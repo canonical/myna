@@ -199,6 +199,8 @@ async fn served_toggle_method_feeds_the_trigger() {
     proxy.toggle().await.expect("Toggle on");
     let edge = tokio::time::timeout(wait, trigger.next_edge()).await;
     assert_eq!(edge.expect("edge"), Some(TriggerEdge::Press));
+    // A Toggle sooner is the same key held down.
+    tokio::time::sleep(myna_desktop::shortcut::control::REPEAT_QUIET).await;
     proxy.toggle().await.expect("Toggle off");
     let edge = tokio::time::timeout(wait, trigger.next_edge()).await;
     assert_eq!(edge.expect("edge"), Some(TriggerEdge::Release));

@@ -5,15 +5,18 @@
 //! `com.canonical.Myna.Dictation.Toggle` over D-Bus ([`Poke`]), and
 //! `myna-desktop --toggle` (`/snap/bin/myna.toggle`) connects to a Unix control
 //! socket ([`listen`]), which shortcuts older Myna Settings wrote still run.
-//! Both feed one channel, so they share one press/release parity.
+//! Both feed one channel, so they share one press/release parity, and a held
+//! key's repeats, from either, toggle nothing ([`REPEAT_QUIET`]).
 
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
 use tokio::io::AsyncReadExt;
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::mpsc;
+use tokio::time::Instant;
 
 use super::{Trigger, TriggerEdge};
 
@@ -32,40 +35,97 @@ pub fn default_socket_path() -> PathBuf {
 
 /// Pokes queued beyond this are hotkey spam and dropped.
 const BACKLOG: usize = 8;
+/// A held key repeats: X11 makes xfsettingsd run the shortcut's command again
+/// after the repeat delay (500 ms on Xubuntu, 660 ms in a bare X server), then
+/// every 50 ms, and GNOME every 30 ms. The first repeat was measured reaching
+/// the daemon 574 ms after the press. A poke within this of the one before may
+/// be a repeat; the margin covers a slower command start.
+pub const REPEAT_QUIET: Duration = Duration::from_millis(800);
+/// A poke within [`REPEAT_QUIET`] is a repeat when another follows it within
+/// this, as repeats do and a second press does not. Consecutive repeats were
+/// measured up to 93 ms apart.
+pub const REPEAT_FOLLOW: Duration = Duration::from_millis(200);
 /// First socket bind retry delay; doubles per failure up to [`RETRY_MAX`].
 const RETRY_START: Duration = Duration::from_secs(1);
 const RETRY_MAX: Duration = Duration::from_secs(30);
 
-/// A [`Trigger`] that yields one edge per poke, alternating `Press`/`Release`.
+/// A [`Trigger`] that yields one edge per press, alternating
+/// `Press`/`Release`, and none for a held key's repeats.
 pub struct ControlTrigger {
-    tx: mpsc::Sender<()>,
-    rx: mpsc::Receiver<()>,
+    poke: Poke,
+    rx: mpsc::Receiver<Arrival>,
     pressed: bool,
+    /// Within `quiet` of the poke before it: a press unless another follows
+    /// within [`REPEAT_FOLLOW`]. Kept here, not in a future, so a `next_edge`
+    /// dropped while it waits loses nothing.
+    candidate: Option<Arrival>,
+    /// Read while deciding a candidate, and not one of its repeats.
+    later: Option<Arrival>,
+    /// A repeat stream is under way: pokes within `quiet` of the one before
+    /// are dropped until the pokes go quiet.
+    streaming: bool,
+    quiet: Duration,
+}
+
+/// One poke, stamped as it arrived, since the controller may not read it for
+/// a second.
+#[derive(Clone, Copy, Debug)]
+struct Arrival {
+    at: Instant,
+    /// Since the poke before, including one the full backlog dropped.
+    gap: Option<Duration>,
 }
 
 /// Pokes a [`ControlTrigger`]: what the served `Toggle` method holds.
 #[derive(Clone)]
-pub struct Poke(mpsc::Sender<()>);
+pub struct Poke {
+    tx: mpsc::Sender<Arrival>,
+    last: Arc<Mutex<Option<Instant>>>,
+}
 
 impl Poke {
     /// Never blocks: a full backlog drops the poke.
     pub fn poke(&self) {
-        let _ = self.0.try_send(());
+        let at = Instant::now();
+        let mut last = self.last.lock().unwrap_or_else(|e| e.into_inner());
+        let gap = last.map(|before| at.duration_since(before));
+        *last = Some(at);
+        let _ = self.tx.try_send(Arrival { at, gap });
     }
 }
 
 impl ControlTrigger {
     pub fn new() -> Self {
+        Self::with_quiet(REPEAT_QUIET)
+    }
+
+    fn with_quiet(quiet: Duration) -> Self {
         let (tx, rx) = mpsc::channel(BACKLOG);
         Self {
-            tx,
+            poke: Poke {
+                tx,
+                last: Arc::new(Mutex::new(None)),
+            },
             rx,
             pressed: false,
+            candidate: None,
+            later: None,
+            streaming: false,
+            quiet,
         }
     }
 
     pub fn poke(&self) -> Poke {
-        Poke(self.tx.clone())
+        self.poke.clone()
+    }
+
+    fn toggle(&mut self) -> TriggerEdge {
+        self.pressed = !self.pressed;
+        if self.pressed {
+            TriggerEdge::Press
+        } else {
+            TriggerEdge::Release
+        }
     }
 }
 
@@ -78,19 +138,48 @@ impl Default for ControlTrigger {
 #[async_trait]
 impl Trigger for ControlTrigger {
     async fn next_edge(&mut self) -> Option<TriggerEdge> {
-        self.rx.recv().await?;
-        self.pressed = !self.pressed;
-        Some(if self.pressed {
-            TriggerEdge::Press
-        } else {
-            TriggerEdge::Release
-        })
+        loop {
+            if let Some(candidate) = self.candidate {
+                let next = match self.later.take() {
+                    Some(next) => Some(next),
+                    None => {
+                        let deadline = candidate.at + REPEAT_FOLLOW;
+                        tokio::time::timeout_at(deadline, self.rx.recv())
+                            .await
+                            .ok()
+                            .flatten()
+                    }
+                };
+                self.candidate = None;
+                match next {
+                    Some(next) if next.gap.is_some_and(|gap| gap < REPEAT_FOLLOW) => {
+                        self.streaming = true;
+                        continue;
+                    }
+                    next => self.later = next,
+                }
+                return Some(self.toggle());
+            }
+            let arrival = match self.later.take() {
+                Some(arrival) => arrival,
+                None => self.rx.recv().await?,
+            };
+            if !arrival.gap.is_some_and(|gap| gap < self.quiet) {
+                self.streaming = false;
+                return Some(self.toggle());
+            }
+            if !self.streaming {
+                self.candidate = Some(arrival);
+            }
+        }
     }
 
     /// Drop queued pokes *without* flipping `pressed` — called by the
     /// controller at the end of an utterance to swallow hotkey spam that
     /// arrived during Finalizing, so the next real tap still delivers `Press`.
     async fn discard_pending(&mut self) {
+        self.candidate = None;
+        self.later = None;
         while self.rx.try_recv().is_ok() {}
     }
 
@@ -160,12 +249,18 @@ pub async fn send_toggle(path: impl AsRef<Path>) -> std::io::Result<()> {
 mod tests {
     use super::*;
 
-    fn listening(tag: &str) -> (ControlTrigger, PathBuf) {
+    /// A trigger on a fresh socket. These tests poke faster than a person,
+    /// so bursts are not coalesced unless `quiet` says so.
+    fn listening_with(tag: &str, quiet: Duration) -> (ControlTrigger, PathBuf) {
         let path = std::env::temp_dir().join(format!("myna-ctl-{tag}-{}.sock", std::process::id()));
-        let trigger = ControlTrigger::new();
+        let trigger = ControlTrigger::with_quiet(quiet);
         let _ = std::fs::remove_file(&path);
         tokio::spawn(listen(path.clone(), trigger.poke()));
         (trigger, path)
+    }
+
+    fn listening(tag: &str) -> (ControlTrigger, PathBuf) {
+        listening_with(tag, Duration::ZERO)
     }
 
     async fn toggle(path: &Path) {
@@ -241,6 +336,138 @@ mod tests {
         tokio::time::timeout(Duration::from_millis(200), trigger.discard_pending())
             .await
             .expect("discard_pending must not block on an empty backlog");
+    }
+
+    /// Whether an edge is waiting, without waiting for one.
+    async fn has_edge(trigger: &mut ControlTrigger) -> bool {
+        tokio::time::timeout(Duration::from_millis(1), trigger.next_edge())
+            .await
+            .is_ok()
+    }
+
+    // A held shortcut on X11: xfsettingsd runs its command again on every key
+    // repeat, after the repeat delay (500 ms on Xubuntu) and then every 50 ms.
+    #[tokio::test(start_paused = true)]
+    async fn a_held_keys_repeats_are_one_toggle() {
+        let mut trigger = ControlTrigger::new();
+        let poke = trigger.poke();
+
+        poke.poke();
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        for _ in 0..20 {
+            poke.poke();
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        assert_eq!(trigger.next_edge().await, Some(TriggerEdge::Press));
+        assert!(!has_edge(&mut trigger).await, "a repeat toggled again");
+
+        tokio::time::sleep(REPEAT_QUIET).await;
+        poke.poke();
+        assert_eq!(trigger.next_edge().await, Some(TriggerEdge::Release));
+    }
+
+    // A second press soon after the first is one, once no repeat follows it.
+    #[tokio::test(start_paused = true)]
+    async fn a_quick_second_press_still_toggles() {
+        let mut trigger = ControlTrigger::new();
+        let poke = trigger.poke();
+
+        poke.poke();
+        assert_eq!(trigger.next_edge().await, Some(TriggerEdge::Press));
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        poke.poke();
+        let pressed = Instant::now();
+        assert_eq!(trigger.next_edge().await, Some(TriggerEdge::Release));
+        assert!(
+            pressed.elapsed() >= REPEAT_FOLLOW,
+            "decided before a repeat could follow"
+        );
+    }
+
+    // That second press held down: it toggles, its repeats do not.
+    #[tokio::test(start_paused = true)]
+    async fn a_quick_second_press_held_toggles_once() {
+        let mut trigger = ControlTrigger::new();
+        let poke = trigger.poke();
+
+        poke.poke();
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        poke.poke();
+        tokio::time::sleep(Duration::from_millis(550)).await;
+        for _ in 0..10 {
+            poke.poke();
+            tokio::time::sleep(Duration::from_millis(30)).await;
+        }
+        assert_eq!(trigger.next_edge().await, Some(TriggerEdge::Press));
+        assert_eq!(trigger.next_edge().await, Some(TriggerEdge::Release));
+        assert!(!has_edge(&mut trigger).await, "a repeat toggled");
+    }
+
+    // The controller reads the trigger in a select, so a read dropped while
+    // it waits to see whether a repeat follows must not lose the press.
+    #[tokio::test(start_paused = true)]
+    async fn a_read_dropped_mid_decision_keeps_the_press() {
+        let mut trigger = ControlTrigger::new();
+        let poke = trigger.poke();
+
+        poke.poke();
+        assert_eq!(trigger.next_edge().await, Some(TriggerEdge::Press));
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        poke.poke();
+        let early = tokio::time::timeout(Duration::from_millis(10), trigger.next_edge()).await;
+        assert!(early.is_err(), "decided before a repeat could follow");
+        assert_eq!(trigger.next_edge().await, Some(TriggerEdge::Release));
+    }
+
+    // A press read while deciding the one before it is not lost either.
+    #[tokio::test(start_paused = true)]
+    async fn a_press_after_the_window_is_kept() {
+        let mut trigger = ControlTrigger::new();
+        let poke = trigger.poke();
+
+        poke.poke();
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        poke.poke();
+        tokio::time::sleep(REPEAT_FOLLOW).await;
+        poke.poke();
+        assert_eq!(trigger.next_edge().await, Some(TriggerEdge::Press));
+        assert_eq!(trigger.next_edge().await, Some(TriggerEdge::Release));
+        assert_eq!(trigger.next_edge().await, Some(TriggerEdge::Press));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn discard_pending_drops_a_press_being_decided() {
+        let mut trigger = ControlTrigger::new();
+        let poke = trigger.poke();
+
+        poke.poke();
+        assert_eq!(trigger.next_edge().await, Some(TriggerEdge::Press));
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        poke.poke();
+        let _ = tokio::time::timeout(Duration::from_millis(10), trigger.next_edge()).await;
+        trigger.discard_pending().await;
+        assert!(!has_edge(&mut trigger).await, "the discarded press toggled");
+        tokio::time::sleep(REPEAT_QUIET).await;
+        poke.poke();
+        assert_eq!(trigger.next_edge().await, Some(TriggerEdge::Release));
+    }
+
+    // Both channels make one stream: socket pokes repeating a D-Bus one.
+    #[tokio::test]
+    async fn the_socket_and_a_poke_share_one_stream() {
+        let (mut trigger, path) = listening_with("stream", REPEAT_QUIET);
+
+        trigger.poke().poke();
+        assert_eq!(trigger.next_edge().await, Some(TriggerEdge::Press));
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        toggle(&path).await;
+        tokio::time::sleep(Duration::from_millis(30)).await;
+        toggle(&path).await;
+        tokio::time::sleep(REPEAT_FOLLOW + Duration::from_millis(50)).await;
+        assert!(
+            !has_edge(&mut trigger).await,
+            "the socket's repeats toggled"
+        );
     }
 
     // `$XDG_RUNTIME_DIR` missing at login: the bind waits for it.
