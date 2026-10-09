@@ -51,22 +51,38 @@ jobs:
           retention-days: 7
 
   # The myna snap of this tree: the suites test the daemon and HUD as packaged,
-  # not the store's older edge build.
+  # not the store's older edge build. The build (about 8 minutes) is cached by
+  # the content it packs, so a push that touches none of it (e2e-tests, the
+  # workflow, the deb) reuses the last snap. A hit carries the version string
+  # of the commit that built it; nothing here reads it, and a release is built
+  # by its own workflow, not this one.
   myna-snap:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v6
+      - uses: actions/cache@v6
+        id: cache
+        with:
+          path: snap-cache
+          key: myna-snap-${{ hashFiles('client/**', 'myna-snap/**', 'LICENSE', 'dev/version.sh', 'dev/stage-*.sh') }}
       - name: Stage the myna snap
+        if: steps.cache.outputs.cache-hit != 'true'
         run: myna-snap/dev/prepare.sh
       - uses: snapcore/action-build@v1
+        if: steps.cache.outputs.cache-hit != 'true'
         id: build
         with:
           path: myna-snap
+      - name: Keep the snap for the cache
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p snap-cache
+          cp "${{ steps.build.outputs.snap }}" snap-cache/
       - uses: actions/upload-artifact@v7
         with:
           name: myna-snap
-          path: ${{ steps.build.outputs.snap }}
+          path: snap-cache/*.snap
           retention-days: 7
 
   e2e:
