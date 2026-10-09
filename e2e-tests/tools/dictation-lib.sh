@@ -98,6 +98,32 @@ ibus_restart() {
 
 default_source_is() { wpctl inspect @DEFAULT_AUDIO_SOURCE@ | grep -q "node.name = \"$1\""; }
 
+# The HUD, hosted the way the myna-config deb's autostart entry hosts it on
+# Xfce: the supervisor starts myna.hud while the daemon owns its bus name.
+# (GNOME's shell extension does this there; the VM has no extension.)
+hud_host_start() {
+    mkdir -p "$HOME/myna-shot/out"
+    session_env
+    setsid "$HOME/myna-shot/myna-hud-host" >"$HOME/myna-shot/out/hud-host.log" 2>&1 </dev/null &
+    wait_until 30 pgrep -u "$USER" -x myna-hud
+}
+# The pill is a mapped window only while the HUD has something to say.
+pill_shows() { DISPLAY=${DISPLAY:-:0} xdotool search --onlyvisible --name '^myna-hud$' >/dev/null; }
+
+# A checkpoint screenshot of the whole X11 desktop, collected by run-suite.sh
+# as artifacts/screenshots/dictation/NAME.png.
+checkpoint() {
+    mkdir -p "$HOME/myna-shot/out/shots/dictation"
+    import -window root "$HOME/myna-shot/out/shots/dictation/$1.png"
+}
+
+# Hold the backend still, so the daemon waits in `finalizing` for as long as a
+# screenshot takes (the fake's transcript is otherwise back in milliseconds).
+# The backend runs as root; the bracket keeps pkill from matching its own
+# command line.
+backend_freeze() { sudo pkill -STOP -f '[-]-adapter fake'; }
+backend_thaw() { sudo pkill -CONT -f '[-]-adapter fake'; }
+
 # The speech clip, looped on the virtual speaker whose monitor is the default
 # microphone: the speaker never falls silent, so no case races the clip.
 mic_start() {

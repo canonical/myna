@@ -8,6 +8,7 @@ set -uo pipefail
 source "$(dirname "$0")/lib.sh"
 
 P=model-settings-$REL
+S=shots/model-settings
 # The connected backend's snap name (myna-whisper, myna-parakeet, ...).
 BACKEND=$(on 'snap connections myna | sed -n "s/^.*myna:backend[[:space:]]\+\(myna-[a-z]*\):provider.*$/\1/p"')
 [ -n "$BACKEND" ] || { echo "no backend connected" >&2; exit 1; }
@@ -20,20 +21,23 @@ NEW=450
 # "Unload when idle (seconds)" is the Runtime entry row for package.sleep-idle-seconds.
 ROW="Unload when idle (seconds)"
 
+# The Model page loads from snapd after it shows; its rows scroll.
+OPEN_ROW=("tab:Model" "waitfor:$ROW@text" "scrollat:550,700#8" "waitfor:$ROW@text")
+
 # Cancel: the row reverts silently, snapd keeps the old value.
 shot --polkit cancel \
-    wait:4 tab:Model wait:2 \
-    "scrollat:550,700#8" wait:1 \
-    "click:$ROW@text" "key:ctrl+a" "type:$NEW" key:Return wait:4 shot:"$P"-01-cancelled.png \
+    waitfor:General "${OPEN_ROW[@]}" shot:$S/01-model.png \
+    "click:$ROW@text" "key:ctrl+a" "type:$NEW" key:Return "$PROMPT_DISMISSED" "waittext:$ROW@text=$OLD" shot:$S/02-cancelled.png \
     || { echo "cancel run failed" >&2; exit 1; }
 assert_on "cancel wrote nothing" \
     "sudo snap get -d $BACKEND | jq -e '[.. .\"sleep-idle-seconds\"? // empty] | index($NEW) == null' >/dev/null"
 
 # Allow: the value lands in snapd.
 shot --polkit allow --monitor "$P" \
-    wait:4 tab:Model wait:2 \
-    "scrollat:550,700#8" wait:1 \
-    "click:$ROW@text" "key:ctrl+a" "type:$NEW" key:Return wait:5 shot:"$P"-02-applied.png \
+    waitfor:General "${OPEN_ROW[@]}" \
+    "click:$ROW@text" "key:ctrl+a" "type:$NEW" key:Return \
+    "$(poll "sudo snap get -d $BACKEND | jq -e '[.. .\"sleep-idle-seconds\"? // empty] | index($NEW) != null'")" \
+    shot:$S/03-applied.png \
     || { echo "allow run failed" >&2; exit 1; }
 assert_on "new value landed in snapd" \
     "sudo snap get -d $BACKEND | jq -e '[.. .\"sleep-idle-seconds\"? // empty] | index($NEW) != null' >/dev/null"

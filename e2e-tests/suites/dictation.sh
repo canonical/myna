@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 # snapshot: dictation
-# binary: none
 # Dictation end to end on the real desktop session: activation -> a speech
 # clip played through a virtual microphone -> the fake backend (a scripted
 # transcript: "The quick brown fox" while recording, "jumps over the lazy dog."
@@ -19,6 +18,11 @@
 #   6. the key held 1.5 s to stop toggles once and the tail still lands
 #   7. the first dictation after ibus-daemon restarts, by key, reaches the
 #      field: the daemon focuses the engine before it can name the field
+#   8. (Xubuntu only) the pill through a dictation, photographed on the real
+#      desktop: listening, finishing, the focus-lost notice, the secure-field
+#      error. The HUD is hosted by myna-hud-host, as the deb's autostart
+#      entry does; GNOME's shell extension is not in the VM, and its Wayland
+#      session cannot be photographed from inside anyway.
 set -uo pipefail
 # shellcheck source=e2e-tests/suites/lib.sh
 source "$(dirname "$0")/lib.sh"
@@ -40,9 +44,6 @@ evidence() {
         journalctl --user -u snap.myna.myna.service --no-pager -o short-precise > daemon.log 2>&1
         { ibus address; ibus engine; } > ibus.txt 2>&1
         true" >/dev/null 2>&1
-    # An X11 desktop can be photographed from inside; GNOME's Wayland cannot.
-    # shellcheck disable=SC2153 # DESKTOP comes from run-suite.sh
-    [ "$DESKTOP" != xubuntu ] || dict "import -window root myna-shot/out/screen-$1.png" >/dev/null 2>&1
     return 0
 }
 
@@ -151,6 +152,44 @@ dict 'key super+j'
 assert_dict "the key stops it" 'wait_until 10 dictation_state_is idle'
 assert_dict "the whole transcript is in the field" "wait_until 10 field_is plain '$FULL'"
 evidence 7
+
+if [ "$DESKTOP" = xubuntu ]; then
+    echo "-- 8. the pill through a dictation, on the real desktop"
+    assert_dict "the HUD host runs the HUD" 'hud_host_start'
+    assert_dict "the field is cleared" 'field_clear'
+    assert_dict "the plain field is focused afresh" 'field_focus other && field_focus plain'
+    dict dictation_toggle
+    assert_dict "recording" 'wait_until 10 dictation_state_is recording'
+    assert_dict "the first segment lands" "wait_until 10 field_is plain '$FIRST'"
+    assert_dict "the pill shows while listening" 'wait_until 10 pill_shows'
+    dict 'checkpoint 01-listening'
+    dict backend_freeze
+    dict dictation_toggle
+    assert_dict "finalizing while the backend is held" 'wait_until 10 dictation_state_is finalizing'
+    assert_dict "the pill shows while finishing" 'wait_until 10 pill_shows'
+    dict 'checkpoint 02-finishing'
+    dict backend_thaw
+    assert_dict "idle once the backend answers" 'wait_until 10 dictation_state_is idle'
+    assert_dict "the whole transcript is in the field" "wait_until 10 field_is plain '$FULL'"
+    dict 'checkpoint 03-dictated'
+
+    assert_dict "the field is cleared" 'field_clear'
+    assert_dict "the plain field is focused afresh" 'field_focus other && field_focus plain'
+    dict dictation_toggle
+    assert_dict "the first segment lands" "wait_until 10 field_is plain '$FIRST'"
+    assert_dict "focus moves to the other field" 'field_focus other'
+    assert_dict "the daemon tells the user focus was lost (notice state)" 'wait_until 10 dictation_state_is notice'
+    assert_dict "the pill shows the notice" 'wait_until 10 pill_shows'
+    dict 'checkpoint 04-notice'
+    assert_dict "idle once the notice has passed" 'wait_until 15 dictation_state_is idle'
+
+    assert_dict "the password field is focused" 'field_focus secret'
+    dict dictation_toggle
+    assert_dict "the press is refused (error state)" 'wait_until 10 dictation_state_is error'
+    assert_dict "the pill shows the error" 'wait_until 10 pill_shows'
+    dict 'checkpoint 05-error'
+    evidence 8
+fi
 
 dict 'mic_stop' >/dev/null 2>&1
 suite_status

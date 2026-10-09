@@ -10,15 +10,16 @@ set -uo pipefail
 source "$(dirname "$0")/lib.sh"
 
 P=onboarding-$REL
+S=shots/onboarding-full
 
 shot --polkit allow --monitor "$P" \
-    wait:4 shot:"$P"-01-welcome.png \
-    "click:Next@$BTN" wait:2 shot:"$P"-02-components.png \
-    "click:Install all components" wait:1 shot:"$P"-03-installing.png \
+    "waitfor:Next@$BTN" shot:$S/01-welcome.png \
+    "click:Next@$BTN" "waitfor:Install all components" shot:$S/02-components.png \
+    "click:Install all components" "gone:Install all components" shot:$S/03-installing.png \
     "burst:$P-install:5:900:How to dictate" \
-    wait:2 shot:"$P"-04-how-to-dictate.png \
-    "click:Done@$BTN" wait:3 \
-    "sh:! pgrep -x myna-config" \
+    "waitfor:Done@$BTN" shot:$S/04-how-to-dictate.png \
+    "click:Done@$BTN" \
+    "$(poll '! pgrep -x myna-config')" \
     || { echo "onboarding run failed" >&2; exit 1; }
 
 assert_on "user-daemons flag on" \
@@ -31,6 +32,6 @@ assert_on "myna:backend connected to a provider" \
     'snap connections myna | grep -E "myna:backend[[:space:]]+myna-[a-z]+:provider" | grep -q .'
 assert_on "dictation daemon active" \
     'systemctl --user is-active -q snap.myna.myna.service'
-assert_on "Super+J custom shortcut written" \
-    'dconf read /org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/myna/binding | grep -q Super'
+assert_shortcut_bound
+assert_input_method_up
 suite_status

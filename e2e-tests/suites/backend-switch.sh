@@ -9,25 +9,29 @@ set -uo pipefail
 source "$(dirname "$0")/lib.sh"
 
 P=backend-switch-$REL
+S=shots/backend-switch
 
 assert_on "precondition: backend is parakeet" \
     'snap connections myna | grep -q "myna:backend.*myna-parakeet:provider"'
 
 # A dismissed prompt reverts silently: the connection must not move.
 shot --polkit cancel \
-    wait:4 waitfor:General \
-    click:Whisper wait:4 shot:"$P"-01-cancelled.png \
+    waitfor:General "waitfor:Parakeet@radio button" shot:$S/01-general.png \
+    click:Whisper "$PROMPT_DISMISSED" "checked:Parakeet@radio button" shot:$S/02-cancelled.png \
     || { echo "cancel run failed" >&2; exit 1; }
 assert_on "cancel left backend on parakeet" \
     'snap connections myna | grep -q "myna:backend.*myna-parakeet:provider"'
 
 # An allowed prompt switches: connection moves, daemon comes back active.
 shot --polkit allow --monitor "$P" \
-    wait:4 waitfor:General \
-    click:Whisper wait:10 shot:"$P"-02-switched.png \
+    waitfor:General \
+    click:Whisper "checked:Whisper@radio button" \
+    "$(poll 'snap connections myna | grep -q "myna:backend.*myna-whisper:provider"')" \
+    shot:$S/03-switched.png \
+    "tab:Diagnostics" "waittext:Diagnostic report=Onboarding:" shot:$S/04-diagnostics.png \
     || { echo "allow run failed" >&2; exit 1; }
 assert_on "backend connected to whisper" \
     'snap connections myna | grep -q "myna:backend.*myna-whisper:provider"'
-assert_on "daemon active after switch" \
+assert_soon "daemon active after switch" \
     'systemctl --user is-active -q snap.myna.myna.service'
 suite_status
