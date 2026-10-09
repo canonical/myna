@@ -32,6 +32,8 @@ myna-platform = { path = "../myna-platform" }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 thiserror.workspace = true
+# The HUD host's watch on the session's display, which dies with the session.
+x11rb = "0.13"
 
 [package.metadata.cargo-machete]
 ignored = ["gettext-rs"]

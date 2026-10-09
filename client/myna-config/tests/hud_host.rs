@@ -81,7 +81,17 @@ impl Rig {
     }
 
     fn start_host(&self, grace_ms: &str) -> Child {
-        let child = Command::new(env!("CARGO_BIN_EXE_myna-hud-host"))
+        self.start_host_on(grace_ms, None)
+    }
+
+    /// The host as a session with `display` (or none) starts it.
+    fn start_host_on(&self, grace_ms: &str, display: Option<&str>) -> Child {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_myna-hud-host"));
+        match display {
+            Some(display) => command.env("DISPLAY", display),
+            None => command.env_remove("DISPLAY"),
+        };
+        let child = command
             .env("DBUS_SESSION_BUS_ADDRESS", &self.address)
             .env("MYNA_HUD_BINARY", self.dir.join("hud"))
             .env("MYNA_HUD_HOST_GRACE_MS", grace_ms)
@@ -257,4 +267,84 @@ fn a_missing_hud_binary_is_logged_and_not_fatal() {
         .unwrap();
     assert!(output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("nope"));
+}
+
+/// An X server on a free display, until dropped.
+struct Xvfb(Child, String);
+
+impl Xvfb {
+    fn start() -> Option<Self> {
+        let mut child = Command::new("Xvfb")
+            .args([
+                "-displayfd",
+                "1",
+                "-nolisten",
+                "tcp",
+                "-screen",
+                "0",
+                "64x64x8",
+            ])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .ok()?;
+        let mut number = String::new();
+        std::io::BufReader::new(child.stdout.take()?)
+            .read_line(&mut number)
+            .ok()?;
+        Some(Self(child, format!(":{}", number.trim())))
+    }
+
+    fn stop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
+impl Drop for Xvfb {
+    fn drop(&mut self) {
+        self.stop();
+    }
+}
+
+/// A logout leaves the user manager, and so the session bus, running: the
+/// display going away is what says the session is over.
+#[test]
+fn the_host_and_its_hud_end_with_the_display() {
+    let Some(mut xvfb) = Xvfb::start() else {
+        eprintln!("skipped: no Xvfb to stand in for the session's display");
+        return;
+    };
+    let mut rig = Rig::new("display", WELL_BEHAVED, "3000");
+    let mut idle = rig.host.take().unwrap();
+    let _ = idle.kill();
+    let _ = idle.wait();
+    let mut host = rig.start_host_on("3000", Some(&xvfb.1));
+    rig.daemon_up();
+    rig.wait_for("start", |log| Rig::count(log, "start") == 1);
+
+    xvfb.stop();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let status = loop {
+        if let Some(status) = host.try_wait().unwrap() {
+            break status;
+        }
+        if Instant::now() > deadline {
+            let _ = host.kill();
+            panic!("the host outlived its display");
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    };
+    assert!(status.success(), "{status:?}");
+    rig.wait_for("term", |log| log.iter().any(|l| l == "term"));
+    assert!(!rig.running(&rig.marker()));
+}
+
+#[test]
+fn a_host_with_no_display_runs_on() {
+    let rig = Rig::new("no-display", WELL_BEHAVED, "3000");
+    rig.settle();
+    assert!(rig.host.is_some());
+    rig.daemon_up();
+    rig.wait_for("start", |log| Rig::count(log, "start") == 1);
 }

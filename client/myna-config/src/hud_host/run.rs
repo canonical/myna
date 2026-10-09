@@ -178,13 +178,50 @@ pub fn run() -> i32 {
     for signal in [libc::SIGTERM, libc::SIGINT] {
         let shared = shared.clone();
         glib::unix_signal_add_local(signal, move || {
-            shared.borrow_mut().quitting = true;
-            feed(&shared, Event::NameLost);
+            end(&shared);
             ControlFlow::Break
         });
     }
+    watch_display(&shared);
     main_loop.run();
     0
+}
+
+/// Stop the HUD and leave.
+fn end(shared: &Shared) {
+    shared.borrow_mut().quitting = true;
+    feed(shared, Event::NameLost);
+}
+
+/// End with the session's X display. A logout leaves the lingering user
+/// manager and its bus running, so the bus name never says the session is over
+/// and the host would outlive it; the display going away does. No display, as
+/// on a Wayland session, is nothing to watch.
+fn watch_display(shared: &Shared) {
+    use std::os::fd::AsRawFd;
+    use x11rb::connection::Connection;
+
+    let Ok((conn, _)) = x11rb::rust_connection::RustConnection::connect(None) else {
+        return;
+    };
+    let shared = shared.clone();
+    let fd = conn.stream().as_raw_fd();
+    glib::source::unix_fd_add_local(
+        fd,
+        glib::IOCondition::IN | glib::IOCondition::HUP | glib::IOCondition::ERR,
+        move |_, condition| {
+            // Nothing is requested of the server, so what arrives is
+            // its goodbye; reading it tells a close from a stray event.
+            let closed = condition.intersects(glib::IOCondition::HUP | glib::IOCondition::ERR)
+                || conn.poll_for_event().is_err();
+            if closed {
+                log("the display is gone; the session has ended");
+                end(&shared);
+                return ControlFlow::Break;
+            }
+            ControlFlow::Continue
+        },
+    );
 }
 
 fn is_executable(path: &str) -> bool {
