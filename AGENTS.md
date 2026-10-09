@@ -23,6 +23,8 @@ Myna has three primary boundaries:
 - The Python project in `server/` owns the shared server contract, inference adapters, server process, testbed, and benchmarker.
 - The `*-snap/` directories package the orchestrator and inference backends. Model weights and runtimes are snap components.
 
+Desktop integration goes through the platform layer: processes name its contracts in `client/myna-platform`, never GNOME, IBus, Mutter, xfconf or X11 (`client/.kb/platform-layer.md`).
+
 The client pushes PCM to a backend; inference snaps never access the microphone. Both language implementations express the same session contract, but code and tests are the source of truth for wire details.
 
 # Directory
@@ -35,7 +37,7 @@ The client pushes PCM to a backend; inference snaps never access the microphone.
 - `dev/` - Development, packaging, benchmark, and quality-gate scripts.
 - `docs/` - Human-run system test plans and multilingual test passages.
 - `specs/` - Frozen feature-design artifacts retained for historical context.
-- `e2e-tests/` - Myna Settings driven through AT-SPI on fresh GNOME desktop LXD VMs.
+- `e2e-tests/` - Myna Settings and dictation driven through AT-SPI on fresh LXD desktop VMs (GNOME, or Xubuntu via `E2E_DESKTOP`).
 - `tests/` - Confined end-to-end tests (spread) and the Testflinger lab-hardware run.
 
 # Documents
