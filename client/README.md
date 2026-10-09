@@ -1,4 +1,4 @@
-# myna client (Rust) — Workstreams D + G
+# myna client (Rust) - Workstreams D + G
 
 The dictation **client** owns microphone capture and activation, runs the
 wire-agnostic session and model-residency FSM against an inference backend, and
@@ -10,18 +10,18 @@ current client knowledge index.
 | crate | role | task |
 |---|---|---|
 | `myna-core` | wire contract: events, session config, protocol version, audio types + JSON codec, mirroring Python `myna.core` | **T38 (done)** |
-| `myna-audio` | native PipeWire capture adapter behind `AudioSource`/`CaptureBackend` — node selection, channel pick/downmix, live device enumeration | **T49–T52 (done)** |
+| `myna-audio` | native PipeWire capture adapter behind `AudioSource`/`CaptureBackend` - node selection, channel pick/downmix, live device enumeration | **T49–T52 (done)** |
 | `myna-orchestrator` | the two-region async FSM + boundary traits (`BackendClient`, `AudioSource`, `Trigger`, `TextSink`) | **T39–T43 (done)** |
 | `myna-cli` (`myna-testbed`) | testbed binary wiring the boundaries end-to-end against the real Python server (WAV / corpus / live mic) | **T41 (done)** |
 | `myna-desktop` (`myna-desktop`) | the shipped push-to-talk **dictation app**: custom-shortcut hotkey → capture → IBus text injection into the focused app, with a GTK activity indicator | **T21/T22 (done)** |
-| `myna-hud` (`myna-hud`) | the dictation **HUD renderer** (feature 004): standalone GTK4 + libadwaita app — level bar, segmented meter or GPU wave ribbon, pill chrome, motion/high-contrast tracking, lab (`--lab`) + simulator (`--serve-dbus`) | **T100–T133 (done)** |
+| `myna-hud` (`myna-hud`) | the dictation **HUD renderer** (feature 004): standalone GTK4 + libadwaita app - level bar, segmented meter or GPU wave ribbon, pill chrome, motion/high-contrast tracking, lab (`--lab`) + simulator (`--serve-dbus`) | **T100–T133 (done)** |
 
 ## Design commitments
 
 - **Wire-agnostic FSM.** The FSM speaks the *existing* `myna.core` wire first
   (real end-to-end runs against the running Python `myna-server` today); the
   OpenAI-Realtime-shaped **IE115** wire is layered on (T43) as a *second*
-  `BackendClient` (`ws_unix_ie115::WsUnixIe115Backend`) — the FSM and driver are
+  `BackendClient` (`ws_unix_ie115::WsUnixIe115Backend`) - the FSM and driver are
   unchanged, proving the trait boundary. Pick it at runtime with
   `myna-testbed --dialect ie115`.
 - **Every boundary is a trait with a mock.** The Python `myna-server` stands in
@@ -39,7 +39,7 @@ current client knowledge index.
 `myna-core`'s codec is verified against golden JSON frames captured from Python
 `myna.core` (`event_to_wire`, `session_config_to_wire`, the handshake frames).
 Frames are compared as parsed JSON values, so key order / whitespace differ but
-the structure matches — both ends parse JSON.
+the structure matches - both ends parse JSON.
 
 ## Build & test
 
@@ -62,10 +62,10 @@ services up and sets the gates; `make test-client-gated` is that script.
 Against a running Python `myna-server` (any adapter) on a Unix socket:
 
 ```sh
-# internal myna.core wire (default) — Enter to start, Enter/clip-end to stop, Ctrl-D quits
+# internal myna.core wire (default) - Enter to start, Enter/clip-end to stop, Ctrl-D quits
 myna-testbed --socket /tmp/myna.sock --language en --clip corpus/english/audio/<id>.wav
 
-# IE115 (OpenAI-Realtime-shaped) wire — same FSM, second backend
+# IE115 (OpenAI-Realtime-shaped) wire - same FSM, second backend
 myna-testbed --socket /tmp/myna.sock --dialect ie115 --language en --clip <wav>
 
 # live microphone via the native PipeWire backend (no subprocess)
@@ -73,26 +73,26 @@ myna-testbed --socket /tmp/myna.sock --language en --mic
 myna-testbed --list-devices
 ```
 
-### The dictation app — `myna-desktop` (hotkey → IBus injection)
+### The dictation app - `myna-desktop` (hotkey → IBus injection)
 
-The shipped push-to-talk app. Needs a Wayland/GNOME session and a running IBus
-daemon. Activation must not depend on terminal focus (dictation injects into
-*another* app), so the default is **toggle-to-talk via a GNOME custom keyboard
-shortcut**: the app runs as a daemon on a control socket, and a GNOME shortcut
+The shipped push-to-talk app. Needs a GNOME (Wayland) or Xfce (X11) session and a running
+IBus daemon. Activation must not depend on terminal focus (dictation injects into
+*another* app), so the default is **toggle-to-talk via a desktop custom keyboard
+shortcut**: the app runs as a daemon on a control socket, and a shortcut
 bound to `myna-desktop --toggle` pokes it (tap = start, tap = stop). This works
-for a plain unsandboxed binary and confined alike — no terminal focus, no app id.
+for a plain unsandboxed binary and confined alike - no terminal focus, no app id.
 
 ```sh
 (cd ../server && uv run myna-server --adapter whisper --model base --socket /tmp/myna.sock) &
 
-myna-desktop --install-shortcut '<Super>t'       # once: binds a shortcut → `myna-desktop --toggle`
+myna-desktop --install-shortcut '<Super>t'       # once, GNOME only: binds a shortcut → `myna-desktop --toggle`
 myna-desktop --socket /tmp/myna.sock --language en   # the daemon (leave running)
 # focus a text field, tap your shortcut, speak, tap → transcript injected there
 ```
 
-The other activation mode is `--stdin` (terminal debug — injects back into the terminal). Feedback defaults to
+The other activation mode is `--stdin` (terminal debug - injects back into the terminal). Feedback defaults to
 desktop notifications; on GNOME the myna-shell extension hosts the richer
-overlay HUD (feature 004). The former GTK `--overlay` was removed in T150.
+overlay HUD (feature 004), on Xfce the HUD's X11 host does (`myna-hud --host x11`). The former GTK `--overlay` was removed in T150.
 
 See `.kb/desktop-integration.md` for the controller and injection invariants.
 
