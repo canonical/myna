@@ -13,9 +13,10 @@
 #      the field that took the focus
 #   4. the bound key (a virtual keyboard, tools/uinput-keys.py, presses it on
 #      the real seat) starts and stops a dictation
-#   5. the key held 450 ms (past the daemon's 400 ms focus wait, short of key
-#      repeat) still starts one: on X11 its grab keeps focus off the field
-#   6. the key held 1.5 s, deep into key repeat, toggles once
+#   5. the key held 2 s (past the focus wait and the 1 s blip grace, deep
+#      into key repeat) still starts one: on X11 its grab keeps focus off the
+#      field until release, and its repeats keep the daemon waiting for it
+#   6. the key held 1.5 s to stop toggles once and the tail still lands
 #   7. the first dictation after ibus-daemon restarts, by key, reaches the
 #      field: the daemon focuses the engine before it can name the field
 set -uo pipefail
@@ -107,12 +108,15 @@ assert_dict "the key stops it" 'wait_until 10 dictation_state_is idle'
 assert_dict "the whole transcript is in the field" "wait_until 10 field_is plain '$FULL'"
 evidence 4
 
-echo "-- 5. the key held past the focus wait starts a dictation"
+echo "-- 5. the key held 2 s starts a dictation"
 assert_dict "the field is cleared" 'field_clear'
 # Refocused: GNOME Shell keeps a cleared field's old surrounding text until
 # focus moves, so a dictation straight after case 4 would open with a space.
 assert_dict "the plain field is focused afresh" 'field_focus other && field_focus plain'
-dict 'key super+j@450'
+dict 'key super+j@2000'
+# The keyboard queues keys: let the hold end, or the stop below follows its
+# last repeat faster than a person could press again.
+dict 'sleep 2.5'
 assert_dict "the held key starts recording" 'wait_until 10 dictation_state_is recording'
 assert_dict "the first segment lands" "wait_until 10 field_is plain '$FIRST'"
 dict 'key super+j'
@@ -130,6 +134,7 @@ assert_dict "the first segment lands" "wait_until 10 field_is plain '$FIRST'"
 dict 'key super+j@1500'
 assert_dict "the held key stops it" 'wait_until 10 dictation_state_is idle'
 assert_dict "and nothing starts again" 'sleep 3; dictation_state_is idle'
+assert_dict "the whole transcript is in the field" "field_is plain '$FULL'"
 # shellcheck disable=SC2016 # expands in the VM
 assert_dict "one start and one stop, no more" \
     '[ "$(journal_count "ctrl: press")" = 1 ] && [ "$(journal_count "ctrl: release")" = 1 ]'
