@@ -16,6 +16,11 @@ packages:
   - im-config
   - mousepad
   - xauth
+  # What the myna-config deb Depends on, which the suites' bare binary needs
+  # and xubuntu-core lacks (ldd: libadwaita-1-0 brings GTK 4 and the rest).
+  - libadwaita-1-0
+  - libglib2.0-bin
+  - pkexec
 
 write_files:
   # LightDM autologin: every boot lands on ubuntu's Xfce session without
