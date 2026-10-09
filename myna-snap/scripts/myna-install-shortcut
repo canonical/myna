@@ -15,6 +15,35 @@ KB_DIR="$KB_KEY/"                # dir form: how the entry appears in the list
 ACCEL="${1:?usage: myna-install-shortcut <accel> (e.g. '<Super>t')}"
 COMMAND="/snap/bin/${SNAP_INSTANCE_NAME}.toggle"
 
+# Bind only on GNOME, as `myna-desktop --install-shortcut` does. The profile
+# follows client/myna-platform/src/session.rs: MYNA_PLATFORM (gnome, xfce or
+# generic, any case) overrides; otherwise the first of XDG_CURRENT_DESKTOP's
+# ':'-separated entries that is gnome or xfce decides, and anything else is
+# generic.
+profile="$(printf '%s' "${MYNA_PLATFORM:-}" | tr -d ' \t' | tr '[:upper:]' '[:lower:]')"
+if [ -z "$profile" ]; then
+    profile="$(printf '%s' "${XDG_CURRENT_DESKTOP:-}" | tr -d ' \t' | tr '[:upper:]' '[:lower:]' |
+        tr ':' '\n' | grep -m1 -E '^(gnome|xfce)$' || true)"
+    [ -n "$profile" ] || profile=generic
+fi
+case "$profile" in
+    gnome | xfce | generic) ;;
+    *)
+        echo "MYNA_PLATFORM=\"${MYNA_PLATFORM:-}\" names no profile (gnome, xfce, generic)" >&2
+        profile=generic
+        ;;
+esac
+case "$profile" in
+    gnome) ;;
+    xfce) session="an Xfce session" ;;
+    *) session="a session not recognised as GNOME (set MYNA_PLATFORM=gnome to force it)" ;;
+esac
+if [ "$profile" != gnome ]; then
+    echo "--install-shortcut binds a GNOME shortcut and this is $session." >&2
+    echo "Bind the key in Myna Settings, or in your desktop's keyboard settings with the command \`$COMMAND\`." >&2
+    exit 1
+fi
+
 # dconf is asymmetric: writes go over D-Bus to the session's dconf-service,
 # which always writes the real ~/.config/dconf/user, while reads open
 # $XDG_CONFIG_HOME/dconf/user directly. snapcraft.yaml points XDG_CONFIG_HOME
