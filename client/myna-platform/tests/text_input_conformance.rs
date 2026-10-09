@@ -40,6 +40,9 @@ struct Desk {
     lost: bool,
     focused: bool,
     secure: bool,
+    /// Commits a field turned secure still takes before the backend hears.
+    lag: u32,
+    blind: u32,
     broken: bool,
     text: String,
     preedit: String,
@@ -119,11 +122,12 @@ impl Target for RefTarget {
             self.flaw,
             Flaw::WritesSecureFields | Flaw::WritesFieldsTurnedSecure
         );
-        if detects && !ignores && self.desk.borrow().secure {
+        if detects && !ignores && self.desk.borrow().secure && self.desk.borrow().blind == 0 {
             return Err(InjectError::SecureField);
         }
         let flaw = self.flaw;
         self.desk.send_modify(|desk| {
+            desk.blind = desk.blind.saturating_sub(1);
             if flaw == Flaw::CommitsThePreedit {
                 let preedit = desk.preedit.clone();
                 desk.text.push_str(&preedit);
@@ -197,7 +201,10 @@ impl Field for RefField {
     }
 
     async fn turn_secure(&mut self) {
-        self.0.send_modify(|desk| desk.secure = true);
+        self.0.send_modify(|desk| {
+            desk.secure = true;
+            desk.blind = desk.lag;
+        });
     }
 
     async fn observe(&mut self) -> Option<FieldView> {
@@ -212,6 +219,7 @@ impl Field for RefField {
 struct RefFixture {
     capabilities: TextInputCapabilities,
     flaw: Flaw,
+    lag: u32,
 }
 
 #[async_trait]
@@ -220,6 +228,7 @@ impl Fixture for RefFixture {
         let desk = Arc::new(watch::Sender::new(Desk {
             focused: true,
             secure: kind == FieldKind::Secure,
+            lag: self.lag,
             ..Desk::default()
         }));
         let injector = Reference {
@@ -238,7 +247,25 @@ const FULL: TextInputCapabilities = TextInputCapabilities {
 };
 
 async fn suite(capabilities: TextInputCapabilities, flaw: Flaw) -> Report {
-    run(&mut RefFixture { capabilities, flaw }).await
+    run(&mut RefFixture {
+        capabilities,
+        flaw,
+        lag: 0,
+    })
+    .await
+}
+
+/// A desktop may tell the backend a field turned secure only after a few
+/// writes went in, as IBus does; that is no violation while it stops.
+#[tokio::test(start_paused = true)]
+async fn a_backend_told_late_of_a_secure_field_still_conforms() {
+    let report = run(&mut RefFixture {
+        capabilities: FULL,
+        flaw: Flaw::None,
+        lag: 3,
+    })
+    .await;
+    assert!(report.passed.contains(&"a_field_turning_secure_is_refused"));
 }
 
 #[tokio::test(start_paused = true)]
