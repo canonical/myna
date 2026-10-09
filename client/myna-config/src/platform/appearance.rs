@@ -10,16 +10,12 @@
 use gtk::prelude::*;
 use gtk4 as gtk;
 use libadwaita as adw;
-use myna_platform::appearance::{Appearance, AppearanceReadings, Freshness};
+use myna_platform::appearance::{
+    is_high_contrast_theme, Appearance, AppearanceReadings, Freshness,
+};
 use myna_platform::Subscription;
 
 pub struct GtkAppearance;
-
-/// Whether a GTK theme name is one of the high-contrast themes.
-pub(super) fn is_high_contrast_theme(name: &str) -> bool {
-    let name = name.to_ascii_lowercase();
-    name.contains("highcontrast") || name.contains("high-contrast")
-}
 
 /// `GtkSettings:gtk-enable-animations`, true where there are no settings.
 pub(super) fn animations_enabled() -> bool {
@@ -76,16 +72,6 @@ mod tests {
     use crate::platform::gnome::appearance::GnomeAppearance;
     use gio::prelude::*;
     use myna_platform::conformance::appearance::{run, Fixture};
-
-    #[test]
-    fn high_contrast_themes_are_recognised_by_name() {
-        for name in ["HighContrast", "Yaru-highcontrast", "high-contrast"] {
-            assert!(is_high_contrast_theme(name), "{name}");
-        }
-        for name in ["Adwaita", "Greybird", ""] {
-            assert!(!is_high_contrast_theme(name), "{name}");
-        }
-    }
 
     fn settle() {
         let context = gtk::glib::MainContext::default();

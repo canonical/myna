@@ -54,8 +54,31 @@ pub trait Appearance {
     fn watch(&self, changed: Box<dyn Fn(Freshness)>) -> Subscription;
 }
 
+/// Whether a GTK theme name is one of the high-contrast ones, the way Xfce
+/// offers high contrast: by theme name, which xfsettingsd exports as
+/// `Net/ThemeName`.
+pub fn is_high_contrast_theme(name: &str) -> bool {
+    let name = name.to_ascii_lowercase();
+    name.contains("highcontrast") || name.contains("high-contrast")
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn high_contrast_themes_are_recognised_by_name() {
+        for name in [
+            "HighContrast",
+            "HighContrastInverse",
+            "Yaru-highcontrast",
+            "high-contrast",
+        ] {
+            assert!(is_high_contrast_theme(name), "{name}");
+        }
+        for name in ["Adwaita", "Greybird", "Yaru-dark", ""] {
+            assert!(!is_high_contrast_theme(name), "{name}");
+        }
+    }
+
     use super::*;
 
     #[test]

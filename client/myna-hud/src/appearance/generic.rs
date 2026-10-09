@@ -19,13 +19,14 @@ use gtk::glib;
 use gtk::prelude::*;
 use gtk4 as gtk;
 use libadwaita as adw;
-use myna_platform::appearance::{Appearance, AppearanceReadings, Freshness};
+use myna_platform::appearance::{
+    is_high_contrast_theme, Appearance, AppearanceReadings, Freshness,
+};
 use myna_platform::Subscription;
 
 use super::probe::{
-    is_high_contrast_theme, probe_css_accent, probe_gtk_enable_animations,
-    probe_gtk_reduced_motion, probe_high_contrast, ADW_ACCENT_RGBA_PROPERTY,
-    GTK_REDUCED_MOTION_PROPERTY,
+    probe_css_accent, probe_gtk_enable_animations, probe_gtk_reduced_motion, probe_high_contrast,
+    ADW_ACCENT_RGBA_PROPERTY, GTK_REDUCED_MOTION_PROPERTY,
 };
 
 pub struct GtkAppearance {

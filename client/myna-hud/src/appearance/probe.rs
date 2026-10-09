@@ -133,14 +133,6 @@ pub fn probe_gtk_enable_animations() -> Option<bool> {
     Some(gtk::Settings::default()?.is_gtk_enable_animations())
 }
 
-/// Whether the GTK theme is one of the high-contrast ones, the way Xfce
-/// offers high contrast: by theme name, which xfsettingsd exports as
-/// `Net/ThemeName`.
-pub fn is_high_contrast_theme(name: &str) -> bool {
-    let name = name.to_ascii_lowercase();
-    name.contains("highcontrast") || name.contains("high-contrast")
-}
-
 /// Whether the desktop requests a higher-contrast UI (FR-022).
 ///
 /// `Adw.StyleManager:high-contrast` — a plain bool libadwaita exposes (and
