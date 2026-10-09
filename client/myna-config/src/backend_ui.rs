@@ -432,6 +432,9 @@ pub struct BackendUi {
     /// The last clock probe and pressure reading. Refreshed with every
     /// discovery, off the main thread, so the page never spins a core itself.
     performance: RefCell<Option<PerformanceFacts>>,
+    /// What the machine, the daemon and gnome-shell last said, read on the
+    /// blocking pool with the clock probe, since each may wait on D-Bus.
+    host: RefCell<Option<HostFacts>>,
     last_diagnostics_refresh: std::cell::Cell<Option<Instant>>,
     /// The Install more models dialog while it is open.
     install_dialog: RefCell<Option<OpenInstallDialog>>,
@@ -610,6 +613,7 @@ impl BackendUi {
             inventory_complete: std::cell::Cell::new(false),
             inventory_failure: RefCell::new(None),
             performance: RefCell::new(None),
+            host: RefCell::new(None),
             last_diagnostics_refresh: std::cell::Cell::new(None),
             install_dialog: RefCell::new(None),
             model_installs: RefCell::default(),
@@ -1971,20 +1975,32 @@ impl BackendUi {
 
     /// Opens a new GitHub issue with the diagnostics already in it, so the
     /// user only has to say what went wrong.
-    fn report_issue(&self, window: &ui::MainWindow) {
-        let text = present_diagnostics(self.diagnostic_input()).copy_text();
-        let overlay = self.overlay.clone();
-        gtk::UriLauncher::new(&diagnostics::issue_url(&text)).launch(
-            Some(window),
-            gio::Cancellable::NONE,
-            move |result| {
-                if result.is_err() {
-                    overlay.add_toast(adw::Toast::new(&gettextrs::gettext(
-                        "Could not open the web browser",
-                    )));
-                }
-            },
-        );
+    fn report_issue(self: &Rc<Self>, window: &ui::MainWindow) {
+        let ui = Rc::downgrade(self);
+        let window = window.downgrade();
+        glib::spawn_future_local(async move {
+            let host = gio::spawn_blocking(host_facts).await.ok();
+            let (Some(ui), Some(window)) = (ui.upgrade(), window.upgrade()) else {
+                return;
+            };
+            if host.is_some() {
+                *ui.host.borrow_mut() = host;
+            }
+            let text = present_diagnostics(ui.diagnostic_input()).copy_text();
+            let url = diagnostics::issue_url(&text);
+            let overlay = ui.overlay.clone();
+            gtk::UriLauncher::new(&url).launch(
+                Some(&window),
+                gio::Cancellable::NONE,
+                move |result| {
+                    if result.is_err() {
+                        overlay.add_toast(adw::Toast::new(&gettextrs::gettext(
+                            "Could not open the web browser",
+                        )));
+                    }
+                },
+            );
+        });
     }
 
     /// What Diagnostics reports, from what discovery last found.
@@ -1992,21 +2008,31 @@ impl BackendUi {
         let pages = self.controller.pages();
         let discovery_error = self.controller.last_discovery_error();
         let snaps = self.installed_snaps.borrow().clone();
+        let host = self.host.borrow().clone();
+        let (system, machine, daemon, daemon_report, extension) = match host {
+            Some(host) => (
+                Some(crate::machine::SystemFacts {
+                    languages: self
+                        .preferred_languages
+                        .borrow()
+                        .clone()
+                        .unwrap_or_default(),
+                    ..host.system
+                }),
+                Some(host.machine),
+                host.daemon,
+                host.daemon_report,
+                Some(host.extension),
+            ),
+            None => (None, None, None, None, None),
+        };
         DiagnosticInput {
             inventory_complete: self.inventory_complete.get(),
-            system: Some(crate::machine::system_facts(
-                crate::adapters::shell_extensions::shell_version(),
-                self.preferred_languages
-                    .borrow()
-                    .clone()
-                    .unwrap_or_default(),
-            )),
-            machine: Some(crate::machine::machine_facts()),
-            daemon: crate::machine::snap_process("myna"),
-            daemon_report: crate::machine::daemon_report(),
-            extension: Some(crate::adapters::shell_extensions::extension_report(
-                crate::onboarding::SHELL_EXTENSION_UUID,
-            )),
+            system,
+            machine,
+            daemon,
+            daemon_report,
+            extension,
             performance: self.performance.borrow().clone(),
             backends: pages
                 .iter()
@@ -2131,10 +2157,15 @@ impl BackendUi {
             // the blocking pool alongside the snapd reads, not on this thread.
             let probe =
                 (!quiet).then(|| gio::spawn_blocking(crate::performance::performance_facts));
+            let host = (!quiet).then(|| gio::spawn_blocking(host_facts));
             let inventory = repository.installed_snaps(inventory_token).await;
             let result = repository.refresh(token).await;
             let performance = match probe {
                 Some(probe) => probe.await.ok(),
+                None => None,
+            };
+            let host = match host {
+                Some(host) => host.await.ok(),
                 None => None,
             };
             if let Some(ui) = ui.upgrade() {
@@ -2149,6 +2180,9 @@ impl BackendUi {
                 ui.render_installs();
                 if performance.is_some() {
                     *ui.performance.borrow_mut() = performance;
+                }
+                if host.is_some() {
+                    *ui.host.borrow_mut() = host;
                 }
                 let (snaps, failure) = match inventory {
                     Ok(snaps) => (snaps, None),
@@ -3288,6 +3322,32 @@ impl SetupGate {
     }
 }
 
+/// What Diagnostics reads from the machine rather than from discovery.
+#[derive(Clone, Debug)]
+struct HostFacts {
+    system: crate::machine::SystemFacts,
+    machine: crate::machine::MachineFacts,
+    daemon: Option<crate::machine::ProcessMemory>,
+    daemon_report: Option<crate::machine::DaemonReport>,
+    extension: crate::onboarding::ExtensionReport,
+}
+
+/// Blocks on /proc and on the session bus: only for the blocking pool.
+fn host_facts() -> HostFacts {
+    HostFacts {
+        system: crate::machine::system_facts(
+            crate::adapters::shell_extensions::shell_version(),
+            Vec::new(),
+        ),
+        machine: crate::machine::machine_facts(),
+        daemon: crate::machine::snap_process("myna"),
+        daemon_report: crate::machine::daemon_report(),
+        extension: crate::adapters::shell_extensions::extension_report(
+            crate::onboarding::SHELL_EXTENSION_UUID,
+        ),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3417,6 +3477,7 @@ mod tests {
             inventory_complete: std::cell::Cell::new(false),
             inventory_failure: RefCell::new(None),
             performance: RefCell::new(None),
+            host: RefCell::new(None),
             last_diagnostics_refresh: std::cell::Cell::new(None),
             install_dialog: RefCell::new(None),
             model_installs: RefCell::default(),
