@@ -75,5 +75,5 @@ jobs:
         with:
           name: myna-config-${{ matrix.series }}
           retention-days: 14
-          path: target/deb/*.deb
+          path: target/deb/${{ matrix.series }}/*.deb
           if-no-files-found: error

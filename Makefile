@@ -237,15 +237,15 @@ build-client: ## Build the Rust client workspace (release, on the host)
 	cd client && cargo build --release
 
 # Myna Settings ships as a deb (myna-config-deb/README.md), not in the snap.
-# The staged source lands in target/deb/; the built packages land in sbuild's
-# $build_dir, not here.
+# The staged source and the built packages land in target/deb/<series>/, the
+# series SERIES names or else debian/changelog's.
 .PHONY: build-deb-source
-build-deb-source: ## Stage the myna-config Debian source (orig tarball + tree) into target/deb
+build-deb-source: ## Stage the myna-config Debian source (orig tarball + tree) into target/deb/<series>
 	./myna-config-deb/build-source.sh
 
 .PHONY: build-deb
-build-deb: build-deb-source ## Build the myna-config deb into target/deb in a clean chroot (sbuild; extra flags via SBUILD_ARGS)
-	cd target/deb/myna-config-*/ && sbuild --build-dir=$(CURDIR)/target/deb $(SBUILD_ARGS)
+build-deb: ## Build the myna-config deb into target/deb/<series> in a clean chroot (sbuild; extra flags via SBUILD_ARGS)
+	stage=$$(./myna-config-deb/build-source.sh) && cd "$$stage" && sbuild --build-dir="$$(dirname "$$stage")" $(SBUILD_ARGS)
 
 # The host venv, for editors and the in-tree bench scripts. The workshop has
 # its own (shadowing this one with a mount), so nothing under `test` or

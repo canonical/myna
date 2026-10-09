@@ -26,7 +26,7 @@ This directory turns `client/myna-core` and `client/myna-config` into the `myna-
 
 # Directory
 
-- `build-source.sh` - Stages the orig tarball and debianised tree into `target/deb/`, the extension included (from HEAD, through `dev/stage-extension.sh`).
+- `build-source.sh` - Stages the orig tarball and debianised tree into `target/deb/<series>/`, the extension included (from HEAD, through `dev/stage-extension.sh`).
 - `vendor-copyright.py` - Generates `debian/copyright` from the vendored crates.
 - `snapshot-changelog.py` - Writes the changelog entry a build past the last tag carries.
 - `debian/` - Packaging: `rules` builds offline with `--locked`, `install` places the schema and icons, `rules` installs the catalogs and the translated desktop entry and metainfo, `tests/` is the autopkgtest.

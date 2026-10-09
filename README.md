@@ -26,7 +26,7 @@ sudo add-apt-repository ppa:canonical-desktop-team/myna
 sudo apt install myna-config
 ```
 
-To build the latest **package** locally, run `make build-deb` followed by `sudo apt install ./target/deb/myna-config_*.deb`.
+To build the latest **package** locally, run `make build-deb` followed by `sudo apt install ./target/deb/*/myna-config_*.deb`.
 
 To build the latest **binary** locally,
 

@@ -3,7 +3,8 @@
 #
 # The deb builds a two-crate workspace (myna-core, myna-config) cut out of
 # client/, with its crates.io dependencies vendored into the orig tarball so
-# the build runs offline. Output, under target/deb/ by default:
+# the build runs offline. Output, under target/deb/<series>/ by default, so
+# one series' staging never wipes another's packages:
 #
 #   myna-config_<upstream>.orig.tar.xz    reproducible: git archive + cargo vendor,
 #                                         mtimes pinned to the commit date
@@ -17,7 +18,6 @@ set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)
 root=$(cd "$here/.." && pwd)
-out=${1:-$root/target/deb}
 
 if [ -n "$(git -C "$root" status --porcelain -- client myna-config-deb extensions/myna-shell dev/stage-extension.sh dev/check-shell-version.sh)" ]; then
     echo "warning: uncommitted changes under client/, myna-config-deb/, extensions/myna-shell/ or the dev/ staging scripts are not staged (git archive reads HEAD)" >&2
@@ -54,6 +54,7 @@ if [ -n "${PPA:-}" ]; then
     revision="$revision~ppa$PPA"
 fi
 version="$upstream-$revision"
+out=${1:-$root/target/deb/$series}
 stage="$out/myna-config-$upstream"
 
 rm -rf "$out"

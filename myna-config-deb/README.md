@@ -11,13 +11,13 @@ myna-shell GNOME Shell extension
 
 ## Build
 
-    make build-deb-source   # target/deb/: orig tarball + debianised source tree
+    make build-deb-source   # target/deb/<series>/: orig tarball + debianised source tree
     make build-deb          # the above, then sbuild in a clean chroot for the
                             # series named in debian/changelog
 
-The `.deb`, `.changes` and `.buildinfo` land in `target/deb/`, overriding any
-`$build_dir` in the sbuild config. The next `make build-deb-source` wipes that
-directory.
+The `.deb`, `.changes` and `.buildinfo` land in `target/deb/<series>/`,
+overriding any `$build_dir` in the sbuild config. The next staging for the same
+series wipes that directory; other series' builds stay.
 
 `make build-deb SBUILD_ARGS=...` passes flags through to sbuild. Two that matter on
 a developer machine: the unshare chroot unpacks under `$TMPDIR` (default
