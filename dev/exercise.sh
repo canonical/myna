@@ -302,7 +302,9 @@ run_cli myna-desktop desktop-toggle.out --toggle --control-socket "$WORK/absent.
 # strips that variable precisely so its write stays dconf-shaped. Either way
 # the developer's real keybindings are untouched. It reports failure cleanly
 # where the GNOME schemas are absent, which is a path worth covering too.
-run_cli myna-desktop desktop-shortcut.out --install-shortcut '<Super>t'
+# The installer binds only on GNOME and the workshop is not a GNOME session,
+# so the desktop is forced.
+MYNA_PLATFORM=gnome run_cli myna-desktop desktop-shortcut.out --install-shortcut '<Super>t'
 grep -qiE "bound|failed to set" "$WORK/desktop-shortcut.out" \
   || die "myna-desktop --install-shortcut said nothing (see $WORK/desktop-shortcut.out)"
 
