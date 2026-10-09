@@ -294,17 +294,12 @@ impl X11Host {
         };
         self.conn
             .configure_window(self.xid, &ConfigureWindowAux::new().x(at.x).y(at.y))?;
-        let hints = self.cardinals(
-            self.xid,
-            AtomEnum::WM_NORMAL_HINTS.into(),
-            AtomEnum::WM_SIZE_HINTS.into(),
-        )?;
         self.conn.change_property32(
             PropMode::REPLACE,
             self.xid,
             AtomEnum::WM_NORMAL_HINTS,
             AtomEnum::WM_SIZE_HINTS,
-            &ewmh::with_position(&hints, at),
+            &ewmh::position_hints(at),
         )?;
         // Processed before GDK's map request, which is still to be sent.
         self.conn.sync()?;

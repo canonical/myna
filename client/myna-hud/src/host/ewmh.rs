@@ -22,10 +22,12 @@ pub fn refuse_input(wm_hints: &[u32]) -> Vec<u32> {
 }
 
 /// `WM_NORMAL_HINTS` that tell the window manager the position is chosen,
-/// so it maps the window at `at` instead of placing it. Size fields kept.
-pub fn with_position(size_hints: &[u32], at: Point) -> Vec<u32> {
-    let mut hints = padded(size_hints, SIZE_HINTS_LEN);
-    hints[0] |= US_POSITION | P_POSITION;
+/// so it maps the window at `at` instead of placing it. Nothing else: the
+/// size limits GDK last wrote are the previous content's, and would hold
+/// the window to them; GDK writes the current ones after the map.
+pub fn position_hints(at: Point) -> Vec<u32> {
+    let mut hints = vec![0; SIZE_HINTS_LEN];
+    hints[0] = US_POSITION | P_POSITION;
     hints[1] = at.x as u32;
     hints[2] = at.y as u32;
     hints

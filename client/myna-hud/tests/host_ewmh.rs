@@ -1,7 +1,7 @@
 // tests/host_ewmh.rs — the X11 host's property arithmetic.
 
 use myna_hud::host::ewmh::{
-    centre, clear_of_bottom_docks, monitor_at, refuse_input, strut, with_position,
+    centre, clear_of_bottom_docks, monitor_at, position_hints, refuse_input, strut,
     without_take_focus,
 };
 use myna_platform::status_surface::{Point, Rect, Size, Strut};
@@ -28,21 +28,16 @@ fn refusing_input_on_a_window_without_hints_still_says_so() {
 }
 
 #[test]
-fn a_chosen_position_keeps_the_size_hints() {
-    // PMinSize | PMaxSize at 300x66.
-    let mut gdk = vec![16 | 32, 0, 0, 0, 0, 300, 66, 300, 66];
-    gdk.resize(18, 0);
-    let hints = with_position(&gdk, Point { x: 810, y: 990 });
-    assert_eq!(hints[0], 16 | 32 | 1 | 4);
-    assert_eq!(&hints[1..3], &[810, 990]);
-    assert_eq!(&hints[3..], &gdk[3..]);
+fn a_chosen_position_names_nothing_else() {
+    let hints = position_hints(Point { x: 810, y: 990 });
+    assert_eq!(hints.len(), 18);
+    assert_eq!(&hints[..3], &[1 | 4, 810, 990]);
+    assert!(hints[3..].iter().all(|&v| v == 0), "{hints:?}");
 }
 
 #[test]
-fn a_chosen_position_pads_short_hints() {
-    let hints = with_position(&[2, 0, 0, 0, 0], Point { x: -5, y: 7 });
-    assert_eq!(hints.len(), 18);
-    assert_eq!(hints[0], 2 | 1 | 4);
+fn a_chosen_position_may_be_negative() {
+    let hints = position_hints(Point { x: -5, y: 7 });
     assert_eq!(hints[1] as i32, -5);
     assert_eq!(hints[2], 7);
 }
