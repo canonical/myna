@@ -462,6 +462,16 @@ e2e: ## Myna Settings AT-SPI suites in an LXD desktop VM (E2E_RELEASE=noble, E2E
 	e2e-tests/vm/provision.sh --release $(E2E_RELEASE) --desktop $(E2E_DESKTOP)
 	e2e-tests/run-suite.sh --release $(E2E_RELEASE) --desktop $(E2E_DESKTOP) $(SUITES)
 
+# A copy of the e2e VM running this tree's snap and deb, to try by hand; the
+# e2e VMs are untouched. See dev/try-desktop.sh --help and e2e-tests/README.md.
+DESKTOP ?= xubuntu
+RELEASE ?= noble
+ACTION ?= up
+
+.PHONY: try-desktop
+try-desktop: ## A desktop VM running HEAD (DESKTOP=xubuntu|gnome RELEASE=noble|resolute ACTION=up|update|console|reset|down|delete|status)
+	dev/try-desktop.sh --desktop $(DESKTOP) --release $(RELEASE) $(ACTION)
+
 .PHONY: testflinger
 testflinger: ## Edge snaps on a lab machine: adapter smoke + FLEURS gate, at pushed HEAD (TESTFLINGER_QUEUE=<queue>)
 	tests/testflinger/submit.sh $(TESTFLINGER_QUEUE)
