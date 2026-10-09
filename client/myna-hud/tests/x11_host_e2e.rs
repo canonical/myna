@@ -93,6 +93,7 @@ x11rb::atom_manager! {
         _NET_WORKAREA,
         _NET_CLIENT_LIST,
         _NET_WM_STRUT_PARTIAL,
+        _NET_WM_WINDOW_TYPE_DOCK,
         _NET_SUPPORTED,
         _NET_SUPPORTING_WM_CHECK,
     }
@@ -290,12 +291,13 @@ fn set_panel(conn: &RustConnection, atoms: &Atoms, root: Window, panel: Window, 
     conn.flush().unwrap();
 }
 
-fn expected(size: Size, panel: i32) -> Point {
+/// Bottom-centre with `reserved` px kept clear at the bottom.
+fn expected(size: Size, reserved: i32) -> Point {
     let area = Rect {
         x: 0,
         y: 0,
         width: SCREEN.width,
-        height: SCREEN.height - panel,
+        height: SCREEN.height - reserved,
     };
     placement(area, size, BOTTOM_MARGIN)
 }
@@ -321,7 +323,6 @@ fn the_hud_hosts_itself_on_x11() {
     let (conn, screen) = x11rb::connect(Some(&headless.display)).expect("connect to Xvfb");
     let root = conn.setup().roots[screen].root;
     let atoms = Atoms::new(&conn).unwrap().reply().unwrap();
-    let seen = window_manager(&headless.display, atoms);
 
     let panel = conn.generate_id().unwrap();
     conn.create_window(
@@ -338,12 +339,41 @@ fn the_hud_hosts_itself_on_x11() {
         &CreateWindowAux::new(),
     )
     .unwrap();
+    // A launcher dock with no strut, autohidden below the screen edge as
+    // Xubuntu's is: 49 px reserved, more than the panel's 40.
+    let dock = conn.generate_id().unwrap();
+    conn.create_window(
+        0,
+        dock,
+        root,
+        362,
+        SCREEN.height as i16 + 10,
+        300,
+        49,
+        0,
+        WindowClass::INPUT_OUTPUT,
+        0,
+        &CreateWindowAux::new(),
+    )
+    .unwrap();
+    conn.change_property32(
+        PropMode::REPLACE,
+        dock,
+        atoms._NET_WM_WINDOW_TYPE,
+        AtomEnum::ATOM,
+        &[atoms._NET_WM_WINDOW_TYPE_DOCK],
+    )
+    .unwrap();
+    // Mapped before the window manager starts, so it is not asked.
+    conn.map_window(dock).unwrap();
+    conn.sync().unwrap();
+    let seen = window_manager(&headless.display, atoms);
     conn.change_property32(
         PropMode::REPLACE,
         root,
         atoms._NET_CLIENT_LIST,
         AtomEnum::WINDOW,
-        &[panel],
+        &[panel, dock],
     )
     .unwrap();
     set_panel(&conn, &atoms, root, panel, 40);
@@ -401,7 +431,7 @@ fn the_hud_hosts_itself_on_x11() {
         5,
         "US/PPosition: map where we are"
     );
-    let target = expected(first.size, 40);
+    let target = expected(first.size, 49);
     assert_eq!(first.position, target, "mapped away from bottom-centre");
     assert_eq!(
         &first.normal_hints[1..3],

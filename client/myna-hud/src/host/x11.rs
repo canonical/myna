@@ -21,7 +21,8 @@
 //! Placement is `myna_platform::status_surface`'s: bottom-centre of the work
 //! area, the monitor pinned at map (focus, then pointer, then primary) and
 //! re-chosen when monitors change, the work area the monitor less panel
-//! struts, followed on `_NET_WORKAREA` changes and the window's own resizes.
+//! struts and clear of strut-less bottom docks, followed on `_NET_WORKAREA`
+//! changes and the window's own resizes.
 
 use std::cell::Cell;
 use std::error::Error;
@@ -37,14 +38,14 @@ use gtk4 as gtk;
 use x11rb::connection::Connection;
 use x11rb::protocol::xproto::{
     AtomEnum, ChangeWindowAttributesAux, ClientMessageEvent, ConfigureWindowAux,
-    ConnectionExt as _, EventMask, PropMode, Window,
+    ConnectionExt as _, EventMask, GetPropertyReply, PropMode, Window,
 };
 use x11rb::protocol::Event;
 use x11rb::rust_connection::RustConnection;
 use x11rb::wrapper::ConnectionExt as _;
 
 use myna_platform::status_surface::{
-    choose_monitor, placement, work_area, Point, Rect, Size, BOTTOM_MARGIN,
+    choose_monitor, placement, work_area, Point, Rect, Size, Strut, BOTTOM_MARGIN,
 };
 
 use super::{ewmh, Host};
@@ -56,6 +57,7 @@ x11rb::atom_manager! {
         WM_TAKE_FOCUS,
         _NET_WM_WINDOW_TYPE,
         _NET_WM_WINDOW_TYPE_NOTIFICATION,
+        _NET_WM_WINDOW_TYPE_DOCK,
         _NET_WM_STATE,
         _NET_WM_STATE_STICKY,
         _NET_WORKAREA,
@@ -354,7 +356,10 @@ impl X11Host {
             width: root.width.into(),
             height: root.height.into(),
         };
-        let area = work_area(monitors[index], screen, &self.struts(screen)?);
+        let (struts, docks) = self.reserved(screen)?;
+        let monitor = monitors[index];
+        let area =
+            ewmh::clear_of_bottom_docks(work_area(monitor, screen, &struts), monitor, &docks);
         let margin = BOTTOM_MARGIN * self.window.scale_factor();
         Ok(Some(placement(area, size, margin)))
     }
@@ -410,25 +415,15 @@ impl X11Host {
         let Some(&active) = active.first().filter(|&&w| w != 0 && w != self.xid) else {
             return Ok(None);
         };
-        // A window can close between the two reads.
-        let (Ok(origin), Ok(geometry)) = (
-            self.conn
-                .translate_coordinates(active, self.root, 0, 0)?
-                .reply(),
-            self.conn.get_geometry(active)?.reply(),
-        ) else {
-            return Ok(None);
-        };
-        Ok(Some(ewmh::centre(
-            Point {
-                x: origin.dst_x.into(),
-                y: origin.dst_y.into(),
-            },
-            Size {
-                width: geometry.width.into(),
-                height: geometry.height.into(),
-            },
-        )))
+        Ok(self.window_rect(active)?.map(|r| {
+            ewmh::centre(
+                Point { x: r.x, y: r.y },
+                Size {
+                    width: r.width,
+                    height: r.height,
+                },
+            )
+        }))
     }
 
     fn pointer(&self) -> XResult<Point> {
@@ -439,44 +434,64 @@ impl X11Host {
         })
     }
 
-    /// Every managed window's struts.
-    fn struts(&self, screen: Size) -> XResult<Vec<myna_platform::status_surface::Strut>> {
+    /// Every managed window's struts, and the rectangles of its docks.
+    fn reserved(&self, screen: Size) -> XResult<(Vec<Strut>, Vec<Rect>)> {
         let clients = self.cardinals(
             self.root,
             self.atoms._NET_CLIENT_LIST,
             AtomEnum::WINDOW.into(),
         )?;
         let a = &self.atoms;
+        let property =
+            |w, atom, kind: AtomEnum, len| self.conn.get_property(false, w, atom, kind, 0, len);
         let cookies = clients
             .iter()
             .map(|&w| {
                 Ok((
-                    self.conn.get_property(
-                        false,
-                        w,
-                        a._NET_WM_STRUT_PARTIAL,
-                        AtomEnum::CARDINAL,
-                        0,
-                        12,
-                    )?,
-                    self.conn
-                        .get_property(false, w, a._NET_WM_STRUT, AtomEnum::CARDINAL, 0, 4)?,
+                    w,
+                    property(w, a._NET_WM_STRUT_PARTIAL, AtomEnum::CARDINAL, 12)?,
+                    property(w, a._NET_WM_STRUT, AtomEnum::CARDINAL, 4)?,
+                    property(w, a._NET_WM_WINDOW_TYPE, AtomEnum::ATOM, 16)?,
                 ))
             })
             .collect::<XResult<Vec<_>>>()?;
         // A client can be gone by now: its replies are errors, and skipped.
-        Ok(cookies
-            .into_iter()
-            .filter_map(|(partial, legacy)| {
-                let read = |reply: Result<x11rb::protocol::xproto::GetPropertyReply, _>| {
-                    reply
-                        .ok()
-                        .and_then(|r| r.value32().map(Iterator::collect::<Vec<u32>>))
-                        .unwrap_or_default()
-                };
-                ewmh::strut(&read(partial.reply()), &read(legacy.reply()), screen)
-            })
-            .collect())
+        let read = |reply: Result<GetPropertyReply, _>| {
+            reply
+                .ok()
+                .and_then(|r| r.value32().map(Iterator::collect::<Vec<u32>>))
+                .unwrap_or_default()
+        };
+        let (mut struts, mut docks) = (Vec::new(), Vec::new());
+        for (w, partial, legacy, kind) in cookies {
+            struts.extend(ewmh::strut(
+                &read(partial.reply()),
+                &read(legacy.reply()),
+                screen,
+            ));
+            if read(kind.reply()).contains(&a._NET_WM_WINDOW_TYPE_DOCK) {
+                docks.extend(self.window_rect(w)?);
+            }
+        }
+        Ok((struts, docks))
+    }
+
+    /// A window's rectangle on the root, or `None` once it is gone.
+    fn window_rect(&self, window: Window) -> XResult<Option<Rect>> {
+        let (Ok(origin), Ok(geometry)) = (
+            self.conn
+                .translate_coordinates(window, self.root, 0, 0)?
+                .reply(),
+            self.conn.get_geometry(window)?.reply(),
+        ) else {
+            return Ok(None);
+        };
+        Ok(Some(Rect {
+            x: origin.dst_x.into(),
+            y: origin.dst_y.into(),
+            width: geometry.width.into(),
+            height: geometry.height.into(),
+        }))
     }
 
     /// A 32-bit property's values; empty when unset or of another type.

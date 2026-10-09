@@ -72,3 +72,25 @@ fn padded(values: &[u32], len: usize) -> Vec<u32> {
     out.resize(len.max(values.len()), 0);
     out
 }
+
+/// `area` lowered to clear any dock along `monitor`'s bottom that claims no
+/// strut, as `myna-shell` does for dash-to-dock: Xubuntu's launcher hides
+/// intelligently, and reserves where it slides out to even while hidden
+/// below the edge. `docks` are the dock windows' current rectangles.
+pub fn clear_of_bottom_docks(area: Rect, monitor: Rect, docks: &[Rect]) -> Rect {
+    let bottom = monitor.y + monitor.height;
+    let lowest = docks
+        .iter()
+        .filter(|d| d.x < monitor.x + monitor.width && monitor.x < d.x + d.width)
+        // In the lower half, and down to the edge or past it (hidden).
+        .filter(|d| d.y >= monitor.y + monitor.height / 2 && d.y + d.height >= bottom)
+        .map(|d| bottom - d.height)
+        .min();
+    match lowest {
+        Some(top) if top < area.y + area.height => Rect {
+            height: (top - area.y).max(0),
+            ..area
+        },
+        _ => area,
+    }
+}
