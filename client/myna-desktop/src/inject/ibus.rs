@@ -39,7 +39,9 @@ use zbus::address::transport::{Transport, Unix, UnixSocket};
 use zbus::zvariant::{OwnedValue, StructureBuilder, Value};
 use zbus::{Address, Connection};
 
-use super::{FocusEvent, InjectError, Injector, Support, Target, TextInputCapabilities};
+use super::{
+    Activation, FocusEvent, InjectError, Injector, Support, Target, TextInputCapabilities,
+};
 
 const IBUS_SERVICE: &str = "org.freedesktop.IBus";
 const IBUS_PATH: &str = "/org/freedesktop/IBus";
@@ -836,6 +838,17 @@ impl EngineState {
         });
     }
 
+    /// The user's activation continues, whichever lease is current.
+    fn activated_current(&self) {
+        self.lease.send_if_modified(|lease| {
+            let held = lease.binding != Binding::Lost;
+            if held {
+                lease.activated();
+            }
+            held
+        });
+    }
+
     /// The user used Myna's activation while lease `id` is held.
     fn activated(&self, id: u64) {
         self.lease.send_if_modified(|lease| {
@@ -923,16 +936,27 @@ impl EngineState {
     }
 
     /// Whether the daemon focused the engine for lease `id`, waiting up to
-    /// `FOCUS_WAIT`. If it did not, the lease becomes `Unfocused`.
+    /// `FOCUS_WAIT`, or on the fake context up to `FOCUS_BLIP_GRACE` from the
+    /// start or the last activation. If it did not, the lease becomes
+    /// `Unfocused`.
     async fn focus_arrived(&self, id: u64) -> bool {
         let mut rx = self.lease.subscribe();
         let arrived = |l: &Lease| l.id != id || l.binding != Binding::Pending;
+        let started = tokio::time::Instant::now();
         let _ = tokio::time::timeout(FOCUS_WAIT, rx.wait_for(arrived)).await;
         // A key grab, as starting by key makes on X11, keeps the field's focus
-        // until the key is released.
-        if self.on_fake(id) {
-            let rest = FOCUS_BLIP_GRACE - FOCUS_WAIT;
-            let _ = tokio::time::timeout(rest, rx.wait_for(arrived)).await;
+        // until the key is released, and a held key repeats until then.
+        while self.on_fake(id) {
+            let last = self
+                .lease
+                .borrow()
+                .activated_at
+                .map_or(started, |at| at.max(started));
+            let deadline = last + FOCUS_BLIP_GRACE;
+            if tokio::time::Instant::now() >= deadline {
+                break;
+            }
+            let _ = tokio::time::timeout_at(deadline, rx.wait_for(arrived)).await;
         }
         !self.lease.send_if_modified(|lease| {
             let pending = lease.id == id && lease.binding == Binding::Pending;
@@ -964,6 +988,13 @@ impl EngineState {
     fn content_type(&self) -> ContentType {
         *self.content_type.borrow()
     }
+}
+
+/// What [`IbusInjector::activation`] hands out: it marks whatever lease is
+/// current, the one being acquired included.
+fn activation_for(state: &Arc<EngineState>) -> Activation {
+    let state = Arc::clone(state);
+    Activation::new(move || state.activated_current())
 }
 
 /// The `org.freedesktop.IBus.Engine` object the daemon drives. Most callbacks
@@ -1261,6 +1292,10 @@ impl Injector for IbusInjector {
 
     fn capabilities(&self) -> TextInputCapabilities {
         CAPABILITIES
+    }
+
+    fn activation(&self) -> Activation {
+        activation_for(&self.state)
     }
 }
 
@@ -2288,6 +2323,60 @@ mod tests {
         assert!(arrived.await.unwrap(), "the field's focus was missed");
         assert!(state.holds(lease));
         assert_eq!(standing_now(&state, lease), Some(Standing::Held));
+    }
+
+    /// A start key held for longer than the grace: its repeats, signalled
+    /// through the injector while it acquires, keep the wait for the field
+    /// open until the key is released.
+    #[tokio::test(start_paused = true)]
+    async fn repeats_keep_an_acquire_waiting_for_the_field() {
+        let state = engine_state();
+        let lease = state.mint();
+        let engine = engine(&state);
+        engine.focus_in_id(FAKE.into(), "fake".into()).await;
+        let arrived = tokio::spawn({
+            let state = Arc::clone(&state);
+            async move { state.focus_arrived(lease).await }
+        });
+        let activation = activation_for(&state);
+        let held = tokio::time::Instant::now();
+        while held.elapsed() < 3 * FOCUS_BLIP_GRACE {
+            tokio::time::sleep(REPEAT).await;
+            activation.signal();
+        }
+        ungrab(&engine).await;
+        assert!(
+            arrived.await.unwrap(),
+            "the wait ended while the key was held"
+        );
+        assert!(state.holds(lease));
+    }
+
+    /// Once the repeats stop, the field has the grace from the last one.
+    #[tokio::test(start_paused = true)]
+    async fn an_acquire_waits_a_grace_after_the_last_repeat() {
+        let state = engine_state();
+        let lease = state.mint();
+        let engine = engine(&state);
+        engine.focus_in_id(FAKE.into(), "fake".into()).await;
+        let started = tokio::time::Instant::now();
+        let arrived = tokio::spawn({
+            let state = Arc::clone(&state);
+            async move { state.focus_arrived(lease).await }
+        });
+        let activation = activation_for(&state);
+        for _ in 0..30 {
+            tokio::time::sleep(REPEAT).await;
+            activation.signal();
+        }
+        let last = tokio::time::Instant::now();
+        assert!(!arrived.await.unwrap());
+        let waited = started.elapsed();
+        let expected = last - started + FOCUS_BLIP_GRACE;
+        assert!(
+            expected <= waited && waited <= expected + TICK,
+            "{waited:?}"
+        );
     }
 
     /// A key never released, or a desktop with no field focused: the fake

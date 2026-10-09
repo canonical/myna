@@ -890,6 +890,32 @@ async fn the_first_activation_on_a_fresh_daemon_reaches_the_field() {
     assert_eq!(field.next().await, Seen::Commit(" words".into()));
 }
 
+/// A start key held past the grace: the grab keeps the fake context focused
+/// until it is released, and its repeats, signalled while the injector
+/// acquires, keep the acquire waiting for the field.
+#[tokio::test]
+async fn a_start_key_held_past_the_grace_still_reaches_the_field() {
+    skip_unless_ibus!();
+    let _serial = exclusive().await;
+    let (mut field, mut injector) = session(0, 0).await;
+    field.focus_out().await;
+    let activation = injector.activation();
+    let hold = async {
+        let held = tokio::time::Instant::now();
+        while held.elapsed() < Duration::from_millis(2000) {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            activation.signal();
+        }
+        field.ic_call(IC_IFACE, "FocusIn", &()).await;
+    };
+    let (acquired, ()) = tokio::join!(injector.acquire(), hold);
+    let mut target = acquired.expect("acquire with the key held");
+    target.commit("held").await.expect("commit after the hold");
+    target.release().await;
+    assert_eq!(field.next().await, Seen::Commit("held".into()));
+    field.close().await;
+}
+
 /// Text held through a blip lands at release when nothing is written after.
 #[tokio::test]
 async fn text_held_through_a_blip_lands_at_release() {
