@@ -499,10 +499,16 @@ enum Binding {
     /// restore may still be delivering focus calls, which are not this
     /// lease's (see [`Lease::focus`]).
     Pending,
-    /// Focused through plain `FocusIn`. A daemon that has not read `FocusId`
-    /// yet sends that first, then re-sends focus as `FocusInId` with no
-    /// `FocusOut` between, which names the context.
+    /// Focused through plain `FocusIn`, as a daemon that has not read
+    /// `FocusId` yet does. ibus 1.5.34 re-sends that focus as `FocusInId`
+    /// with no `FocusOut` between, which names the context; 1.5.29 names
+    /// nothing until focus moves.
     Unnamed,
+    /// An unnamed focus turned out to be the daemon's fake context, or left
+    /// before anything was written, as the fake context does when a key grab
+    /// ends. The next field focused within [`FOCUS_BLIP_GRACE`] binds the
+    /// lease, as it would a pending one; writes are held until then.
+    Left { blip: u64 },
     /// Focused on this input context.
     Context(String),
     /// Focus left `path`. Unless an activation comes within
@@ -557,6 +563,8 @@ struct Lease {
     /// Pending, with the daemon's fake context focused: a key grab holds focus
     /// off every field until the key is released.
     on_fake: bool,
+    /// Text or a preedit went to the daemon under this lease.
+    wrote: bool,
 }
 
 /// Where a target stands for its next write.
@@ -605,9 +613,17 @@ impl Lease {
             }
             (Binding::Away { .. }, FocusChange::In(Some(ctx))) if ctx.is_fake() => return,
             (Binding::Pending, FocusChange::In(None)) => Binding::Unnamed,
-            (Binding::Pending | Binding::Unnamed, FocusChange::In(Some(ctx))) if !ctx.is_fake() => {
-                Binding::Context(ctx.path.to_owned())
+            (Binding::Unnamed, FocusChange::Out) if !self.wrote => Binding::Left { blip },
+            (Binding::Unnamed, FocusChange::In(Some(ctx))) if ctx.is_fake() && !self.wrote => {
+                Binding::Left { blip }
             }
+            (Binding::Left { .. }, FocusChange::Out) => return,
+            (Binding::Left { .. }, FocusChange::In(Some(ctx))) if ctx.is_fake() => return,
+            (Binding::Left { .. }, FocusChange::In(None)) => Binding::Unnamed,
+            (
+                Binding::Pending | Binding::Unnamed | Binding::Left { .. },
+                FocusChange::In(Some(ctx)),
+            ) if !ctx.is_fake() => Binding::Context(ctx.path.to_owned()),
             (Binding::Context(path), FocusChange::In(Some(ctx))) if *path == ctx.path => return,
             (Binding::Context(path), FocusChange::Out) => Binding::Away {
                 path: std::mem::take(path),
@@ -656,7 +672,7 @@ impl Lease {
     /// so one names its lease too.
     fn away(&self) -> Option<u64> {
         match self.binding {
-            Binding::Away { blip, .. } => Some(blip),
+            Binding::Away { blip, .. } | Binding::Left { blip } => Some(blip),
             _ => None,
         }
     }
@@ -666,7 +682,8 @@ impl Lease {
             _ if !self.held_by(id) => Standing::Lost,
             Binding::Away {
                 activated: false, ..
-            } => Standing::Unsure,
+            }
+            | Binding::Left { .. } => Standing::Unsure,
             Binding::Away { .. } => return None,
             _ => Standing::Held,
         })
@@ -707,6 +724,7 @@ impl EngineState {
                 before_cursor: None,
                 activated_at: None,
                 on_fake: false,
+                wrote: false,
             }),
             next_lease: AtomicU64::new(1),
             next_blip: AtomicU64::new(1),
@@ -724,6 +742,7 @@ impl EngineState {
             before_cursor: None,
             activated_at: None,
             on_fake: false,
+            wrote: false,
         });
         id
     }
@@ -773,6 +792,16 @@ impl EngineState {
                 lease.binding = Binding::Lost;
             }
             expired
+        });
+    }
+
+    /// Lease `id` put text or a preedit in front of the daemon.
+    fn wrote(&self, id: u64) {
+        self.lease.send_if_modified(|lease| {
+            if lease.held_by(id) {
+                lease.wrote = true;
+            }
+            false
         });
     }
 
@@ -1073,7 +1102,12 @@ impl IbusInjector {
     /// Connect to the IBus daemon's private bus. `Err(Unavailable)` if IBus is
     /// not reachable.
     pub async fn connect() -> Result<Self, InjectError> {
-        let address = discover_address()?;
+        Self::connect_to(discover_address()?).await
+    }
+
+    /// Connect to the IBus daemon at `address`, as `connect` does to the
+    /// session's.
+    pub async fn connect_to(address: Address) -> Result<Self, InjectError> {
         let conn = zbus::conn::Builder::address(address)
             .map_err(|e| InjectError::Unavailable(format!("bad IBus address: {e}")))?
             .build()
@@ -1292,6 +1326,7 @@ impl IbusTarget {
             myna_core::dbg_log!("inject", "commit REFUSED: secure field {content_type:?}");
             return Err(InjectError::SecureField);
         }
+        self.state.wrote(self.lease);
         self.emit("CommitText", &(ibus_text(text),))
             .await
             .map_err(|e| classify("CommitText", e))
@@ -1319,6 +1354,7 @@ impl IbusTarget {
         // (chars). Mode is PREEDIT_CLEAR: focus-out must discard the volatile
         // text, never commit it.
         let cursor = text.chars().count() as u32;
+        self.state.wrote(self.lease);
         match self
             .emit(
                 "UpdatePreeditText",
@@ -1603,16 +1639,86 @@ mod tests {
         }
     }
 
-    /// The same for a lease focused but not yet named: the fake context is
-    /// never a field, so focus reaching it is focus leaving ours.
-    #[tokio::test]
-    async fn the_fake_context_ends_a_lease_focused_through_a_plain_focus_in() {
+    /// The first activation after ibus-daemon starts, by a key on X11: the
+    /// grab holds the fake context focused, and the daemon has not read
+    /// `FocusId` yet, so it focuses the engine with a plain `FocusIn`. ibus
+    /// 1.5.29 (noble) then names nothing until the key's release:
+    /// `FocusOutId(fake)`, `FocusInId(field)` (traced on Xubuntu noble).
+    #[tokio::test(start_paused = true)]
+    async fn an_unnamed_focus_that_leaves_before_any_write_binds_the_next_field() {
+        let state = engine_state();
+        let lease = state.mint();
+        let engine = engine(&state);
+        engine.focus_in().await;
+        assert!(state.focus_arrived(lease).await);
+
+        engine.focus_out_id(FAKE.into()).await;
+        assert_eq!(standing_now(&state, lease), Some(Standing::Unsure));
+        engine.focus_in_id(FIELD.into(), APP.into()).await;
+        assert!(state.holds(lease));
+        assert_eq!(standing_now(&state, lease), Some(Standing::Held));
+
+        // Bound to the field now: focus elsewhere ends it.
+        engine.focus_out_id(FIELD.into()).await;
+        engine.focus_in_id(OTHER.into(), APP.into()).await;
+        assert!(!state.holds(lease));
+    }
+
+    /// ibus 1.5.34 re-sends the first focus as `FocusInId` once it has read
+    /// both properties, which names the fake context; the field comes at the
+    /// key's release.
+    #[tokio::test(start_paused = true)]
+    async fn an_unnamed_focus_named_the_fake_context_waits_for_the_field() {
         let state = engine_state();
         let lease = state.mint();
         let engine = engine(&state);
         engine.focus_in().await;
         engine.focus_in_id(FAKE.into(), "fake".into()).await;
-        assert!(!state.holds(lease));
+        assert_eq!(standing_now(&state, lease), Some(Standing::Unsure));
+
+        tokio::time::sleep(FOCUS_BLIP_GRACE - TICK).await;
+        ungrab(&engine).await;
+        assert!(state.holds(lease));
+        assert_eq!(standing_now(&state, lease), Some(Standing::Held));
+    }
+
+    /// The wait for the field is bounded like a key grab's.
+    #[tokio::test(start_paused = true)]
+    async fn no_field_after_an_unnamed_focus_left_is_a_loss() {
+        for named_fake in [false, true] {
+            let state = engine_state();
+            let lease = state.mint();
+            let engine = engine(&state);
+            engine.focus_in().await;
+            if named_fake {
+                engine.focus_in_id(FAKE.into(), "fake".into()).await;
+            } else {
+                engine.focus_out_id(FAKE.into()).await;
+            }
+            tokio::time::sleep(FOCUS_BLIP_GRACE + TICK).await;
+            assert!(!state.holds(lease), "named fake: {named_fake}");
+            engine.focus_in_id(FIELD.into(), APP.into()).await;
+            assert!(!state.holds(lease), "a lost lease stays lost");
+        }
+    }
+
+    /// Once something was written, the unnamed focus was a field: focus
+    /// leaving it, or turning out to be the fake context, ends the lease.
+    #[tokio::test]
+    async fn an_unnamed_focus_written_to_does_not_move() {
+        for named_fake in [false, true] {
+            let state = engine_state();
+            let lease = state.mint();
+            let engine = engine(&state);
+            engine.focus_in().await;
+            state.wrote(lease);
+            if named_fake {
+                engine.focus_in_id(FAKE.into(), "fake".into()).await;
+            } else {
+                engine.focus_out_id(FIELD.into()).await;
+            }
+            assert!(!state.holds(lease), "named fake: {named_fake}");
+        }
     }
 
     /// With no activation around it, once the window is over.
@@ -1697,12 +1803,18 @@ mod tests {
         assert!(!state.holds(lease));
     }
 
+    /// A second plain focus is a focus change the daemon could not name, as
+    /// is a plain `FocusOut` once something was written (unwritten, it may be
+    /// the fake context's: see the unnamed focus cases above).
     #[tokio::test]
     async fn plain_focus_calls_after_the_first_end_the_lease() {
-        for second in [FocusChange::In(None), FocusChange::Out] {
+        for (second, wrote) in [(FocusChange::In(None), false), (FocusChange::Out, true)] {
             let state = engine_state();
             let lease = state.mint();
             state.focus(FocusChange::In(None));
+            if wrote {
+                state.wrote(lease);
+            }
             state.focus(second);
             assert!(!state.holds(lease), "{second:?}");
         }

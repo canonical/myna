@@ -150,7 +150,11 @@ struct Field {
 impl Field {
     async fn open(purpose: u32, hints: u32) -> Self {
         let address = std::env::var("IBUS_ADDRESS").expect("IBUS_ADDRESS from dev/gated-tests.sh");
-        let conn = zbus::conn::Builder::address(address.as_str())
+        Self::open_at(&address, purpose, hints).await
+    }
+
+    async fn open_at(address: &str, purpose: u32, hints: u32) -> Self {
+        let conn = zbus::conn::Builder::address(address)
             .expect("parse IBUS_ADDRESS")
             .max_queued(1024)
             .build()
@@ -772,6 +776,106 @@ async fn a_focus_blip_around_an_activation_is_not_a_loss() {
 
     target.release().await;
     field.close().await;
+}
+
+/// An ibus-daemon of the case's own, so it has never activated Myna's engine.
+struct FreshDaemon {
+    child: std::process::Child,
+    address: String,
+    dir: std::path::PathBuf,
+}
+
+impl FreshDaemon {
+    async fn start() -> Self {
+        let dir = std::env::temp_dir().join(format!("myna-fresh-ibus-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("a directory for the daemon");
+        let address = format!("unix:path={}/bus", dir.display());
+        let child = std::process::Command::new("ibus-daemon")
+            .args([
+                "--panel",
+                "disable",
+                "--config",
+                "disable",
+                "--address",
+                &address,
+            ])
+            .env("XDG_CONFIG_HOME", &dir)
+            .env("XDG_CACHE_HOME", &dir)
+            // It refuses to start where a client would find another daemon.
+            .env_remove("IBUS_ADDRESS")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("start ibus-daemon");
+        let daemon = Self {
+            child,
+            address,
+            dir,
+        };
+        let serving = async {
+            loop {
+                if let Ok(builder) = zbus::conn::Builder::address(daemon.address.as_str()) {
+                    if builder.build().await.is_ok() {
+                        return;
+                    }
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        };
+        tokio::time::timeout(HANG_GUARD, serving)
+            .await
+            .expect("the fresh ibus-daemon never served");
+        daemon
+    }
+}
+
+impl Drop for FreshDaemon {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+        let _ = std::fs::remove_dir_all(&self.dir);
+    }
+}
+
+/// The first dictation after ibus-daemon starts, by a key on X11. The daemon
+/// has not read the engine's `FocusId`, so it focuses the engine with a plain
+/// `FocusIn` on the fake context the key's grab holds focused; noble's ibus
+/// then sends `FocusOutId(fake)`, `FocusInId(field)` at the key's release.
+/// The dictation reaches the field.
+#[tokio::test]
+async fn the_first_activation_on_a_fresh_daemon_reaches_the_field() {
+    skip_unless_ibus!();
+    let _serial = exclusive().await;
+    let daemon = FreshDaemon::start().await;
+    let mut field = Field::open_at(&daemon.address, 0, 0).await;
+    // The grab: focus leaves the field for the daemon's fake context.
+    field.focus_out().await;
+    let address = daemon.address.as_str().try_into().expect("address");
+    let mut injector = IbusInjector::connect_to(address)
+        .await
+        .expect("connect to the fresh daemon");
+
+    let release = async {
+        tokio::time::sleep(BLIP).await;
+        field.ic_call(IC_IFACE, "FocusIn", &()).await;
+    };
+    let (acquired, ()) = tokio::join!(injector.acquire(), release);
+    let mut target = acquired.expect("acquire on a fresh daemon");
+    let mut events = target.focus_events();
+    // Held if the field's focus has not reached the engine yet.
+    target
+        .commit("first")
+        .await
+        .expect("commit the first dictation");
+    target.commit(" words").await.expect("commit more");
+    tokio::time::sleep(EDGE_AFTER).await;
+    assert!(
+        events.next().now_or_never().is_none(),
+        "the key's release was reported as a focus loss"
+    );
+    target.release().await;
+    assert_eq!(field.next().await, Seen::Commit("first".into()));
+    assert_eq!(field.next().await, Seen::Commit(" words".into()));
 }
 
 /// Text held through a blip lands at release when nothing is written after.
