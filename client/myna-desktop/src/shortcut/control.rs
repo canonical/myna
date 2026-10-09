@@ -452,6 +452,33 @@ mod tests {
         );
     }
 
+    // Repeats come under REPEAT_FOLLOW apart; a poke that long after the last
+    // is a person's press.
+    #[tokio::test(start_paused = true)]
+    async fn a_press_a_follow_after_the_last_repeat_toggles() {
+        let mut trigger = ControlTrigger::new();
+        let poke = trigger.poke();
+
+        poke.poke();
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        let mut last = Instant::now();
+        for _ in 0..5 {
+            poke.poke();
+            last = Instant::now();
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        assert_eq!(trigger.next_edge().await, Some(TriggerEdge::Press));
+        assert!(!has_edge(&mut trigger).await, "a repeat toggled");
+        tokio::time::sleep_until(last + REPEAT_FOLLOW).await;
+        poke.poke();
+        let edge = tokio::time::timeout(REPEAT_QUIET, trigger.next_edge()).await;
+        assert_eq!(
+            edge,
+            Ok(Some(TriggerEdge::Release)),
+            "the press was dropped"
+        );
+    }
+
     // A second press soon after the first is one, once no repeat follows it.
     #[tokio::test(start_paused = true)]
     async fn a_quick_second_press_still_toggles() {
