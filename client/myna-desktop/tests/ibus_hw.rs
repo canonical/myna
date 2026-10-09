@@ -147,8 +147,17 @@ struct Field {
     ic: OwnedObjectPath,
 }
 
+/// A context no application owns, as GNOME Shell's on Wayland.
+const DESKTOP_CLIENT: &str = "myna-ibus-hw";
+/// A GTK4 widget's context, as the IM module names it.
+const GTK_CLIENT: &str = "gtk4-im:myna-ibus-hw";
+
 impl Field {
     async fn open(purpose: u32, hints: u32) -> Self {
+        Self::open_as(DESKTOP_CLIENT, purpose, hints).await
+    }
+
+    async fn open_as(client: &str, purpose: u32, hints: u32) -> Self {
         let address = std::env::var("IBUS_ADDRESS").expect("IBUS_ADDRESS from dev/gated-tests.sh");
         let conn = zbus::conn::Builder::address(address.as_str())
             .expect("parse IBUS_ADDRESS")
@@ -164,7 +173,7 @@ impl Field {
                 IBUS_PATH,
                 Some(IBUS_SERVICE),
                 "CreateInputContext",
-                &("myna-ibus-hw",),
+                &(client,),
             )
             .await
             .expect("CreateInputContext")
@@ -464,6 +473,14 @@ impl suite::Field for SuiteField {
         self.focused = true;
     }
 
+    async fn blip(&mut self) {
+        let mut field = self.field.lock().await;
+        let field = field.as_mut().expect("an open field");
+        field.focus_out().await;
+        tokio::time::sleep(BLIP).await;
+        field.ic_call(IC_IFACE, "FocusIn", &()).await;
+    }
+
     async fn turn_secure(&mut self) {
         let mut field = self.field.lock().await;
         let field = field.as_mut().expect("an open field");
@@ -507,7 +524,8 @@ impl suite::Fixture for IbusFixture {
             FieldKind::Plain => 0,
             FieldKind::Secure => PURPOSE_PASSWORD,
         };
-        let (field, injector) = session(purpose, 0).await;
+        // A GTK widget's context, which the backend can tell came back.
+        let (field, injector) = session_as(GTK_CLIENT, purpose, 0).await;
         let field = Arc::new(tokio::sync::Mutex::new(Some(field)));
         self.open = Some(Arc::clone(&field));
         let field = SuiteField {
@@ -560,7 +578,11 @@ async fn global_engine() -> Option<String> {
 /// A focused field of the given content type, the prior engine global, and an
 /// injector that has not acquired yet.
 async fn session(purpose: u32, hints: u32) -> (Field, IbusInjector) {
-    let field = Field::open(purpose, hints).await;
+    session_as(DESKTOP_CLIENT, purpose, hints).await
+}
+
+async fn session_as(client: &str, purpose: u32, hints: u32) -> (Field, IbusInjector) {
+    let field = Field::open_as(client, purpose, hints).await;
     field.use_prior_engine().await;
     let injector = IbusInjector::connect()
         .await
@@ -713,6 +735,108 @@ async fn focus_leaving_the_field_ends_the_session() {
     assert_eq!(event, Some(FocusEvent::FocusOut));
 
     target.release().await;
+    field.close().await;
+}
+
+/// How long an X11 key grab holds focus off the field: a key tap.
+const BLIP: Duration = Duration::from_millis(150);
+
+/// When the key's command reaches the daemon after the FocusOut its grab
+/// caused: 5-9 ms through gdbus, about 80 ms through `myna.toggle` (Xubuntu).
+const EDGE_AFTER: Duration = Duration::from_millis(20);
+
+/// A global key grab on X11 sends the focused window FocusOut, then FocusIn
+/// once the key is released, and the toolkit relays both to the same input
+/// context; the key's Toggle arrives in between. Text written before the
+/// Toggle is held, text after it waits, and both land once focus is back.
+#[tokio::test]
+async fn a_focus_blip_around_an_activation_is_not_a_loss() {
+    skip_unless_ibus!();
+    let _serial = exclusive().await;
+    let (mut field, mut injector) = session(0, 0).await;
+    let mut target = injector.acquire().await.expect("acquire an ordinary field");
+    let mut events = target.focus_events();
+    target
+        .commit("before")
+        .await
+        .expect("commit before the blip");
+    assert_eq!(field.next().await, Seen::Commit("before".into()));
+
+    field.focus_out().await;
+    tokio::time::sleep(EDGE_AFTER).await;
+    let held = target.commit("held").await;
+    target.activated();
+    let refocus = async {
+        tokio::time::sleep(BLIP).await;
+        field.ic_call(IC_IFACE, "FocusIn", &()).await;
+    };
+    let (during, ()) = tokio::join!(target.commit("during"), refocus);
+    held.expect("a commit before the Toggle is held");
+    during.expect("a commit after the Toggle lands once focus is back");
+    assert_eq!(field.next().await, Seen::Commit("held".into()));
+    assert_eq!(field.next().await, Seen::Commit("during".into()));
+    field.expect_only_sentinel(target.as_mut()).await;
+    assert!(
+        events.next().now_or_never().is_none(),
+        "the blip was reported as a focus loss"
+    );
+
+    target.release().await;
+    field.close().await;
+}
+
+/// Without an activation the same calls may be an application moving focus
+/// between fields that share its context, so they end the dictation and
+/// nothing written meanwhile lands.
+#[tokio::test]
+async fn a_focus_blip_without_an_activation_ends_the_dictation() {
+    skip_unless_ibus!();
+    let _serial = exclusive().await;
+    let (mut field, mut injector) = session(0, 0).await;
+    let mut target = injector.acquire().await.expect("acquire an ordinary field");
+    let mut events = target.focus_events();
+
+    field.focus_out().await;
+    tokio::time::sleep(EDGE_AFTER).await;
+    let _ = target.commit("stray").await;
+    tokio::time::sleep(BLIP).await;
+    field.ic_call(IC_IFACE, "FocusIn", &()).await;
+    let event = tokio::time::timeout(NOTICE, events.next()).await;
+    assert_eq!(event, Ok(Some(FocusEvent::FocusOut)));
+    let committed = target.commit("stray").await;
+    assert!(
+        matches!(committed, Err(InjectError::FocusLost)),
+        "{committed:?}"
+    );
+    let seen = sentinel_via_fresh_acquire(&mut field, &mut injector, Some(target)).await;
+    assert_eq!(seen, Seen::Commit(SENTINEL.into()));
+    field.close().await;
+}
+
+/// Focus that does not come back within the grace is a loss, even around an
+/// activation, and the commit held for it is refused, never written late.
+#[tokio::test]
+async fn focus_gone_past_the_grace_is_a_loss() {
+    skip_unless_ibus!();
+    let _serial = exclusive().await;
+    let (mut field, mut injector) = session(0, 0).await;
+    let mut target = injector.acquire().await.expect("acquire an ordinary field");
+    let mut events = target.focus_events();
+
+    field.focus_out().await;
+    tokio::time::sleep(EDGE_AFTER).await;
+    target.activated();
+    let committed = target.commit("held").await;
+    assert!(
+        matches!(committed, Err(InjectError::FocusLost)),
+        "{committed:?}"
+    );
+    let event = tokio::time::timeout(NOTICE, events.next()).await;
+    assert_eq!(event, Ok(Some(FocusEvent::FocusOut)));
+
+    field.ic_call(IC_IFACE, "FocusIn", &()).await;
+    let seen = sentinel_via_fresh_acquire(&mut field, &mut injector, Some(target)).await;
+    assert_eq!(seen, Seen::Commit(SENTINEL.into()));
     field.close().await;
 }
 
@@ -970,6 +1094,8 @@ async fn the_ibus_backend_conforms() {
             "a_focused_target_reports_nothing",
             "a_newer_target_supersedes_the_older",
             "release_after_focus_loss_then_reacquire",
+            "a_focus_blip_with_an_activation_is_not_a_loss",
+            "a_focus_blip_without_an_activation_is_a_loss",
             "secure_fields_are_refused",
             "a_field_turning_secure_is_refused",
             "commit_clears_the_preedit",

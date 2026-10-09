@@ -22,6 +22,10 @@ impl Field for SeenField {
     // Every acquire binds the field afresh, as if refocused.
     async fn focus(&mut self) {}
 
+    async fn blip(&mut self) {
+        self.0.blip();
+    }
+
     async fn turn_secure(&mut self) {
         self.0.set_secure(true);
     }
@@ -47,13 +51,15 @@ impl Fixture for MockFixture {
     }
 }
 
-const COMMON: [&str; 8] = [
+const COMMON: [&str; 10] = [
     "commits_reach_a_plain_field",
     "no_commit_after_focus_loss",
     "late_focus_streams_still_report_the_loss",
     "a_focused_target_reports_nothing",
     "a_newer_target_supersedes_the_older",
     "release_after_focus_loss_then_reacquire",
+    "a_focus_blip_with_an_activation_is_not_a_loss",
+    "a_focus_blip_without_an_activation_is_a_loss",
     "secure_fields_are_refused",
     "a_field_turning_secure_is_refused",
 ];

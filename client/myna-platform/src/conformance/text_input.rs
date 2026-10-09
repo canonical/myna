@@ -40,6 +40,10 @@ pub trait Field: Send {
     /// Give the field focus again.
     async fn focus(&mut self);
 
+    /// Move focus off the field and straight back to it, as an X11 key grab
+    /// does for as long as a shortcut is held.
+    async fn blip(&mut self);
+
     /// Make the focused field secure under a held target, as a page that
     /// swaps a text input for a password one.
     async fn turn_secure(&mut self);
@@ -73,6 +77,10 @@ pub async fn run(fixture: &mut dyn Fixture) -> Report {
     report.record("a_newer_target_supersedes_the_older", observed);
     release_after_focus_loss_then_reacquire(fixture).await;
     report.record("release_after_focus_loss_then_reacquire", true);
+    let observed = a_focus_blip_with_an_activation_is_not_a_loss(fixture).await;
+    report.record("a_focus_blip_with_an_activation_is_not_a_loss", observed);
+    let observed = a_focus_blip_without_an_activation_is_a_loss(fixture).await;
+    report.record("a_focus_blip_without_an_activation_is_a_loss", observed);
 
     if capabilities.secure_field_detection == Support::Supported {
         let observed = secure_fields_are_refused(fixture).await;
@@ -222,6 +230,56 @@ async fn release_after_focus_loss_then_reacquire(fixture: &mut dyn Fixture) {
         panic!("{CHECK}: a reacquired target cannot write: {err}");
     }
     again.release().await;
+}
+
+async fn a_focus_blip_with_an_activation_is_not_a_loss(fixture: &mut dyn Fixture) -> bool {
+    const CHECK: &str = "a_focus_blip_with_an_activation_is_not_a_loss";
+    let (mut injector, mut field) = fixture.setup(FieldKind::Plain).await;
+    let mut target = acquire(injector.as_mut(), CHECK).await;
+    let mut events = target.focus_events();
+    target.activated();
+    field.blip().await;
+    if let Err(err) = target.commit("after").await {
+        panic!("{CHECK}: commit after the blip failed: {err}");
+    }
+    let view = field.observe().await;
+    if let Some(view) = &view {
+        assert!(view.text.contains("after"), "{CHECK}: field shows {view:?}");
+    }
+    let early = tokio::time::timeout(QUIET, events.next()).await;
+    assert!(early.is_err(), "{CHECK}: reported {early:?} for a blip");
+    target.release().await;
+    view.is_some()
+}
+
+/// Without an activation a blip may be a move to another field that shares
+/// the context, as an application with one context per window makes it.
+async fn a_focus_blip_without_an_activation_is_a_loss(fixture: &mut dyn Fixture) -> bool {
+    const CHECK: &str = "a_focus_blip_without_an_activation_is_a_loss";
+    let (mut injector, mut field) = fixture.setup(FieldKind::Plain).await;
+    let mut target = acquire(injector.as_mut(), CHECK).await;
+    let events = target.focus_events();
+    field.blip().await;
+    let stray = target.commit("stray").await;
+    let mut events = events;
+    match tokio::time::timeout(FOCUS_EVENT_LIMIT, events.next()).await {
+        Ok(Some(_)) => {}
+        Ok(None) => panic!("{CHECK}: the focus stream ended without an event"),
+        Err(_) => panic!("{CHECK}: no focus event within {FOCUS_EVENT_LIMIT:?}"),
+    }
+    assert!(
+        matches!(stray, Err(InjectError::FocusLost)),
+        "{CHECK}: commit after the blip gave {stray:?}"
+    );
+    let view = field.observe().await;
+    if let Some(view) = &view {
+        assert!(
+            !view.text.contains("stray"),
+            "{CHECK}: field shows {view:?}"
+        );
+    }
+    target.release().await;
+    view.is_some()
 }
 
 async fn secure_fields_are_refused(fixture: &mut dyn Fixture) -> bool {

@@ -32,12 +32,16 @@ enum Flaw {
     WritesFieldsTurnedSecure,
     PreeditInSecureFields,
     KeepsPreeditOnRelease,
+    BlipIsALoss,
+    BlipIsNeverALoss,
 }
 
 #[derive(Debug, Default)]
 struct Desk {
     lease: u64,
     lost: bool,
+    /// The held target was told of an activation.
+    activated: bool,
     focused: bool,
     secure: bool,
     /// Commits a field turned secure still takes before the backend hears.
@@ -85,6 +89,7 @@ impl Injector for Reference {
         self.desk.send_modify(|desk| {
             desk.lease += 1;
             desk.lost = !desk.focused;
+            desk.activated = false;
             id = desk.lease;
         });
         let desk = self.desk.borrow();
@@ -151,6 +156,12 @@ impl Target for RefTarget {
         }
     }
 
+    fn activated(&self) {
+        let id = self.id;
+        self.desk
+            .send_modify(|desk| desk.activated |= desk.lease == id);
+    }
+
     fn focus_events(&self) -> BoxStream<'static, FocusEvent> {
         let id = self.id;
         match self.flaw {
@@ -185,7 +196,7 @@ impl Target for RefTarget {
     }
 }
 
-struct RefField(Arc<watch::Sender<Desk>>);
+struct RefField(Arc<watch::Sender<Desk>>, Flaw);
 
 #[async_trait]
 impl Field for RefField {
@@ -198,6 +209,19 @@ impl Field for RefField {
 
     async fn focus(&mut self) {
         self.0.send_modify(|desk| desk.focused = true);
+    }
+
+    async fn blip(&mut self) {
+        let flaw = self.1;
+        self.0.send_modify(|desk| {
+            desk.preedit.clear();
+            let ridden = match flaw {
+                Flaw::BlipIsALoss => false,
+                Flaw::BlipIsNeverALoss => true,
+                _ => desk.activated,
+            };
+            desk.lost |= !ridden;
+        });
     }
 
     async fn turn_secure(&mut self) {
@@ -236,7 +260,7 @@ impl Fixture for RefFixture {
             capabilities: self.capabilities,
             flaw: self.flaw,
         };
-        (Box::new(injector), Box::new(RefField(desk)))
+        (Box::new(injector), Box::new(RefField(desk, self.flaw)))
     }
 }
 
@@ -280,6 +304,8 @@ async fn a_backend_with_every_capability_passes_every_check() {
             "a_focused_target_reports_nothing",
             "a_newer_target_supersedes_the_older",
             "release_after_focus_loss_then_reacquire",
+            "a_focus_blip_with_an_activation_is_not_a_loss",
+            "a_focus_blip_without_an_activation_is_a_loss",
             "secure_fields_are_refused",
             "a_field_turning_secure_is_refused",
             "commit_clears_the_preedit",
@@ -294,7 +320,7 @@ async fn a_backend_with_every_capability_passes_every_check() {
 #[tokio::test(start_paused = true)]
 async fn a_commit_only_backend_that_cannot_see_secure_fields_skips_those_checks() {
     let report = suite(TextInputCapabilities::COMMIT_ONLY, Flaw::None).await;
-    assert_eq!(report.passed.len(), 7, "{report:?}");
+    assert_eq!(report.passed.len(), 9, "{report:?}");
     assert!(report.passed.contains(&"preedit_without_support_is_inert"));
     assert_eq!(
         report.not_applicable,
@@ -401,6 +427,18 @@ rejects!(
     Flaw::KeepsPreeditOnRelease,
     FULL,
     "release_clears_the_preedit"
+);
+rejects!(
+    a_blip_taken_for_a_loss,
+    Flaw::BlipIsALoss,
+    FULL,
+    "a_focus_blip_with_an_activation_is_not_a_loss"
+);
+rejects!(
+    a_blip_always_ridden_out,
+    Flaw::BlipIsNeverALoss,
+    FULL,
+    "a_focus_blip_without_an_activation_is_a_loss"
 );
 rejects!(
     a_preedit_committed_with_the_text,

@@ -108,6 +108,12 @@ impl MockField {
         self.shown.lock().unwrap().preedit.clear();
     }
 
+    /// Focus leaves the field and comes straight back, as an X11 key grab
+    /// makes it: the toolkit discards the preedit, and the lease rides it out.
+    pub fn blip(&self) {
+        self.shown.lock().unwrap().preedit.clear();
+    }
+
     /// The field's content type turns secure (or ordinary) under the user.
     pub fn set_secure(&self, secure: bool) {
         self.shown.lock().unwrap().secure = secure;
