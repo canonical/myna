@@ -11,6 +11,7 @@ use std::task::{Context, Poll, Waker};
 
 use async_trait::async_trait;
 use myna_platform::activation::Activation;
+use myna_platform::appearance::Appearance;
 use myna_platform::components::{
     Component, ComponentError, ComponentStatus, Components, Purpose, StepKind,
 };
@@ -19,6 +20,7 @@ use myna_platform::{Profile, SessionEnv};
 use crate::onboarding::ExtensionReport;
 use crate::ports::{FailedStep, SystemConfiguratorError};
 
+pub mod appearance;
 pub mod gnome;
 pub mod xfce;
 
@@ -27,6 +29,7 @@ pub struct Platform {
     profile: Profile,
     activation: Option<Rc<dyn Activation>>,
     components: Rc<dyn Components>,
+    appearance: Rc<dyn Appearance>,
 }
 
 impl Platform {
@@ -52,10 +55,15 @@ impl Platform {
                 ),
                 Profile::Generic => (None, Rc::new(NoComponents)),
             };
+        let appearance: Rc<dyn Appearance> = match profile {
+            Profile::Gnome => Rc::new(gnome::appearance::GnomeAppearance),
+            Profile::Xfce | Profile::Generic => Rc::new(appearance::GtkAppearance),
+        };
         Self {
             profile,
             activation,
             components,
+            appearance,
         }
     }
 
@@ -85,6 +93,11 @@ impl Platform {
     /// The dictation shortcut, where the desktop has one Myna can manage.
     pub fn activation(&self) -> Option<Rc<dyn Activation>> {
         self.activation.clone()
+    }
+
+    /// The desktop's reduced-motion and high-contrast preferences.
+    pub fn appearance(&self) -> Rc<dyn Appearance> {
+        self.appearance.clone()
     }
 
     /// What this desktop needs outside Myna's own processes.

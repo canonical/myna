@@ -54,28 +54,6 @@ pub const fn appearance_policy(animations_enabled: bool, high_contrast: bool) ->
     }
 }
 
-const A11Y_INTERFACE_SCHEMA: &str = "org.gnome.desktop.a11y.interface";
-const HIGH_CONTRAST_KEY: &str = "high-contrast";
-
-/// The GSettings object for `schema`, or none when the schema or `key` is not
-/// installed. `gio::Settings::new` aborts the process on a missing schema, and
-/// desktops such as Xubuntu do not ship GNOME's accessibility schema.
-fn settings_for_schema_key(schema: &str, key: &str) -> Option<gio::Settings> {
-    let source = gio::SettingsSchemaSource::default()?;
-    let schema_obj = source.lookup(schema, true)?;
-    if !schema_obj.has_key(key) {
-        return None;
-    }
-    Some(gio::Settings::new(schema))
-}
-
-/// Whether GNOME's high-contrast preference is on. Without the schema there is
-/// no such preference, so it reads as off.
-fn high_contrast_preference() -> bool {
-    settings_for_schema_key(A11Y_INTERFACE_SCHEMA, HIGH_CONTRAST_KEY)
-        .is_some_and(|settings| settings.boolean(HIGH_CONTRAST_KEY))
-}
-
 pub fn run() -> glib::ExitCode {
     if smoke_requested(std::env::var_os(TEMPLATE_ENV).as_deref()) {
         return template_probe();
@@ -1560,12 +1538,8 @@ fn build_settings_window(application: &adw::Application) {
 }
 
 fn current_appearance_policy() -> AppearancePolicy {
-    appearance_policy(
-        gtk::Settings::default()
-            .map(|settings| settings.is_gtk_enable_animations())
-            .unwrap_or(true),
-        adw::StyleManager::default().is_high_contrast() || high_contrast_preference(),
-    )
+    let readings = crate::platform::Platform::current().appearance().read();
+    appearance_policy(!readings.reduced_motion, readings.high_contrast)
 }
 
 fn apply_appearance_policy(window: &gtk::Widget) {
@@ -1612,34 +1586,15 @@ pub(crate) fn install_appearance_policy(window: &gtk::Widget) {
         icons.add_resource_path(ICON_RESOURCES);
     }
     apply_appearance_policy(window);
-    if let Some(settings) = gtk::Settings::default() {
-        settings.connect_gtk_enable_animations_notify(glib::clone!(
+    let subscription = crate::platform::Platform::current()
+        .appearance()
+        .watch(Box::new(glib::clone!(
             #[weak]
             window,
             move |_| apply_appearance_policy(&window)
-        ));
-    }
-    if let Some(accessibility_settings) =
-        settings_for_schema_key(A11Y_INTERFACE_SCHEMA, HIGH_CONTRAST_KEY)
-    {
-        accessibility_settings.connect_changed(
-            Some(HIGH_CONTRAST_KEY),
-            glib::clone!(
-                #[weak]
-                window,
-                move |_, _| apply_appearance_policy(&window)
-            ),
-        );
-        window.connect_destroy(move |_| {
-            // Keep the settings source alive for the lifetime of its window.
-            let _ = &accessibility_settings;
-        });
-    }
-    adw::StyleManager::default().connect_high_contrast_notify(glib::clone!(
-        #[weak]
-        window,
-        move |_| apply_appearance_policy(&window)
-    ));
+        )));
+    let subscription = std::cell::RefCell::new(Some(subscription));
+    window.connect_destroy(move |_| drop(subscription.borrow_mut().take()));
 }
 
 /// Type into a text row and let its write land, asserting the row is still
@@ -5771,10 +5726,5 @@ mod tests {
         assert!(smoke_requested(Some(std::ffi::OsStr::new("TRUE"))));
         assert!(!smoke_requested(Some(std::ffi::OsStr::new("yes"))));
         assert!(!smoke_requested(None));
-    }
-
-    #[test]
-    fn a_missing_schema_reads_as_no_settings() {
-        assert!(settings_for_schema_key("org.example.NoSuchSchema", "high-contrast").is_none());
     }
 }
