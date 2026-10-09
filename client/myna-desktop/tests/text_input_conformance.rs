@@ -26,6 +26,13 @@ impl Field for SeenField {
         self.0.blip();
     }
 
+    // The mock has no clock: a held blip is a blip.
+    async fn grab(&mut self) {}
+
+    async fn ungrab(&mut self) {
+        self.0.blip();
+    }
+
     async fn turn_secure(&mut self) {
         self.0.set_secure(true);
     }
@@ -51,7 +58,7 @@ impl Fixture for MockFixture {
     }
 }
 
-const COMMON: [&str; 10] = [
+const COMMON: [&str; 11] = [
     "commits_reach_a_plain_field",
     "no_commit_after_focus_loss",
     "late_focus_streams_still_report_the_loss",
@@ -60,11 +67,12 @@ const COMMON: [&str; 10] = [
     "release_after_focus_loss_then_reacquire",
     "a_focus_blip_with_an_activation_is_not_a_loss",
     "a_focus_blip_without_an_activation_is_a_loss",
+    "a_blip_kept_alive_by_continued_activation_is_not_a_loss",
     "secure_fields_are_refused",
     "a_field_turning_secure_is_refused",
 ];
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn a_commit_only_mock_conforms() {
     let report = run(&mut MockFixture { preedit: false }).await;
     let mut passed = COMMON.to_vec();
@@ -81,7 +89,7 @@ async fn a_commit_only_mock_conforms() {
     );
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn a_preedit_mock_conforms() {
     let report = run(&mut MockFixture { preedit: true }).await;
     let mut passed = COMMON.to_vec();

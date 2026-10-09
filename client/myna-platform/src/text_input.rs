@@ -170,8 +170,9 @@ pub trait Target: Send + fmt::Debug {
     /// is released, as an X11 key grab does. Focus that leaves within a short
     /// window of an activation and comes back to the same field soon after
     /// is not a loss: writes in between are held and land once it is back.
-    /// Focus leaving at any other time is a loss, as is focus that does not
-    /// come back.
+    /// A held key's repeats call this again for as long as it is held, and
+    /// the window lasts as long. Focus leaving at any other time is a loss,
+    /// as is focus that does not come back.
     fn activated(&self) {}
 
     /// Give up the field: clear what it shows and hand the desktop back

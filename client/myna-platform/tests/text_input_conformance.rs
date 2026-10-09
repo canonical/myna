@@ -3,10 +3,12 @@
 //! must reject.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use futures_util::stream::{self, BoxStream, StreamExt};
 use tokio::sync::watch;
+use tokio::time::Instant;
 
 use myna_platform::conformance::text_input::{run, Field, FieldKind, FieldView, Fixture};
 use myna_platform::conformance::Report;
@@ -34,7 +36,12 @@ enum Flaw {
     KeepsPreeditOnRelease,
     BlipIsALoss,
     BlipIsNeverALoss,
+    GraceIgnoresActivation,
 }
+
+/// How long the reference backend rides out a blip after its last
+/// activation.
+const GRACE: Duration = Duration::from_secs(1);
 
 #[derive(Debug, Default)]
 struct Desk {
@@ -42,6 +49,10 @@ struct Desk {
     lost: bool,
     /// The held target was told of an activation.
     activated: bool,
+    /// When it was last told.
+    activated_at: Option<Instant>,
+    /// When a grab took focus off the field.
+    grabbed_at: Option<Instant>,
     focused: bool,
     secure: bool,
     /// Commits a field turned secure still takes before the backend hears.
@@ -158,8 +169,12 @@ impl Target for RefTarget {
 
     fn activated(&self) {
         let id = self.id;
-        self.desk
-            .send_modify(|desk| desk.activated |= desk.lease == id);
+        self.desk.send_modify(|desk| {
+            if desk.lease == id {
+                desk.activated = true;
+                desk.activated_at = Some(Instant::now());
+            }
+        });
     }
 
     fn focus_events(&self) -> BoxStream<'static, FocusEvent> {
@@ -221,6 +236,25 @@ impl Field for RefField {
                 _ => desk.activated,
             };
             desk.lost |= !ridden;
+        });
+    }
+
+    async fn grab(&mut self) {
+        self.0.send_modify(|desk| {
+            desk.preedit.clear();
+            desk.grabbed_at = Some(Instant::now());
+        });
+    }
+
+    async fn ungrab(&mut self) {
+        let flaw = self.1;
+        self.0.send_modify(|desk| {
+            let grabbed = desk.grabbed_at.take().expect("a grab first");
+            let since = match (flaw, desk.activated_at) {
+                (Flaw::GraceIgnoresActivation, _) | (_, None) => grabbed,
+                (_, Some(at)) => at.max(grabbed),
+            };
+            desk.lost |= !(desk.activated && since.elapsed() <= GRACE);
         });
     }
 
@@ -306,6 +340,7 @@ async fn a_backend_with_every_capability_passes_every_check() {
             "release_after_focus_loss_then_reacquire",
             "a_focus_blip_with_an_activation_is_not_a_loss",
             "a_focus_blip_without_an_activation_is_a_loss",
+            "a_blip_kept_alive_by_continued_activation_is_not_a_loss",
             "secure_fields_are_refused",
             "a_field_turning_secure_is_refused",
             "commit_clears_the_preedit",
@@ -320,7 +355,7 @@ async fn a_backend_with_every_capability_passes_every_check() {
 #[tokio::test(start_paused = true)]
 async fn a_commit_only_backend_that_cannot_see_secure_fields_skips_those_checks() {
     let report = suite(TextInputCapabilities::COMMIT_ONLY, Flaw::None).await;
-    assert_eq!(report.passed.len(), 9, "{report:?}");
+    assert_eq!(report.passed.len(), 10, "{report:?}");
     assert!(report.passed.contains(&"preedit_without_support_is_inert"));
     assert_eq!(
         report.not_applicable,
@@ -445,4 +480,10 @@ rejects!(
     Flaw::CommitsThePreedit,
     FULL,
     "commit_clears_the_preedit"
+);
+rejects!(
+    a_grace_counted_from_the_grab,
+    Flaw::GraceIgnoresActivation,
+    FULL,
+    "a_blip_kept_alive_by_continued_activation_is_not_a_loss"
 );

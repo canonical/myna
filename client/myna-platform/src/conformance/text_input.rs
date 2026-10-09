@@ -16,6 +16,11 @@ const QUIET: Duration = Duration::from_millis(100);
 /// How often a write is retried while a change to the field reaches the
 /// backend.
 const RETRY: Duration = Duration::from_millis(20);
+/// How long the key is held in the held blip check: longer than any
+/// backend's grace for a blip, so only the activation continuing keeps it.
+const HELD: Duration = Duration::from_secs(3);
+/// How often a held key repeats its activation.
+const REPEAT: Duration = Duration::from_millis(50);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FieldKind {
@@ -43,6 +48,12 @@ pub trait Field: Send {
     /// Move focus off the field and straight back to it, as an X11 key grab
     /// does for as long as a shortcut is held.
     async fn blip(&mut self);
+
+    /// Take focus off the field as a key grab does, until [`Field::ungrab`].
+    async fn grab(&mut self);
+
+    /// End the grab: focus is back on the same field.
+    async fn ungrab(&mut self);
 
     /// Make the focused field secure under a held target, as a page that
     /// swaps a text input for a password one.
@@ -81,6 +92,11 @@ pub async fn run(fixture: &mut dyn Fixture) -> Report {
     report.record("a_focus_blip_with_an_activation_is_not_a_loss", observed);
     let observed = a_focus_blip_without_an_activation_is_a_loss(fixture).await;
     report.record("a_focus_blip_without_an_activation_is_a_loss", observed);
+    let observed = a_blip_kept_alive_by_continued_activation_is_not_a_loss(fixture).await;
+    report.record(
+        "a_blip_kept_alive_by_continued_activation_is_not_a_loss",
+        observed,
+    );
 
     if capabilities.secure_field_detection == Support::Supported {
         let observed = secure_fields_are_refused(fixture).await;
@@ -248,6 +264,39 @@ async fn a_focus_blip_with_an_activation_is_not_a_loss(fixture: &mut dyn Fixture
     }
     let early = tokio::time::timeout(QUIET, events.next()).await;
     assert!(early.is_err(), "{CHECK}: reported {early:?} for a blip");
+    target.release().await;
+    view.is_some()
+}
+
+/// A key held down grabs for as long as it is held, and repeats its
+/// activation all the while: however long that is, the blip is not a loss.
+async fn a_blip_kept_alive_by_continued_activation_is_not_a_loss(
+    fixture: &mut dyn Fixture,
+) -> bool {
+    const CHECK: &str = "a_blip_kept_alive_by_continued_activation_is_not_a_loss";
+    let (mut injector, mut field) = fixture.setup(FieldKind::Plain).await;
+    let mut target = acquire(injector.as_mut(), CHECK).await;
+    let mut events = target.focus_events();
+    target.activated();
+    field.grab().await;
+    let held = tokio::time::Instant::now();
+    while held.elapsed() < HELD {
+        tokio::time::sleep(REPEAT).await;
+        target.activated();
+    }
+    field.ungrab().await;
+    if let Err(err) = target.commit("after").await {
+        panic!("{CHECK}: commit after a held blip failed: {err}");
+    }
+    let view = field.observe().await;
+    if let Some(view) = &view {
+        assert!(view.text.contains("after"), "{CHECK}: field shows {view:?}");
+    }
+    let early = tokio::time::timeout(QUIET, events.next()).await;
+    assert!(
+        early.is_err(),
+        "{CHECK}: reported {early:?} for a held blip"
+    );
     target.release().await;
     view.is_some()
 }

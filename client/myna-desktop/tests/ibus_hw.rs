@@ -476,6 +476,18 @@ impl suite::Field for SuiteField {
         field.ic_call(IC_IFACE, "FocusIn", &()).await;
     }
 
+    async fn grab(&mut self) {
+        let mut field = self.field.lock().await;
+        let field = field.as_mut().expect("an open field");
+        field.focus_out().await;
+    }
+
+    async fn ungrab(&mut self) {
+        let mut field = self.field.lock().await;
+        let field = field.as_mut().expect("an open field");
+        field.ic_call(IC_IFACE, "FocusIn", &()).await;
+    }
+
     async fn turn_secure(&mut self) {
         let mut field = self.field.lock().await;
         let field = field.as_mut().expect("an open field");
@@ -1213,6 +1225,7 @@ async fn the_ibus_backend_conforms() {
             "release_after_focus_loss_then_reacquire",
             "a_focus_blip_with_an_activation_is_not_a_loss",
             "a_focus_blip_without_an_activation_is_a_loss",
+            "a_blip_kept_alive_by_continued_activation_is_not_a_loss",
             "secure_fields_are_refused",
             "a_field_turning_secure_is_refused",
             "commit_clears_the_preedit",
