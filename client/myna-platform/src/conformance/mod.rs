@@ -5,6 +5,7 @@
 //! check, so a test asserts the gaps it expects instead of skipping silently.
 
 pub mod activation;
+pub mod appearance;
 pub mod text_input;
 
 /// What a suite run established.
