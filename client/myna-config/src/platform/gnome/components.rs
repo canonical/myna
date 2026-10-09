@@ -14,11 +14,14 @@ use async_trait::async_trait;
 use gio::glib::{self, Variant, VariantDict, VariantTy};
 use gio::prelude::*;
 
+use myna_platform::components::{
+    Component, ComponentError, ComponentStatus, Components, Purpose, StepKind,
+};
+
 use crate::onboarding::{
     extension_state, ExtensionCopies, ExtensionCopy, ExtensionInfo, ExtensionListing,
-    ExtensionReport, ExtensionRun, ExtensionState,
+    ExtensionReport, ExtensionRun, SHELL_EXTENSION_UUID,
 };
-use crate::ports::{ShellExtensions, SystemConfiguratorError};
 
 const SHELL_NAME: &str = "org.gnome.Shell";
 const SHELL_PATH: &str = "/org/gnome/Shell";
@@ -44,7 +47,7 @@ const STATE_OUT_OF_DATE: i64 = 4;
 /// `ExtensionState.ERROR`.
 const STATE_ERROR: i64 = 3;
 
-pub struct GnomeShellExtensions {
+pub struct GnomeComponents {
     connection: Option<gio::DBusConnection>,
     data_dirs: Vec<PathBuf>,
     user_data_dir: PathBuf,
@@ -53,7 +56,7 @@ pub struct GnomeShellExtensions {
     shell_settings: Option<gio::Settings>,
 }
 
-impl GnomeShellExtensions {
+impl GnomeComponents {
     /// The session bus and the system data directories.
     pub fn new() -> Self {
         Self {
@@ -180,11 +183,7 @@ impl GnomeShellExtensions {
 
     /// List `uuid` for the next login as `EnableExtension` would: into
     /// `enabled-extensions`, out of `disabled-extensions`.
-    fn list_for_login(
-        &self,
-        settings: &gio::Settings,
-        uuid: &str,
-    ) -> Result<(), SystemConfiguratorError> {
+    fn list_for_login(&self, settings: &gio::Settings, uuid: &str) -> Result<(), ComponentError> {
         let write = |key: &str, edit: &dyn Fn(&mut Vec<String>)| {
             let mut listed: Vec<String> = settings
                 .strv(key)
@@ -196,17 +195,14 @@ impl GnomeShellExtensions {
             if listed == before {
                 return Ok(());
             }
-            settings.set_strv(key, listed).map_err(|error| {
-                SystemConfiguratorError::setting_execution(
-                    format!("{SHELL_SCHEMA} {key}"),
-                    error.to_string(),
-                )
-            })
+            settings
+                .set_strv(key, listed)
+                .map_err(|error| setting_failed(key, error.to_string()))
         };
         if !settings.is_writable(ENABLED_KEY) {
-            return Err(SystemConfiguratorError::setting_execution(
-                format!("{SHELL_SCHEMA} {ENABLED_KEY}"),
-                "the administrator does not let it change",
+            return Err(setting_failed(
+                ENABLED_KEY,
+                "the administrator does not let it change".to_owned(),
             ));
         }
         write(ENABLED_KEY, &|listed| {
@@ -235,22 +231,42 @@ impl GnomeShellExtensions {
     }
 }
 
-impl Default for GnomeShellExtensions {
+impl Default for GnomeComponents {
     fn default() -> Self {
         Self::new()
     }
 }
 
+/// Myna's one component on GNOME: the extension that hosts the status surface.
 #[async_trait(?Send)]
-impl ShellExtensions for GnomeShellExtensions {
-    async fn extension_state(&self, uuid: &str) -> ExtensionState {
-        let info = self.info(uuid).await;
-        extension_state(info, self.copies_on_disk(uuid), self.listing(uuid))
+impl Components for GnomeComponents {
+    fn required(&self) -> Vec<Component> {
+        vec![Component {
+            id: SHELL_EXTENSION_UUID.to_owned(),
+            purpose: Purpose::StatusSurface,
+        }]
     }
 
+    async fn status(&self, id: &str) -> ComponentStatus {
+        if id != SHELL_EXTENSION_UUID {
+            return ComponentStatus::Unavailable;
+        }
+        let info = self.info(id).await;
+        extension_state(info, self.copies_on_disk(id), self.listing(id))
+    }
+
+    async fn enable(&self, id: &str) -> Result<(), ComponentError> {
+        if id != SHELL_EXTENSION_UUID {
+            return Err(ComponentError::Unknown(id.to_owned()));
+        }
+        self.enable_extension(id).await
+    }
+}
+
+impl GnomeComponents {
     /// `EnableExtension` for a copy gnome-shell lists; for a system copy it
     /// has not scanned, the listing it starts at the next login.
-    async fn enable_extension(&self, uuid: &str) -> Result<(), SystemConfiguratorError> {
+    async fn enable_extension(&self, uuid: &str) -> Result<(), ComponentError> {
         let scanned = matches!(
             self.info(uuid).await,
             Some(ExtensionInfo { system: true, .. })
@@ -261,8 +277,11 @@ impl ShellExtensions for GnomeShellExtensions {
         {
             return self.list_for_login(settings, uuid);
         }
-        let failed =
-            |message: String| SystemConfiguratorError::dbus_execution(enable_call(uuid), message);
+        let failed = |message: String| ComponentError::Failed {
+            kind: StepKind::Call,
+            step: enable_call(uuid),
+            message,
+        };
         let reply = self
             .call("EnableExtension", uuid, "(b)")
             .await
@@ -312,6 +331,14 @@ impl ShellExtensions for GnomeShellExtensions {
                 _ => glib::timeout_future(SETTLE_POLL).await,
             }
         }
+    }
+}
+
+fn setting_failed(key: &str, message: String) -> ComponentError {
+    ComponentError::Failed {
+        kind: StepKind::Setting,
+        step: format!("{SHELL_SCHEMA} {key}"),
+        message,
     }
 }
 
@@ -370,7 +397,7 @@ pub fn extension_report(uuid: &str) -> ExtensionReport {
         Ok(reply) => parse_report(&reply.child_value(0), &glib::user_data_dir()),
         Err(_) => ExtensionReport::NoShell,
     };
-    let extensions = GnomeShellExtensions::new();
+    let extensions = GnomeComponents::new();
     unscanned_report(
         report,
         extensions.copies_on_disk(uuid),
@@ -444,10 +471,11 @@ mod tests {
 
     #[test]
     fn a_failed_call_is_reported_as_the_call() {
-        let error = SystemConfiguratorError::dbus_execution(
-            enable_call(crate::onboarding::SHELL_EXTENSION_UUID),
-            "gnome-shell did not start it",
-        );
+        let error = crate::platform::step_failure(ComponentError::Failed {
+            kind: StepKind::Call,
+            step: enable_call(SHELL_EXTENSION_UUID),
+            message: "gnome-shell did not start it".into(),
+        });
         assert_eq!(
             crate::backend_ui::system_error_details(&error),
             "D-Bus call: org.gnome.Shell.Extensions.EnableExtension(\"myna-shell@canonical.com\")\n\

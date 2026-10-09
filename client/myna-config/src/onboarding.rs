@@ -6,6 +6,7 @@
 //! the strings the user reads live in `onboarding_ui`.
 
 use myna_core::language::ModelFamily;
+use myna_platform::components::{Blocker, ComponentStatus};
 
 use crate::diagnostics::InstalledSnap;
 
@@ -31,23 +32,35 @@ pub enum ComponentId {
     Myna,
     /// A speech-to-text backend with its model.
     Model,
-    /// Myna's GNOME Shell extension. Dictation works without it, falling back
-    /// to desktop notifications.
-    ShellExtension,
+    /// The desktop's input method, where Myna needs it set up (Xfce: IBus).
+    /// Not listed on a desktop that brings its own.
+    InputMethod,
+    /// What hosts the dictation indicator: GNOME's Shell extension, Xfce's
+    /// autostarted HUD. Dictation works without it, falling back to desktop
+    /// notifications.
+    StatusSurface,
 }
 
 impl ComponentId {
-    pub const ALL: [Self; 4] = [
+    pub const ALL: [Self; 5] = [
         Self::UserDaemons,
         Self::Myna,
         Self::Model,
-        Self::ShellExtension,
+        Self::InputMethod,
+        Self::StatusSurface,
     ];
 
     /// Whether dictation needs it. Only these gate the component step and
-    /// open the wizard at startup.
+    /// open the wizard at startup. The desktop's pieces never do: the wizard
+    /// cannot install them, and Diagnostics says what is missing.
     pub const fn required(self) -> bool {
-        !matches!(self, Self::ShellExtension)
+        !self.is_desktop()
+    }
+
+    /// Whether the desktop provides it, through `myna_platform`'s
+    /// `Components`, rather than snapd.
+    pub const fn is_desktop(self) -> bool {
+        matches!(self, Self::InputMethod | Self::StatusSurface)
     }
 }
 
@@ -70,15 +83,45 @@ pub enum Unavailable {
     NotInstalled,
     /// Hidden by a copy in the user's data dir, which gnome-shell loads
     /// first; a re-login does not help, removing that copy does.
-    ShadowedByUserCopy,
-    /// The user turned all extensions off (the Extensions app's switch).
-    ExtensionsOff,
-    /// gnome-shell tried to run it and it failed.
-    ExtensionFailed,
-    /// Its `shell-version` does not list the running gnome-shell.
-    ExtensionOutOfDate,
-    /// The administrator locked the enabled extensions list.
-    ExtensionLocked,
+    Shadowed,
+    /// The user turned off what runs it (the Extensions app's switch).
+    TurnedOff,
+    /// It ran and failed.
+    Failed,
+    /// It does not support the running desktop, or the user chose something
+    /// it cannot work with.
+    Incompatible,
+    /// The administrator does not let the user enable it.
+    Locked,
+}
+
+impl Unavailable {
+    fn of(status: ComponentStatus) -> Option<Self> {
+        match status {
+            ComponentStatus::Blocked(Blocker::Shadowed) => Some(Self::Shadowed),
+            ComponentStatus::Blocked(Blocker::TurnedOff) => Some(Self::TurnedOff),
+            ComponentStatus::Blocked(Blocker::Incompatible) => Some(Self::Incompatible),
+            ComponentStatus::Blocked(Blocker::Locked) => Some(Self::Locked),
+            ComponentStatus::Failed => Some(Self::Failed),
+            ComponentStatus::Unavailable => Some(Self::NotInstalled),
+            _ => None,
+        }
+    }
+}
+
+impl ComponentState {
+    /// A desktop component's status as the wizard reads it: what it can turn
+    /// on is missing, what is set for the next login is done.
+    fn of(status: ComponentStatus) -> Self {
+        match status {
+            ComponentStatus::Active => Self::Satisfied,
+            ComponentStatus::ActiveAfterRelogin => Self::AfterRelogin,
+            ComponentStatus::Inactive | ComponentStatus::NeedsRelogin => Self::Missing,
+            blocked => {
+                Self::Unavailable(Unavailable::of(blocked).unwrap_or(Unavailable::NotInstalled))
+            }
+        }
+    }
 }
 
 /// One assessed component.
@@ -95,35 +138,6 @@ impl Component {
             ComponentState::Satisfied | ComponentState::AfterRelogin
         )
     }
-}
-
-/// Where Myna's extension stands, from gnome-shell's view and the disk.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum ExtensionState {
-    Enabled,
-    /// gnome-shell has the system copy and is not running it; enabling it
-    /// is one call.
-    Disabled,
-    /// A system copy is on disk that gnome-shell has not scanned, and the
-    /// user's settings do not list it: listing it starts it at the next
-    /// login.
-    NeedsRelogin,
-    /// A system copy gnome-shell has not scanned and will start at the next
-    /// login.
-    EnabledAtLogin,
-    /// A system copy is on disk, and a user copy of the same uuid hides it.
-    ShadowedByUserCopy,
-    /// A system copy gnome-shell will not run while extensions are off.
-    TurnedOff,
-    /// A system copy that failed when gnome-shell ran it.
-    Failed,
-    /// A system copy whose `shell-version` lacks the running gnome-shell.
-    OutOfDate,
-    /// A system copy the administrator does not let the user enable.
-    Locked,
-    /// No system copy, or no gnome-shell to ask.
-    #[default]
-    Unavailable,
 }
 
 /// How gnome-shell runs an extension (`GetExtensionInfo`'s `state`).
@@ -184,41 +198,41 @@ pub fn extension_state(
     reported: Option<ExtensionInfo>,
     on_disk: ExtensionCopies,
     listing: ExtensionListing,
-) -> ExtensionState {
+) -> ComponentStatus {
     match reported {
         Some(ExtensionInfo {
             system: true,
             run: ExtensionRun::Enabled,
-        }) => ExtensionState::Enabled,
+        }) => ComponentStatus::Active,
         Some(ExtensionInfo {
             system: true,
             run: ExtensionRun::Disabled,
-        }) => ExtensionState::Disabled,
+        }) => ComponentStatus::Inactive,
         Some(ExtensionInfo {
             system: true,
             run: ExtensionRun::TurnedOff,
-        }) => ExtensionState::TurnedOff,
+        }) => ComponentStatus::Blocked(Blocker::TurnedOff),
         Some(ExtensionInfo {
             system: true,
             run: ExtensionRun::Failed,
-        }) => ExtensionState::Failed,
+        }) => ComponentStatus::Failed,
         Some(ExtensionInfo {
             system: true,
             run: ExtensionRun::OutOfDate,
-        }) => ExtensionState::OutOfDate,
+        }) => ComponentStatus::Blocked(Blocker::Incompatible),
         Some(ExtensionInfo {
             system: true,
             run: ExtensionRun::Locked,
-        }) => ExtensionState::Locked,
-        _ if on_disk.system && on_disk.user => ExtensionState::ShadowedByUserCopy,
+        }) => ComponentStatus::Blocked(Blocker::Locked),
+        _ if on_disk.system && on_disk.user => ComponentStatus::Blocked(Blocker::Shadowed),
         _ if on_disk.system => match listing {
-            ExtensionListing::Enabled => ExtensionState::EnabledAtLogin,
-            ExtensionListing::Unlisted => ExtensionState::NeedsRelogin,
-            ExtensionListing::Locked => ExtensionState::Locked,
-            ExtensionListing::TurnedOff => ExtensionState::TurnedOff,
-            ExtensionListing::Unknown => ExtensionState::Unavailable,
+            ExtensionListing::Enabled => ComponentStatus::ActiveAfterRelogin,
+            ExtensionListing::Unlisted => ComponentStatus::NeedsRelogin,
+            ExtensionListing::Locked => ComponentStatus::Blocked(Blocker::Locked),
+            ExtensionListing::TurnedOff => ComponentStatus::Blocked(Blocker::TurnedOff),
+            ExtensionListing::Unknown => ComponentStatus::Unavailable,
         },
-        _ => ExtensionState::Unavailable,
+        _ => ComponentStatus::Unavailable,
     }
 }
 
@@ -356,7 +370,11 @@ pub struct Machine {
     pub user_daemons: bool,
     pub myna_installed: bool,
     pub backend_discovered: bool,
-    pub extension: ExtensionState,
+    /// What hosts the indicator; absent where the desktop has none.
+    pub status_surface: ComponentStatus,
+    /// The input method, for a desktop that needs it set up; `None` where it
+    /// is not Myna's to set up.
+    pub input_method: Option<ComponentStatus>,
     pub nvidia_gpu: bool,
 }
 
@@ -371,7 +389,8 @@ impl Machine {
     }
 }
 
-/// Assess every component, in [`ComponentId::ALL`]'s order.
+/// Assess every component, in [`ComponentId::ALL`]'s order; the input
+/// method only where the desktop needs it.
 pub fn assess(machine: Machine) -> Vec<Component> {
     let installed = |satisfied: bool| {
         if satisfied {
@@ -382,38 +401,15 @@ pub fn assess(machine: Machine) -> Vec<Component> {
     };
     ComponentId::ALL
         .into_iter()
-        .map(|id| Component {
-            id,
-            state: match id {
+        .filter_map(|id| {
+            let state = match id {
                 ComponentId::UserDaemons => installed(machine.user_daemons),
                 ComponentId::Myna => installed(machine.myna_installed),
                 ComponentId::Model => installed(machine.backend_discovered),
-                ComponentId::ShellExtension => match machine.extension {
-                    ExtensionState::Enabled => ComponentState::Satisfied,
-                    ExtensionState::Disabled | ExtensionState::NeedsRelogin => {
-                        ComponentState::Missing
-                    }
-                    ExtensionState::EnabledAtLogin => ComponentState::AfterRelogin,
-                    ExtensionState::ShadowedByUserCopy => {
-                        ComponentState::Unavailable(Unavailable::ShadowedByUserCopy)
-                    }
-                    ExtensionState::TurnedOff => {
-                        ComponentState::Unavailable(Unavailable::ExtensionsOff)
-                    }
-                    ExtensionState::Failed => {
-                        ComponentState::Unavailable(Unavailable::ExtensionFailed)
-                    }
-                    ExtensionState::OutOfDate => {
-                        ComponentState::Unavailable(Unavailable::ExtensionOutOfDate)
-                    }
-                    ExtensionState::Locked => {
-                        ComponentState::Unavailable(Unavailable::ExtensionLocked)
-                    }
-                    ExtensionState::Unavailable => {
-                        ComponentState::Unavailable(Unavailable::NotInstalled)
-                    }
-                },
-            },
+                ComponentId::InputMethod => ComponentState::of(machine.input_method?),
+                ComponentId::StatusSurface => ComponentState::of(machine.status_surface),
+            };
+            Some(Component { id, state })
         })
         .collect()
 }
@@ -442,7 +438,7 @@ pub fn installs(id: ComponentId, offer: &ModelOffer) -> Option<(&'static str, u6
     match id {
         ComponentId::Myna => Some((MYNA_SNAP, MYNA_DOWNLOAD_BYTES)),
         ComponentId::Model => Some((offer.snap(), offer.download_bytes)),
-        ComponentId::UserDaemons | ComponentId::ShellExtension => None,
+        ComponentId::UserDaemons | ComponentId::InputMethod | ComponentId::StatusSurface => None,
     }
 }
 
@@ -477,18 +473,15 @@ pub fn next_install(components: &[Component], done: &[ComponentId]) -> Option<Co
 /// The steps of a run that one privileged set-up takes together: the flag
 /// and the snaps still missing. As the user, snapd authorizes the flag, the
 /// installs and the connect after them as three polkit actions, so up to
-/// three prompts; the set-up asks once. Empty once only the extension, which
-/// needs no authorization, is left.
+/// three prompts; the set-up asks once. Empty once only the desktop's pieces, which
+/// need no authorization, are left.
 pub fn set_up_steps(components: &[Component], done: &[ComponentId]) -> Vec<ComponentId> {
-    if matches!(
-        next_install(components, done),
-        None | Some(ComponentId::ShellExtension)
-    ) {
+    if next_install(components, done).is_none_or(ComponentId::is_desktop) {
         return Vec::new();
     }
     install_plan(components)
         .into_iter()
-        .filter(|id| !done.contains(id) && *id != ComponentId::ShellExtension)
+        .filter(|id| !done.contains(id) && !id.is_desktop())
         .collect()
 }
 
@@ -561,11 +554,11 @@ pub fn settled(components: &[Component]) -> bool {
     !needs_onboarding(components) && install_plan(components).is_empty()
 }
 
-/// Whether the extension waits only for the user to log out and back in.
+/// Whether a desktop component waits only for the user to log out and back
+/// in.
 pub fn relogin_pending(components: &[Component]) -> bool {
     components.iter().any(|component| {
-        component.id == ComponentId::ShellExtension
-            && component.state == ComponentState::AfterRelogin
+        component.id.is_desktop() && component.state == ComponentState::AfterRelogin
     })
 }
 
@@ -636,7 +629,7 @@ pub fn polls(step: Step, components: &[Component]) -> bool {
 pub fn completes(before: &[Component], after: &[Component]) -> bool {
     let other_missing = before
         .iter()
-        .any(|component| component.id != ComponentId::ShellExtension && !component.satisfied());
+        .any(|component| !component.id.is_desktop() && !component.satisfied());
     other_missing && settled(after)
 }
 
@@ -658,9 +651,9 @@ mod tests {
         }
     }
 
-    fn with_extension(extension: ExtensionState) -> Vec<Component> {
+    fn with_extension(extension: ComponentStatus) -> Vec<Component> {
         assess(Machine {
-            extension,
+            status_surface: extension,
             ..ready()
         })
     }
@@ -685,16 +678,105 @@ mod tests {
             .iter()
             .map(|component| component.id)
             .collect();
+        // The input method is listed only where the desktop needs it.
+        let mut all = ComponentId::ALL.to_vec();
+        all.retain(|id| *id != ComponentId::InputMethod);
+        assert_eq!(ids, all);
+        let with_input_method = assess(Machine {
+            input_method: Some(ComponentStatus::Active),
+            ..Machine::default()
+        });
+        let ids: Vec<ComponentId> = with_input_method.iter().map(|c| c.id).collect();
         assert_eq!(ids, ComponentId::ALL);
     }
 
     #[test]
-    fn only_the_extension_is_optional() {
+    fn only_the_desktops_pieces_are_optional() {
         let optional: Vec<ComponentId> = ComponentId::ALL
             .into_iter()
             .filter(|id| !id.required())
             .collect();
-        assert_eq!(optional, [ComponentId::ShellExtension]);
+        assert_eq!(
+            optional,
+            [ComponentId::InputMethod, ComponentId::StatusSurface]
+        );
+    }
+
+    #[test]
+    fn an_input_method_the_wizard_can_set_up_is_run_after_the_snaps() {
+        let machine = |input_method| Machine {
+            input_method: Some(input_method),
+            ..Machine::new(&[], 0)
+        };
+        let plan = install_plan(&assess(machine(ComponentStatus::NeedsRelogin)));
+        assert_eq!(
+            plan,
+            [
+                ComponentId::UserDaemons,
+                ComponentId::Myna,
+                ComponentId::Model,
+                ComponentId::InputMethod
+            ]
+        );
+        let components = assess(Machine {
+            user_daemons: true,
+            ..Machine::new(&[snap("myna")], 1)
+        });
+        assert!(set_up_steps(&components, &[]).is_empty());
+        let components = assess(Machine {
+            input_method: Some(ComponentStatus::NeedsRelogin),
+            ..ready()
+        });
+        assert_eq!(
+            next_install(&components, &[]),
+            Some(ComponentId::InputMethod)
+        );
+        assert!(set_up_steps(&components, &[]).is_empty());
+        assert_eq!(
+            installs(ComponentId::InputMethod, &model_offer(&ready())),
+            None
+        );
+    }
+
+    #[test]
+    fn what_a_desktop_piece_reports_is_what_the_step_shows() {
+        for (status, state) in [
+            (ComponentStatus::Active, ComponentState::Satisfied),
+            (
+                ComponentStatus::ActiveAfterRelogin,
+                ComponentState::AfterRelogin,
+            ),
+            (ComponentStatus::Inactive, ComponentState::Missing),
+            (ComponentStatus::NeedsRelogin, ComponentState::Missing),
+            (
+                ComponentStatus::Blocked(Blocker::Incompatible),
+                ComponentState::Unavailable(Unavailable::Incompatible),
+            ),
+            (
+                ComponentStatus::Failed,
+                ComponentState::Unavailable(Unavailable::Failed),
+            ),
+            (
+                ComponentStatus::Unavailable,
+                ComponentState::Unavailable(Unavailable::NotInstalled),
+            ),
+        ] {
+            let components = assess(Machine {
+                input_method: Some(status),
+                ..ready()
+            });
+            let found = components
+                .iter()
+                .find(|component| component.id == ComponentId::InputMethod)
+                .map(|component| component.state);
+            assert_eq!(found, Some(state), "{status:?}");
+            assert!(!needs_onboarding(&components), "{status:?}");
+        }
+        let components = assess(Machine {
+            input_method: Some(ComponentStatus::ActiveAfterRelogin),
+            ..ready()
+        });
+        assert!(relogin_pending(&components));
     }
 
     #[test]
@@ -711,13 +793,13 @@ mod tests {
     #[test]
     fn a_missing_extension_does_not_open_the_wizard() {
         for extension in [
-            ExtensionState::Unavailable,
-            ExtensionState::Disabled,
-            ExtensionState::NeedsRelogin,
-            ExtensionState::ShadowedByUserCopy,
-            ExtensionState::Failed,
-            ExtensionState::OutOfDate,
-            ExtensionState::Locked,
+            ComponentStatus::Unavailable,
+            ComponentStatus::Inactive,
+            ComponentStatus::NeedsRelogin,
+            ComponentStatus::Blocked(Blocker::Shadowed),
+            ComponentStatus::Failed,
+            ComponentStatus::Blocked(Blocker::Incompatible),
+            ComponentStatus::Blocked(Blocker::Locked),
         ] {
             assert!(
                 !needs_onboarding(&with_extension(extension)),
@@ -744,11 +826,11 @@ mod tests {
         assert!(!can_advance(Step::Components, &flag_missing));
         assert!(can_advance(
             Step::Components,
-            &with_extension(ExtensionState::Unavailable)
+            &with_extension(ComponentStatus::Unavailable)
         ));
         assert!(can_advance(
             Step::Components,
-            &with_extension(ExtensionState::Disabled)
+            &with_extension(ComponentStatus::Inactive)
         ));
     }
 
@@ -765,37 +847,40 @@ mod tests {
     #[test]
     fn the_extension_is_satisfied_only_when_enabled() {
         let state = |extension| with_extension(extension)[3].state;
-        assert_eq!(state(ExtensionState::Enabled), ComponentState::Satisfied);
-        assert_eq!(state(ExtensionState::Disabled), ComponentState::Missing);
+        assert_eq!(state(ComponentStatus::Active), ComponentState::Satisfied);
+        assert_eq!(state(ComponentStatus::Inactive), ComponentState::Missing);
         // Listing an unscanned copy is the wizard's to do; once listed, only
         // a re-login is left.
-        assert_eq!(state(ExtensionState::NeedsRelogin), ComponentState::Missing);
         assert_eq!(
-            state(ExtensionState::EnabledAtLogin),
+            state(ComponentStatus::NeedsRelogin),
+            ComponentState::Missing
+        );
+        assert_eq!(
+            state(ComponentStatus::ActiveAfterRelogin),
             ComponentState::AfterRelogin
         );
         assert_eq!(
-            state(ExtensionState::ShadowedByUserCopy),
-            ComponentState::Unavailable(Unavailable::ShadowedByUserCopy)
+            state(ComponentStatus::Blocked(Blocker::Shadowed)),
+            ComponentState::Unavailable(Unavailable::Shadowed)
         );
         assert_eq!(
-            state(ExtensionState::TurnedOff),
-            ComponentState::Unavailable(Unavailable::ExtensionsOff)
+            state(ComponentStatus::Blocked(Blocker::TurnedOff)),
+            ComponentState::Unavailable(Unavailable::TurnedOff)
         );
         assert_eq!(
-            state(ExtensionState::Failed),
-            ComponentState::Unavailable(Unavailable::ExtensionFailed)
+            state(ComponentStatus::Failed),
+            ComponentState::Unavailable(Unavailable::Failed)
         );
         assert_eq!(
-            state(ExtensionState::OutOfDate),
-            ComponentState::Unavailable(Unavailable::ExtensionOutOfDate)
+            state(ComponentStatus::Blocked(Blocker::Incompatible)),
+            ComponentState::Unavailable(Unavailable::Incompatible)
         );
         assert_eq!(
-            state(ExtensionState::Locked),
-            ComponentState::Unavailable(Unavailable::ExtensionLocked)
+            state(ComponentStatus::Blocked(Blocker::Locked)),
+            ComponentState::Unavailable(Unavailable::Locked)
         );
         assert_eq!(
-            state(ExtensionState::Unavailable),
+            state(ComponentStatus::Unavailable),
             ComponentState::Unavailable(Unavailable::NotInstalled)
         );
     }
@@ -811,22 +896,28 @@ mod tests {
         let listed = ExtensionListing::Enabled;
         assert_eq!(
             extension_state(info(true, ExtensionRun::Enabled), packaged, listed),
-            ExtensionState::Enabled
+            ComponentStatus::Active
         );
         assert_eq!(
             extension_state(info(true, ExtensionRun::Disabled), packaged, listed),
-            ExtensionState::Disabled
+            ComponentStatus::Inactive
         );
         for (run, state) in [
-            (ExtensionRun::Failed, ExtensionState::Failed),
-            (ExtensionRun::OutOfDate, ExtensionState::OutOfDate),
-            (ExtensionRun::Locked, ExtensionState::Locked),
+            (ExtensionRun::Failed, ComponentStatus::Failed),
+            (
+                ExtensionRun::OutOfDate,
+                ComponentStatus::Blocked(Blocker::Incompatible),
+            ),
+            (
+                ExtensionRun::Locked,
+                ComponentStatus::Blocked(Blocker::Locked),
+            ),
         ] {
             assert_eq!(extension_state(info(true, run), packaged, listed), state);
         }
         assert_eq!(
             extension_state(info(true, ExtensionRun::TurnedOff), packaged, listed),
-            ExtensionState::TurnedOff
+            ComponentStatus::Blocked(Blocker::TurnedOff)
         );
         // A development copy in ~/.local, enabled or not, is not what ships.
         assert_eq!(
@@ -835,11 +926,11 @@ mod tests {
                 copies(false, true),
                 listed
             ),
-            ExtensionState::Unavailable
+            ComponentStatus::Unavailable
         );
         assert_eq!(
             extension_state(None, ExtensionCopies::default(), listed),
-            ExtensionState::Unavailable
+            ComponentStatus::Unavailable
         );
     }
 
@@ -847,7 +938,7 @@ mod tests {
     fn a_system_copy_the_shell_has_not_scanned_needs_a_relogin() {
         assert_eq!(
             extension_state(None, copies(true, false), ExtensionListing::Unlisted),
-            ExtensionState::NeedsRelogin
+            ComponentStatus::NeedsRelogin
         );
         // gnome-shell still lists a deleted user copy it scanned at login.
         assert_eq!(
@@ -859,7 +950,7 @@ mod tests {
                 copies(true, false),
                 ExtensionListing::Unlisted
             ),
-            ExtensionState::NeedsRelogin
+            ComponentStatus::NeedsRelogin
         );
     }
 
@@ -868,17 +959,20 @@ mod tests {
         let unscanned = |listing| extension_state(None, copies(true, false), listing);
         assert_eq!(
             unscanned(ExtensionListing::Enabled),
-            ExtensionState::EnabledAtLogin
+            ComponentStatus::ActiveAfterRelogin
         );
-        assert_eq!(unscanned(ExtensionListing::Locked), ExtensionState::Locked);
+        assert_eq!(
+            unscanned(ExtensionListing::Locked),
+            ComponentStatus::Blocked(Blocker::Locked)
+        );
         assert_eq!(
             unscanned(ExtensionListing::TurnedOff),
-            ExtensionState::TurnedOff
+            ComponentStatus::Blocked(Blocker::TurnedOff)
         );
         // No org.gnome.shell schema: no gnome-shell to run it.
         assert_eq!(
             unscanned(ExtensionListing::Unknown),
-            ExtensionState::Unavailable
+            ComponentStatus::Unavailable
         );
         // What gnome-shell reports wins over its settings.
         assert_eq!(
@@ -890,20 +984,20 @@ mod tests {
                 copies(true, false),
                 ExtensionListing::Enabled
             ),
-            ExtensionState::Disabled
+            ComponentStatus::Inactive
         );
     }
 
     #[test]
     fn only_an_extension_listed_for_the_next_login_asks_for_a_relogin() {
         assert!(relogin_pending(&with_extension(
-            ExtensionState::EnabledAtLogin
+            ComponentStatus::ActiveAfterRelogin
         )));
         for extension in [
-            ExtensionState::Enabled,
-            ExtensionState::Disabled,
-            ExtensionState::NeedsRelogin,
-            ExtensionState::Unavailable,
+            ComponentStatus::Active,
+            ComponentStatus::Inactive,
+            ComponentStatus::NeedsRelogin,
+            ComponentStatus::Unavailable,
         ] {
             assert!(
                 !relogin_pending(&with_extension(extension)),
@@ -914,7 +1008,7 @@ mod tests {
 
     #[test]
     fn an_extension_listed_for_the_next_login_is_installed() {
-        let components = with_extension(ExtensionState::EnabledAtLogin);
+        let components = with_extension(ComponentStatus::ActiveAfterRelogin);
         assert!(components[3].satisfied());
         assert!(install_plan(&components).is_empty());
         assert_eq!(install_view(&components, None), InstallView::Installed);
@@ -938,7 +1032,7 @@ mod tests {
         ] {
             assert_eq!(
                 extension_state(reported, copies(true, true), ExtensionListing::Enabled),
-                ExtensionState::ShadowedByUserCopy,
+                ComponentStatus::Blocked(Blocker::Shadowed),
                 "{reported:?}"
             );
         }
@@ -947,7 +1041,7 @@ mod tests {
     #[test]
     fn the_button_installs_what_is_missing_flag_first() {
         let bare = assess(Machine {
-            extension: ExtensionState::Disabled,
+            status_surface: ComponentStatus::Inactive,
             ..Machine::default()
         });
         assert_eq!(
@@ -956,36 +1050,36 @@ mod tests {
                 ComponentId::UserDaemons,
                 ComponentId::Myna,
                 ComponentId::Model,
-                ComponentId::ShellExtension
+                ComponentId::StatusSurface
             ]
         );
         let myna_only = assess(Machine {
             user_daemons: true,
-            extension: ExtensionState::Enabled,
+            status_surface: ComponentStatus::Active,
             ..Machine::new(&[snap("myna")], 0)
         });
         assert_eq!(install_plan(&myna_only), [ComponentId::Model]);
-        assert!(install_plan(&with_extension(ExtensionState::Enabled)).is_empty());
+        assert!(install_plan(&with_extension(ComponentStatus::Active)).is_empty());
     }
 
     #[test]
     fn an_extension_out_of_reach_is_skipped_silently() {
         for extension in [
-            ExtensionState::Unavailable,
-            ExtensionState::ShadowedByUserCopy,
-            ExtensionState::TurnedOff,
-            ExtensionState::Failed,
-            ExtensionState::OutOfDate,
-            ExtensionState::Locked,
+            ComponentStatus::Unavailable,
+            ComponentStatus::Blocked(Blocker::Shadowed),
+            ComponentStatus::Blocked(Blocker::TurnedOff),
+            ComponentStatus::Failed,
+            ComponentStatus::Blocked(Blocker::Incompatible),
+            ComponentStatus::Blocked(Blocker::Locked),
         ] {
             let components = with_extension(extension);
             assert!(install_plan(&components).is_empty(), "{extension:?}");
             assert_eq!(install_view(&components, None), InstallView::Installed);
         }
-        for extension in [ExtensionState::Disabled, ExtensionState::NeedsRelogin] {
+        for extension in [ComponentStatus::Inactive, ComponentStatus::NeedsRelogin] {
             assert_eq!(
                 install_plan(&with_extension(extension)),
-                [ComponentId::ShellExtension],
+                [ComponentId::StatusSurface],
                 "{extension:?}"
             );
         }
@@ -1014,7 +1108,7 @@ mod tests {
         );
         // The flag and the extension download nothing.
         assert_eq!(
-            remaining_download(&with_extension(ExtensionState::Disabled), &cpu),
+            remaining_download(&with_extension(ComponentStatus::Inactive), &cpu),
             DownloadSize::Exact(0)
         );
         let gpu = model_offer(&Machine {
@@ -1040,11 +1134,11 @@ mod tests {
             install_view(&bare, Some(ComponentId::Myna)),
             InstallView::Installing(ComponentId::Myna)
         );
-        let complete = with_extension(ExtensionState::Enabled);
+        let complete = with_extension(ComponentStatus::Active);
         assert_eq!(install_view(&complete, None), InstallView::Installed);
         // A disabled extension is still something the button turns on.
         assert_eq!(
-            install_view(&with_extension(ExtensionState::Disabled), None),
+            install_view(&with_extension(ComponentStatus::Inactive), None),
             InstallView::Offer
         );
     }
@@ -1070,7 +1164,7 @@ mod tests {
             None
         );
         assert_eq!(
-            next_install(&with_extension(ExtensionState::Enabled), &[]),
+            next_install(&with_extension(ComponentStatus::Active), &[]),
             None
         );
     }
@@ -1078,7 +1172,7 @@ mod tests {
     #[test]
     fn one_set_up_takes_the_flag_and_the_missing_snaps_together() {
         let bare = assess(Machine {
-            extension: ExtensionState::Disabled,
+            status_surface: ComponentStatus::Inactive,
             ..Machine::default()
         });
         assert_eq!(
@@ -1215,7 +1309,7 @@ mod tests {
         assert!(polls(Step::Components, &bare));
         assert!(!polls(
             Step::Components,
-            &with_extension(ExtensionState::Unavailable)
+            &with_extension(ComponentStatus::Unavailable)
         ));
         assert!(!polls(Step::Welcome, &bare));
         assert!(!polls(Step::Shortcut, &bare));
@@ -1224,9 +1318,9 @@ mod tests {
     #[test]
     fn only_the_last_component_appearing_moves_on_by_itself() {
         let bare = assess(Machine::default());
-        let complete = with_extension(ExtensionState::Enabled);
-        let required_only = with_extension(ExtensionState::Unavailable);
-        let disabled = with_extension(ExtensionState::Disabled);
+        let complete = with_extension(ComponentStatus::Active);
+        let required_only = with_extension(ComponentStatus::Unavailable);
+        let disabled = with_extension(ComponentStatus::Inactive);
         assert!(completes(&bare, &complete));
         // An extension out of reach is skipped silently: it holds nothing.
         assert!(completes(&bare, &required_only));
@@ -1280,7 +1374,7 @@ mod tests {
     fn a_component_snapd_is_still_installing_shows_missing() {
         // A backend's slot is published before its install has fetched the
         // model, so discovery finds it half-way through the change.
-        let found = with_extension(ExtensionState::Enabled);
+        let found = with_extension(ComponentStatus::Active);
         let shown = while_installing(&found, &[ComponentId::Model]);
         assert_eq!(shown[2].state, ComponentState::Missing);
         assert!(!can_advance(Step::Components, &shown));
@@ -1303,7 +1397,7 @@ mod tests {
             Some((RECOMMENDED_BACKEND_SNAP, offer.download_bytes))
         );
         assert_eq!(installs(ComponentId::UserDaemons, &offer), None);
-        assert_eq!(installs(ComponentId::ShellExtension, &offer), None);
+        assert_eq!(installs(ComponentId::StatusSurface, &offer), None);
     }
 
     #[test]

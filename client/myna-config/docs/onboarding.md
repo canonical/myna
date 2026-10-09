@@ -98,6 +98,21 @@ a re-read right after `EnableExtension` does not read it as out of reach.
 Enabling itself waits past 8 for 1, since an activating extension may still
 error.
 
+## Other desktops
+
+The extension row is the desktop's status surface host, and what the wizard
+asks of the desktop comes from `Platform::current().components()`
+(`platform/mod.rs`), not from GNOME. On Xfce that is two optional components,
+listed after the model: the input method and the HUD host's autostart entry.
+The input method is IBus: installed, set for the session
+(`GTK_IM_MODULE=ibus`, `XMODIFIERS=@im=ibus`) and its daemon running is
+satisfied; installed but not chosen is the wizard's to fix with `im-config`
+for the user, which takes effect at the next login, so the shortcut step
+carries the same re-login note; another input method chosen, or IBus not
+installed (Xubuntu ships without it, and Settings never installs packages),
+is out of its reach and Diagnostics says so. The autostart entry is shipped by
+the myna-config deb and only read.
+
 The settings window's main menu reopens the wizard (Set Up Dictation), modal
 over the window. It refuses while a backend operation is in flight: the wizard
 connects a backend and restarts the daemon, and the window's operation gate does
@@ -323,7 +338,7 @@ myna-config`), and to stderr from a terminal.
 
 The key is a GNOME custom shortcut, Myna's entry under
 `/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/myna/`
-(`adapters/desktop_shortcut.rs`), which this unconfined application writes
+(`platform/gnome/activation.rs`), which this unconfined application writes
 itself. It runs `gdbus call ... --method com.canonical.Myna.Dictation.Toggle`
 (`shortcut::TOGGLE_COMMAND`, so the deb depends on `libglib2.0-bin`), which
 reaches the daemon without `snap run`'s 90-130 ms of startup. A daemon that

@@ -10,7 +10,6 @@ use crate::domain::{
     BackendIdentity, BackendSnapshot, BackendSurfaceError, ClientSetting, ClientSettingMetadata,
     ClientSettingValue, CommandResult, ConnectionSnapshot,
 };
-use crate::onboarding::ExtensionState;
 use crate::snap_changes::{apply_progress, ApplyProgress, ChangeInProgress};
 
 pub type ClientSettingsCallback = Box<dyn Fn(ClientSetting) + 'static>;
@@ -135,18 +134,6 @@ pub struct SetUpPlan {
     pub flag: bool,
     pub installs: Vec<&'static str>,
     pub connect: Option<&'static str>,
-}
-
-/// GNOME Shell's extensions, as the running shell reports them.
-#[async_trait(?Send)]
-pub trait ShellExtensions {
-    /// Where `uuid` stands. A session with no gnome-shell has none.
-    async fn extension_state(&self, uuid: &str) -> ExtensionState;
-
-    /// Have gnome-shell enable `uuid`, and wait until it runs it; a copy
-    /// installed since login is listed to start at the next one. Needs no
-    /// authorization: it is the user's own shell.
-    async fn enable_extension(&self, uuid: &str) -> Result<(), SystemConfiguratorError>;
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

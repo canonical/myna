@@ -1388,12 +1388,11 @@ impl BackendUi {
         let gate = gate.clone();
         let window = window.clone();
         glib::spawn_future_local(async move {
-            let extensions: Rc<dyn crate::ports::ShellExtensions> =
-                Rc::new(crate::adapters::shell_extensions::GnomeShellExtensions::new());
+            let desktop = crate::platform::Platform::current().components();
             let components = crate::onboarding_ui::assess_machine(
                 repository.as_ref(),
                 configurator.as_ref(),
-                extensions.as_ref(),
+                desktop.as_ref(),
             )
             .await;
             if ui.upgrade().is_none() {
@@ -1405,7 +1404,7 @@ impl BackendUi {
                 components,
                 repository,
                 configurator,
-                extensions,
+                desktop,
                 crate::onboarding_ui::Opener::Settings(window.upcast_ref()),
             );
             wizard.window().connect_close_request(move |_| {
@@ -1965,14 +1964,14 @@ impl BackendUi {
         let discovery_loading = self.controller.discovery_loading();
 
         let snaps = self.installed_snaps.borrow().clone();
+        let desktop = crate::platform::Platform::current().diagnostics();
         let input = DiagnosticInput {
             inventory_complete: self.inventory_complete.get(),
             machine: Some(crate::machine::machine_facts()),
             daemon: crate::machine::snap_process("myna"),
             daemon_report: crate::machine::daemon_report(),
-            extension: Some(crate::adapters::shell_extensions::extension_report(
-                crate::onboarding::SHELL_EXTENSION_UUID,
-            )),
+            extension: desktop.extension,
+            desktop: desktop.components,
             performance: self.performance.borrow().clone(),
             backends: pages
                 .iter()

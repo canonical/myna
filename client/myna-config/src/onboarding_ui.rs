@@ -17,7 +17,6 @@ use libadwaita as adw;
 use libadwaita::prelude::*;
 
 use crate::active_backend::{ensure_backend_active, Settled, SetupError, SetupStage, SnapdWait};
-use crate::adapters::shell_extensions::GnomeShellExtensions;
 use crate::adapters::snap_backend::SnapBackendRepository;
 use crate::adapters::system_configurator::PkexecSystemConfigurator;
 use crate::command::{CancellationToken, GioCommandRunner};
@@ -27,15 +26,14 @@ use crate::onboarding::{
     installs, model_offer, needs_onboarding, next_install, polls, relogin_pending,
     remaining_download, set_up_plan, set_up_steps, settled, while_installing, Component,
     ComponentId, ComponentState, DownloadSize, InstallView, Machine, ModelOffer, Step,
-    RECOMMENDED_BACKEND_SNAP, SHELL_EXTENSION_UUID,
+    RECOMMENDED_BACKEND_SNAP,
 };
-use crate::ports::{
-    BackendRepository, ShellExtensions, SystemConfigurator, SystemConfiguratorError,
-};
+use crate::ports::{BackendRepository, SystemConfigurator, SystemConfiguratorError};
 use crate::shortcut_ui::set_class;
 use crate::snap_changes::{pending_install, ApplyProgress};
 use crate::snap_install::{follow_change, Follow};
 use crate::ui;
+use myna_platform::components::{Components, Purpose};
 
 /// How often the component step re-reads the machine while something is
 /// missing: one `snap list` and one discovery each time.
@@ -86,7 +84,8 @@ pub struct OnboardingUi {
     shortcut: Rc<crate::shortcut_ui::ShortcutControl>,
     repository: Rc<dyn BackendRepository>,
     configurator: Rc<dyn SystemConfigurator>,
-    extensions: Rc<dyn ShellExtensions>,
+    /// The desktop's pieces: the shell extension, the input method.
+    desktop: Rc<dyn Components>,
     step: Cell<Step>,
     components: RefCell<Vec<Component>>,
     offer: Cell<ModelOffer>,
@@ -129,7 +128,7 @@ impl OnboardingUi {
             initial,
             Rc::new(SnapBackendRepository::new(runner.clone())),
             Rc::new(PkexecSystemConfigurator::new(runner)),
-            Rc::new(GnomeShellExtensions::new()),
+            crate::platform::Platform::current().components(),
             Opener::FirstRun,
         )
     }
@@ -141,7 +140,7 @@ impl OnboardingUi {
         initial: Vec<Component>,
         repository: Rc<dyn BackendRepository>,
         configurator: Rc<dyn SystemConfigurator>,
-        extensions: Rc<dyn ShellExtensions>,
+        desktop: Rc<dyn Components>,
         opener: Opener,
     ) -> Rc<Self> {
         let window = ui::OnboardingWindow::new(application);
@@ -191,7 +190,7 @@ impl OnboardingUi {
             shortcut,
             repository,
             configurator,
-            extensions,
+            desktop,
             step: Cell::new(Step::first()),
             components: RefCell::new(initial),
             offer: Cell::new(model_offer(&Machine {
@@ -314,14 +313,10 @@ impl OnboardingUi {
         let ui = Rc::downgrade(self);
         let repository = self.repository.clone();
         let configurator = self.configurator.clone();
-        let extensions = self.extensions.clone();
+        let desktop = self.desktop.clone();
         glib::spawn_future_local(async move {
-            let reading = read_machine(
-                repository.as_ref(),
-                configurator.as_ref(),
-                extensions.as_ref(),
-            )
-            .await;
+            let reading =
+                read_machine(repository.as_ref(), configurator.as_ref(), desktop.as_ref()).await;
             let Some(ui) = ui.upgrade() else {
                 return;
             };
@@ -420,7 +415,7 @@ impl OnboardingUi {
                     .map(|ui| set_up_steps(&ui.shown(), &done))
                     .unwrap_or_default();
                 let outcome = if set_up.is_empty() {
-                    extension_step(&ui)
+                    desktop_step(&ui, id)
                         .await
                         .map(|()| vec![id])
                         .map_err(|error| (id, error))
@@ -768,9 +763,9 @@ impl OnboardingUi {
         }
 
         self.render_components(&components, setting_up);
-        self.shortcut_page
-            .relogin_note()
-            .set_visible(relogin_pending(&components));
+        let note = self.shortcut_page.relogin_note();
+        note.set_visible(relogin_pending(&components));
+        note.set_property("label", relogin_text(&components));
         let forward = self.window.forward_button();
         if step.next().is_some() {
             forward.set_label(&gettextrs::gettext("Next"));
@@ -961,7 +956,8 @@ fn step_text(id: ComponentId, percent: Option<u8>) -> String {
         ComponentId::UserDaemons => gettextrs::gettext("Enabling user daemons support"),
         ComponentId::Myna => gettextrs::gettext("Installing Dictation app"),
         ComponentId::Model => gettextrs::gettext("Installing speech-to-text model"),
-        ComponentId::ShellExtension => gettextrs::gettext("Enabling shell extension"),
+        ComponentId::InputMethod => gettextrs::gettext("Setting up the input method"),
+        ComponentId::StatusSurface => gettextrs::gettext("Enabling shell extension"),
     };
     match percent {
         Some(percent) => {
@@ -981,29 +977,69 @@ fn install_failed(id: ComponentId) -> String {
         ComponentId::UserDaemons => gettextrs::gettext("Could not let Myna run in the background"),
         ComponentId::Myna => gettextrs::gettext("Installing the Dictation app failed"),
         ComponentId::Model => gettextrs::gettext("Installing the speech-to-text model failed"),
-        ComponentId::ShellExtension => gettextrs::gettext("Enabling the shell extension failed"),
+        ComponentId::InputMethod => gettextrs::gettext("Setting up the input method failed"),
+        ComponentId::StatusSurface => gettextrs::gettext("Enabling the shell extension failed"),
     }
 }
 
-/// The run's last step: the extension, asked of the user's own
-/// gnome-shell, which needs no authorization.
-async fn extension_step(ui: &std::rc::Weak<OnboardingUi>) -> Result<(), SystemConfiguratorError> {
+/// The run's last steps: the desktop's own pieces, asked of the user's own
+/// session, which needs no authorization.
+async fn desktop_step(
+    ui: &std::rc::Weak<OnboardingUi>,
+    id: ComponentId,
+) -> Result<(), SystemConfiguratorError> {
     let Some(strong) = ui.upgrade() else {
         return Err(SystemConfiguratorError::Cancelled);
     };
+    let purpose = purpose_of(id);
+    let desktop = strong.desktop.clone();
+    let Some(component) = desktop
+        .required()
+        .into_iter()
+        .find(|component| Some(component.purpose) == purpose)
+    else {
+        return Ok(());
+    };
     strong.epoch.set(strong.epoch.get() + 1);
-    strong.log("extension: enabling");
-    let extensions = strong.extensions.clone();
+    strong.log(&format!("desktop: enabling {}", component.id));
     drop(strong);
-    let outcome = extensions.enable_extension(SHELL_EXTENSION_UUID).await;
+    let outcome = desktop
+        .enable(&component.id)
+        .await
+        .map_err(crate::platform::step_failure);
     if let Some(ui) = ui.upgrade() {
         ui.epoch.set(ui.epoch.get() + 1);
         match &outcome {
-            Ok(()) => ui.log("extension: enabled"),
-            Err(error) => ui.log(&format!("extension: failed: {error}")),
+            Ok(()) => ui.log(&format!("desktop: enabled {}", component.id)),
+            Err(error) => ui.log(&format!("desktop: {} failed: {error}", component.id)),
         }
     }
     outcome
+}
+
+/// What the shortcut step says a re-login will turn on.
+fn relogin_text(components: &[Component]) -> String {
+    let pending = |id| {
+        components
+            .iter()
+            .any(|component| component.id == id && component.state == ComponentState::AfterRelogin)
+    };
+    if pending(ComponentId::InputMethod) && !pending(ComponentId::StatusSurface) {
+        gettextrs::gettext("Log out and back in to finish setting up the input method.")
+    } else {
+        gettextrs::gettext(
+            "Log out and back in to turn on the dictation indicator (GNOME Shell extension).",
+        )
+    }
+}
+
+/// What a desktop component of the wizard is for.
+fn purpose_of(id: ComponentId) -> Option<Purpose> {
+    match id {
+        ComponentId::InputMethod => Some(Purpose::TextInput),
+        ComponentId::StatusSurface => Some(Purpose::StatusSurface),
+        ComponentId::UserDaemons | ComponentId::Myna | ComponentId::Model => None,
+    }
 }
 
 /// `steps` as one privileged set-up, one prompt: the flag, the snaps and the
@@ -1101,18 +1137,13 @@ async fn reread(ui: &std::rc::Weak<OnboardingUi>) {
     let Some(strong) = ui.upgrade() else {
         return;
     };
-    let (repository, configurator, extensions) = (
+    let (repository, configurator, desktop) = (
         strong.repository.clone(),
         strong.configurator.clone(),
-        strong.extensions.clone(),
+        strong.desktop.clone(),
     );
     drop(strong);
-    let reading = read_machine(
-        repository.as_ref(),
-        configurator.as_ref(),
-        extensions.as_ref(),
-    )
-    .await;
+    let reading = read_machine(repository.as_ref(), configurator.as_ref(), desktop.as_ref()).await;
     if let Some(ui) = ui.upgrade() {
         ui.take_reading(reading);
     }
@@ -1126,9 +1157,9 @@ async fn reread(ui: &std::rc::Weak<OnboardingUi>) {
 pub async fn assess_machine(
     repository: &dyn BackendRepository,
     configurator: &dyn SystemConfigurator,
-    extensions: &dyn ShellExtensions,
+    desktop: &dyn Components,
 ) -> Vec<Component> {
-    let (components, _, problem) = read_machine(repository, configurator, extensions).await;
+    let (components, _, problem) = read_machine(repository, configurator, desktop).await;
     let found = problem.unwrap_or_else(|| describe(&components));
     glib::g_message!(crate::LOG_DOMAIN, "onboarding assessment: {found}");
     components
@@ -1143,7 +1174,7 @@ type Reading = (Vec<Component>, ModelOffer, Option<String>);
 async fn read_machine(
     repository: &dyn BackendRepository,
     configurator: &dyn SystemConfigurator,
-    extensions: &dyn ShellExtensions,
+    desktop: &dyn Components,
 ) -> Reading {
     let cancellation = CancellationToken::new();
     let mut problems = Vec::new();
@@ -1172,12 +1203,18 @@ async fn read_machine(
     problems.dedup();
     // snapd's own words, for the log; the step shows a plain sentence.
     let problem = (!problems.is_empty()).then(|| problems.join("; "));
-    let machine = Machine {
+    let mut machine = Machine {
         user_daemons,
-        extension: extensions.extension_state(SHELL_EXTENSION_UUID).await,
         nvidia_gpu: crate::machine::has_nvidia_gpu(),
         ..Machine::new(&installed, backends)
     };
+    for component in desktop.required() {
+        let status = desktop.status(&component.id).await;
+        match component.purpose {
+            Purpose::StatusSurface => machine.status_surface = status,
+            Purpose::TextInput => machine.input_method = Some(status),
+        }
+    }
     (assess(machine), model_offer(&machine), problem)
 }
 

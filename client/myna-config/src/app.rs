@@ -7,6 +7,7 @@ use gtk::glib;
 use gtk4 as gtk;
 use libadwaita as adw;
 use libadwaita::prelude::*;
+use myna_platform::components::{ComponentStatus, Components};
 
 use crate::adapters::client_settings::GioClientSettings;
 use crate::domain::ClientSettingValue;
@@ -377,7 +378,7 @@ fn onboarding_probe() -> glib::ExitCode {
                 runner.clone(),
             )),
             Rc::new(ProbeMachine::new()),
-            ProbeExtensions::new(crate::onboarding::ExtensionState::Enabled),
+            ProbeExtensions::new(ComponentStatus::Active),
             crate::onboarding_ui::Opener::FirstRun,
         );
         ui.window()
@@ -584,7 +585,7 @@ fn onboarding_probe() -> glib::ExitCode {
                 std::sync::Arc::new(machine.clone()),
             )),
             Rc::new(machine.clone()),
-            ProbeExtensions::new(crate::onboarding::ExtensionState::Enabled),
+            ProbeExtensions::new(ComponentStatus::Active),
             crate::onboarding_ui::Opener::FirstRun,
         );
         ui.set_poll_interval(Duration::from_millis(50));
@@ -692,7 +693,7 @@ fn onboarding_probe() -> glib::ExitCode {
                 std::sync::Arc::new(machine.clone()),
             )),
             Rc::new(machine.clone()),
-            ProbeExtensions::new(crate::onboarding::ExtensionState::Enabled),
+            ProbeExtensions::new(ComponentStatus::Active),
             crate::onboarding_ui::Opener::FirstRun,
         );
         ui.set_poll_interval(Duration::from_millis(50));
@@ -731,7 +732,7 @@ fn onboarding_probe() -> glib::ExitCode {
                 std::sync::Arc::new(machine.clone()),
             )),
             Rc::new(machine.clone()),
-            ProbeExtensions::new(crate::onboarding::ExtensionState::Enabled),
+            ProbeExtensions::new(ComponentStatus::Active),
             crate::onboarding_ui::Opener::FirstRun,
         );
         ui.set_poll_interval(Duration::from_millis(50));
@@ -773,7 +774,7 @@ fn onboarding_probe() -> glib::ExitCode {
                 std::sync::Arc::new(machine.clone()),
             )),
             Rc::new(machine.clone()),
-            ProbeExtensions::new(crate::onboarding::ExtensionState::Unavailable),
+            ProbeExtensions::new(ComponentStatus::Unavailable),
             crate::onboarding_ui::Opener::FirstRun,
         );
         ui.set_poll_interval(Duration::from_millis(50));
@@ -823,7 +824,7 @@ fn onboarding_probe() -> glib::ExitCode {
                 std::sync::Arc::new(machine.clone()),
             )),
             Rc::new(machine.clone()),
-            ProbeExtensions::new(crate::onboarding::ExtensionState::Enabled),
+            ProbeExtensions::new(ComponentStatus::Active),
             crate::onboarding_ui::Opener::FirstRun,
         );
         ui.set_poll_interval(Duration::from_millis(50));
@@ -899,7 +900,7 @@ fn onboarding_probe() -> glib::ExitCode {
                 std::sync::Arc::new(crate::command::FakeCommandRunner::default()),
             )),
             Rc::new(ProbeMachine::new()),
-            ProbeExtensions::new(crate::onboarding::ExtensionState::Enabled),
+            ProbeExtensions::new(ComponentStatus::Active),
             crate::onboarding_ui::Opener::FirstRun,
         );
         ui.window()
@@ -938,14 +939,14 @@ fn onboarding_probe() -> glib::ExitCode {
             &application,
             assess(Machine {
                 user_daemons: true,
-                extension: crate::onboarding::ExtensionState::Enabled,
+                status_surface: ComponentStatus::Active,
                 ..Machine::new(&installed, 1)
             }),
             Rc::new(crate::adapters::snap_backend::SnapBackendRepository::new(
                 std::sync::Arc::new(machine.clone()),
             )),
             Rc::new(machine.clone()),
-            ProbeExtensions::new(crate::onboarding::ExtensionState::Enabled),
+            ProbeExtensions::new(ComponentStatus::Active),
             crate::onboarding_ui::Opener::FirstRun,
         );
         ui.window()
@@ -1027,14 +1028,14 @@ fn onboarding_probe() -> glib::ExitCode {
             &application,
             assess(Machine {
                 user_daemons: true,
-                extension: crate::onboarding::ExtensionState::Enabled,
+                status_surface: ComponentStatus::Active,
                 ..Machine::new(&installed, 1)
             }),
             Rc::new(crate::adapters::snap_backend::SnapBackendRepository::new(
                 std::sync::Arc::new(machine.clone()),
             )),
             Rc::new(machine.clone()),
-            ProbeExtensions::new(crate::onboarding::ExtensionState::Enabled),
+            ProbeExtensions::new(ComponentStatus::Active),
             crate::onboarding_ui::Opener::FirstRun,
         );
         (ui.window(), ui.shortcut_button())
@@ -1217,14 +1218,14 @@ fn onboarding_probe() -> glib::ExitCode {
         &application,
         assess(Machine {
             user_daemons: true,
-            extension: crate::onboarding::ExtensionState::Enabled,
+            status_surface: ComponentStatus::Active,
             ..Machine::new(&installed, 1)
         }),
         Rc::new(crate::adapters::snap_backend::SnapBackendRepository::new(
             std::sync::Arc::new(machine.clone()),
         )),
         Rc::new(machine.clone()),
-        ProbeExtensions::new(crate::onboarding::ExtensionState::Enabled),
+        ProbeExtensions::new(ComponentStatus::Active),
         crate::onboarding_ui::Opener::Settings(settings.upcast_ref()),
     )
     .window();
@@ -1467,7 +1468,7 @@ fn build_window(application: &adw::Application) {
         let components = crate::onboarding_ui::assess_machine(
             &crate::adapters::snap_backend::SnapBackendRepository::new(runner.clone()),
             &crate::adapters::system_configurator::PkexecSystemConfigurator::new(runner),
-            &crate::adapters::shell_extensions::GnomeShellExtensions::new(),
+            crate::platform::Platform::current().components().as_ref(),
         )
         .await;
         if needs_onboarding(&components) {
@@ -1831,7 +1832,7 @@ fn onboarding_control_probe() -> glib::ExitCode {
                     std::sync::Arc::new(machine.clone()),
                 )),
                 Rc::new(machine),
-                ProbeExtensions::new(crate::onboarding::ExtensionState::Enabled),
+                ProbeExtensions::new(ComponentStatus::Active),
                 crate::onboarding_ui::Opener::FirstRun,
             );
             (ui.window(), ui.shortcut_button(), ui.shortcut())
@@ -2047,7 +2048,7 @@ fn onboarding_control_probe() -> glib::ExitCode {
             std::sync::Arc::new(ProbeMachine::new()),
         )),
         Rc::new(ProbeMachine::new()),
-        ProbeExtensions::new(crate::onboarding::ExtensionState::Enabled),
+        ProbeExtensions::new(ComponentStatus::Active),
         crate::onboarding_ui::Opener::FirstRun,
     )
     .window();
@@ -2670,7 +2671,7 @@ const PROBE_PERCENT: u64 = 1 << 32;
 
 /// gnome-shell as the probes need it, changed as they go.
 struct ProbeExtensions {
-    state: Cell<crate::onboarding::ExtensionState>,
+    state: Cell<ComponentStatus>,
     /// Why the next enables fail; they succeed once cleared.
     failing: RefCell<Option<String>>,
     /// An enable waits while this is set, as while gnome-shell starts it.
@@ -2679,7 +2680,7 @@ struct ProbeExtensions {
 }
 
 impl ProbeExtensions {
-    fn new(state: crate::onboarding::ExtensionState) -> Rc<Self> {
+    fn new(state: ComponentStatus) -> Rc<Self> {
         Rc::new(Self {
             state: Cell::new(state),
             failing: RefCell::default(),
@@ -2690,32 +2691,35 @@ impl ProbeExtensions {
 }
 
 #[async_trait::async_trait(?Send)]
-impl crate::ports::ShellExtensions for ProbeExtensions {
-    async fn extension_state(&self, _uuid: &str) -> crate::onboarding::ExtensionState {
+impl Components for ProbeExtensions {
+    fn required(&self) -> Vec<myna_platform::components::Component> {
+        vec![myna_platform::components::Component {
+            id: crate::onboarding::SHELL_EXTENSION_UUID.to_owned(),
+            purpose: myna_platform::components::Purpose::StatusSurface,
+        }]
+    }
+
+    async fn status(&self, _id: &str) -> ComponentStatus {
         self.state.get()
     }
 
-    async fn enable_extension(
-        &self,
-        uuid: &str,
-    ) -> Result<(), crate::ports::SystemConfiguratorError> {
+    async fn enable(&self, id: &str) -> Result<(), myna_platform::components::ComponentError> {
         self.enables.set(self.enables.get() + 1);
         while self.holding.get() {
             glib::timeout_future(Duration::from_millis(10)).await;
         }
         if let Some(message) = self.failing.borrow().clone() {
-            return Err(crate::ports::SystemConfiguratorError::dbus_execution(
-                format!("org.gnome.Shell.Extensions.EnableExtension({uuid:?})"),
+            return Err(myna_platform::components::ComponentError::Failed {
+                kind: myna_platform::components::StepKind::Call,
+                step: format!("org.gnome.Shell.Extensions.EnableExtension({id:?})"),
                 message,
-            ));
+            });
         }
         // gnome-shell runs a copy it has scanned at once; one installed
         // since login is only listed for the next.
         self.state.set(match self.state.get() {
-            crate::onboarding::ExtensionState::NeedsRelogin => {
-                crate::onboarding::ExtensionState::EnabledAtLogin
-            }
-            _ => crate::onboarding::ExtensionState::Enabled,
+            ComponentStatus::NeedsRelogin => ComponentStatus::ActiveAfterRelogin,
+            _ => ComponentStatus::Active,
         });
         Ok(())
     }
@@ -3944,12 +3948,12 @@ fn offered(window: &ui::OnboardingWindow, size: &str) -> bool {
 /// request, and the button then offers what is still missing. Once nothing
 /// is left the wizard sets dictation up and moves on.
 fn probe_install_all(application: &adw::Application) -> Result<(), String> {
-    use crate::onboarding::{assess, ExtensionState, Machine};
+    use crate::onboarding::{assess, Machine};
 
     let machine = ProbeMachine::bare();
-    let extensions = ProbeExtensions::new(ExtensionState::Disabled);
+    let extensions = ProbeExtensions::new(ComponentStatus::Inactive);
     let initial = assess(Machine {
-        extension: ExtensionState::Disabled,
+        status_surface: ComponentStatus::Inactive,
         ..Machine::default()
     });
     let window = {
@@ -4186,7 +4190,7 @@ fn probe_install_all(application: &adw::Application) -> Result<(), String> {
     let myna_installed = assess(Machine {
         user_daemons: true,
         myna_installed: true,
-        extension: ExtensionState::Disabled,
+        status_surface: ComponentStatus::Inactive,
         ..Machine::default()
     });
     if !until(&|| announced(&model_heading) && offered(&window, &expected_size(&myna_installed)))
@@ -4301,7 +4305,7 @@ fn probe_install_all(application: &adw::Application) -> Result<(), String> {
                 std::sync::Arc::new(machine.clone()),
             )),
             Rc::new(machine.clone()),
-            ProbeExtensions::new(ExtensionState::Unavailable),
+            ProbeExtensions::new(ComponentStatus::Unavailable),
             crate::onboarding_ui::Opener::FirstRun,
         );
         ui.set_poll_interval(Duration::from_millis(50));
@@ -4351,12 +4355,12 @@ fn probe_install_all(application: &adw::Application) -> Result<(), String> {
 /// A machine with the app and no model installs the model alone, sized for
 /// it; an extension out of reach is skipped silently and holds nothing.
 fn probe_partial(application: &adw::Application) -> Result<(), String> {
-    use crate::onboarding::{assess, ExtensionState, Machine};
+    use crate::onboarding::{assess, Machine};
 
     // Only a disabled extension left: Next leads, the button turns it on,
     // and a refusal names gnome-shell's call.
     let machine = ProbeMachine::new();
-    let extensions = ProbeExtensions::new(ExtensionState::Disabled);
+    let extensions = ProbeExtensions::new(ComponentStatus::Inactive);
     let window = {
         let ui = crate::onboarding_ui::OnboardingUi::present_with_ports(
             application,
@@ -4364,7 +4368,7 @@ fn probe_partial(application: &adw::Application) -> Result<(), String> {
                 user_daemons: true,
                 myna_installed: true,
                 backend_discovered: true,
-                extension: ExtensionState::Disabled,
+                status_surface: ComponentStatus::Inactive,
                 ..Machine::default()
             }),
             Rc::new(crate::adapters::snap_backend::SnapBackendRepository::new(
@@ -4458,7 +4462,7 @@ fn probe_partial(application: &adw::Application) -> Result<(), String> {
     // One installed since login is listed for the next, and the last step
     // says to log out and back in.
     let machine = ProbeMachine::new();
-    let extensions = ProbeExtensions::new(ExtensionState::NeedsRelogin);
+    let extensions = ProbeExtensions::new(ComponentStatus::NeedsRelogin);
     let window = {
         let ui = crate::onboarding_ui::OnboardingUi::present_with_ports(
             application,
@@ -4466,7 +4470,7 @@ fn probe_partial(application: &adw::Application) -> Result<(), String> {
                 user_daemons: true,
                 myna_installed: true,
                 backend_discovered: true,
-                extension: ExtensionState::NeedsRelogin,
+                status_surface: ComponentStatus::NeedsRelogin,
                 ..Machine::default()
             }),
             Rc::new(crate::adapters::snap_backend::SnapBackendRepository::new(
@@ -4507,7 +4511,7 @@ fn probe_partial(application: &adw::Application) -> Result<(), String> {
     settle_gtk();
 
     let machine = ProbeMachine::myna_only();
-    let extensions = ProbeExtensions::new(ExtensionState::Unavailable);
+    let extensions = ProbeExtensions::new(ComponentStatus::Unavailable);
     let initial = assess(Machine {
         user_daemons: true,
         myna_installed: true,

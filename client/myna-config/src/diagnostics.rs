@@ -15,6 +15,7 @@ use crate::onboarding::{ExtensionCopy, ExtensionReport};
 use crate::performance::{
     assess_clock, assess_pressure, ClockClass, ClockVerdict, PerformanceFacts, PressureWarning,
 };
+use myna_platform::components::{Blocker, ComponentStatus, Purpose};
 
 /// Upper bound on subprocess spawns required to refresh a single backend
 /// snapshot: `snap info`, at most four prioritized modelctl candidate probes,
@@ -79,6 +80,8 @@ pub struct DiagnosticInput {
     pub daemon_report: Option<DaemonReport>,
     /// Which copy of the shell extension runs; `None` when not read.
     pub extension: Option<ExtensionReport>,
+    /// The desktop's other pieces, where it has no extension to report on.
+    pub desktop: Vec<crate::platform::ComponentFact>,
     /// `None` until the probe has run once; the report says so rather than
     /// claiming a clock it did not measure.
     pub performance: Option<PerformanceFacts>,
@@ -511,6 +514,13 @@ fn render_body(
             &extension_summary(extension),
         );
     }
+    for fact in &input.desktop {
+        field(
+            &mut out,
+            &component_label(fact.purpose),
+            &component_summary(fact.purpose, fact.status),
+        );
+    }
 
     out.push('\n');
     out.push_str(&gettextrs::gettext("Models"));
@@ -689,6 +699,35 @@ fn drops_summary(drops: AudioDrops) -> String {
         drops.not_active,
         gettextrs::gettext("chunks dropped this session")
     )
+}
+
+fn component_label(purpose: Purpose) -> String {
+    match purpose {
+        Purpose::TextInput => gettextrs::gettext("Input method"),
+        Purpose::StatusSurface => gettextrs::gettext("Indicator host"),
+    }
+}
+
+fn component_summary(purpose: Purpose, status: ComponentStatus) -> String {
+    match status {
+        ComponentStatus::Active => gettextrs::gettext("active"),
+        ComponentStatus::ActiveAfterRelogin => {
+            gettextrs::gettext("set up, starts at the next login")
+        }
+        ComponentStatus::Inactive => gettextrs::gettext("not running"),
+        ComponentStatus::NeedsRelogin => gettextrs::gettext("not set up"),
+        ComponentStatus::Blocked(Blocker::TurnedOff) => gettextrs::gettext("turned off"),
+        ComponentStatus::Blocked(Blocker::Locked) => {
+            gettextrs::gettext("locked by the administrator")
+        }
+        ComponentStatus::Blocked(Blocker::Shadowed) => gettextrs::gettext("hidden by another copy"),
+        ComponentStatus::Blocked(Blocker::Incompatible) => match purpose {
+            Purpose::TextInput => gettextrs::gettext("another input method is in use"),
+            Purpose::StatusSurface => gettextrs::gettext("not supported on this desktop"),
+        },
+        ComponentStatus::Failed => gettextrs::gettext("failed"),
+        ComponentStatus::Unavailable => gettextrs::gettext("not installed"),
+    }
 }
 
 /// `<state>, <copy>`, plus gnome-shell's error when it has one. The copy is
@@ -1009,6 +1048,28 @@ mod tests {
     }
 
     #[test]
+    fn an_xfce_session_reports_its_input_method_and_indicator_host() {
+        use crate::platform::ComponentFact;
+        let report = present_diagnostics(DiagnosticInput {
+            desktop: vec![
+                ComponentFact {
+                    purpose: Purpose::TextInput,
+                    status: ComponentStatus::Unavailable,
+                },
+                ComponentFact {
+                    purpose: Purpose::StatusSurface,
+                    status: ComponentStatus::Active,
+                },
+            ],
+            ..DiagnosticInput::default()
+        });
+        let text = report.copy_text();
+        assert_eq!(field_value(&text, "Input method"), Some("not installed"));
+        assert_eq!(field_value(&text, "Indicator host"), Some("active"));
+        assert_eq!(field_value(&text, "Shell extension"), None);
+    }
+
+    #[test]
     fn the_report_names_the_machine_and_what_each_process_costs() {
         let report = present_diagnostics(DiagnosticInput {
             inventory_complete: true,
@@ -1035,6 +1096,7 @@ mod tests {
                 copy: ExtensionCopy::MynaConfigPackage,
                 error: None,
             }),
+            desktop: Vec::new(),
             performance: None,
             backends: vec![BackendDiagnostic {
                 snap_name: "myna-parakeet".into(),

@@ -3,9 +3,10 @@
 
 use myna_config::diagnostics::InstalledSnap;
 use myna_config::onboarding::{
-    assess, can_advance, completes, install_plan, needs_onboarding, ComponentId, ExtensionState,
-    Machine, Step, MYNA_SNAP,
+    assess, can_advance, completes, install_plan, needs_onboarding, ComponentId, Machine, Step,
+    MYNA_SNAP,
 };
+use myna_platform::components::ComponentStatus;
 
 fn snap(name: &str) -> InstalledSnap {
     InstalledSnap {
@@ -58,7 +59,7 @@ fn the_wizard_assesses_the_flag_both_snaps_and_the_extension() {
             ComponentId::UserDaemons,
             ComponentId::Myna,
             ComponentId::Model,
-            ComponentId::ShellExtension
+            ComponentId::StatusSurface
         ]
     );
 }
@@ -71,22 +72,22 @@ fn the_extension_is_optional_but_completes_the_step() {
     let ready = |extension| {
         assess(Machine {
             user_daemons: true,
-            extension,
+            status_surface: extension,
             ..Machine::new(&[snap(MYNA_SNAP)], 1)
         })
     };
-    let without = ready(ExtensionState::Unavailable);
+    let without = ready(ComponentStatus::Unavailable);
     assert!(!needs_onboarding(&without));
     assert!(can_advance(Step::Components, &without));
     assert!(completes(&assess(Machine::default()), &without));
     assert!(completes(
         &assess(Machine::default()),
-        &ready(ExtensionState::Enabled)
+        &ready(ComponentStatus::Active)
     ));
     // Enabling it when only it was missing leaves the move to Next.
     assert!(!completes(
-        &ready(ExtensionState::Disabled),
-        &ready(ExtensionState::Enabled)
+        &ready(ComponentStatus::Inactive),
+        &ready(ComponentStatus::Active)
     ));
 }
 

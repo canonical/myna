@@ -883,8 +883,20 @@ msgstr ""
 msgid "Setup status unavailable. The log has the details."
 msgstr ""
 
+#: src/onboarding_ui.rs:959
+msgid "Setting up the input method"
+msgstr ""
+
 #: src/onboarding_ui.rs:982
 msgid "Installing the Dictation app failed"
+msgstr ""
+
+#: src/onboarding_ui.rs:980
+msgid "Setting up the input method failed"
+msgstr ""
+
+#: src/onboarding_ui.rs:1028
+msgid "Log out and back in to finish setting up the input method."
 msgstr ""
 
 #. TRANSLATORS: a download size in megabytes, such as "776 MB"; the space is a no-break space.
@@ -1205,6 +1217,50 @@ msgstr ""
 
 #: src/diagnostics.rs:690
 msgid "chunks dropped this session"
+msgstr ""
+
+#: src/diagnostics.rs:706
+msgid "Input method"
+msgstr ""
+
+#: src/diagnostics.rs:707
+msgid "Indicator host"
+msgstr ""
+
+#: src/diagnostics.rs:713
+msgid "active"
+msgstr ""
+
+#: src/diagnostics.rs:715
+msgid "set up, starts at the next login"
+msgstr ""
+
+#: src/diagnostics.rs:718
+msgid "not set up"
+msgstr ""
+
+#: src/diagnostics.rs:719
+msgid "turned off"
+msgstr ""
+
+#: src/diagnostics.rs:721
+msgid "locked by the administrator"
+msgstr ""
+
+#: src/diagnostics.rs:723
+msgid "hidden by another copy"
+msgstr ""
+
+#: src/diagnostics.rs:725
+msgid "another input method is in use"
+msgstr ""
+
+#: src/diagnostics.rs:726
+msgid "not supported on this desktop"
+msgstr ""
+
+#: src/diagnostics.rs:728
+msgid "failed"
 msgstr ""
 
 #: src/diagnostics.rs:698

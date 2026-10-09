@@ -10,9 +10,9 @@ use std::time::Duration;
 
 use gio::glib::{self, MainContext, Variant, VariantDict};
 use gio::prelude::*;
-use myna_config::adapters::shell_extensions::GnomeShellExtensions;
-use myna_config::onboarding::{ExtensionState, SHELL_EXTENSION_UUID};
-use myna_config::ports::{FailedStep, ShellExtensions, SystemConfiguratorError};
+use myna_config::onboarding::SHELL_EXTENSION_UUID;
+use myna_config::platform::gnome::components::GnomeComponents;
+use myna_platform::components::{Blocker, ComponentError, ComponentStatus, Components, StepKind};
 
 const SHELL_XML: &str = "<node>\
   <interface name='org.gnome.Shell.Extensions'>\
@@ -232,7 +232,7 @@ fn block_on<T>(future: impl std::future::Future<Output = T>) -> T {
     MainContext::ref_thread_default().block_on(future)
 }
 
-fn state(reported: &[(&str, f64)], with_system_copy: bool) -> ExtensionState {
+fn state(reported: &[(&str, f64)], with_system_copy: bool) -> ComponentStatus {
     state_with(reported, with_system_copy, false)
 }
 
@@ -240,7 +240,7 @@ fn state_with(
     reported: &[(&str, f64)],
     with_system_copy: bool,
     with_user_copy: bool,
-) -> ExtensionState {
+) -> ComponentStatus {
     on_own_context(|| {
         let known = Rc::new(RefCell::new(
             reported
@@ -250,12 +250,12 @@ fn state_with(
         ));
         let dirs = data_dirs(with_system_copy, with_user_copy);
         let (client, _server) = shell(known);
-        let extensions = GnomeShellExtensions::with_connection(
+        let extensions = GnomeComponents::with_connection(
             client,
             dirs.system_dirs.clone(),
             dirs.user_dir.clone(),
         );
-        block_on(extensions.extension_state(SHELL_EXTENSION_UUID))
+        block_on(extensions.status(SHELL_EXTENSION_UUID))
     })
 }
 
@@ -263,7 +263,7 @@ fn state_with(
 fn an_enabled_system_copy_is_enabled() {
     assert_eq!(
         state(&[("type", 1.0), ("state", 1.0)], true),
-        ExtensionState::Enabled
+        ComponentStatus::Active
     );
 }
 
@@ -271,7 +271,7 @@ fn an_enabled_system_copy_is_enabled() {
 fn a_disabled_system_copy_can_be_enabled() {
     assert_eq!(
         state(&[("type", 1.0), ("state", 2.0)], true),
-        ExtensionState::Disabled
+        ComponentStatus::Inactive
     );
 }
 
@@ -279,7 +279,7 @@ fn a_disabled_system_copy_can_be_enabled() {
 fn a_user_copy_is_not_the_packaged_extension() {
     assert_eq!(
         state_with(&[("type", 2.0), ("state", 1.0)], false, true),
-        ExtensionState::Unavailable
+        ComponentStatus::Unavailable
     );
 }
 
@@ -287,11 +287,11 @@ fn a_user_copy_is_not_the_packaged_extension() {
 fn a_user_copy_on_disk_shadows_a_system_copy() {
     assert_eq!(
         state_with(&[("type", 2.0), ("state", 1.0)], true, true),
-        ExtensionState::ShadowedByUserCopy
+        ComponentStatus::Blocked(Blocker::Shadowed)
     );
     assert_eq!(
         state_with(&[], true, true),
-        ExtensionState::ShadowedByUserCopy
+        ComponentStatus::Blocked(Blocker::Shadowed)
     );
 }
 
@@ -299,11 +299,11 @@ fn a_user_copy_on_disk_shadows_a_system_copy() {
 fn a_system_copy_the_shell_cannot_run_says_why() {
     assert_eq!(
         state(&[("type", 1.0), ("state", 3.0)], true),
-        ExtensionState::Failed
+        ComponentStatus::Failed
     );
     assert_eq!(
         state(&[("type", 1.0), ("state", 4.0)], true),
-        ExtensionState::OutOfDate
+        ComponentStatus::Blocked(Blocker::Incompatible)
     );
 }
 
@@ -351,23 +351,19 @@ fn shell_settings(read_only: bool) -> ShellSettings {
 /// it has not scanned.
 fn unscanned(
     settings: Option<&gio::Settings>,
-) -> (
-    ExtensionState,
-    Result<(), SystemConfiguratorError>,
-    ExtensionState,
-) {
+) -> (ComponentStatus, Result<(), ComponentError>, ComponentStatus) {
     on_own_context(|| {
         let dirs = data_dirs(true, false);
         let (client, _server) = shell_enabling(Rc::default(), OnEnable::Refuse);
-        let extensions = GnomeShellExtensions::with_connection(
+        let extensions = GnomeComponents::with_connection(
             client,
             dirs.system_dirs.clone(),
             dirs.user_dir.clone(),
         )
         .with_shell_settings(settings.cloned());
-        let before = block_on(extensions.extension_state(SHELL_EXTENSION_UUID));
-        let outcome = block_on(extensions.enable_extension(SHELL_EXTENSION_UUID));
-        let after = block_on(extensions.extension_state(SHELL_EXTENSION_UUID));
+        let before = block_on(extensions.status(SHELL_EXTENSION_UUID));
+        let outcome = block_on(extensions.enable(SHELL_EXTENSION_UUID));
+        let after = block_on(extensions.status(SHELL_EXTENSION_UUID));
         (before, outcome, after)
     })
 }
@@ -384,9 +380,9 @@ fn a_system_copy_the_shell_does_not_list_needs_a_relogin() {
         .set_strv("enabled-extensions", ["ubuntu-dock@ubuntu.com"])
         .unwrap();
     let (before, outcome, after) = unscanned(Some(&shell.settings));
-    assert_eq!(before, ExtensionState::NeedsRelogin);
+    assert_eq!(before, ComponentStatus::NeedsRelogin);
     assert_eq!(outcome, Ok(()));
-    assert_eq!(after, ExtensionState::EnabledAtLogin);
+    assert_eq!(after, ComponentStatus::ActiveAfterRelogin);
     assert_eq!(
         strv(&shell.settings, "enabled-extensions"),
         ["ubuntu-dock@ubuntu.com", SHELL_EXTENSION_UUID]
@@ -409,9 +405,9 @@ fn enabling_an_unscanned_copy_lifts_a_disable_as_the_shell_would() {
         .unwrap();
     // Listed in both: gnome-shell does not start a disabled extension.
     let (before, outcome, after) = unscanned(Some(&shell.settings));
-    assert_eq!(before, ExtensionState::NeedsRelogin);
+    assert_eq!(before, ComponentStatus::NeedsRelogin);
     assert_eq!(outcome, Ok(()));
-    assert_eq!(after, ExtensionState::EnabledAtLogin);
+    assert_eq!(after, ComponentStatus::ActiveAfterRelogin);
     assert_eq!(
         strv(&shell.settings, "enabled-extensions"),
         [SHELL_EXTENSION_UUID]
@@ -431,7 +427,7 @@ fn an_unscanned_copy_already_listed_waits_for_the_login() {
         .unwrap();
     assert_eq!(
         unscanned(Some(&shell.settings)).0,
-        ExtensionState::EnabledAtLogin
+        ComponentStatus::ActiveAfterRelogin
     );
 }
 
@@ -439,12 +435,13 @@ fn an_unscanned_copy_already_listed_waits_for_the_login() {
 fn an_unscanned_copy_under_a_lockdown_is_locked() {
     let shell = shell_settings(true);
     let (before, outcome, _) = unscanned(Some(&shell.settings));
-    assert_eq!(before, ExtensionState::Locked);
+    assert_eq!(before, ComponentStatus::Blocked(Blocker::Locked));
     match outcome {
-        Err(SystemConfiguratorError::Execution {
-            step: FailedStep::Setting { key },
+        Err(ComponentError::Failed {
+            kind: StepKind::Setting,
+            step,
             ..
-        }) => assert_eq!(key, "org.gnome.shell enabled-extensions"),
+        }) => assert_eq!(step, "org.gnome.shell enabled-extensions"),
         other => panic!("expected a failed setting, got {other:?}"),
     }
 }
@@ -458,18 +455,18 @@ fn an_unscanned_copy_with_extensions_off_is_turned_off() {
         .unwrap();
     assert_eq!(
         unscanned(Some(&shell.settings)).0,
-        ExtensionState::TurnedOff
+        ComponentStatus::Blocked(Blocker::TurnedOff)
     );
 }
 
 #[test]
 fn an_unscanned_copy_with_no_shell_settings_is_unavailable() {
-    assert_eq!(unscanned(None).0, ExtensionState::Unavailable);
+    assert_eq!(unscanned(None).0, ComponentStatus::Unavailable);
 }
 
 #[test]
 fn an_extension_neither_listed_nor_installed_is_unavailable() {
-    assert_eq!(state(&[], false), ExtensionState::Unavailable);
+    assert_eq!(state(&[], false), ComponentStatus::Unavailable);
 }
 
 #[test]
@@ -478,49 +475,44 @@ fn a_shell_that_is_gone_is_no_shell() {
         let dirs = data_dirs(false, false);
         let (client, server) = shell(Rc::default());
         block_on(server.close_future()).unwrap();
-        let extensions = GnomeShellExtensions::with_connection(
+        let extensions = GnomeComponents::with_connection(
             client,
             dirs.system_dirs.clone(),
             dirs.user_dir.clone(),
         );
-        block_on(extensions.extension_state(SHELL_EXTENSION_UUID))
+        block_on(extensions.status(SHELL_EXTENSION_UUID))
     });
-    assert_eq!(state, ExtensionState::Unavailable);
+    assert_eq!(state, ComponentStatus::Unavailable);
 }
 
 /// Enable the extension through a stand-in shell that reports it disabled,
 /// then read it back.
-fn enable(
-    on_enable: OnEnable,
-    settle: Duration,
-) -> (Result<(), SystemConfiguratorError>, ExtensionState) {
+fn enable(on_enable: OnEnable, settle: Duration) -> (Result<(), ComponentError>, ComponentStatus) {
     on_own_context(|| {
         let known: Known = Rc::default();
         set(&known, "type", 1.0.to_variant());
         set(&known, "state", 2.0.to_variant());
         let dirs = data_dirs(true, false);
         let (client, _server) = shell_enabling(known, on_enable);
-        let extensions = GnomeShellExtensions::with_connection(
+        let extensions = GnomeComponents::with_connection(
             client,
             dirs.system_dirs.clone(),
             dirs.user_dir.clone(),
         )
         .with_settle_timeout(settle);
-        let outcome = block_on(extensions.enable_extension(SHELL_EXTENSION_UUID));
-        (
-            outcome,
-            block_on(extensions.extension_state(SHELL_EXTENSION_UUID)),
-        )
+        let outcome = block_on(extensions.enable(SHELL_EXTENSION_UUID));
+        (outcome, block_on(extensions.status(SHELL_EXTENSION_UUID)))
     })
 }
 
 const ENABLE_CALL: &str =
     "org.gnome.Shell.Extensions.EnableExtension(\"myna-shell@canonical.com\")";
 
-fn failure(outcome: Result<(), SystemConfiguratorError>) -> (String, String) {
+fn failure(outcome: Result<(), ComponentError>) -> (String, String) {
     match outcome {
-        Err(SystemConfiguratorError::Execution {
-            step: FailedStep::DBus { call },
+        Err(ComponentError::Failed {
+            kind: StepKind::Call,
+            step: call,
             message,
         }) => (call, message),
         other => panic!("expected a failed D-Bus call, got {other:?}"),
@@ -531,7 +523,7 @@ fn failure(outcome: Result<(), SystemConfiguratorError>) -> (String, String) {
 fn enabling_waits_until_the_shell_runs_it() {
     let (outcome, state) = enable(OnEnable::Start, Duration::from_secs(5));
     assert_eq!(outcome, Ok(()));
-    assert_eq!(state, ExtensionState::Enabled);
+    assert_eq!(state, ComponentStatus::Active);
 }
 
 #[test]
@@ -561,12 +553,12 @@ fn enabling_with_no_shell_fails_with_the_bus_error() {
         let dirs = data_dirs(true, false);
         let (client, server) = shell(Rc::default());
         block_on(server.close_future()).unwrap();
-        let extensions = GnomeShellExtensions::with_connection(
+        let extensions = GnomeComponents::with_connection(
             client,
             dirs.system_dirs.clone(),
             dirs.user_dir.clone(),
         );
-        block_on(extensions.enable_extension(SHELL_EXTENSION_UUID))
+        block_on(extensions.enable(SHELL_EXTENSION_UUID))
     });
     let (call, message) = failure(outcome);
     assert_eq!(call, ENABLE_CALL);
@@ -577,7 +569,7 @@ fn enabling_with_no_shell_fails_with_the_bus_error() {
 fn a_locked_extension_cannot_be_enabled() {
     assert_eq!(
         state(&[("type", 1.0), ("state", 2.0)], true),
-        ExtensionState::Disabled
+        ComponentStatus::Inactive
     );
     let locked = on_own_context(|| {
         let known: Known = Rc::default();
@@ -586,14 +578,14 @@ fn a_locked_extension_cannot_be_enabled() {
         set(&known, "canChange", false.to_variant());
         let dirs = data_dirs(true, false);
         let (client, _server) = shell(known);
-        let extensions = GnomeShellExtensions::with_connection(
+        let extensions = GnomeComponents::with_connection(
             client,
             dirs.system_dirs.clone(),
             dirs.user_dir.clone(),
         );
-        block_on(extensions.extension_state(SHELL_EXTENSION_UUID))
+        block_on(extensions.status(SHELL_EXTENSION_UUID))
     });
-    assert_eq!(locked, ExtensionState::Locked);
+    assert_eq!(locked, ComponentStatus::Blocked(Blocker::Locked));
 }
 
 #[test]
@@ -611,17 +603,17 @@ fn an_extension_held_off_by_the_extensions_switch_is_turned_off() {
             );
             let dirs = data_dirs(true, false);
             let (client, _server) = shell(known);
-            let extensions = GnomeShellExtensions::with_connection(
+            let extensions = GnomeComponents::with_connection(
                 client,
                 dirs.system_dirs.clone(),
                 dirs.user_dir.clone(),
             );
-            block_on(extensions.extension_state(SHELL_EXTENSION_UUID))
+            block_on(extensions.status(SHELL_EXTENSION_UUID))
         })
     };
-    assert_eq!(held(false), ExtensionState::TurnedOff);
+    assert_eq!(held(false), ComponentStatus::Blocked(Blocker::TurnedOff));
     // With the switch on, only the administrator's lockdown is left.
-    assert_eq!(held(true), ExtensionState::Locked);
+    assert_eq!(held(true), ComponentStatus::Blocked(Blocker::Locked));
 }
 
 #[test]

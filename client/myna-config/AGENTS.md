@@ -22,16 +22,17 @@ Myna Settings is a host application, not a snap. It talks to snapd on the user's
 - Strict confinement was measured and rejected (`docs/confinement.md`). Do not reopen it without new evidence.
 - The GSettings schema this application writes is owned by `client/data/` and shared with the daemon.
 - The deb builds against each series' own GTK and libadwaita. Noble's 4.14 and 1.5 are the floor, and the main workshop's newer toolkit hides their bugs: an unscrolled page of wrapping labels overflows the window, a dialog with no focusable child never receives keys, a fixed-size dialog warns when its content grows, and removing the focused row focuses the next focusable one and scrolls to it, which is why a Model tab rebuild clears the focus first and restores it with the viewport's scroll-to-focus off. `make test-noble` runs this crate's suites there, and the startup and shortcut tests fail on any toolkit warning. CSS that GTK 4.14 cannot parse (colour functions such as `oklab(from ...)`, `color-mix()`, `@media`) goes in `data/appearance-gtk416.css`, which loads only from GTK 4.16; in `appearance.css` it is a parser warning on Noble.
-- The dictation key is a GNOME custom shortcut this application writes (`adapters/desktop_shortcut.rs`), calling the daemon's `Toggle` over D-Bus; `docs/onboarding.md` records how GNOME treats it and how a key follows an older daemon.
+- The dictation key is the desktop's custom shortcut, which this application writes through `myna_platform::activation::Activation` (GNOME: media-keys, `platform/gnome/activation.rs`; Xfce: xfconf, `platform/xfce/activation.rs`), calling the daemon's `Toggle` over D-Bus; `docs/onboarding.md` records how GNOME treats it and how a key follows an older daemon.
 
 # Architecture
 
-Hexagonal. `ports.rs` declares the traits the application depends on (backend repository, system configurator, client settings, shell extensions). `adapters/` implements them against real snapd, `snap`, `pkexec`, gnome-shell's D-Bus, and Gio. `domain.rs`, `active_backend.rs`, `backend_apply.rs`, `onboarding.rs`, `snap_install.rs`, `shortcut.rs`, and `machine.rs` hold the pure decision logic. The `*_controller.rs` and `*_ui.rs` pairs bind that logic to GTK, and `operation_gate.rs` ensures one privileged operation runs at a time.
+Hexagonal. `ports.rs` declares the traits the application depends on (backend repository, system configurator, client settings). `adapters/` implements them against real snapd, `snap`, `pkexec` and Gio. The desktop is reached only through `myna-platform` contracts, built per `Profile` by `Platform` (`platform/mod.rs`): the shortcut control, the wizard and Diagnostics never name GNOME or Xfce (`client/.kb/platform-layer.md`). `domain.rs`, `active_backend.rs`, `backend_apply.rs`, `onboarding.rs`, `snap_install.rs`, `shortcut.rs`, and `machine.rs` hold the pure decision logic. The `*_controller.rs` and `*_ui.rs` pairs bind that logic to GTK, and `operation_gate.rs` ensures one privileged operation runs at a time.
 
 # Directory
 
 - `build/` - Build logic outside cargo: the minimum `blueprint-compiler` version that `tests/` pulls in with `include!`, and the translation install the deb build runs.
-- `src/adapters/` - snapd REST client, `snap` CLI repository, pkexec configurator, Gio settings, GNOME custom shortcut, gnome-shell extension state.
+- `src/adapters/` - snapd REST client, `snap` CLI repository, pkexec configurator, Gio settings.
+- `src/platform/` - The composition root and the per-desktop backends: `gnome/` (media-keys shortcut, shell extension) and `xfce/` (xfconf shortcut, IBus and the HUD host's autostart entry).
 - `src/ui/` - One module per Blueprint template in `data/`.
 - `src/bin/` - Test fixture that stands in for a real command runner.
 - `data/` - Blueprint templates, CSS, desktop entry, polkit action, man page, gresource manifest.
