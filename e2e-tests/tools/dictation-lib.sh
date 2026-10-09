@@ -77,6 +77,25 @@ bind_toggle_key() {
     esac
 }
 
+# The daemon's journal from a mark on: `journal_mark`, then `journal_count RE`.
+JOURNAL_MARK=$HOME/myna-shot/journal.mark
+journal_mark() { date +%s.%N > "$JOURNAL_MARK"; }
+journal_count() {
+    journalctl --user -u snap.myna.myna.service --no-pager --since "@$(cat "$JOURNAL_MARK")" \
+        | grep -c -- "$1"
+}
+
+# Restart the session's ibus-daemon and wait for it to serve again, so the
+# next activation is its first: it has not read the engine's properties yet.
+# The daemon re-executes itself, keeping its PID; its address (a new guid)
+# is what changes.
+ibus_restart() {
+    local before
+    before=$(ibus address)
+    ibus restart >/dev/null 2>&1
+    wait_until 20 sh -c "[ \"\$(ibus address)\" != '$before' ] && ibus engine >/dev/null"
+}
+
 default_source_is() { wpctl inspect @DEFAULT_AUDIO_SOURCE@ | grep -q "node.name = \"$1\""; }
 
 # The speech clip, looped on the virtual speaker whose monitor is the default

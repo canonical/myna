@@ -15,6 +15,9 @@
 #      the real seat) starts and stops a dictation
 #   5. the key held 450 ms (past the daemon's 400 ms focus wait, short of key
 #      repeat) still starts one: on X11 its grab keeps focus off the field
+#   6. the key held 1.5 s, deep into key repeat, toggles once
+#   7. the first dictation after ibus-daemon restarts, by key, reaches the
+#      field: the daemon focuses the engine before it can name the field
 set -uo pipefail
 # shellcheck source=e2e-tests/suites/lib.sh
 source "$(dirname "$0")/lib.sh"
@@ -116,6 +119,33 @@ dict 'key super+j'
 assert_dict "the key stops it" 'wait_until 10 dictation_state_is idle'
 assert_dict "the whole transcript is in the field" "wait_until 10 field_is plain '$FULL'"
 evidence 5
+
+echo "-- 6. the key held 1.5 s toggles once"
+assert_dict "the field is cleared" 'field_clear'
+assert_dict "the plain field is focused afresh" 'field_focus other && field_focus plain'
+dict journal_mark
+dict dictation_toggle
+assert_dict "recording" 'wait_until 10 dictation_state_is recording'
+assert_dict "the first segment lands" "wait_until 10 field_is plain '$FIRST'"
+dict 'key super+j@1500'
+assert_dict "the held key stops it" 'wait_until 10 dictation_state_is idle'
+assert_dict "and nothing starts again" 'sleep 3; dictation_state_is idle'
+# shellcheck disable=SC2016 # expands in the VM
+assert_dict "one start and one stop, no more" \
+    '[ "$(journal_count "ctrl: press")" = 1 ] && [ "$(journal_count "ctrl: release")" = 1 ]'
+evidence 6
+
+echo "-- 7. the first dictation by key after ibus-daemon restarts"
+assert_dict "ibus-daemon restarted" 'ibus_restart'
+assert_dict "the field is cleared" 'field_clear'
+assert_dict "the plain field is focused afresh" 'field_focus other && field_focus plain'
+dict 'key super+j'
+assert_dict "the key starts recording" 'wait_until 10 dictation_state_is recording'
+assert_dict "the first segment lands" "wait_until 10 field_is plain '$FIRST'"
+dict 'key super+j'
+assert_dict "the key stops it" 'wait_until 10 dictation_state_is idle'
+assert_dict "the whole transcript is in the field" "wait_until 10 field_is plain '$FULL'"
+evidence 7
 
 dict 'mic_stop' >/dev/null 2>&1
 suite_status
