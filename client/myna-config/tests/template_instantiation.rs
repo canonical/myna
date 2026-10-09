@@ -324,6 +324,38 @@ fn the_shortcut_row_installs_a_desktop_shortcut() {
     assert!(warnings.is_empty(), "toolkit warnings: {warnings:#?}");
 }
 
+/// A desktop with no shortcut backend gets a sentence and the command, not a
+/// button that fails.
+#[test]
+fn the_shortcut_row_on_a_generic_desktop_says_it_cannot_be_set_up() {
+    if std::env::var_os("MYNA_CONFIG_GTK_TESTS").is_none() {
+        eprintln!("skipped: set MYNA_CONFIG_GTK_TESTS=1 under Xvfb");
+        return;
+    }
+
+    let (store, schemas) = scratch_store("shortcut-unsupported");
+    let output = Command::new("dbus-run-session")
+        .arg("--")
+        .arg(env!("CARGO_BIN_EXE_myna-config"))
+        .env("GSETTINGS_BACKEND", "memory")
+        .env("MYNA_PLATFORM", "generic")
+        .env("GSETTINGS_SCHEMA_DIR", &schemas)
+        .env("XDG_CONFIG_HOME", &store)
+        .env("GDK_DEBUG", "no-portals")
+        .env("MYNA_CONFIG_SHORTCUT_UNSUPPORTED_TEST", "1")
+        .env("GTK_A11Y", "none")
+        .output()
+        .expect("run the unsupported shortcut probe");
+    std::fs::remove_dir_all(&store).ok();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "probe failed: {stderr}");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("shortcut-unsupported: no button"),
+        "{stdout}"
+    );
+}
+
 /// Setup installs the default key itself, but never over a key the user has
 /// or another shortcut holds.
 #[test]

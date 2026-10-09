@@ -22,17 +22,39 @@ fn setup_waits_for_the_daemon() {
 #[test]
 fn a_desktop_binding_is_the_shortcut() {
     assert_eq!(
-        ShortcutState::observe(true, Some("<Super>j")),
+        ShortcutState::observe(true, true, Some("<Super>j")),
         ShortcutState::Bound("<Super>j".into())
     );
     assert_eq!(
-        ShortcutState::observe(true, Some("")),
+        ShortcutState::observe(true, true, Some("")),
         ShortcutState::Unbound
     );
-    assert_eq!(ShortcutState::observe(true, None), ShortcutState::Unbound);
     assert_eq!(
-        ShortcutState::observe(false, Some("<Super>j")),
+        ShortcutState::observe(true, true, None),
+        ShortcutState::Unbound
+    );
+    assert_eq!(
+        ShortcutState::observe(true, false, Some("<Super>j")),
         ShortcutState::NotRunning
+    );
+}
+
+#[test]
+fn a_desktop_without_a_shortcut_backend_is_unsupported_whatever_else_is_seen() {
+    use myna_config::shortcut::{button_action, ButtonAction};
+    for (owned, binding) in [(true, Some("<Super>j")), (true, None), (false, None)] {
+        assert_eq!(
+            ShortcutState::observe(false, owned, binding),
+            ShortcutState::Unsupported
+        );
+    }
+    assert_eq!(
+        button_action(&ShortcutState::Unsupported, false),
+        ButtonAction::Nothing
+    );
+    assert_eq!(
+        default_key(&ShortcutState::Unsupported, true),
+        DefaultKey::Leave
     );
 }
 

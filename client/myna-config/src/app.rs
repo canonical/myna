@@ -24,6 +24,7 @@ const TEMPLATE_ENV: &str = "MYNA_CONFIG_TEMPLATE_TEST";
 const ACCESSIBILITY_ENV: &str = "MYNA_CONFIG_ACCESSIBILITY_TEST";
 const TYPING_ENV: &str = "MYNA_CONFIG_TYPING_TEST";
 const ONBOARDING_ENV: &str = "MYNA_CONFIG_ONBOARDING_TEST";
+const SHORTCUT_UNSUPPORTED_ENV: &str = "MYNA_CONFIG_SHORTCUT_UNSUPPORTED_TEST";
 const SHORTCUT_ENV: &str = "MYNA_CONFIG_SHORTCUT_TEST";
 const ONBOARDING_CONTROL_ENV: &str = "MYNA_CONFIG_ONBOARDING_CONTROL_TEST";
 const BACKENDS_ENV: &str = "MYNA_CONFIG_BACKENDS_TEST";
@@ -77,6 +78,10 @@ pub fn run() -> glib::ExitCode {
 
     if smoke_requested(std::env::var_os(SHORTCUT_ENV).as_deref()) {
         return shortcut_probe();
+    }
+
+    if smoke_requested(std::env::var_os(SHORTCUT_UNSUPPORTED_ENV).as_deref()) {
+        return shortcut_unsupported_probe();
     }
 
     if smoke_requested(std::env::var_os(BACKENDS_ENV).as_deref()) {
@@ -2044,6 +2049,60 @@ fn onboarding_control_probe() -> glib::ExitCode {
 
 /// Drive the Myna page's shortcut row against a stand-in daemon on the session
 /// bus, which the caller makes private.
+/// On a desktop with no shortcut backend the row says so and offers no button.
+fn shortcut_unsupported_probe() -> glib::ExitCode {
+    ui::register_resources();
+    if let Err(error) = gtk::init() {
+        eprintln!("myna-config unsupported shortcut probe could not initialize GTK: {error}");
+        return glib::ExitCode::FAILURE;
+    }
+    adw::init().expect("libadwaita init");
+    let settings = match GioClientSettings::open() {
+        Ok(settings) => settings,
+        Err(error) => {
+            eprintln!("could not open the settings store: {error}");
+            return glib::ExitCode::FAILURE;
+        }
+    };
+    let controller = MynaSettingsController::load(Rc::new(settings) as Rc<dyn ClientSettings>);
+    let writer = PersistenceWriter::spawn(GioClientSettings::open);
+    let overlay = adw::ToastOverlay::new();
+    let PageState::Ready(rows) = controller.state() else {
+        eprintln!("found no settings rows");
+        return glib::ExitCode::FAILURE;
+    };
+    let page = ready_page(
+        controller,
+        writer,
+        rows,
+        &overlay,
+        &adw::PreferencesGroup::new(),
+    );
+    let Ok(myna) = page.clone().downcast::<ui::MynaPage>() else {
+        eprintln!("the settings page is not the Myna page");
+        return glib::ExitCode::FAILURE;
+    };
+    overlay.set_child(Some(&page));
+    let window = adw::Window::builder().content(&overlay).build();
+    window.present();
+    for _ in 0..20 {
+        settle_gtk();
+    }
+    let subtitle = myna.shortcut_row().subtitle().unwrap_or_default();
+    if myna.shortcut_button().is_visible()
+        || !subtitle.contains("cannot set up the shortcut")
+        || !subtitle.contains(crate::shortcut::TOGGLE_COMMAND)
+    {
+        eprintln!(
+            "the unsupported row shows button {} and {subtitle:?}",
+            myna.shortcut_button().is_visible()
+        );
+        return glib::ExitCode::FAILURE;
+    }
+    println!("shortcut-unsupported: no button, the command to bind by hand");
+    glib::ExitCode::SUCCESS
+}
+
 fn shortcut_probe() -> glib::ExitCode {
     use gtk::glib::translate::IntoGlib;
 
@@ -5342,6 +5401,9 @@ fn ready_page(
                     let subtitle = refusal
                         .map_or_else(|| crate::shortcut_ui::row_subtitle(state), str::to_owned);
                     row.set_subtitle(&crate::markup::escape_markup(&subtitle));
+                    row.set_subtitle_selectable(
+                        *state == crate::shortcut::ShortcutState::Unsupported,
+                    );
                 }
             }
         }),

@@ -81,6 +81,8 @@ pub struct ShortcutControl {
     refusal: RefCell<Option<String>>,
     /// The capture's key is waiting on the replace question.
     asking: Cell<bool>,
+    /// The last install or release failed.
+    failed: Cell<bool>,
     default_pending: Cell<bool>,
     changed: RefCell<Option<Box<dyn Fn()>>>,
 }
@@ -120,6 +122,7 @@ impl ShortcutControl {
             capture: RefCell::default(),
             refusal: RefCell::default(),
             asking: Cell::new(false),
+            failed: Cell::new(false),
             default_pending: Cell::new(false),
             changed: RefCell::default(),
         });
@@ -233,7 +236,7 @@ impl ShortcutControl {
             .as_ref()
             .and_then(|desktop| desktop.binding().ok().flatten())
             .map(|binding| binding.to_string());
-        let state = ShortcutState::observe(owned, binding.as_deref());
+        let state = ShortcutState::observe(self.desktop.is_some(), owned, binding.as_deref());
         self.state.replace(state.clone());
         self.render();
         // A key set up for another daemon follows this one; the write
@@ -290,6 +293,7 @@ impl ShortcutControl {
                     "Press a keyboard shortcut for dictation.",
                 ))],
             );
+            button.set_visible(state != ShortcutState::Unsupported);
             button.set_sensitive(state != ShortcutState::NotRunning);
             // Onboarding cannot finish usefully without a key, so setting one
             // up is the step's main action until there is one.
@@ -432,15 +436,17 @@ impl ShortcutControl {
         }
         let weak = Rc::downgrade(self);
         self.asking.set(true);
+        self.failed.set(false);
         self.claim(&accelerator, move |taken| {
             let Some(control) = weak.upgrade() else {
                 return;
             };
             control.asking.set(false);
-            if taken {
+            // A failure ends the capture as success does; only declining the
+            // swap keeps waiting for a different key.
+            if taken || control.failed.take() {
                 control.end_capture(true);
             } else {
-                // Declining the swap keeps waiting for a different key.
                 control.focus_cancel();
             }
         });
@@ -517,9 +523,7 @@ impl ShortcutControl {
             .as_ref()
             .is_some_and(|desktop| desktop.release(conflict).is_ok());
         if !released {
-            self.toast(adw::Toast::new(&gettextrs::gettext(
-                "Could not set up the shortcut",
-            )));
+            self.fail();
             return false;
         }
         self.install(accelerator)
@@ -531,12 +535,17 @@ impl ShortcutControl {
             bind(desktop.as_ref(), accelerator, &command(self.legacy.get()))
         });
         if !installed {
-            self.toast(adw::Toast::new(&gettextrs::gettext(
-                "Could not set up the shortcut",
-            )));
+            self.fail();
         }
         self.refresh();
         installed
+    }
+
+    fn fail(&self) {
+        self.failed.set(true);
+        self.toast(adw::Toast::new(&gettextrs::gettext(
+            "Could not set up the shortcut",
+        )));
     }
 
     fn toast(&self, toast: adw::Toast) {
@@ -637,6 +646,7 @@ fn accelerator_name(key: gdk::Key, modifiers: gdk::ModifierType) -> String {
 /// The onboarding step's sentence for `state`.
 pub fn onboarding_description(state: &ShortcutState) -> String {
     match state {
+        ShortcutState::Unsupported => unsupported_text(),
         ShortcutState::Unbound => {
             gettextrs::gettext("Set up a keyboard shortcut to trigger Dictation.")
         }
@@ -649,10 +659,19 @@ pub fn onboarding_description(state: &ShortcutState) -> String {
     }
 }
 
+/// Why there is no button, and the command to bind by hand.
+fn unsupported_text() -> String {
+    gettextrs::gettext(
+        "This desktop cannot set up the shortcut. Bind this command to a key in its settings: {command}",
+    )
+    .replace("{command}", crate::shortcut::TOGGLE_COMMAND)
+}
+
 /// The Myna page row's subtitle for `state`; the keys speak for a bound one.
 pub fn row_subtitle(state: &ShortcutState) -> String {
     match state {
         ShortcutState::Bound(_) => String::new(),
+        ShortcutState::Unsupported => unsupported_text(),
         ShortcutState::Unbound => gettextrs::gettext("Not set up"),
         ShortcutState::NotRunning => gettextrs::gettext("Myna is not running"),
     }

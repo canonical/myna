@@ -49,6 +49,8 @@ pub fn is_toggle_command(command: &str) -> bool {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ShortcutState {
+    /// The desktop has no shortcut Myna can manage.
+    Unsupported,
     /// Nothing owns the daemon's bus name.
     NotRunning,
     /// No desktop shortcut is installed.
@@ -58,10 +60,12 @@ pub enum ShortcutState {
 }
 
 impl ShortcutState {
-    /// `owned` is whether the bus name has an owner; `binding` is the desktop
-    /// shortcut's accelerator, when one is installed.
-    pub fn observe(owned: bool, binding: Option<&str>) -> Self {
+    /// `supported` is whether the desktop has a shortcut backend; `owned` is
+    /// whether the bus name has an owner; `binding` is the desktop shortcut's
+    /// accelerator, when one is installed.
+    pub fn observe(supported: bool, owned: bool, binding: Option<&str>) -> Self {
         match (owned, binding) {
+            _ if !supported => Self::Unsupported,
             (false, _) => Self::NotRunning,
             (true, Some(binding)) if !binding.trim().is_empty() => Self::Bound(binding.to_owned()),
             (true, _) => Self::Unbound,
@@ -86,6 +90,7 @@ pub enum DefaultKey {
 pub fn default_key(state: &ShortcutState, available: bool) -> DefaultKey {
     match state {
         ShortcutState::NotRunning => DefaultKey::Wait,
+        ShortcutState::Unsupported => DefaultKey::Leave,
         ShortcutState::Unbound if available => DefaultKey::Install,
         _ => DefaultKey::Leave,
     }
@@ -105,7 +110,7 @@ pub enum ButtonAction {
 pub fn button_action(state: &ShortcutState, capturing: bool) -> ButtonAction {
     match state {
         _ if capturing => ButtonAction::CancelCapture,
-        ShortcutState::NotRunning => ButtonAction::Nothing,
+        ShortcutState::NotRunning | ShortcutState::Unsupported => ButtonAction::Nothing,
         _ => ButtonAction::Capture,
     }
 }
