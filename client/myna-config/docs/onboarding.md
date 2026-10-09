@@ -343,10 +343,11 @@ myna-config`), and to stderr from a terminal.
 
 ## The keyboard shortcut
 
-The key is a GNOME custom shortcut, Myna's entry under
+The key is a desktop custom shortcut that this unconfined application writes
+itself: on GNOME, Myna's entry under
 `/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/myna/`
-(`platform/gnome/activation.rs`), which this unconfined application writes
-itself. It runs `gdbus call ... --method com.canonical.Myna.Dictation.Toggle`
+(`platform/gnome/activation.rs`); on Xfce, an xfconf `/commands/custom` entry
+(`platform/xfce/activation.rs`). It runs `gdbus call ... --method com.canonical.Myna.Dictation.Toggle`
 (`shortcut::TOGGLE_COMMAND`, so the deb depends on `libglib2.0-bin`), which
 reaches the daemon without `snap run`'s 90-130 ms of startup. A daemon that
 still publishes `Shortcut` predates a working `Toggle`, so against one the
