@@ -89,6 +89,10 @@ pub fn run() -> glib::ExitCode {
     }
 
     ui::register_resources();
+    // libadwaita replaces the GTK theme name as it starts; keep the desktop's.
+    if gtk::init().is_ok() {
+        crate::platform::appearance::remember_startup_theme();
+    }
     let application = new_application(APP_ID);
     application.connect_activate(build_window);
     application.run_with_args::<&str>(&[])

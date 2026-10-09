@@ -58,7 +58,11 @@ impl Platform {
             };
         let appearance: Rc<dyn Appearance> = match profile {
             Profile::Gnome => Rc::new(gnome::appearance::GnomeAppearance),
-            Profile::Xfce | Profile::Generic => Rc::new(appearance::GtkAppearance),
+            Profile::Xfce => Rc::new(match xfce::xfconf::Xfconf::session("xsettings") {
+                Ok(xfconf) => appearance::GtkAppearance::with_xfconf(xfconf),
+                Err(_) => appearance::GtkAppearance::default(),
+            }),
+            Profile::Generic => Rc::new(appearance::GtkAppearance::default()),
         };
         Self {
             profile,

@@ -7,6 +7,11 @@
 //! no contrast setting, so a theme whose name says high contrast counts, as
 //! does whatever libadwaita derives. Likewise a theme named `-dark` is the
 //! dark preference, which libadwaita cannot see: the caller feeds it in.
+//!
+//! libadwaita replaces `gtk-theme-name` with its own at start-up and ignores
+//! the desktop's from then on, so the theme is the name GTK held before that
+//! ([`remember_startup_theme`]) or, on Xfce, what xfsettingsd publishes in
+//! xfconf, which also says when it changes.
 
 use gtk::prelude::*;
 use gtk4 as gtk;
@@ -16,7 +21,60 @@ use myna_platform::appearance::{
 };
 use myna_platform::Subscription;
 
-pub struct GtkAppearance;
+use super::xfce::xfconf::Xfconf;
+
+/// What GTK, and xfconf where the desktop has it, say.
+#[derive(Default)]
+pub struct GtkAppearance {
+    xfconf: Option<Xfconf>,
+}
+
+impl GtkAppearance {
+    /// Read the theme from xfsettingsd's `xsettings` channel.
+    pub fn with_xfconf(xfconf: Xfconf) -> Self {
+        Self {
+            xfconf: Some(xfconf),
+        }
+    }
+
+    /// The desktop's GTK theme name.
+    fn theme(&self) -> Option<String> {
+        let published = self
+            .xfconf
+            .as_ref()
+            .and_then(|xfconf| xfconf.get(XFCONF_THEME).ok().flatten())
+            .and_then(|value| value.str().map(str::to_owned));
+        published.or_else(|| {
+            STARTUP_THEME
+                .get()
+                .cloned()
+                .flatten()
+                .or_else(current_theme)
+        })
+    }
+}
+
+const XFCONF_THEME: &str = "/Net/ThemeName";
+
+/// The GTK theme name before libadwaita replaces it.
+static STARTUP_THEME: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
+
+fn current_theme() -> Option<String> {
+    gtk::Settings::default()
+        .and_then(|settings| settings.gtk_theme_name())
+        .map(|name| name.to_string())
+}
+
+/// Keep the theme GTK starts with. Call after `gtk::init`, before libadwaita
+/// starts.
+pub fn remember_startup_theme() {
+    STARTUP_THEME.get_or_init(current_theme);
+}
+
+/// libadwaita's own high-contrast reading, once it runs.
+fn adw_high_contrast() -> bool {
+    adw::is_initialized() && adw::StyleManager::default().is_high_contrast()
+}
 
 /// `GtkSettings:gtk-enable-animations`, true where there are no settings.
 pub(super) fn animations_enabled() -> bool {
@@ -25,23 +83,32 @@ pub(super) fn animations_enabled() -> bool {
 
 impl Appearance for GtkAppearance {
     fn read(&self) -> AppearanceReadings {
-        let theme = gtk::Settings::default().and_then(|settings| settings.gtk_theme_name());
+        let theme = self.theme();
         let theme_contrast = theme.as_deref().is_some_and(is_high_contrast_theme);
         AppearanceReadings {
             prefers_dark: theme.as_deref().is_some_and(is_dark_theme),
             accent: None,
             reduced_motion: !animations_enabled(),
-            high_contrast: adw::StyleManager::default().is_high_contrast() || theme_contrast,
+            high_contrast: adw_high_contrast() || theme_contrast,
         }
     }
 
     fn watch(&self, changed: Box<dyn Fn(Freshness)>) -> Subscription {
         let changed: std::rc::Rc<dyn Fn(Freshness)> = changed.into();
-        let manager = adw::StyleManager::default();
-        let contrast = {
+        let contrast = adw::is_initialized().then(|| {
+            let manager = adw::StyleManager::default();
             let changed = changed.clone();
-            manager.connect_high_contrast_notify(move |_| changed(Freshness::Current))
-        };
+            let handle = manager.connect_high_contrast_notify(move |_| changed(Freshness::Current));
+            (manager, handle)
+        });
+        let theme_watch = self.xfconf.as_ref().map(|xfconf| {
+            let changed = changed.clone();
+            xfconf.watch(move |property| {
+                if property == XFCONF_THEME {
+                    changed(Freshness::Current);
+                }
+            })
+        });
         let settings = gtk::Settings::default();
         let handles: Vec<_> = settings
             .iter()
@@ -57,7 +124,10 @@ impl Appearance for GtkAppearance {
             })
             .collect();
         Subscription::new(move || {
-            manager.disconnect(contrast);
+            drop(theme_watch);
+            if let Some((manager, handle)) = contrast {
+                manager.disconnect(handle);
+            }
             if let Some(settings) = settings {
                 for handle in handles {
                     settings.disconnect(handle);
@@ -97,7 +167,7 @@ mod tests {
             if self.gnome {
                 Box::new(GnomeAppearance)
             } else {
-                Box::new(GtkAppearance)
+                Box::new(GtkAppearance::default())
             }
         }
 
