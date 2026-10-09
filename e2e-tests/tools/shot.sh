@@ -1,11 +1,16 @@
 #!/bin/bash
-# Run Myna Settings inside an e2e VM under its own Xvfb (x11, 1100x800) on
-# the autologin user's real session bus, drive it through AT-SPI
-# (shot-driver.py) and leave screenshots and logs in ./out. run-suite.sh
-# pushes this directory and the binary to ~/myna-shot and runs it as the
-# user (suites/lib.sh `shot`).
+# Run Myna Settings inside an e2e VM, drive it through AT-SPI
+# (shot-driver.py) and leave screenshots and logs in ./out. By default the
+# app runs under its own Xvfb (x11, 1100x800) on the autologin user's real
+# session bus: a Wayland desktop cannot be photographed from inside.
+# `--display real` runs it on the X11 session's own display instead, so the
+# screenshots show the real desktop (panel, theme, pill, notifications).
+# run-suite.sh pushes this directory and the binary to ~/myna-shot and runs
+# it as the user (suites/lib.sh `shot`).
 #
-# Usage: shot.sh [--polkit allow|deny|cancel] [--monitor NAME] [step ...]
+# Usage: shot.sh [--display xvfb|real] [--polkit allow|deny|cancel] [--monitor NAME] [step ...]
+#   --display D     xvfb (default) or real (DISPLAY and XAUTHORITY from the
+#                   caller; an X11 desktop session)
 #   --polkit MODE   answer snapd's and the pkexec --apply-plan and --set-up
 #                   prompts with a temporary rule; cancel answers through
 #                   cancel-agent.py, like pressing Cancel
@@ -14,23 +19,28 @@
 # Steps: see shot-driver.py.
 set -uo pipefail
 cd "$(dirname "$0")" || exit 2
-mode=none monitor=
+mode=none monitor='' display=xvfb
 while [ $# -gt 0 ]; do
     case $1 in
         --polkit) mode=$2; shift 2 ;;
         --monitor) monitor=$2; shift 2 ;;
+        --display) display=$2; shift 2 ;;
         *) break ;;
     esac
 done
 case $mode in none|allow|deny|cancel) ;; *) echo "shot.sh: bad --polkit $mode" >&2; exit 2 ;; esac
+case $display in xvfb|real) ;; *) echo "shot.sh: bad --display $display" >&2; exit 2 ;; esac
 rule=/etc/polkit-1/rules.d/49-myna-shot.rules
 monitor_pids=()
 mkdir -p out
 glib-compile-schemas schemas/
-# The session's data dirs, as a desktop launch inherits them: the
-# myna-config deb's extension copy is under /usr/share/gnome, which only the
-# GNOME session lists.
-eval "$(systemctl --user show-environment | sed -n 's/^XDG_DATA_DIRS=/export XDG_DATA_DIRS=/p')"
+# The session's environment, as a desktop launch hands it to an app: the data
+# dirs (the myna-config deb's extension copy is under /usr/share/gnome, which
+# only the GNOME session lists) and the desktop, which picks Myna's platform
+# profile. On the real display the input method and session type come too.
+vars='XDG_DATA_DIRS\|XDG_CURRENT_DESKTOP'
+[ "$display" = xvfb ] || vars="$vars\\|XDG_SESSION_TYPE\\|GTK_IM_MODULE\\|QT_IM_MODULE\\|XMODIFIERS"
+eval "$(systemctl --user show-environment | sed -n "s/^\\($vars\\)=/export \\1=/p")"
 
 cleanup() {
     sudo rm -f "$rule"
@@ -75,16 +85,19 @@ if [ -n "$monitor" ]; then
     monitor_pids+=($!)
 fi
 
-export MODE=$mode
-xvfb-run -a -s "-screen 0 1100x800x24" bash -s -- "$@" <<'INNER'
+export MODE=$mode DISPLAY_MODE=$display
+if [ "$display" = real ]; then runner=(bash -s --); else runner=(xvfb-run -a -s "-screen 0 1100x800x24" bash -s --); fi
+"${runner[@]}" "$@" <<'INNER'
 export GDK_BACKEND=x11 GSETTINGS_SCHEMA_DIR=$PWD/schemas
-# Under x11 GTK loads libim-ibus, which on newer GTK + ibus (no IBus
-# reachable from Xvfb) recurses until the stack overflows as soon as a
-# window with a text widget maps. Users on Wayland never load it.
-export GTK_IM_MODULE=gtk-im-context-simple
-unset WAYLAND_DISPLAY
-# Without a compositor GTK paints popover and dialog shadows opaque black.
-xcompmgr -n 2>/dev/null & comp=$!
+if [ "$DISPLAY_MODE" = xvfb ]; then
+    # Under x11 GTK loads libim-ibus, which on newer GTK + ibus (no IBus
+    # reachable from Xvfb) recurses until the stack overflows as soon as a
+    # window with a text widget maps. Users on Wayland never load it.
+    export GTK_IM_MODULE=gtk-im-context-simple
+    unset WAYLAND_DISPLAY
+    # Without a compositor GTK paints popover and dialog shadows opaque black.
+    xcompmgr -n 2>/dev/null & comp=$!
+fi
 ./myna-config >> out/app.log 2>&1 &
 pid=$!
 [ "$MODE" = cancel ] && { python3 cancel-agent.py $pid >> out/agent.log 2>&1 & agent=$!; }

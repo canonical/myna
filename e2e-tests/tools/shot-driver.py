@@ -10,11 +10,17 @@ Runs inside the e2e VM under xvfb-run (DISPLAY set). Steps are argv words:
   activate:<name>      AT-SPI action only (no pointer)
   waitfor:<name>       wait (<=30 s) until a showing widget has that name
   gone:<name>          wait (<=60 s) until no showing widget has that name
+  checked:<name>       wait (<=60 s) until the widget with that name is checked
+                       (use "name@radio button": a list item shares the name)
+  waittext:<name>=<s>  wait (<=60 s) until the widget ("name@text") has text
+                       containing s (a value or report that settles later)
   wait:<seconds>       sleep
   key:<keysym>         xdotool key (e.g. Escape, ctrl+w)
   type:<text>          xdotool type
   scrollat:<x>,<y>[#n] wheel n clicks (default 10, negative = up) at root x,y
-  shot:<file.png>      screenshot the screen (= the window) to OUT_DIR
+  shot:<file.png>      screenshot the screen (= the window under Xvfb, the whole
+                       desktop with `shot.sh --display real`) to OUT_DIR; a
+                       checkpoint is shot:shots/<suite>/<NN>-<name>.png
   burst:<prefix>:<interval>:<max_s>[:<name>]
                        screenshot <prefix>-NNN.png every <interval> s, for at
                        most <max_s> s or until a widget named <name> shows
@@ -120,7 +126,43 @@ def wait_for(name, timeout=30.0, roles=None):
     sys.exit(f"shot-driver: no showing widget named {name!r} after {timeout}s")
 
 
+def text_of(node):
+    if node is None:
+        return ""
+    try:
+        return Atspi.Text.get_text(node, 0, Atspi.Text.get_character_count(node))
+    except Exception:
+        return ""
+
+
+def wait_until(what, probe, timeout=60.0):
+    deadline = time.monotonic() + timeout
+    while not probe():
+        if time.monotonic() > deadline:
+            sys.exit(f"shot-driver: {what} not true after {timeout}s")
+        time.sleep(0.2)
+
+
+def find_spec(spec):
+    """`name` or `name@role`."""
+    name, _, role = spec.rpartition("@") if "@" in spec else (spec, "", "")
+    return find(name, (role,) if role else None)
+
+
+def is_checked(spec):
+    node = find_spec(spec)
+    try:
+        return node is not None and node.get_state_set().contains(Atspi.StateType.CHECKED)
+    except Exception:
+        return False
+
+
 def window_origin():
+    """Root coordinates of the app's content origin, which AT-SPI extents
+    (CoordType.WINDOW) are relative to. Under a compositing window manager GTK
+    draws its shadow inside the X window and says how wide it is in
+    _GTK_FRAME_EXTENTS (left, right, top, bottom); with none the property is
+    absent and the content starts at the window's corner."""
     wid = subprocess.run(
         ["xdotool", "search", "--sync", "--onlyvisible", "--pid", str(PID)],
         capture_output=True,
@@ -134,7 +176,13 @@ def window_origin():
         check=True,
     ).stdout
     vals = dict(line.split("=", 1) for line in geo.split())
-    return int(vals["X"]), int(vals["Y"])
+    shadow = subprocess.run(
+        ["xprop", "-id", wid, "_GTK_FRAME_EXTENTS"], capture_output=True, text=True
+    ).stdout
+    left = top = 0
+    if "=" in shadow:
+        left, _right, top, _bottom = (int(v) for v in shadow.split("=", 1)[1].split(","))
+    return int(vals["X"]) + left, int(vals["Y"]) + top
 
 
 def x_click(node):
@@ -254,6 +302,14 @@ def main(steps):
                 if time.monotonic() > deadline:
                     sys.exit(f"shot-driver: {arg!r} still showing after 60s")
                 time.sleep(0.2)
+        elif verb == "checked":
+            wait_until(f"{arg!r} checked", lambda arg=arg: is_checked(arg))
+        elif verb == "waittext":
+            name, _, want = arg.partition("=")
+            wait_until(
+                f"{name!r} containing {want!r}",
+                lambda name=name, want=want: want in text_of(find_spec(name)),
+            )
         elif verb == "wait":
             time.sleep(float(arg))
         elif verb == "key":
@@ -263,6 +319,7 @@ def main(steps):
         elif verb == "shot":
             time.sleep(0.4)  # let the frame after the last event paint
             path = os.path.join(OUT_DIR, arg)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
             subprocess.run(["import", "-window", "root", path], check=True)
             print(f"shot-driver: wrote {path}", flush=True)
         elif verb == "burst":
