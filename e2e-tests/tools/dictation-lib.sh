@@ -121,6 +121,73 @@ hud_host_start() {
 # The pill is a mapped window only while the HUD has something to say.
 pill_shows() { DISPLAY=${DISPLAY:-:0} xdotool search --onlyvisible --name '^myna-hud$' >/dev/null; }
 
+# The HUD is a client of the daemon once it has said so (RegisterClient):
+# until then the daemon answers a dictation with a notification toast instead
+# of the pill. `journal_mark` before starting the host, then wait for this.
+hud_registered() { [ "$(journal_count 'dbus: RegisterClient')" -ge 1 ]; }
+
+# Every Notify call from now on lands in out/notify.log (dbus-monitor), after
+# a positive control proves the monitor sees one.
+NOTIFY_LOG=$HOME/myna-shot/out/notify.log
+notify_control() {
+    gdbus call --session --dest org.freedesktop.Notifications --object-path /org/freedesktop/Notifications \
+        --method org.freedesktop.Notifications.Notify e2e-control 0 '' control '' '[]' '{}' 1000 >/dev/null 2>&1
+    sleep 0.3
+    grep -q e2e-control "$NOTIFY_LOG"
+}
+notify_watch_start() {
+    mkdir -p "$HOME/myna-shot/out"
+    : > "$NOTIFY_LOG"
+    session_env
+    setsid dbus-monitor --session "interface='org.freedesktop.Notifications',member='Notify'" \
+        >"$NOTIFY_LOG" 2>&1 </dev/null &
+    wait_until 30 notify_control
+}
+# Myna toasted nothing (the daemon falls back to notifications while no HUD
+# is registered).
+no_myna_toast() { ! grep -q 'string "Myna"' "$NOTIFY_LOG"; }
+
+pill_id() { DISPLAY=${DISPLAY:-:0} xdotool search --onlyvisible --name '^myna-hud$' | head -1; }
+active_window() { DISPLAY=${DISPLAY:-:0} xprop -root _NET_ACTIVE_WINDOW | sed 's/.*# //'; }
+active_window_save() { active_window > "$HOME/myna-shot/active.window"; }
+# The active window is still the one `active_window_save` saw, and not the pill.
+active_window_kept() {
+    [ "$(active_window)" = "$(cat "$HOME/myna-shot/active.window")" ] \
+        && [ "$(active_window)" != "$(printf '0x%x' "$(pill_id)")" ]
+}
+
+# The pill as the window manager sees it: mapped, a notification-type window
+# that takes no input focus, bottom centre inside the work area (the panel's
+# strut is out of it). The numbers go to out/pill.txt for a human.
+pill_placed() {
+    local id out=$HOME/myna-shot/out/pill.txt
+    export DISPLAY=${DISPLAY:-:0}
+    id=$(pill_id) && [ -n "$id" ] || return 1
+    {
+        xprop -id "$id" _NET_WM_WINDOW_TYPE WM_HINTS _NET_WM_STATE
+        xwininfo -id "$id"
+        xprop -root _NET_WORKAREA
+    } > "$out" 2>&1
+    grep -q '^_NET_WM_WINDOW_TYPE.*_NET_WM_WINDOW_TYPE_NOTIFICATION' "$out" || return 1
+    grep -q 'Client accepts input or input focus: False' "$out" || return 1
+    grep -q 'Map State: IsViewable' "$out" || return 1
+    local x y w h wx wy ww wh
+    x=$(sed -n 's/.*Absolute upper-left X: *//p' "$out")
+    y=$(sed -n 's/.*Absolute upper-left Y: *//p' "$out")
+    w=$(sed -n 's/^ *Width: *//p' "$out")
+    h=$(sed -n 's/^ *Height: *//p' "$out")
+    read -r wx wy ww wh < <(sed -n 's/^_NET_WORKAREA.*= *//p' "$out" | tr -d ',' | cut -d' ' -f1-4)
+    echo "pill $w x $h at $x,$y; work area $ww x $wh at $wx,$wy" >> "$out"
+    # Inside, centred within 32 px, and within 120 px of the bottom.
+    [ "$x" -ge "$wx" ] && [ $((x + w)) -le $((wx + ww)) ] \
+        && [ "$y" -ge "$wy" ] && [ $((y + h)) -le $((wy + wh)) ] \
+        && [ $(( (2 * x + w) - (2 * wx + ww) )) -le 64 ] && [ $(( (2 * wx + ww) - (2 * x + w) )) -le 64 ] \
+        && [ $(( wy + wh - (y + h) )) -le 120 ]
+}
+
+# The HUD host's log carries no GTK critical (a layout bug the HUD survives).
+hud_log_clean() { ! grep -q 'CRITICAL' "$HOME/myna-shot/out/hud-host.log"; }
+
 # A checkpoint screenshot of the whole X11 desktop, collected by run-suite.sh
 # as artifacts/screenshots/dictation/NAME.png.
 checkpoint() {

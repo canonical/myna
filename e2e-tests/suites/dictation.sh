@@ -157,13 +157,20 @@ evidence 7
 
 if [ "$DESKTOP" = xubuntu ]; then
     echo "-- 8. the pill through a dictation, on the real desktop"
+    dict journal_mark
     assert_dict "the HUD host runs the HUD" 'hud_host_start'
+    assert_dict "the toast watch is up" 'notify_watch_start'
     assert_dict "the field is cleared" 'field_clear'
     assert_dict "the plain field is focused afresh" 'field_focus other && field_focus plain'
+    dict active_window_save
+    assert_dict "the HUD is registered with the daemon" 'hud_registered'
     dict dictation_toggle
     assert_dict "recording" 'wait_until 10 dictation_state_is recording'
     assert_dict "the first segment lands" "wait_until 10 field_is plain '$FIRST'"
     assert_dict "the pill shows while listening" 'wait_until 10 pill_shows'
+    assert_dict "the pill is a no-focus notification window, bottom centre of the work area" 'pill_placed'
+    assert_dict "the field app is still the active window" 'active_window_kept'
+    assert_dict "the daemon did not fall back to a toast" 'no_myna_toast'
     dict 'checkpoint 01-listening'
     dict backend_freeze
     dict dictation_toggle
@@ -190,6 +197,7 @@ if [ "$DESKTOP" = xubuntu ]; then
     assert_dict "the press is refused (error state)" 'wait_until 10 dictation_state_is error'
     assert_dict "the pill shows the error" 'wait_until 10 pill_shows'
     dict 'checkpoint 05-error'
+    assert_dict "the HUD logged no GTK critical" 'hud_log_clean'
     evidence 8
 fi
 
