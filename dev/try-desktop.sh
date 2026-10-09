@@ -155,6 +155,19 @@ start_vm() {
     host_audio_up
     lxc start "$TRY"
     wait_ready "$TRY"
+    audio_levels
+}
+
+# The tunnels come up at volume 0 (measured on noble), which reads as "no speech".
+audio_levels() {
+    # shellcheck disable=SC2016 # expands in the VM
+    on_vm "$TRY" 'for _ in $(seq 20); do
+            pw-cli info myna-host-mic 2>/dev/null | grep -q "id:" && break; sleep 0.5
+        done
+        for n in myna-host-mic myna-host-speaker; do
+            id=$(pw-cli info "$n" 2>/dev/null | awk "/^\tid:/ {print \$2; exit}")
+            [ -n "$id" ] && wpctl set-volume "$id" 1.0 && wpctl set-mute "$id" 0
+        done' || true
 }
 
 # The snap, from a clean clone of HEAD. Cached by commit.
@@ -313,7 +326,7 @@ do_audio() {
     host_audio_up
     audio_setup
     on_vm "$TRY" 'systemctl --user restart pipewire pipewire-pulse wireplumber'
-    sleep 3
+    audio_levels
     on_vm "$TRY" 'wpctl status | sed -n "/^Audio/,/^Video/p" | grep -E "Host"'
 }
 
