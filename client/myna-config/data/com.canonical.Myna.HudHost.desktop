@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Myna dictation indicator
+Comment=Shows the dictation indicator while Myna is running
+Exec=/usr/libexec/myna-config/myna-hud-host
+OnlyShowIn=XFCE;
+NoDisplay=true

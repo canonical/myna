@@ -21,10 +21,10 @@ use crate::command::{CancellationToken, CommandError, CommandRequest, CommandRun
 /// IBus as the active input method.
 pub const IBUS: &str = "ibus";
 /// The XDG autostart entry that starts the HUD host with the session. The
-/// myna-config deb ships it in `/etc/xdg/autostart`.
-// TODO(T6s): the supervisor and this entry land with the HUD host; check the
-// name against the file the deb installs.
+/// myna-config deb ships it in `/etc/xdg/autostart` (`data/` here).
 pub const HUD_HOST_AUTOSTART: &str = "com.canonical.Myna.HudHost.desktop";
+/// The supervisor the entry starts (`hud_host`).
+const HUD_HOST_PROCESS: &str = "myna-hud-host";
 
 /// The machine as the statuses read it.
 #[derive(Clone, Debug)]
@@ -85,7 +85,7 @@ impl XfceComponents {
         let env = |name: &str| self.host.env.get(name).map(String::as_str).unwrap_or("");
         let session_uses_ibus = env("GTK_IM_MODULE") == "ibus" && env("XMODIFIERS") == "@im=ibus";
         if session_uses_ibus {
-            return if self.ibus_running() {
+            return if self.process_running("ibus-daemon") {
                 ComponentStatus::Active
             } else {
                 // The session was set up for IBus and its daemon is gone.
@@ -108,8 +108,8 @@ impl XfceComponents {
             .any(|dir| dir.join("ibus-daemon").is_file())
     }
 
-    /// A process named `ibus-daemon` of this user.
-    fn ibus_running(&self) -> bool {
+    /// A process of this user whose `comm` is `name`.
+    fn process_running(&self, name: &str) -> bool {
         use std::os::unix::fs::MetadataExt;
         let Ok(entries) = std::fs::read_dir(&self.host.proc_dir) else {
             return false;
@@ -117,8 +117,7 @@ impl XfceComponents {
         // SAFETY: getuid has no preconditions and cannot fail.
         let uid = unsafe { libc::getuid() };
         entries.flatten().any(|entry| {
-            std::fs::read_to_string(entry.path().join("comm"))
-                .is_ok_and(|comm| comm.trim() == "ibus-daemon")
+            std::fs::read_to_string(entry.path().join("comm")).is_ok_and(|comm| comm.trim() == name)
                 && entry.metadata().is_ok_and(|meta| meta.uid() == uid)
         })
     }
@@ -152,7 +151,13 @@ impl XfceComponents {
         if key_file_says(&entry, "Hidden", true) {
             return ComponentStatus::Blocked(Blocker::TurnedOff);
         }
-        ComponentStatus::Active
+        // The entry starts the supervisor with the session, so one installed
+        // mid-session has not run yet.
+        if self.process_running(HUD_HOST_PROCESS) {
+            ComponentStatus::Active
+        } else {
+            ComponentStatus::NeedsRelogin
+        }
     }
 
     /// `im-config` for the user: `-n` where it takes a framework name, `-w`

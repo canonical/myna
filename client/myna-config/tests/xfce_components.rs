@@ -264,6 +264,12 @@ fn the_indicator_host_is_the_autostart_entry_the_package_ships() {
         "system",
         "[Desktop Entry]\nType=Application\nExec=myna-hud-host\nOnlyShowIn=XFCE;\n",
     );
+    // Installed, but this session started before it was.
+    assert_eq!(
+        status(&session, HUD_HOST_AUTOSTART),
+        ComponentStatus::NeedsRelogin
+    );
+    session.run("myna-hud-host");
     assert_eq!(
         status(&session, HUD_HOST_AUTOSTART),
         ComponentStatus::Active
@@ -321,4 +327,20 @@ fn a_component_of_another_desktop_is_unknown() {
         block_on(components.enable("myna-shell@canonical.com")),
         Err(ComponentError::Unknown("myna-shell@canonical.com".into()))
     );
+}
+
+#[test]
+fn the_shipped_entry_is_the_one_the_status_looks_for() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("data")
+        .join(HUD_HOST_AUTOSTART);
+    let entry = gio::glib::KeyFile::new();
+    entry
+        .load_from_file(&path, gio::glib::KeyFileFlags::NONE)
+        .expect("the package ships the entry");
+    let get = |key: &str| entry.string("Desktop Entry", key).unwrap().to_string();
+    assert_eq!(get("OnlyShowIn"), "XFCE;");
+    assert_eq!(get("NoDisplay"), "true");
+    assert_eq!(get("Exec"), "/usr/libexec/myna-config/myna-hud-host");
+    assert!(entry.boolean("Desktop Entry", "Hidden").is_err());
 }
