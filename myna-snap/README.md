@@ -8,7 +8,7 @@ CLI). Feature `005-myna-orchestrator-snap`
 This snap is the mirror image of the inference snaps: **it** owns the
 microphone, the hotkey, and text injection (audio-push invariant); the
 backend snaps only receive PCM on a socket. It deliberately has **no
-`network` plug** — every boundary is a Unix socket or the session bus.
+`network` plug** - every boundary is a Unix socket or the session bus.
 
 ## Setup (the repeatable path)
 
@@ -141,11 +141,11 @@ for the socket to exist (`sudo snap start myna-whisper.server`).
 ## Activation
 
 Everything is **press-to-toggle**: tap the key to start, tap again to stop.
-The key is a GNOME custom shortcut, which Myna Settings writes, calling the
-daemon's `com.canonical.Myna.Dictation.Toggle` over D-Bus. `myna` also listens
+The key is a custom shortcut, which Myna Settings writes (GNOME media-keys or
+Xfce xfconf), calling the daemon's `com.canonical.Myna.Dictation.Toggle` over D-Bus. `myna` also listens
 on a control socket that `myna.toggle` pokes, slower by `snap run`'s
 startup; `myna.install-shortcut '<Super>t'` binds that without Myna
-Settings.
+Settings, on GNOME only.
 
 The GlobalShortcuts portal was the packaged default until 2026-10 and is gone:
 stacked and duplicate consent dialogs, consent and retry races, an app id that
@@ -157,7 +157,7 @@ Noble. Hold-to-talk, the one thing only the portal offered, is not planned.
 terminal). `--control` and `--stdin` are mutually exclusive.
 
 **Indicator**: `com.canonical.Myna.Dictation` is always served for the myna-shell
-GNOME extension, falling back to desktop notifications by itself when the
+GNOME extension or, on Xfce, the HUD's X11 host, falling back to desktop notifications by itself when the
 session bus is unreachable - so there is no flag to set. `myna --no-dbus`
 forces the notification path for debugging. The experimental GTK `--overlay`
 was removed (T150).
@@ -239,8 +239,8 @@ gdbus introspect --session --dest com.canonical.Myna.Dictation \
   com.canonical.Myna.Dictation.Toggle`. A `myna.toggle` shortcut needs the
   control socket, whose bind is retried at 1s doubling to 30s
   (`journalctl --user -u snap.myna.myna`).
-- **`myna.toggle` can't reach the daemon** — `myna` isn't running.
-- **Nothing is injected, state shows `error`** — read the status:
+- **`myna.toggle` can't reach the daemon** - `myna` isn't running.
+- **Nothing is injected, state shows `error`** - read the status:
   `gdbus call --session --dest com.canonical.Myna.Dictation \
     --object-path /com/canonical/Myna/Dictation \
     --method org.freedesktop.DBus.Properties.Get com.canonical.Myna.Dictation StatusMessage`
@@ -249,7 +249,8 @@ gdbus introspect --session --dest com.canonical.Myna.Dictation \
   daemon serves `com.canonical.Myna.Dictation` by default, so ALL feedback (including
   errors) goes to its properties; without the myna-shell extension nothing
   renders it (notifications are only the fallback when the bus can't be
-  owned). Critical session errors are always printed to the daemon's
+  owned). On Xfce the HUD host renders it, and only while the daemon owns the
+  name. Critical session errors are always printed to the daemon's
   stderr, so run `myna` from a terminal and read them there. For the full
   stage-by-stage trace add `MYNA_DEBUG=1` (`ctrl`/`capture`/`ws`/`inject`
   lines - where the trail stops is the culprit). That tier prints the
@@ -266,12 +267,12 @@ gdbus introspect --session --dest com.canonical.Myna.Dictation \
   `sudo journalctl -k`. Live state without restarting: read the
   `State`/`StatusMessage` properties as above.
 - **`busctl` fails with "Operation not permitted" / "Access denied" against
-  the session bus in general** — your shell's `DBUS_SESSION_BUS_ADDRESS`
+  the session bus in general** - your shell's `DBUS_SESSION_BUS_ADDRESS`
   carries a stale `guid=` (a terminal/tmux server that survived a logout;
   sd-bus validates the guid, GIO ignores it, myna recovers by itself). Fix:
   `export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"`, and
   restart the offending terminal server.
-- **Reading the bus from a container fails with "Access denied"** — snapd's
+- **Reading the bus from a container fails with "Access denied"** - snapd's
   `dbus` slot only admits `label=unconfined` peers; call from a host shell
   (not `snap run --shell`, Workshop/LXD/toolbox). The GNOME Shell extension
   is in-compositor (unconfined) and unaffected.
@@ -295,12 +296,12 @@ control socket lives under the snap-scoped `$XDG_RUNTIME_DIR`.
 
 **Confinement note (indicator bus):** `com.canonical.Myna.Dictation` is properties-only
 by design. snapd's `dbus` slot AppArmor policy denies broadcasting *custom*
-signals to unconfined subscribers (and can't be safely widened — AppArmor
+signals to unconfined subscribers (and can't be safely widened - AppArmor
 dbus rules can't discriminate message types), but it does allow
 `org.freedesktop.DBus.Properties` sends on the service's own path, which is
 exactly the shape of a `PropertiesChanged` broadcast. State + level updates
 are therefore pushed with standard `PropertiesChanged`; the myna-shell
-extension subscribes and gets the fast push path confined or not — no
+extension subscribes and gets the fast push path confined or not - no
 polling (contract `specs/004-gnome-shell-indicator/contracts/dbus-interface.md`
 §Confinement).
 
@@ -363,7 +364,7 @@ Notes:
   allowlisted upstream (see **The daemon**).
 - No `default-provider` on the `backend` plug, so installing a backend is a
   separate step rather than an install prerequisite.
-- Socket access control is "an admin connected the plug" — identity/polkit
+- Socket access control is "an admin connected the plug" - identity/polkit
   is T17.
 - Store name `myna` is unregistered as of 2026-07-22; register before any
   store upload.
