@@ -7,6 +7,7 @@
 
 use libadwaita as adw;
 use libadwaita::prelude::*;
+use myna_hud::platform::Platform;
 use myna_hud::states::state_to_descriptor;
 use myna_hud::window::HudWindow;
 
@@ -29,7 +30,7 @@ fn main() {
         .application_id("com.canonical.Myna.StateGallery")
         .build();
     app.connect_activate(move |app| {
-        let hud = HudWindow::new(app);
+        let hud = HudWindow::new(app, Platform::current().profile);
         // Present first, then apply — the order the running app uses, and
         // the one that lets `idle` actually hide the window rather than
         // being undone by a later present().

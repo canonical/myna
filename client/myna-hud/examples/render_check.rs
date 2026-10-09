@@ -32,6 +32,7 @@ use libadwaita as adw;
 
 use myna_hud::hud_logic::HudStyle;
 use myna_hud::pill::{Pill, PILL_WIDTH};
+use myna_hud::platform::Platform;
 use myna_hud::segmented_meter::BAR_COUNT;
 use myna_hud::simulator::envelope_to_levels;
 use myna_hud::states::{state_to_descriptor, wire};
@@ -341,7 +342,7 @@ fn when_window(
 /// rather than wrapping it, and returns to its resting width after.
 fn check_fit(app: &adw::Application, then: impl FnOnce(Vec<String>) + 'static) {
     const HEADLINE: &str = "Error: Model not connected";
-    let hud = HudWindow::new(app);
+    let hud = HudWindow::new(app, Platform::current().profile);
     hud.apply_descriptor(state_to_descriptor(Some(wire::ERROR), HEADLINE));
     let one_line = |window: &gtk::ApplicationWindow| {
         window.width() > PILL_WIDTH && label_lines(window.upcast_ref()) == Some(1)
@@ -413,7 +414,7 @@ fn main() {
         .build();
 
     app.connect_activate(|app| {
-        let pill = Pill::new();
+        let pill = Pill::new(Platform::current().profile);
         let window = gtk::ApplicationWindow::new(app);
         window.set_title(Some("myna render-check"));
         window.set_child(Some(pill.widget()));

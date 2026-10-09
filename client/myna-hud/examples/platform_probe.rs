@@ -11,6 +11,7 @@ use libadwaita as adw;
 
 use myna_hud::accent::palette_for;
 use myna_hud::appearance::probe as platform;
+use myna_hud::platform::Platform;
 
 fn main() {
     let app = adw::Application::builder()
@@ -41,7 +42,7 @@ fn main() {
         );
         println!(
             "resolved             : {}",
-            myna_hud::appearance::for_process(&gtk::Label::new(None))
+            myna_hud::appearance::for_profile(Platform::current().profile, &gtk::Label::new(None))
                 .read()
                 .reduced_motion
         );
@@ -68,7 +69,11 @@ fn main() {
             "theme @accent_bg_color: {:?}   (the primary source)",
             platform::probe_css_accent(&probe)
         );
-        let palette = palette_for(myna_hud::appearance::for_process(&probe).read().accent);
+        let palette = palette_for(
+            myna_hud::appearance::for_profile(Platform::current().profile, &probe)
+                .read()
+                .accent,
+        );
         println!("ribbon palette       : {palette:?}");
 
         app.quit();

@@ -10,6 +10,7 @@
 use gtk4 as gtk;
 use libadwaita as adw;
 use libadwaita::prelude::*;
+use myna_hud::platform::Platform;
 use myna_hud::states::{state_to_descriptor, wire};
 use myna_hud::window::HudWindow;
 
@@ -18,7 +19,7 @@ fn main() {
         .application_id("com.canonical.Myna.StateCycle")
         .build();
     app.connect_activate(|app| {
-        let hud = HudWindow::new(app);
+        let hud = HudWindow::new(app, Platform::current().profile);
         hud.window().present();
         hud.apply_descriptor(state_to_descriptor(Some(wire::IDLE), ""));
 

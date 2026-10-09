@@ -24,9 +24,11 @@ use myna_hud::bus::{self, BusEvent};
 use myna_hud::dbus_consumer::DictationService;
 use myna_hud::host::x11::X11Host;
 use myna_hud::hud_logic::HudStyle;
+use myna_hud::platform::Platform;
 use myna_hud::signals::quit_on_signal;
 use myna_hud::states::state_to_descriptor;
 use myna_hud::window::HudWindow;
+use myna_platform::Profile;
 
 const APP_ID: &str = "com.canonical.Myna.Hud";
 
@@ -60,8 +62,9 @@ fn main() -> glib::ExitCode {
         }
     };
 
+    let platform = Platform::current();
     if mode == Mode::Hosted(Host::X11) {
-        let session = myna_platform::Session::detect(&myna_platform::SessionEnv::from_process());
+        let session = &platform.session;
         if session.kind != myna_platform::SessionKind::X11 {
             eprintln!("myna-hud: --host x11 needs an X11 session, this one is {session:?}");
             return glib::ExitCode::new(EXIT_WRONG_SESSION);
@@ -98,17 +101,18 @@ fn main() -> glib::ExitCode {
 
     let failed = std::rc::Rc::new(std::cell::Cell::new(false));
     let failed_in_activate = failed.clone();
+    let profile = platform.profile;
     app.connect_activate(move |app| match mode {
         Mode::Hosted(host) => {
-            if !activate_hosted(app, host) {
+            if !activate_hosted(app, host, profile) {
                 failed_in_activate.set(true);
                 app.quit();
             }
         }
         #[cfg(dev_lab)]
-        Mode::Lab => activate_lab(app),
+        Mode::Lab => activate_lab(app, profile),
         #[cfg(dev_lab)]
-        Mode::ServeDbus => activate_serve_dbus(app),
+        Mode::ServeDbus => activate_serve_dbus(app, profile),
     });
 
     // Our own argv is already consumed above.
@@ -193,8 +197,8 @@ The myna dictation HUD renderer.
 
 /// The shipping path: render whatever the publisher reports. False when
 /// the requested host cannot run.
-fn activate_hosted(app: &adw::Application, host: Host) -> bool {
-    let hud = HudWindow::new(app);
+fn activate_hosted(app: &adw::Application, host: Host, profile: Profile) -> bool {
+    let hud = HudWindow::new(app, profile);
     if host == Host::X11 {
         if let Err(e) = X11Host::install(&hud) {
             eprintln!("myna-hud: --host x11: {e}");
@@ -246,13 +250,13 @@ fn activate_hosted(app: &adw::Application, host: Host) -> bool {
 
 /// The development lab: manual controls, no backend.
 #[cfg(dev_lab)]
-fn activate_lab(app: &adw::Application) {
-    myna_hud::lab::present(app);
+fn activate_lab(app: &adw::Application, profile: Profile) {
+    myna_hud::lab::present(app, profile);
 }
 
 /// The simulated publisher: the lab, plus a real `com.canonical.Myna.Dictation` on the
 /// session bus so the hosted path can be exercised without the daemon.
 #[cfg(dev_lab)]
-fn activate_serve_dbus(app: &adw::Application) {
-    myna_hud::lab::present_serving(app);
+fn activate_serve_dbus(app: &adw::Application, profile: Profile) {
+    myna_hud::lab::present_serving(app, profile);
 }

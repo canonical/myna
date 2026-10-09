@@ -33,6 +33,8 @@ use gtk4 as gtk;
 use libadwaita as adw;
 use libadwaita::prelude::*;
 
+use myna_platform::Profile;
+
 use crate::host::Host;
 use crate::pill::{Pill, PILL_HEIGHT, PILL_WIDTH};
 use crate::states::Descriptor;
@@ -67,8 +69,8 @@ pub struct HudWindow {
 
 impl HudWindow {
     /// Build the overlay window around a fresh pill.
-    pub fn new(app: &adw::Application) -> Rc<Self> {
-        let pill = Pill::new();
+    pub fn new(app: &adw::Application, profile: Profile) -> Rc<Self> {
+        let pill = Pill::new(profile);
 
         // A plain GtkApplicationWindow, deliberately NOT
         // adw::ApplicationWindow: the libadwaita window imposes a 200 px

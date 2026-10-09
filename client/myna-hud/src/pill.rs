@@ -21,7 +21,7 @@ use gtk::glib;
 use gtk::prelude::*;
 use gtk4 as gtk;
 use myna_platform::appearance::{Appearance, Freshness};
-use myna_platform::Subscription;
+use myna_platform::{Profile, Subscription};
 
 use crate::accent::palette_for;
 use crate::appearance;
@@ -139,7 +139,7 @@ pub struct Pill {
 
 impl Pill {
     /// Build the pill and wire its clock, renderer and preference tracking.
-    pub fn new() -> Rc<Self> {
+    pub fn new(profile: Profile) -> Rc<Self> {
         load_css();
 
         let icon = gtk::Image::from_icon_name("audio-input-microphone-symbolic");
@@ -189,7 +189,7 @@ impl Pill {
         pill.append(&icon);
         pill.append(&content);
 
-        let appearance = appearance::for_process(&ribbon);
+        let appearance = appearance::for_profile(profile, &ribbon);
         let initial = appearance.read();
         let state = Rc::new(RefCell::new(PillState {
             descriptor: crate::states::state_to_descriptor(None, ""),

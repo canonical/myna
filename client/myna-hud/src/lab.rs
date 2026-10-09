@@ -25,6 +25,8 @@ use gtk4 as gtk;
 use libadwaita as adw;
 use libadwaita::prelude::*;
 
+use myna_platform::Profile;
+
 use crate::pill::Pill;
 use crate::simulator::{default_status_message, envelope_to_levels, PUBLISH_HZ};
 use crate::states::{state_to_descriptor, wire};
@@ -122,17 +124,17 @@ impl Target {
 }
 
 /// `--lab`: the HUD as an external window, no backend.
-pub fn present(app: &adw::Application) {
-    build_lab(app, false);
+pub fn present(app: &adw::Application, profile: Profile) {
+    build_lab(app, profile, false);
 }
 
 /// `--serve-dbus`: the HUD embedded as a preview, publishing to the bus so a
 /// shell-hosted instance shows the real overlay.
-pub fn present_serving(app: &adw::Application) {
-    build_lab(app, true);
+pub fn present_serving(app: &adw::Application, profile: Profile) {
+    build_lab(app, profile, true);
 }
 
-fn build_lab(app: &adw::Application, publishing: bool) {
+fn build_lab(app: &adw::Application, profile: Profile, publishing: bool) {
     let shared = Rc::new(crate::serve::Shared::default());
 
     // The Publish toggle switches between an external window (no bus) and an
@@ -147,9 +149,9 @@ fn build_lab(app: &adw::Application, publishing: bool) {
 
     let controls = Rc::new(RefCell::new(Controls::default()));
     let target: Rc<RefCell<Target>> = Rc::new(RefCell::new(if publishing {
-        Target::Embedded(Pill::new())
+        Target::Embedded(Pill::new(profile))
     } else {
-        let hud = HudWindow::new(app);
+        let hud = HudWindow::new(app, profile);
         hud.window().present();
         Target::Window(hud)
     }));
@@ -461,7 +463,14 @@ fn build_lab(app: &adw::Application, publishing: bool) {
         let apply = apply.clone();
         publish_switch.connect_active_notify(move |switch| {
             let publishing = switch.is_active();
-            swap_target(&app, &target, &preview_holder, &preview_frame, publishing);
+            swap_target(
+                &app,
+                profile,
+                &target,
+                &preview_holder,
+                &preview_frame,
+                publishing,
+            );
             if publishing {
                 start_publish(shared.clone(), &publisher);
             } else {
@@ -598,6 +607,7 @@ fn stop_publish(shared: &crate::serve::Shared, _publisher: &Rc<RefCell<Publisher
 /// Swap the HUD target between an external window and an embedded pill.
 fn swap_target(
     app: &adw::Application,
+    profile: Profile,
     target: &RefCell<Target>,
     preview_holder: &gtk::Box,
     preview_frame: &gtk::Frame,
@@ -619,12 +629,12 @@ fn swap_target(
 
     let new_target = if publishing {
         preview_frame.set_visible(true);
-        let pill = Pill::new();
+        let pill = Pill::new(profile);
         preview_holder.append(pill.widget());
         Target::Embedded(pill)
     } else {
         preview_frame.set_visible(false);
-        let hud = HudWindow::new(app);
+        let hud = HudWindow::new(app, profile);
         hud.window().present();
         Target::Window(hud)
     };
