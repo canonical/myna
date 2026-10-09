@@ -201,6 +201,53 @@ pub fn parse_snap_list(input: &str) -> Result<Vec<InstalledSnap>, SnapListError>
     Ok(snaps)
 }
 
+/// The issue form `.github/ISSUE_TEMPLATE/report.yml` describes.
+const ISSUE_FORM: &str = "https://github.com/canonical/myna/issues/new?template=report.yml";
+
+/// GitHub answers 414 to a URL much past 8 KB; this leaves it headroom.
+const ISSUE_URL_BUDGET: usize = 7_500;
+
+/// A new issue on the report form, its diagnostics field already holding
+/// `report`. A report too long for a URL loses lines from its end and says
+/// where the rest is.
+pub fn issue_url(report: &str) -> String {
+    let prefix = format!("{ISSUE_FORM}&diagnostics=");
+    let full = format!("{prefix}{}", form_encode(report));
+    if full.len() <= ISSUE_URL_BUDGET {
+        return full;
+    }
+    let note = format!(
+        "\n({})\n",
+        gettextrs::gettext("Shortened. The full report is in About and Diagnostics.")
+    );
+    let budget = ISSUE_URL_BUDGET - prefix.len() - form_encode(&note).len();
+    let mut kept = String::new();
+    for line in report.lines() {
+        let next = format!("{kept}{line}\n");
+        if form_encode(&next).len() > budget {
+            break;
+        }
+        kept = next;
+    }
+    format!("{prefix}{}", form_encode(&format!("{kept}{note}")))
+}
+
+/// `application/x-www-form-urlencoded`, which GitHub decodes prefilled form
+/// fields from: a space is `+`, the alignment padding costing one byte each.
+fn form_encode(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    for byte in value.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
+                out.push(byte as char)
+            }
+            b' ' => out.push('+'),
+            _ => out.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    out
+}
+
 /// Coalesces user-initiated refreshes. There is no periodic refresh.
 pub const REFRESH_DEBOUNCE: Duration = Duration::from_millis(250);
 
@@ -969,6 +1016,63 @@ mod tests {
             redact_text("dictation failed: token=abc123 password=hunter2 rest"),
             "dictation failed: token=[redacted] password=[redacted] rest"
         );
+    }
+
+    fn form_decode(value: &str) -> String {
+        let bytes = value.as_bytes();
+        let mut out = Vec::new();
+        let mut i = 0;
+        while i < bytes.len() {
+            match bytes[i] {
+                b'+' => out.push(b' '),
+                b'%' => {
+                    let hex = std::str::from_utf8(&bytes[i + 1..i + 3]).unwrap();
+                    out.push(u8::from_str_radix(hex, 16).unwrap());
+                    i += 2;
+                }
+                byte => out.push(byte),
+            }
+            i += 1;
+        }
+        String::from_utf8(out).unwrap()
+    }
+
+    fn prefilled(url: &str) -> String {
+        let (form, field) = url
+            .split_once("&diagnostics=")
+            .expect("a diagnostics field");
+        assert_eq!(
+            form,
+            "https://github.com/canonical/myna/issues/new?template=report.yml"
+        );
+        form_decode(field)
+    }
+
+    #[test]
+    fn the_issue_carries_the_report_verbatim() {
+        let report = "Myna Settings 1.0\n    CPU   x86 & co, 100% 粵語 a+b=c?#\n";
+        let url = issue_url(report);
+        assert!(url.len() <= ISSUE_URL_BUDGET);
+        assert!(!url.contains(' ') && !url.contains('#'), "{url}");
+        assert_eq!(prefilled(&url), report);
+    }
+
+    /// GitHub refuses an oversized URL outright, which would lose the whole
+    /// report rather than its tail.
+    #[test]
+    fn an_oversized_report_keeps_its_head_and_says_so() {
+        let report: String = (0..2_000).map(|n| format!("line {n}\n")).collect();
+        let url = issue_url(&report);
+        assert!(url.len() <= ISSUE_URL_BUDGET, "{}", url.len());
+        let field = prefilled(&url);
+        assert!(field.starts_with("line 0\nline 1\n"), "{field}");
+        assert!(field.ends_with("(Shortened. The full report is in About and Diagnostics.)\n"));
+        let kept = field
+            .lines()
+            .filter(|line| line.starts_with("line "))
+            .count();
+        assert!(kept > 500, "{kept}");
+        assert!(report.starts_with(&field[..field.find("\n\n(").unwrap() + 1]));
     }
 
     #[test]

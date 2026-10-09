@@ -72,7 +72,7 @@ fn application_exposes_accessible_diagnostics_controls_when_enabled() {
     assert!(stdout.contains("high-contrast: verified"));
     assert!(stdout.contains("reduced-motion: verified"));
     assert!(stdout.contains("appearance-policy: applied"));
-    assert!(stdout.contains("main-menu: setup and about"));
+    assert!(stdout.contains("main-menu: setup, report-issue and about"));
     assert!(stdout.contains("close-accelerator: bound"));
     assert!(stdout.contains("quit-accelerator: closes windows"));
 }

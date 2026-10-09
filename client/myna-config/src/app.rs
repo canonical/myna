@@ -264,7 +264,7 @@ fn accessibility_probe() -> glib::ExitCode {
     .and_then(|widget| widget.downcast::<gtk::MenuButton>().ok())
     .and_then(|button| button.menu_model());
     let menu_actions: Vec<String> = menu.map(|menu| menu_actions(&menu)).unwrap_or_default();
-    if menu_actions != ["win.setup", "app.about"] {
+    if menu_actions != ["win.setup", "win.report-issue", "app.about"] {
         eprintln!("the main menu offers {menu_actions:?}");
         return glib::ExitCode::FAILURE;
     }
@@ -282,7 +282,7 @@ fn accessibility_probe() -> glib::ExitCode {
     };
     about.close();
     settle_gtk();
-    println!("main-menu: setup and about");
+    println!("main-menu: setup, report-issue and about");
 
     for (accelerator, action) in [("<Control>w", "window.close"), ("<Control>q", "app.quit")] {
         if !application

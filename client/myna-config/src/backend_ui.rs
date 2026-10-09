@@ -1353,6 +1353,18 @@ impl BackendUi {
         });
         window.add_action(&setup);
 
+        let report_issue = gio::SimpleAction::new("report-issue", None);
+        report_issue.connect_activate({
+            let ui = Rc::downgrade(self);
+            let window = window.downgrade();
+            move |_, _| {
+                if let (Some(ui), Some(window)) = (ui.upgrade(), window.upgrade()) {
+                    ui.report_issue(&window);
+                }
+            }
+        });
+        window.add_action(&report_issue);
+
         window.connect_is_active_notify({
             let ui = Rc::downgrade(self);
             move |window| {
@@ -1955,6 +1967,24 @@ impl BackendUi {
             DiagnosticsFocus::Refresh => page.copy_button().grab_focus(),
             DiagnosticsFocus::Report => page.report_view().grab_focus(),
         };
+    }
+
+    /// Opens a new GitHub issue with the diagnostics already in it, so the
+    /// user only has to say what went wrong.
+    fn report_issue(&self, window: &ui::MainWindow) {
+        let text = present_diagnostics(self.diagnostic_input()).copy_text();
+        let overlay = self.overlay.clone();
+        gtk::UriLauncher::new(&diagnostics::issue_url(&text)).launch(
+            Some(window),
+            gio::Cancellable::NONE,
+            move |result| {
+                if result.is_err() {
+                    overlay.add_toast(adw::Toast::new(&gettextrs::gettext(
+                        "Could not open the web browser",
+                    )));
+                }
+            },
+        );
     }
 
     /// What Diagnostics reports, from what discovery last found.

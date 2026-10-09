@@ -1,0 +1,18 @@
+name: Report an issue
+description: Something in Myna does not work as it should.
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Enough for someone else to make it happen again, in whatever form suits you.
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: >-
+        Filled in when you report from Myna Settings. Otherwise, open Myna
+        Settings, go to About and Diagnostics, copy the report and paste it here.
+      render: text
