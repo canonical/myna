@@ -64,7 +64,9 @@ const FAKE_CLIENT: &str = "fake";
 const ACTIVATION_WINDOW: Duration = Duration::from_millis(500);
 
 /// How long focus may stay off the field after a `FocusOut` that came with an
-/// activation: the grab ends, and FocusIn returns, when the key is released.
+/// activation, or after the last activation since: the grab ends, and
+/// FocusIn returns, when the key is released, and a held key repeats its
+/// activation until then.
 const FOCUS_BLIP_GRACE: Duration = Duration::from_millis(1000);
 
 /// `IBusInputPurpose` values we refuse to inject into.
@@ -513,7 +515,8 @@ enum Binding {
     Context(String),
     /// Focus left `path`. Unless an activation comes within
     /// [`ACTIVATION_WINDOW`] (`activated`) and focus is back on `path` within
-    /// [`FOCUS_BLIP_GRACE`] (`back`), it is a loss. Writes are held until the
+    /// [`FOCUS_BLIP_GRACE`] of the `FocusOut` or of the last activation, a
+    /// held key's repeats included (`back`), it is a loss. Writes are held until the
     /// activation and wait after it. `blip` tells this absence from a later
     /// one.
     Away {
@@ -772,14 +775,35 @@ impl EngineState {
             Some(runtime) => {
                 let state = Arc::clone(self);
                 runtime.spawn(async move {
+                    let since = tokio::time::Instant::now();
                     tokio::time::sleep(ACTIVATION_WINDOW).await;
                     state.expire(blip, false);
-                    tokio::time::sleep(FOCUS_BLIP_GRACE - ACTIVATION_WINDOW).await;
-                    state.expire(blip, true);
+                    while let Some(deadline) = state.blip_deadline(blip, since) {
+                        if tokio::time::Instant::now() >= deadline {
+                            state.expire(blip, true);
+                            break;
+                        }
+                        tokio::time::sleep_until(deadline).await;
+                    }
                 });
             }
             None => self.expire(blip, true),
         }
+    }
+
+    /// When focus away in `blip` since `since` becomes a loss: the grace from
+    /// then or from the last activation, whichever is later, so a held key's
+    /// repeats keep it open. `None` once the blip is over.
+    fn blip_deadline(
+        &self,
+        blip: u64,
+        since: tokio::time::Instant,
+    ) -> Option<tokio::time::Instant> {
+        let lease = self.lease.borrow();
+        (lease.away() == Some(blip)).then(|| {
+            let last = lease.activated_at.map_or(since, |at| at.max(since));
+            last + FOCUS_BLIP_GRACE
+        })
     }
 
     /// End the lease if it is still away in `blip`, and, short of the grace,
@@ -2013,6 +2037,53 @@ mod tests {
 
     fn standing_now(state: &EngineState, lease: u64) -> Option<Standing> {
         state.lease.borrow().standing(lease)
+    }
+
+    /// How often a held key repeats on Xubuntu.
+    const REPEAT: Duration = Duration::from_millis(50);
+
+    /// A key held for longer than the grace repeats its activation all the
+    /// while, and the blip lasts as long.
+    #[tokio::test(start_paused = true)]
+    async fn repeats_keep_a_blip_open_past_the_grace() {
+        let (state, engine, lease) = focused().await;
+        grab(&engine).await;
+        state.activated(lease);
+        let held = tokio::time::Instant::now();
+        while held.elapsed() < 3 * FOCUS_BLIP_GRACE {
+            tokio::time::sleep(REPEAT).await;
+            assert!(
+                state.holds(lease),
+                "lost {:?} into the hold",
+                held.elapsed()
+            );
+            state.activated(lease);
+        }
+        ungrab(&engine).await;
+        assert!(state.holds(lease));
+        assert_eq!(standing_now(&state, lease), Some(Standing::Held));
+    }
+
+    /// Once the repeats stop, focus has the grace from the last one.
+    #[tokio::test(start_paused = true)]
+    async fn a_blip_ends_a_grace_after_the_last_repeat() {
+        let (state, engine, lease) = focused().await;
+        grab(&engine).await;
+        state.activated(lease);
+        for _ in 0..30 {
+            tokio::time::sleep(REPEAT).await;
+            state.activated(lease);
+        }
+        tokio::time::sleep(FOCUS_BLIP_GRACE - TICK).await;
+        assert!(
+            state.holds(lease),
+            "ended before the grace from the last repeat"
+        );
+        tokio::time::sleep(2 * TICK).await;
+        assert!(
+            !state.holds(lease),
+            "outlived the grace from the last repeat"
+        );
     }
 
     /// The Toggle reaches the daemon after the grab's FocusOut, and the key
