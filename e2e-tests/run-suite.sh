@@ -7,7 +7,9 @@
 #   --desktop D    the desktop VM to use (default $E2E_DESKTOP, else gnome)
 #   --binary PATH  test this myna-config instead of building one in the
 #                  myna-noble workshop
-# Suites live in suites/; none given runs them all.
+# Suites live in suites/; none given runs them all. A suite whose header says
+# `# binary: none` does not drive myna-config, so it is not built or pushed
+# when only such suites run.
 set -euo pipefail
 
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -20,7 +22,7 @@ while [ $# -gt 0 ]; do
         --release) REL=$2; shift 2 ;;
         --desktop) E2E_DESKTOP=$2; shift 2 ;;
         --binary) BINARY=$2; shift 2 ;;
-        -h|--help) sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) SUITES+=("$1"); shift ;;
     esac
 done
@@ -36,7 +38,12 @@ fi
 TAG=$REL; [ "$E2E_DESKTOP" = gnome ] || TAG=$E2E_DESKTOP-$REL
 REPO=$(git -C "$HERE" rev-parse --show-toplevel)
 
-if [ -z "$BINARY" ]; then
+NEEDS_BINARY=''
+for SUITE in "${SUITES[@]}"; do
+    grep -qx '# binary: none' "$HERE/suites/$SUITE.sh" || NEEDS_BINARY=1
+done
+
+if [ -z "$BINARY" ] && [ -n "$NEEDS_BINARY" ]; then
     # The binary is built once on the GTK 4.14/adw 1.5 floor and runs on every
     # series. A worktree's .git does not resolve inside the workshop, so the
     # version is staged the way snap packaging does it.
@@ -68,7 +75,7 @@ for SUITE in "${SUITES[@]}"; do
     wait_ready "$RUN"
 
     on_vm "$RUN" 'mkdir -p myna-shot/schemas'
-    lxc file push --uid 1000 --gid 1000 --mode 0755 "$BINARY" "$HERE"/tools/* "$RUN/home/ubuntu/myna-shot/"
+    lxc file push --uid 1000 --gid 1000 --mode 0755 ${BINARY:+"$BINARY"} "$HERE"/tools/* "$RUN/home/ubuntu/myna-shot/"
     lxc file push --uid 1000 --gid 1000 "$REPO"/client/data/glib-2.0/schemas/*.gschema.xml "$RUN/home/ubuntu/myna-shot/schemas/"
 
     src=0

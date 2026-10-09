@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # snapshot: dictation
+# binary: none
 # Dictation end to end on the real desktop session: activation -> a speech
 # clip played through a virtual microphone -> the fake backend (a scripted
 # transcript: "The quick brown fox" while recording, "jumps over the lazy dog."
@@ -32,8 +33,11 @@ evidence() {
         cp field.json \"field-$1.json\" 2>/dev/null
         journalctl --user -u snap.myna.myna.service --no-pager -o short-precise > daemon.log 2>&1
         { ibus address; ibus engine; } > ibus.txt 2>&1
-        [ \"\${XDG_SESSION_TYPE:-}\" != x11 ] || import -window root \"screen-$1.png\" 2>/dev/null
         true" >/dev/null 2>&1
+    # An X11 desktop can be photographed from inside; GNOME's Wayland cannot.
+    # shellcheck disable=SC2153 # DESKTOP comes from run-suite.sh
+    [ "$DESKTOP" != xubuntu ] || dict "import -window root myna-shot/out/screen-$1.png" >/dev/null 2>&1
+    return 0
 }
 
 on 'mkdir -p myna-shot/out'
