@@ -77,6 +77,11 @@ for SUITE in "${SUITES[@]}"; do
     lxc copy "$VM/$SNAP" "$RUN" -c limits.memory="$E2E_VM_MEMORY"
     lxc start "$RUN"
     wait_ready "$RUN"
+    # A copy boots into snapd's refresh window: a store refresh of myna in
+    # flight refuses a sideload ("auto-refresh change in progress"), and one
+    # after it would replace the snap under test.
+    lxc exec "$RUN" -- snap refresh --hold >/dev/null
+    wait_snapd_idle "$RUN"
     # Not over a machine without myna (`bare`): onboarding installs the store's.
     if [ -n "${E2E_MYNA_SNAP:-}" ] && lxc exec "$RUN" -- snap list myna >/dev/null 2>&1; then
         lxc file push "$E2E_MYNA_SNAP" "$RUN/root/myna.snap"
