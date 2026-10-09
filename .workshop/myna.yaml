@@ -118,9 +118,10 @@ actions:
     cargo build --workspace --example render_check
     dbus-run-session -- xvfb-run -a -s "-screen 0 800x600x24" \
       ./target/debug/examples/render_check
-    MYNA_CONFIG_TEMPLATE_TESTS=1 MYNA_CONFIG_GTK_TESTS=1 \
+    MYNA_CONFIG_TEMPLATE_TESTS=1 MYNA_CONFIG_GTK_TESTS=1 MYNA_HUD_GTK_TESTS=1 \
       dbus-run-session -- xvfb-run -a -s "-screen 0 1024x768x24" \
-      cargo test --workspace --lib --test template_instantiation -- --test-threads=1
+      cargo test --workspace --lib --test template_instantiation \
+        --test appearance_conformance -- --test-threads=1
 
   # --- feature 006: coverage, dead-code, quality gates -----------------------
   # Contract: specs/006-coverage-quality-gates/contracts/workshop-actions.md.
@@ -151,9 +152,10 @@ actions:
     # drive is measured; `ui-check` runs the same suite uninstrumented, and
     # explains the private bus.
     export GIO_USE_VFS=local
-    MYNA_CONFIG_TEMPLATE_TESTS=1 MYNA_CONFIG_GTK_TESTS=1 \
+    MYNA_CONFIG_TEMPLATE_TESTS=1 MYNA_CONFIG_GTK_TESTS=1 MYNA_HUD_GTK_TESTS=1 \
       dbus-run-session -- xvfb-run -a -s "-screen 0 1024x768x24" \
-      cargo llvm-cov --no-report --workspace --lib --test template_instantiation -- --test-threads=1
+      cargo llvm-cov --no-report --workspace --lib --test template_instantiation \
+        --test appearance_conformance -- --test-threads=1
     # The indicators only paint on a display, which no test has: `ui-check`'s
     # render_check is their test, so measure it here too.
     dbus-run-session -- xvfb-run -a -s "-screen 0 800x600x24" \
@@ -297,7 +299,7 @@ actions:
     # before cargo-mutants starts, and cargo-mutants fails the baseline loudly
     # if the suite it enables is red.
     export GIO_USE_VFS=local
-    export MYNA_CONFIG_TEMPLATE_TESTS=1 MYNA_CONFIG_GTK_TESTS=1
+    export MYNA_CONFIG_TEMPLATE_TESTS=1 MYNA_CONFIG_GTK_TESTS=1 MYNA_HUD_GTK_TESTS=1
     cd /project/client
     exec /project/dev/gated-tests.sh \
       xvfb-run -a -s "-screen 0 1024x768x24" cargo mutants "$@"

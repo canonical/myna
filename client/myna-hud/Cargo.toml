@@ -74,4 +74,5 @@ x11rb = { version = "0.13", features = ["shape"] }
 myna-platform = { path = "../myna-platform" }
 
 [dev-dependencies]
+myna-platform = { path = "../myna-platform", features = ["conformance"] }
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "time"] }
