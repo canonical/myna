@@ -45,6 +45,40 @@ dictation_toggle() {
         --method $DAEMON.Toggle >/dev/null
 }
 
+# A virtual keyboard on the real seat (uinput-keys.py, as root): chords go
+# through the compositor like a person's, so shortcuts and focus behave.
+KEYS_FIFO=$HOME/myna-shot/keys.fifo
+keys_start() {
+    rm -f "$KEYS_FIFO" "$HOME/myna-shot/out/uinput.log"
+    mkfifo "$KEYS_FIFO"
+    # shellcheck disable=SC2024 # the log belongs to the user
+    sudo setsid python3 "$HOME/myna-shot/uinput-keys.py" "$KEYS_FIFO" \
+        >"$HOME/myna-shot/out/uinput.log" 2>&1 </dev/null &
+    wait_until 20 grep -qx ready "$HOME/myna-shot/out/uinput.log"
+}
+# shellcheck disable=SC2016 # expands in the inner shell
+key() { timeout 5 sh -c 'echo "$1" > "$2"' sh "$1" "$KEYS_FIFO"; }
+
+# Bind CHORD (e.g. "<Super>j") to the daemon's Toggle in the desktop's own
+# shortcut store, the way a user's custom shortcut is.
+bind_toggle_key() {
+    local cmd="gdbus call --session --dest $DAEMON --object-path $DAEMON_PATH --method $DAEMON.Toggle"
+    case ${XDG_CURRENT_DESKTOP:-} in
+        *GNOME*)
+            local base=org.gnome.settings-daemon.plugins.media-keys
+            local path=/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/e2e/
+            gsettings set "$base.custom-keybinding:$path" name 'Myna e2e'
+            gsettings set "$base.custom-keybinding:$path" command "$cmd"
+            gsettings set "$base.custom-keybinding:$path" binding "$1"
+            gsettings set $base custom-keybindings "['$path']" ;;
+        *XFCE*)
+            xfconf-query -c xfce4-keyboard-shortcuts -n -t string -p "/commands/custom/$1" -s "$cmd" ;;
+        *) echo "bind_toggle_key: unknown desktop ${XDG_CURRENT_DESKTOP:-}" >&2; return 1 ;;
+    esac
+}
+
+default_source_is() { wpctl inspect @DEFAULT_AUDIO_SOURCE@ | grep -q "node.name = \"$1\""; }
+
 # The speech clip, looped on the virtual speaker whose monitor is the default
 # microphone: the speaker never falls silent, so no case races the clip.
 mic_start() {

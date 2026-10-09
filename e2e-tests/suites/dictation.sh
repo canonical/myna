@@ -11,8 +11,8 @@
 #   2. a password field receives nothing and the press is refused
 #   3. focus moved away mid-utterance: the rest is dropped, nothing lands in
 #      the field that took the focus
-#   4. the bound key starts a dictation (Xubuntu only: GNOME Wayland has no
-#      reliable key injector in the guest)
+#   4. the bound key (a virtual keyboard, tools/uinput-keys.py, presses it on
+#      the real seat) starts and stops a dictation
 set -uo pipefail
 # shellcheck source=e2e-tests/suites/lib.sh
 source "$(dirname "$0")/lib.sh"
@@ -48,8 +48,11 @@ assert_on "precondition: the backend is the fake" \
 assert_on "precondition: the daemon is idle" \
     "$LIB; wait_until 20 dictation_state_is idle"
 assert_on "precondition: the virtual microphone is the default source" \
-    'pactl info | grep -qx "Default Source: myna-e2e-mic"'
+    "$LIB; default_source_is myna-e2e-mic"
 dict 'mic_start myna-shot/speech.wav'
+assert_dict "the virtual keyboard is up" 'keys_start'
+# GNOME starts in the Overview, where a new window is not focused.
+dict 'key escape'
 assert_dict "the field app is up" 'field_start'
 assert_dict "the field is focused and the window active" 'field_focus plain'
 
@@ -87,23 +90,17 @@ assert_dict "the rest of the transcript was dropped" \
     "sleep 2; field_is plain '$FIRST' && field_is other ''"
 evidence 3
 
-echo "-- 4. the bound key starts a dictation"
-# shellcheck disable=SC2153 # DESKTOP comes from run-suite.sh
-if [ "$DESKTOP" = xubuntu ]; then
-    on "xfconf-query -c xfce4-keyboard-shortcuts -n -t string -p '/commands/custom/<Super>j' \
-        -s 'gdbus call --session --dest com.canonical.Myna.Dictation --object-path /com/canonical/Myna/Dictation --method com.canonical.Myna.Dictation.Toggle'"
-    assert_dict "the field is cleared" 'field_clear'
-    assert_dict "the plain field is focused" 'field_focus plain'
-    on 'xdotool key super+j'
-    assert_dict "the key starts recording" 'wait_until 10 dictation_state_is recording'
-    assert_dict "the first segment lands" "wait_until 10 field_is plain '$FIRST'"
-    on 'xdotool key super+j'
-    assert_dict "the key stops it" 'wait_until 10 dictation_state_is idle'
-    assert_dict "the whole transcript is in the field" "wait_until 10 field_is plain '$FULL'"
-    evidence 4
-else
-    echo "SKIP: no reliable key injector on $DESKTOP in the guest"
-fi
+echo "-- 4. the bound key starts and stops a dictation"
+dict 'session_env; bind_toggle_key "<Super>j"'
+assert_dict "the field is cleared" 'field_clear'
+assert_dict "the plain field is focused" 'field_focus plain'
+dict 'key super+j'
+assert_dict "the key starts recording" 'wait_until 10 dictation_state_is recording'
+assert_dict "the first segment lands" "wait_until 10 field_is plain '$FIRST'"
+dict 'key super+j'
+assert_dict "the key stops it" 'wait_until 10 dictation_state_is idle'
+assert_dict "the whole transcript is in the field" "wait_until 10 field_is plain '$FULL'"
+evidence 4
 
 dict 'mic_stop' >/dev/null 2>&1
 suite_status

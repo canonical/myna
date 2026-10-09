@@ -22,7 +22,10 @@ GTK4 window of plain and password entries that reports itself as JSON) in the
 real session, a speech clip looped on a virtual PipeWire speaker whose
 loopback is the default microphone (`dictation` provisioning stage), and the
 fake backend snap, so the transcript is scripted. It drives the daemon through
-its D-Bus `Toggle` and reads `State`/`AudioPeak` from it; helpers are in
+its D-Bus `Toggle` and reads `State`/`AudioPeak` from it; one case presses a
+bound key through `tools/uinput-keys.py`, a virtual keyboard on the real seat
+(the same on both desktops; it also presses Escape to leave GNOME's initial
+Overview, where a new window is not focused). Helpers are in
 `tools/dictation-lib.sh`.
 
 # Important
