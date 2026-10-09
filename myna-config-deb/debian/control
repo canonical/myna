@@ -7,6 +7,7 @@ Build-Depends: debhelper-compat (= 13),
                appstream,
                blueprint-compiler (>= 0.12),
                cargo (>= 1.85),
+               dbus-daemon <!nocheck>,
                gettext,
                gir1.2-adw-1,
                gir1.2-gtk-4.0,
@@ -15,6 +16,7 @@ Build-Depends: debhelper-compat (= 13),
                libgtk-4-dev (>= 4.14),
                pkgconf,
                rustc (>= 1.85),
+               xvfb <!nocheck>,
 Standards-Version: 4.7.4
 Rules-Requires-Root: no
 
