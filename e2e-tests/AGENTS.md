@@ -7,16 +7,41 @@ Read the top-level `.kb/agents.md` file before continuing below.
 # Overview
 
 A suite runs on the host: `run-suite.sh` restores the LXD snapshot it
-declares, pushes the binary and `tools/` into the VM, and the suite calls
-`shot` (the app under Xvfb on the autologin user's session bus, driven by
-`shot-driver.py` steps) and asserts with `assert_on` inside the VM. CI runs
-the same `make e2e` per series and desktop (`.github/workflows/e2e.yml`).
+declares, pushes the binaries and `tools/` into the VM, and the suite calls
+`shot` (the app driven by `shot-driver.py` steps) and asserts with `assert_on`
+inside the VM. CI runs the same `make e2e` per series and desktop
+(`.github/workflows/e2e.yml`); the suites are desktop-aware, and the places
+the desktops legitimately differ (`assert_shortcut_bound`,
+`assert_input_method_up`, the `shot` display) are helpers in `suites/lib.sh`.
 
 The desktop is an axis, `E2E_DESKTOP=gnome|xubuntu` (`--desktop` on the
 scripts). Its cloud-init is `vm/user-data.common` merged with
 `vm/user-data.<desktop>` by `lib.sh`; session readiness (`session_up`) and
 the X11 environment `on_vm` hands out are per desktop. Xubuntu is Xfce on
 X11 (lightdm autologin).
+
+## Screenshots
+
+`shot` runs the app on the real display of an X11 desktop (Xubuntu: `shot.sh
+--display real`, so a screenshot shows the panel, theme, pill and
+notifications) and under its own Xvfb on GNOME, whose Wayland session cannot
+be photographed from inside. A checkpoint is a fixed name,
+`shot:shots/<suite>/<NN>-<checkpoint>.png`; the dictation suite takes its
+pill checkpoints (listening, finishing, notice, error, with the backend held
+still by SIGSTOP so `finalizing` lasts) with `checkpoint NAME` on Xubuntu
+only. `run-suite.sh` moves them to `.run/artifacts/screenshots/<suite>/`; the
+workflow uploads them as `screenshots-<desktop>-<release>` (30 days), beside
+the whole `.run/artifacts/` upload.
+
+The nightly `contact-sheet` job runs `tools/contact-sheet.py` on the Xubuntu
+noble set and the last approved one: one self-contained HTML page, each
+checkpoint current beside baseline, with NEW, MISSING, changed and same
+badges (same = identical bytes; the panel clock makes most differ, so it is a
+page to look at). "Approved" is the newest green scheduled or dispatched E2E
+run on `main` that kept `screenshots-xubuntu-noble`. To re-baseline after an
+intended UI change, merge it and dispatch E2E on `main` (`make ci-e2e` from
+main, or the Actions tab); once that run is green it is the baseline. Tests
+never assert pixels.
 
 The `dictation` suite does not use `shot`. It runs `tools/field-app.py` (a
 GTK4 window of plain and password entries that reports itself as JSON) in the
@@ -29,7 +54,11 @@ its D-Bus `Toggle` and reads `State`/`AudioPeak` from it; one case presses a
 bound key through `tools/uinput-keys.py`, a virtual keyboard on the real seat
 (the same on both desktops; it also presses Escape to leave GNOME's initial
 Overview, where a new window is not focused). Helpers are in
-`tools/dictation-lib.sh`.
+`tools/dictation-lib.sh`. On Xubuntu it also runs the `myna-hud-host`
+supervisor from the build (what the deb's autostart entry runs) so the HUD
+pill exists; the VM has no deb. CI builds the tree's myna snap and passes it
+as `E2E_MYNA_SNAP`, so the daemon and HUD under test are the tree's, not
+edge's.
 
 `dev/try-desktop.sh` (`make try-desktop`) reuses the provisioning above for a
 manual-test VM; it only ever copies the `installed` snapshot of an e2e VM.
@@ -40,8 +69,12 @@ manual-test VM; it only ever copies the `installed` snapshot of an e2e VM.
   `myna-e2e-<desktop>-<release>`, so they coexist. A new desktop adds a
   `user-data.<desktop>`, a `session_up` arm and, if X11, an `on_vm` arm in
   `lib.sh`; shared packages go in `user-data.common`.
-- Xubuntu is informational in CI (`continue-on-error`) until its suites
-  pass; scheduled and dispatch runs only, noble only.
+- Xubuntu noble is a blocking PR job with GNOME noble (check names `e2e
+  (noble)` and `e2e (xubuntu, noble)`; a required check is a repo setting).
+  Only the devel series is `continue-on-error`. Other Xubuntu releases are
+  not in the matrix yet. Keep GNOME's job names stable.
+- `E2E_VM_MEMORY` (default 6GiB, CI's) sizes every VM copy; a laptop that is
+  also somebody's desktop uses `E2E_VM_MEMORY=4GiB`, one running VM at a time.
 
 - Assert machine state (`assert_on`), never pixels. `waitfor:`/`gone:` gate
   the flow; a suite that needs a long `wait:` is missing a waitable
