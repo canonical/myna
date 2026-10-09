@@ -104,14 +104,21 @@ The extension row is the desktop's status surface host, and what the wizard
 asks of the desktop comes from `Platform::current().components()`
 (`platform/mod.rs`), not from GNOME. On Xfce that is two optional components,
 listed after the model: the input method and the HUD host's autostart entry.
+The step has no row per component: one is named in the line under the button
+only when it blocks.
 The input method is IBus: installed, set for the session
 (`GTK_IM_MODULE=ibus`, `XMODIFIERS=@im=ibus`) and its daemon running is
 satisfied; installed but not chosen is the wizard's to fix with `im-config`
 for the user, which takes effect at the next login, so the shortcut step
-carries the same re-login note; another input method chosen, or IBus not
-installed (Xubuntu ships without it, and Settings never installs packages),
-is out of its reach and Diagnostics says so. The autostart entry is shipped by
-the myna-config deb and only read.
+carries the same re-login note; another input method chosen is out of its
+reach and Diagnostics says so. IBus not installed (Xubuntu ships without it)
+blocks the step, since nothing can be typed: the line under the hidden button
+says to install the `ibus` package, the poll finds it, and Diagnostics lists
+a problem. Settings never installs packages: a root `apt-get` in the set-up
+executor would widen the privilege surface (lock, network, a prompt whose
+message speaks of snaps) for a machine state the deb's `Recommends: ibus`
+already covers. The autostart entry is shipped by the myna-config deb and
+only read.
 
 The settings window's main menu reopens the wizard (Set Up Dictation), modal
 over the window. It refuses while a backend operation is in flight: the wizard

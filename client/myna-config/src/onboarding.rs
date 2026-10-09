@@ -51,8 +51,9 @@ impl ComponentId {
     ];
 
     /// Whether dictation needs it. Only these gate the component step and
-    /// open the wizard at startup. The desktop's pieces never do: the wizard
-    /// cannot install them, and Diagnostics says what is missing.
+    /// open the wizard at startup. The desktop's pieces do not, bar an input
+    /// method that is not installed (`Component::blocks`): the wizard cannot
+    /// install them, and Diagnostics says what is missing.
     pub const fn required(self) -> bool {
         !self.is_desktop()
     }
@@ -132,6 +133,18 @@ pub struct Component {
 }
 
 impl Component {
+    /// Whether dictation cannot work while this stands. A desktop's pieces
+    /// do not, but for an input method that is not installed: nothing can
+    /// be typed without one.
+    pub fn blocks(&self) -> bool {
+        (self.id.required() && !self.satisfied()) || self.lacks_input_method()
+    }
+
+    fn lacks_input_method(&self) -> bool {
+        self.id == ComponentId::InputMethod
+            && self.state == ComponentState::Unavailable(Unavailable::NotInstalled)
+    }
+
     pub fn satisfied(&self) -> bool {
         matches!(
             self.state,
@@ -445,9 +458,13 @@ pub fn installs(id: ComponentId, offer: &ModelOffer) -> Option<(&'static str, u6
 /// Whether a required component is missing: what opens the wizard at
 /// startup and holds its component step.
 pub fn needs_onboarding(components: &[Component]) -> bool {
-    components
-        .iter()
-        .any(|component| component.id.required() && !component.satisfied())
+    components.iter().any(Component::blocks)
+}
+
+/// Whether the desktop's input method is not installed at all: the wizard
+/// cannot install it, and without it nothing can be typed.
+pub fn input_method_missing(components: &[Component]) -> bool {
+    components.iter().any(Component::lacks_input_method)
 }
 
 /// What the component step's one button installs, in order: each missing
@@ -537,6 +554,9 @@ pub enum InstallView {
     Offer,
     /// Installing or turning on this component.
     Installing(ComponentId),
+    /// Nothing left that the wizard can install, yet something required is
+    /// missing: only the user can fix it.
+    Blocked,
     /// Nothing left that the wizard can install.
     Installed,
 }
@@ -545,6 +565,7 @@ pub fn install_view(components: &[Component], installing: Option<ComponentId>) -
     match installing {
         Some(id) => InstallView::Installing(id),
         None if settled(components) => InstallView::Installed,
+        None if install_plan(components).is_empty() => InstallView::Blocked,
         None => InstallView::Offer,
     }
 }
@@ -770,13 +791,34 @@ mod tests {
                 .find(|component| component.id == ComponentId::InputMethod)
                 .map(|component| component.state);
             assert_eq!(found, Some(state), "{status:?}");
-            assert!(!needs_onboarding(&components), "{status:?}");
+            // Only an IBus that is not installed holds the wizard.
+            assert_eq!(
+                needs_onboarding(&components),
+                status == ComponentStatus::Unavailable,
+                "{status:?}"
+            );
         }
         let components = assess(Machine {
             input_method: Some(ComponentStatus::ActiveAfterRelogin),
             ..ready()
         });
         assert!(relogin_pending(&components));
+    }
+
+    #[test]
+    fn a_missing_input_method_blocks_the_step_and_offers_nothing_to_install() {
+        let components = assess(Machine {
+            input_method: Some(ComponentStatus::Unavailable),
+            ..ready()
+        });
+        assert!(needs_onboarding(&components));
+        assert!(!can_advance(Step::Components, &components));
+        assert!(polls(Step::Components, &components));
+        assert!(install_plan(&components).is_empty());
+        assert!(!settled(&components));
+        assert_eq!(install_view(&components, None), InstallView::Blocked);
+        assert!(input_method_missing(&components));
+        assert!(!input_method_missing(&assess(ready())));
     }
 
     #[test]

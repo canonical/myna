@@ -22,11 +22,11 @@ use crate::adapters::system_configurator::PkexecSystemConfigurator;
 use crate::command::{CancellationToken, GioCommandRunner};
 use crate::domain::BackendSurfaceError;
 use crate::onboarding::{
-    assess, can_advance, completes, failed_set_up_step, flag_enabled, forward_leads, install_view,
-    installs, model_offer, needs_onboarding, next_install, polls, relogin_pending,
-    remaining_download, set_up_plan, set_up_steps, settled, while_installing, Component,
-    ComponentId, ComponentState, DownloadSize, InstallView, Machine, ModelOffer, Step,
-    RECOMMENDED_BACKEND_SNAP,
+    assess, can_advance, completes, failed_set_up_step, flag_enabled, forward_leads,
+    input_method_missing, install_view, installs, model_offer, needs_onboarding, next_install,
+    polls, relogin_pending, remaining_download, set_up_plan, set_up_steps, settled,
+    while_installing, Component, ComponentId, ComponentState, DownloadSize, InstallView, Machine,
+    ModelOffer, Step, RECOMMENDED_BACKEND_SNAP,
 };
 use crate::ports::{BackendRepository, SystemConfigurator, SystemConfiguratorError};
 use crate::shortcut_ui::set_class;
@@ -811,8 +811,11 @@ impl OnboardingUi {
             InstallView::Offer => "offer",
             InstallView::Installing(_) => "installing",
             InstallView::Installed => "installed",
+            // Nothing to click: the line below says what to do.
+            InstallView::Blocked => "offer",
         });
         let button = page.install_button();
+        button.set_visible(view != InstallView::Blocked);
         button.set_sensitive(offer && !self.busy.get());
         // Next leads once nothing required is missing; insensitive, the
         // accent would only read as a faded call to act.
@@ -828,7 +831,12 @@ impl OnboardingUi {
             (_, Some((id, percent))) => Some(step_text(id, percent)),
             _ => None,
         };
-        let note = if failed {
+        let missing_input_method = input_method_missing(components) && !self.busy.get();
+        let note = if missing_input_method {
+            gettextrs::gettext(
+                "The input method IBus is not installed. Install the “ibus” package, then log out and back in.",
+            )
+        } else if failed {
             gettextrs::gettext("Dictation is not set up yet. Select Next to try again.")
         } else if needs_onboarding(components) && self.problem.borrow().is_some() {
             gettextrs::gettext("Setup status unavailable. The log has the details.")
@@ -847,7 +855,7 @@ impl OnboardingUi {
         };
         page.show_status(match &text {
             Some(text) => ui::ComponentsStatus::Busy(text),
-            None if failed => ui::ComponentsStatus::Warning(&note),
+            None if failed || missing_input_method => ui::ComponentsStatus::Warning(&note),
             None if note.is_empty() => ui::ComponentsStatus::Hidden,
             None => ui::ComponentsStatus::Note(&note),
         });
