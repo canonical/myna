@@ -21,7 +21,9 @@ The `dictation` suite does not use `shot`. It runs `tools/field-app.py` (a
 GTK4 window of plain and password entries that reports itself as JSON) in the
 real session, a speech clip looped on a virtual PipeWire speaker whose
 loopback is the default microphone (`dictation` provisioning stage), and the
-fake backend snap, so the transcript is scripted. It drives the daemon through
+fake backend snap, so the transcript is scripted. The daemon is the store's
+edge myna snap unless `E2E_MYNA_SNAP=PATH` names one built from the tree
+(`make snap-myna`), which `run-suite.sh` installs over it in each run. It drives the daemon through
 its D-Bus `Toggle` and reads `State`/`AudioPeak` from it; one case presses a
 bound key through `tools/uinput-keys.py`, a virtual keyboard on the real seat
 (the same on both desktops; it also presses Escape to leave GNOME's initial

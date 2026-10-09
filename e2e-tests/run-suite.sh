@@ -7,6 +7,8 @@
 #   --desktop D    the desktop VM to use (default $E2E_DESKTOP, else gnome)
 #   --binary PATH  test this myna-config instead of building one in the
 #                  myna-noble workshop
+# E2E_MYNA_SNAP=PATH installs that myna snap (`make snap-myna`) over the
+# store's edge one in each run, keeping its connections.
 # Suites live in suites/; none given runs them all. A suite whose header says
 # `# binary: none` does not drive myna-config, so it is not built or pushed
 # when only such suites run.
@@ -22,7 +24,7 @@ while [ $# -gt 0 ]; do
         --release) REL=$2; shift 2 ;;
         --desktop) E2E_DESKTOP=$2; shift 2 ;;
         --binary) BINARY=$2; shift 2 ;;
-        -h|--help) sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) SUITES+=("$1"); shift ;;
     esac
 done
@@ -73,6 +75,10 @@ for SUITE in "${SUITES[@]}"; do
     lxc copy "$VM/$SNAP" "$RUN"
     lxc start "$RUN"
     wait_ready "$RUN"
+    if [ -n "${E2E_MYNA_SNAP:-}" ]; then
+        lxc file push "$E2E_MYNA_SNAP" "$RUN/root/myna.snap"
+        lxc exec "$RUN" -- snap install --dangerous /root/myna.snap
+    fi
 
     on_vm "$RUN" 'mkdir -p myna-shot/schemas'
     lxc file push --uid 1000 --gid 1000 --mode 0755 ${BINARY:+"$BINARY"} "$HERE"/tools/* "$RUN/home/ubuntu/myna-shot/"
