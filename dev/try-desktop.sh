@@ -212,6 +212,14 @@ install_artifacts() {
     lxc file push "$TRY_DIR/myna.snap" "$TRY/root/myna.snap"
     lxc file push "$TRY_DIR/deb-$REL/myna-config.deb" "$TRY/root/myna-config.deb"
 
+    # A running HUD blocks the snap refresh (issue #38): stop it, and the
+    # daemon that would bring it back.
+    # shellcheck disable=SC2016 # expands in the VM
+    on_vm "$TRY" 'systemctl --user stop snap.myna.myna.service
+pkill -x myna-hud-host || true
+pkill -x myna-hud || true
+for _ in $(seq 20); do pgrep -x myna-hud >/dev/null || exit 0; sleep 0.5; done
+echo "the HUD did not stop" >&2; exit 1'
     before=$(connections myna)
     lxc exec "$TRY" -- snap install --dangerous /root/myna.snap
     # A sideloaded snap is granted what the store would grant by default, but
