@@ -28,9 +28,9 @@ KEYS = {
     "alt": 56,
     "space": 57,
     "super": 125,
-    **{c: code for c, code in zip("qwertyuiop", range(16, 26))},
-    **{c: code for c, code in zip("asdfghjkl", range(30, 39))},
-    **{c: code for c, code in zip("zxcvbnm", range(44, 51))},
+    **{c: code for c, code in zip("qwertyuiop", range(16, 26), strict=True)},
+    **{c: code for c, code in zip("asdfghjkl", range(30, 39), strict=True)},
+    **{c: code for c, code in zip("zxcvbnm", range(44, 51), strict=True)},
 }
 EV_SYN, EV_KEY = 0, 1
 BUS_USB = 3

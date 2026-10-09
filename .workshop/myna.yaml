@@ -241,7 +241,7 @@ actions:
     cd /project/client && cargo fmt
   py-fmt: |
     cd /project/server && uv sync -q
-    uv run ruff format src tests ../dev
+    uv run ruff format src tests ../dev ../e2e-tests/tools
 
   # --- static gates (FR-010/FR-011) ---
   fmt-check: |
@@ -252,7 +252,7 @@ actions:
     cd /project/client && cargo deny check bans licenses
   py-lint: |
     cd /project/server && uv sync -q
-    uv run ruff check src tests ../dev && uv run ruff format --check src tests ../dev
+    uv run ruff check src tests ../dev ../e2e-tests/tools && uv run ruff format --check src tests ../dev ../e2e-tests/tools
   py-types: |
     cd /project/server && uv sync -q
     uv run mypy src/myna

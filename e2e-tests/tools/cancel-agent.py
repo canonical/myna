@@ -37,7 +37,9 @@ def start_time(pid):
 def on_call(conn, sender, path, iface, method, params, invocation):
     if method == "BeginAuthentication":
         print(f"cancel-agent: dismissing {params[0]}", flush=True)
-        invocation.return_dbus_error("org.freedesktop.PolicyKit1.Error.Cancelled", "dismissed by e2e")
+        invocation.return_dbus_error(
+            "org.freedesktop.PolicyKit1.Error.Cancelled", "dismissed by e2e"
+        )
     else:
         invocation.return_value(None)
 
@@ -55,7 +57,10 @@ bus.call_sync(
     "org.freedesktop.PolicyKit1.Authority",
     "RegisterAuthenticationAgent",
     GLib.Variant("((sa{sv})ss)", (subject, "en_US.UTF-8", PATH)),
-    None, Gio.DBusCallFlags.NONE, -1, None,
+    None,
+    Gio.DBusCallFlags.NONE,
+    -1,
+    None,
 )
 print(f"cancel-agent: registered for pid {PID}", flush=True)
 GLib.MainLoop().run()

@@ -95,6 +95,7 @@ def find(name, roles=None):
                 return n.get_role_name()
             except Exception:
                 return None
+
         nodes = [n for n in nodes if role_of(n) in roles]
     for n in nodes:
         if name_of(n) == name:
@@ -122,11 +123,15 @@ def wait_for(name, timeout=30.0, roles=None):
 def window_origin():
     wid = subprocess.run(
         ["xdotool", "search", "--sync", "--onlyvisible", "--pid", str(PID)],
-        capture_output=True, text=True, check=True,
+        capture_output=True,
+        text=True,
+        check=True,
     ).stdout.split()[0]
     geo = subprocess.run(
         ["xdotool", "getwindowgeometry", "--shell", wid],
-        capture_output=True, text=True, check=True,
+        capture_output=True,
+        text=True,
+        check=True,
     ).stdout
     vals = dict(line.split("=", 1) for line in geo.split())
     return int(vals["X"]), int(vals["Y"])
@@ -163,17 +168,20 @@ STAND_IN = None
 def app_window():
     return subprocess.run(
         ["xdotool", "search", "--sync", "--onlyvisible", "--pid", str(PID)],
-        capture_output=True, text=True, check=True,
+        capture_output=True,
+        text=True,
+        check=True,
     ).stdout.split()[0]
 
 
 def blur():
     global STAND_IN
-    STAND_IN = subprocess.Popen(
-        ["xmessage", "-geometry", "360x60+700+700", "App Center stand-in"])
+    STAND_IN = subprocess.Popen(["xmessage", "-geometry", "360x60+700+700", "App Center stand-in"])
     wid = subprocess.run(
         ["timeout", "10", "xdotool", "search", "--sync", "--onlyvisible", "--name", "^xmessage$"],
-        capture_output=True, text=True, check=True,
+        capture_output=True,
+        text=True,
+        check=True,
     ).stdout.split()[0]
     subprocess.run(["xdotool", "windowfocus", "--sync", wid], check=True)
 
@@ -218,9 +226,22 @@ def main(steps):
             at, _, clicks = arg.partition("#")
             x, y = at.split(",")
             count = int(clicks or "10")
-            subprocess.run(["xdotool", "mousemove", "--sync", x, y,
-                            "click", "--repeat", str(abs(count)), "--delay", "30",
-                            "4" if count < 0 else "5"], check=True)
+            subprocess.run(
+                [
+                    "xdotool",
+                    "mousemove",
+                    "--sync",
+                    x,
+                    y,
+                    "click",
+                    "--repeat",
+                    str(abs(count)),
+                    "--delay",
+                    "30",
+                    "4" if count < 0 else "5",
+                ],
+                check=True,
+            )
         elif verb == "activate":
             do_action(wait_for(arg))
         elif verb == "waitfor":
@@ -255,8 +276,15 @@ def main(steps):
                 n += 1
                 if stop and find(stop[0]) is not None:
                     time.sleep(0.4)
-                    subprocess.run(["import", "-window", "root",
-                                    os.path.join(OUT_DIR, f"{prefix}-{n:03d}.png")], check=True)
+                    subprocess.run(
+                        [
+                            "import",
+                            "-window",
+                            "root",
+                            os.path.join(OUT_DIR, f"{prefix}-{n:03d}.png"),
+                        ],
+                        check=True,
+                    )
                     break
                 if time.monotonic() - start > float(limit):
                     break
