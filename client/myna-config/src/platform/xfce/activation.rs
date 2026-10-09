@@ -21,16 +21,29 @@ const WINDOW_MANAGER: &str = "/xfwm4";
 
 pub struct XfconfActivation {
     xfconf: Xfconf,
+    /// Where desktop entries name the commands that hold keys; none reads
+    /// them raw.
+    applications: Vec<std::path::PathBuf>,
 }
 
 impl XfconfActivation {
     /// The session bus's xfconfd.
     pub fn open() -> Result<Self, ActivationError> {
-        Ok(Self::with_xfconf(Xfconf::session(CHANNEL)?))
+        Ok(Self::with_xfconf(Xfconf::session(CHANNEL)?)
+            .with_applications(super::applications::application_dirs()))
     }
 
     pub fn with_xfconf(xfconf: Xfconf) -> Self {
-        Self { xfconf }
+        Self {
+            xfconf,
+            applications: Vec::new(),
+        }
+    }
+
+    /// Name the commands that hold a key by the desktop entries in `dirs`.
+    pub fn with_applications(mut self, dirs: Vec<std::path::PathBuf>) -> Self {
+        self.applications = dirs;
+        self
     }
 
     /// Where `provider`'s live shortcuts are: its custom tree once
@@ -130,7 +143,7 @@ impl Activation for XfconfActivation {
                 }
                 found.push(Conflict {
                     action: if provider == COMMANDS {
-                        what
+                        super::applications::name_of(&what, &self.applications).unwrap_or(what)
                     } else {
                         window_manager_action(&what)
                     },

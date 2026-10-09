@@ -452,6 +452,34 @@ fn other_commands_and_window_manager_keys_hold_a_key() {
 }
 
 #[test]
+fn a_command_holding_a_key_is_named_by_its_desktop_entry() {
+    on_own_context(|| {
+        let apps = std::env::temp_dir().join(format!("xfconf-apps-{}", std::process::id()));
+        std::fs::create_dir_all(&apps).unwrap();
+        std::fs::write(
+            apps.join("thunar.desktop"),
+            "[Desktop Entry]\nType=Application\nName=File Manager\nExec=thunar %U\n",
+        )
+        .unwrap();
+        let mut desktop = desktop(true);
+        desktop.activation = XfconfActivation::with_xfconf(Xfconf::with_connection(
+            desktop.connection.clone(),
+            CHANNEL,
+        ))
+        .with_applications(vec![apps.clone()]);
+        desktop.put("/commands/custom/<Super>e", "thunar");
+        desktop.put("/commands/custom/<Super>t", "unknown-tool --flag");
+        let held = desktop.activation.conflicts(&key("<Super>e")).unwrap();
+        assert_eq!(held[0].action, "File Manager");
+        // Releasing still finds the entry by where it is held.
+        assert_eq!(held[0].holder, "/commands/custom/<Super>e");
+        let held = desktop.activation.conflicts(&key("<Super>t")).unwrap();
+        assert_eq!(held[0].action, "unknown-tool --flag");
+        std::fs::remove_dir_all(apps).ok();
+    });
+}
+
+#[test]
 fn releasing_resets_the_holder_and_what_hangs_off_it() {
     on_own_context(|| {
         let desktop = desktop(true);
