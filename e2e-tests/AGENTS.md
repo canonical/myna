@@ -1,7 +1,8 @@
 # Preface
 
-Read this before changing the Myna Settings end-to-end tests. Read the
-top-level `.kb/agents.md` file before continuing below.
+Read this before changing the Myna Settings and dictation end-to-end tests.
+
+Read the top-level `.kb/agents.md` file before continuing below.
 
 # Overview
 
