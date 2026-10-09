@@ -6,7 +6,7 @@
 use gtk::glib;
 use gtk4 as gtk;
 
-use myna_hud::appearance::probe::decode_reduced_motion;
+use myna_hud::appearance::probe::{decode_reduced_motion, is_high_contrast_theme};
 
 // `GtkSettings:gtk-interface-reduced-motion` is a `GtkReducedMotion` ENUM
 // (no_preference = 0, reduce = 1), not the boolean its name suggests.
@@ -61,4 +61,21 @@ fn an_unrelated_type_reads_as_absent() {
     // than inventing an answer.
     assert_eq!(decode_reduced_motion(&glib::Value::from("reduce")), None);
     assert_eq!(decode_reduced_motion(&glib::Value::from(1i32)), None);
+}
+
+// Xfce offers high contrast as a theme, which xfsettingsd exports as
+// `Net/ThemeName`, so the name is all there is to go on.
+#[test]
+fn high_contrast_themes_are_recognised_by_name() {
+    for name in [
+        "HighContrast",
+        "HighContrastInverse",
+        "Yaru-highcontrast",
+        "high-contrast",
+    ] {
+        assert!(is_high_contrast_theme(name), "{name}");
+    }
+    for name in ["Adwaita", "Greybird", "Yaru-dark", ""] {
+        assert!(!is_high_contrast_theme(name), "{name}");
+    }
 }
