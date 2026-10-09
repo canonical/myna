@@ -403,7 +403,7 @@ fn the_hud_hosts_itself_on_x11() {
         .build()
         .expect("publish com.canonical.Myna.Dictation");
 
-    let hud = Hud(Command::new(env!("CARGO_BIN_EXE_myna-hud"))
+    let mut hud = Hud(Command::new(env!("CARGO_BIN_EXE_myna-hud"))
         .args(["--host", "x11"])
         .env("DBUS_SESSION_BUS_ADDRESS", &bus.address)
         .env("DISPLAY", &headless.display)
@@ -513,6 +513,19 @@ fn the_hud_hosts_itself_on_x11() {
     let second = next_map(&seen, &mut messages);
     assert_eq!(second.window, first.window);
     assert_eq!(second.position, expected(second.size, 60));
+
+    // Stopped as its supervisor stops it, it leaves cleanly (and, under
+    // coverage, writes its profile).
+    assert_eq!(unsafe { libc::kill(pid as libc::pid_t, libc::SIGTERM) }, 0);
+    let deadline = Instant::now() + WAIT;
+    let status = loop {
+        if let Some(status) = hud.0.try_wait().expect("try_wait") {
+            break status;
+        }
+        assert!(Instant::now() < deadline, "myna-hud ignored SIGTERM");
+        std::thread::sleep(Duration::from_millis(50));
+    };
+    assert_eq!(status.code(), Some(0), "myna-hud exited {status}");
 }
 
 #[test]
