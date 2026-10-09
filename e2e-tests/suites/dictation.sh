@@ -106,7 +106,9 @@ evidence 4
 
 echo "-- 5. the key held past the focus wait starts a dictation"
 assert_dict "the field is cleared" 'field_clear'
-assert_dict "the plain field is focused" 'field_focus plain'
+# Refocused: GNOME Shell keeps a cleared field's old surrounding text until
+# focus moves, so a dictation straight after case 4 would open with a space.
+assert_dict "the plain field is focused afresh" 'field_focus other && field_focus plain'
 dict 'key super+j@450'
 assert_dict "the held key starts recording" 'wait_until 10 dictation_state_is recording'
 assert_dict "the first segment lands" "wait_until 10 field_is plain '$FIRST'"
