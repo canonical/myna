@@ -652,10 +652,11 @@ impl Lease {
         }
     }
 
-    /// The blip lease `id` is away in, if it is.
-    fn away(&self, id: u64) -> Option<u64> {
+    /// The blip this lease is away in, if it is. Blip ids are the engine's,
+    /// so one names its lease too.
+    fn away(&self) -> Option<u64> {
         match self.binding {
-            Binding::Away { blip, .. } if self.id == id => Some(blip),
+            Binding::Away { blip, .. } => Some(blip),
             _ => None,
         }
     }
@@ -733,34 +734,33 @@ impl EngineState {
 
     fn focus(self: &Arc<Self>, change: FocusChange<'_>) {
         let blip = self.next_blip.fetch_add(1, Ordering::Relaxed);
-        let mut away = None;
+        let mut began = false;
         self.lease.send_modify(|lease| {
             lease.focus(change, blip);
-            away = lease
-                .away(lease.id)
-                .filter(|&b| b == blip)
-                .map(|_| lease.id);
+            began = lease.away() == Some(blip);
         });
-        let Some(id) = away else { return };
+        if !began {
+            return;
+        }
         match &self.runtime {
             Some(runtime) => {
                 let state = Arc::clone(self);
                 runtime.spawn(async move {
                     tokio::time::sleep(ACTIVATION_WINDOW).await;
-                    state.expire(id, blip, false);
+                    state.expire(blip, false);
                     tokio::time::sleep(FOCUS_BLIP_GRACE - ACTIVATION_WINDOW).await;
-                    state.expire(id, blip, true);
+                    state.expire(blip, true);
                 });
             }
-            None => self.expire(id, blip, true),
+            None => self.expire(blip, true),
         }
     }
 
-    /// End lease `id` if it is still away in `blip`, and, short of the
-    /// grace, `even_activated`.
-    fn expire(&self, id: u64, blip: u64, even_activated: bool) {
+    /// End the lease if it is still away in `blip`, and, short of the grace,
+    /// `even_activated`.
+    fn expire(&self, blip: u64, even_activated: bool) {
         self.lease.send_if_modified(|lease| {
-            let expired = lease.away(id) == Some(blip)
+            let expired = lease.away() == Some(blip)
                 && (even_activated
                     || matches!(
                         lease.binding,
@@ -2062,7 +2062,8 @@ mod tests {
         engine.focus_in_id(FAKE.into(), "fake".into()).await;
         let started = tokio::time::Instant::now();
         assert!(!state.focus_arrived(lease).await);
-        assert!(started.elapsed() >= FOCUS_BLIP_GRACE);
+        let waited = started.elapsed();
+        assert!(FOCUS_BLIP_GRACE <= waited && waited <= FOCUS_BLIP_GRACE + TICK);
         assert!(state.on_fake(lease));
 
         // Focus gone from the fake context again: the usual wait.
