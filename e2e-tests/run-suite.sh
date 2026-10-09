@@ -85,7 +85,16 @@ for SUITE in "${SUITES[@]}"; do
     # Not over a machine without myna (`bare`): onboarding installs the store's.
     if [ -n "${E2E_MYNA_SNAP:-}" ] && lxc exec "$RUN" -- snap list myna >/dev/null 2>&1; then
         lxc file push "$E2E_MYNA_SNAP" "$RUN/root/myna.snap"
+        # A running HUD blocks the install (issue #38): stop the daemon, whose
+        # bus name keeps the shell extension or the Xfce host respawning it,
+        # and wait for the HUD to go. The service comes back after.
+        # shellcheck disable=SC2016 # expands in the VM
+        on_vm "$RUN" 'systemctl --user stop snap.myna.myna.service
+pkill -x myna-hud-host || true
+for _ in $(seq 40); do pgrep -x myna-hud >/dev/null || exit 0; pkill -x myna-hud; sleep 0.5; done
+echo "the HUD did not stop" >&2; exit 1'
         lxc exec "$RUN" -- snap install --dangerous /root/myna.snap
+        on_vm "$RUN" 'systemctl --user start snap.myna.myna.service'
     fi
 
     on_vm "$RUN" 'mkdir -p myna-shot/schemas'
