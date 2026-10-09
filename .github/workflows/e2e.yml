@@ -1,9 +1,14 @@
-# Myna Settings end-to-end: the real binary, built on the GTK 4.14 floor in
-# the myna-noble workshop, driven through AT-SPI on fresh GNOME (scheduled
-# runs: also Xubuntu) desktop LXD VMs with the store's latest/edge snaps (e2e-tests/). Provisioned from
+# Myna Settings and dictation end-to-end: the real binary, built on the GTK
+# 4.14 floor in the myna-noble workshop, driven through AT-SPI on fresh GNOME
+# and Xubuntu (Xfce on X11) desktop LXD VMs (e2e-tests/), against the myna snap
+# built from this tree and the store's latest/edge backends. Provisioned from
 # scratch every run, so a regression in the edge snaps shows here too.
-# The devel series and the Xubuntu desktop are informational: the former's
-# archive breaks for reasons not ours, the latter is being brought up.
+# Blocking on pull requests: GNOME and Xubuntu on noble. Informational: the
+# devel series (its archive breaks for reasons not ours) and the Xubuntu
+# releases after noble, which run nightly only. Nobody daily-drives Xfce here,
+# so this is what catches its regressions.
+# Nightly, the Xubuntu screenshots are laid beside the last green nightly's in
+# a contact sheet (the `contact-sheet` job); see e2e-tests/AGENTS.md.
 name: E2E
 
 concurrency:
@@ -16,11 +21,13 @@ on:
   workflow_dispatch:
   pull_request:
     paths:
-      - "client/myna-config/**"
-      - "client/myna-core/**"
-      - "client/data/**"
-      - "e2e-tests/**"
+      # Every crate the daemon, the HUD and Settings are built from, and the
+      # snaps and deb that package them.
+      - "client/**"
+      - "myna-snap/**"
+      - "myna-config-deb/**"
       - "fake-snap/**"
+      - "e2e-tests/**"
       - ".github/workflows/e2e.yml"
 
 jobs:
@@ -43,27 +50,51 @@ jobs:
           path: ${{ steps.build.outputs.snap }}
           retention-days: 7
 
+  # The myna snap of this tree: the suites test the daemon and HUD as packaged,
+  # not the store's older edge build.
+  myna-snap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+      - name: Stage the myna snap
+        run: myna-snap/dev/prepare.sh
+      - uses: snapcore/action-build@v1
+        id: build
+        with:
+          path: myna-snap
+      - uses: actions/upload-artifact@v7
+        with:
+          name: myna-snap
+          path: ${{ steps.build.outputs.snap }}
+          retention-days: 7
+
   e2e:
-    needs: fake-backend
+    needs: [fake-backend, myna-snap]
     strategy:
       fail-fast: false
       matrix:
         release: ${{ fromJSON(github.event_name == 'pull_request' && '["noble"]' || '["noble", "resolute", "stonking"]') }}
-        desktop: ${{ fromJSON(github.event_name == 'pull_request' && '["gnome"]' || '["gnome", "xubuntu"]') }}
+        desktop: ["gnome", "xubuntu"]
         exclude:
           - { desktop: xubuntu, release: resolute }
           - { desktop: xubuntu, release: stonking }
-    # GNOME keeps its release-only names (required checks, artifacts).
+    # GNOME keeps its release-only names (required checks, artifacts). Pull
+    # requests run noble only; the Xubuntu check is "e2e (xubuntu, noble)".
     name: ${{ matrix.desktop == 'gnome' && format('e2e ({0})', matrix.release) || format('e2e ({0}, {1})', matrix.desktop, matrix.release) }}
     runs-on: ubuntu-latest
-    continue-on-error: ${{ matrix.release == 'stonking' || matrix.desktop == 'xubuntu' }}
-    timeout-minutes: 60
+    continue-on-error: ${{ matrix.release == 'stonking' || (matrix.desktop == 'xubuntu' && matrix.release != 'noble') }}
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@v6
       - uses: actions/download-artifact@v8
         with:
           name: fake-backend-snap
           path: fake-snap
+      - uses: actions/download-artifact@v8
+        with:
+          name: myna-snap
+          path: myna-snap
       # Before the workshop, which runs on the same LXD.
       - uses: canonical/setup-lxd@v1
       # TODO(security): pin to a commit SHA - @v1 tracks the latest v1.*.
@@ -74,7 +105,9 @@ jobs:
       # setup-lxd's pool is `dir`, where each suite's snapshot copy is a full
       # 20 GB disk copy; btrfs makes it copy-on-write.
       - run: lxc storage create e2e btrfs size=60GiB
-      - run: make e2e E2E_RELEASE=${{ matrix.release }} E2E_DESKTOP=${{ matrix.desktop }}
+      - run: |
+          E2E_MYNA_SNAP=$(ls "$PWD"/myna-snap/myna_*_amd64.snap) \
+            make e2e E2E_RELEASE=${{ matrix.release }} E2E_DESKTOP=${{ matrix.desktop }}
         env:
           E2E_POOL: e2e
       - if: always()
@@ -83,3 +116,60 @@ jobs:
           name: ${{ matrix.desktop == 'gnome' && format('e2e-{0}', matrix.release) || format('e2e-{0}-{1}', matrix.desktop, matrix.release) }}
           retention-days: 14
           path: e2e-tests/.run/artifacts/
+      # The checkpoints alone, kept longer than the whole artifact: the
+      # contact sheet compares with the last green nightly's.
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ format('screenshots-{0}-{1}', matrix.desktop, matrix.release) }}
+          retention-days: 30
+          if-no-files-found: ignore
+          path: e2e-tests/.run/artifacts/screenshots/
+
+  # Nightly (and on dispatch): the Xubuntu screenshots of this run beside the
+  # last approved run's. "Approved" is the newest green scheduled or dispatched
+  # run on main that kept its screenshots; re-baselining is dispatching E2E on
+  # main. Nothing is asserted here: the page is for a human.
+  contact-sheet:
+    if: ${{ !cancelled() && github.event_name != 'pull_request' }}
+    needs: e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      NAME: screenshots-xubuntu-noble
+    steps:
+      - uses: actions/checkout@v6
+      - run: python3 -I e2e-tests/tools/test_contact_sheet.py
+      - uses: actions/download-artifact@v8
+        continue-on-error: true
+        with:
+          name: ${{ env.NAME }}
+          path: current
+      - name: Download the last approved run's screenshots
+        run: |
+          mkdir -p baseline
+          ids=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow e2e.yml --branch main --status success --limit 30 \
+            --json databaseId,event --jq '.[] | select(.event == "schedule" or .event == "workflow_dispatch") | .databaseId')
+          for id in $ids; do
+            [ "$id" != "$GITHUB_RUN_ID" ] || continue
+            if gh run download "$id" --repo "$GITHUB_REPOSITORY" --name "$NAME" --dir baseline; then
+              echo "baseline: run $id" | tee -a "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            rm -rf baseline; mkdir baseline
+          done
+          echo "No baseline yet: no green scheduled run on main kept $NAME." | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Build the sheet
+        run: |
+          mkdir -p current sheet
+          python3 -I e2e-tests/tools/contact-sheet.py --current current --baseline baseline \
+            --out sheet/index.html --title "Xubuntu noble: run $GITHUB_RUN_ID vs the last approved run" | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: contact-sheet-xubuntu-noble
+          retention-days: 14
+          path: sheet/index.html
