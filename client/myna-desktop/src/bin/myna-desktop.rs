@@ -51,6 +51,7 @@ use myna_desktop::indicator::dynamic::DynamicIndicator;
 use myna_desktop::indicator::notify::NotifyIndicator;
 use myna_desktop::indicator::readiness::{Readiness, ReadinessTee};
 use myna_desktop::inject::lazy::{IbusConnect, LazyInjector};
+use myna_desktop::platform::Platform;
 use myna_desktop::shortcut::control::{default_socket_path, listen, send_toggle, ControlTrigger};
 use myna_desktop::sound::{
     player::{Player, Previewer},
@@ -765,7 +766,7 @@ fn banner(args: &Args, resolved: &Resolved) {
                 "  if you haven't bound one yet: `myna-desktop --install-shortcut '<Super>t>'"
             );
             println!(
-                "  or bind a GNOME custom shortcut to: `{}`",
+                "  or bind a keyboard shortcut (Myna Settings does it) to: `{}`",
                 toggle_command()
             );
         }
@@ -1060,6 +1061,10 @@ fn main() -> ExitCode {
 
     // Non-daemon subcommands first (no IBus / server needed).
     if let Some(accel) = &args.install_shortcut {
+        if let Some(refusal) = Platform::current().install_shortcut_refusal(&toggle_command()) {
+            eprintln!("{refusal}");
+            return ExitCode::FAILURE;
+        }
         return install_shortcut(accel);
     }
     if args.status {

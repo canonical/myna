@@ -29,6 +29,7 @@ pub mod dbus;
 pub mod indicator;
 pub mod inject;
 pub mod live;
+pub mod platform;
 pub mod shortcut;
 pub mod sound;
 
