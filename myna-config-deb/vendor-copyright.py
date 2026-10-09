@@ -75,8 +75,22 @@ for atom in sorted(set(first_crate) - defined):
     elif exception and base in COMMON:
         # Reference the base text, embed only the exception paragraph: lintian
         # rejects a copy of the full Apache-2.0 text in debian/copyright.
-        crate = first_crate[atom][0]
-        text = (crate / "LICENSE").read_text(errors="replace").splitlines()
+        # Crates name the file LICENSE or LICENSE-Apache-2.0_WITH_LLVM-exception.
+        for crate in first_crate[atom]:
+            path = next(
+                (
+                    crate / n
+                    for n in ["LICENSE", "LICENSE-Apache-2.0_WITH_LLVM-exception"]
+                    if (crate / n).exists()
+                    and any("exception" in l.lower() and l.startswith("---") for l in (crate / n).read_text(errors="replace").splitlines())
+                ),
+                None,
+            )
+            if path:
+                break
+        else:
+            raise SystemExit(f"no exception text found for {atom} in {[c.name for c in first_crate[atom]]}")
+        text = path.read_text(errors="replace").splitlines()
         start = next(i for i, l in enumerate(text) if "exception" in l.lower() and l.startswith("---"))
         out.append(f" On Debian systems the full text of the {base} licence is in\n /usr/share/common-licenses/{COMMON[base]}.\n .")
         out.append("\n".join(" " + (l.rstrip() or ".") for l in text[start:]))
