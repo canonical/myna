@@ -5,13 +5,14 @@
 //! `GtkSettings`: `gtk-enable-animations` (`Net/EnableAnimations`, unset in
 //! xfsettingsd's defaults) and `gtk-theme-name` (`Net/ThemeName`). It exports
 //! no contrast setting, so a theme whose name says high contrast counts, as
-//! does whatever libadwaita derives.
+//! does whatever libadwaita derives. Likewise a theme named `-dark` is the
+//! dark preference, which libadwaita cannot see: the caller feeds it in.
 
 use gtk::prelude::*;
 use gtk4 as gtk;
 use libadwaita as adw;
 use myna_platform::appearance::{
-    is_high_contrast_theme, Appearance, AppearanceReadings, Freshness,
+    is_dark_theme, is_high_contrast_theme, Appearance, AppearanceReadings, Freshness,
 };
 use myna_platform::Subscription;
 
@@ -24,10 +25,10 @@ pub(super) fn animations_enabled() -> bool {
 
 impl Appearance for GtkAppearance {
     fn read(&self) -> AppearanceReadings {
-        let theme_contrast = gtk::Settings::default()
-            .and_then(|settings| settings.gtk_theme_name())
-            .is_some_and(|name| is_high_contrast_theme(&name));
+        let theme = gtk::Settings::default().and_then(|settings| settings.gtk_theme_name());
+        let theme_contrast = theme.as_deref().is_some_and(is_high_contrast_theme);
         AppearanceReadings {
+            prefers_dark: theme.as_deref().is_some_and(is_dark_theme),
             accent: None,
             reduced_motion: !animations_enabled(),
             high_contrast: adw::StyleManager::default().is_high_contrast() || theme_contrast,
@@ -128,6 +129,16 @@ mod tests {
             true
         }
 
+        fn set_prefers_dark(&mut self, on: bool) -> bool {
+            if self.gnome {
+                return false;
+            }
+            gtk::Settings::default()
+                .expect("display")
+                .set_gtk_theme_name(Some(if on { "Adwaita-dark" } else { "Adwaita" }));
+            true
+        }
+
         fn settle(&mut self) {
             settle();
         }
@@ -150,10 +161,10 @@ mod tests {
             adw::init().expect("libadwaita");
             let report = run(&mut Rig { gnome: true });
             assert!(
-                report
-                    .not_applicable
-                    .iter()
-                    .all(|check| *check == "high_contrast_is_read_back"),
+                report.not_applicable.iter().all(|check| matches!(
+                    *check,
+                    "high_contrast_is_read_back" | "dark_is_read_back"
+                )),
                 "{report:?}"
             );
         });

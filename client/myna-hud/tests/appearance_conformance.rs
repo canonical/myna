@@ -106,6 +106,15 @@ impl Fixture for Rig {
         true
     }
 
+    fn set_prefers_dark(&mut self, on: bool) -> bool {
+        if self.gnome {
+            // libadwaita derives it from the portal; nothing to set here.
+            return false;
+        }
+        Self::settings().set_gtk_theme_name(Some(if on { "Adwaita-dark" } else { "Adwaita" }));
+        true
+    }
+
     fn settle(&mut self) {
         settle();
     }
@@ -127,7 +136,7 @@ fn both_backends_conform_when_enabled() {
             gnome
                 .not_applicable
                 .iter()
-                .all(|check| *check == "high_contrast_is_read_back"),
+                .all(|check| matches!(*check, "high_contrast_is_read_back" | "dark_is_read_back")),
             "GNOME skipped more than contrast: {gnome:?}"
         );
         let generic = run(&mut Rig::new(false));

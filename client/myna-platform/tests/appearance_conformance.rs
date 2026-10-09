@@ -17,6 +17,8 @@ enum Flaw {
     NotifiesAfterDrop,
     DropSilencesEveryWatch,
     NoContrast,
+    NoDark,
+    StartsDark,
 }
 
 type Listener = (u64, Rc<dyn Fn(Freshness)>);
@@ -25,6 +27,7 @@ type Listener = (u64, Rc<dyn Fn(Freshness)>);
 struct Desk {
     reduced_motion: bool,
     high_contrast: bool,
+    dark: bool,
     listeners: Vec<Listener>,
     next: u64,
     reads: Cell<u32>,
@@ -59,6 +62,7 @@ impl Appearance for Reference {
                 || self.flaw == Flaw::StartsReduced
                 || (self.flaw == Flaw::ReadingsDrift && desk.reads.get() % 2 == 0),
             high_contrast: desk.high_contrast,
+            prefers_dark: desk.dark || self.flaw == Flaw::StartsDark,
         }
     }
 
@@ -110,6 +114,15 @@ impl Fixture for Rig {
         notify(&self.desk);
         true
     }
+
+    fn set_prefers_dark(&mut self, on: bool) -> bool {
+        if self.flaw == Flaw::NoDark {
+            return false;
+        }
+        self.desk.borrow_mut().dark = on;
+        notify(&self.desk);
+        true
+    }
 }
 
 fn rig(flaw: Flaw) -> Rig {
@@ -138,7 +151,7 @@ fn rejects(flaw: Flaw, check: &str) {
 #[test]
 fn the_reference_desktop_passes_every_check() {
     let report = run(&mut rig(Flaw::None));
-    assert_eq!(report.passed.len(), 6);
+    assert_eq!(report.passed.len(), 7);
     assert!(report.not_applicable.is_empty());
 }
 
@@ -146,6 +159,20 @@ fn the_reference_desktop_passes_every_check() {
 fn a_desktop_that_cannot_set_contrast_still_checks_motion() {
     let report = run(&mut rig(Flaw::NoContrast));
     assert_eq!(report.not_applicable, ["high_contrast_is_read_back"]);
+}
+
+#[test]
+fn a_desktop_that_cannot_set_dark_still_checks_the_rest() {
+    let report = run(&mut rig(Flaw::NoDark));
+    assert_eq!(report.not_applicable, ["dark_is_read_back"]);
+}
+
+#[test]
+fn a_desktop_that_starts_dark_is_rejected() {
+    rejects(
+        Flaw::StartsDark,
+        "a_plain_desktop_reads_as_no_preference: dark",
+    );
 }
 
 #[test]

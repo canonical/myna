@@ -48,6 +48,7 @@ impl Appearance for GnomeAppearance {
                 enable_animations: probe_enable_animations(),
             }),
             high_contrast: probe_high_contrast(),
+            prefers_dark: adw::StyleManager::default().is_dark(),
         }
     }
 

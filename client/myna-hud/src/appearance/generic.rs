@@ -20,7 +20,7 @@ use gtk::prelude::*;
 use gtk4 as gtk;
 use libadwaita as adw;
 use myna_platform::appearance::{
-    is_high_contrast_theme, Appearance, AppearanceReadings, Freshness,
+    is_dark_theme, is_high_contrast_theme, Appearance, AppearanceReadings, Freshness,
 };
 use myna_platform::Subscription;
 
@@ -47,6 +47,12 @@ fn theme_is_high_contrast() -> bool {
         .is_some_and(|name| is_high_contrast_theme(&name))
 }
 
+fn theme_is_dark() -> bool {
+    gtk::Settings::default()
+        .and_then(|settings| settings.gtk_theme_name())
+        .is_some_and(|name| is_dark_theme(&name))
+}
+
 impl Appearance for GtkAppearance {
     fn read(&self) -> AppearanceReadings {
         AppearanceReadings {
@@ -58,6 +64,7 @@ impl Appearance for GtkAppearance {
             reduced_motion: probe_gtk_reduced_motion().unwrap_or(false)
                 || !probe_gtk_enable_animations().unwrap_or(true),
             high_contrast: probe_high_contrast() || theme_is_high_contrast(),
+            prefers_dark: theme_is_dark(),
         }
     }
 

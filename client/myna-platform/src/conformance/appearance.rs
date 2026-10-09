@@ -21,6 +21,9 @@ pub trait Fixture {
     /// As [`Fixture::set_reduced_motion`], for high contrast.
     fn set_high_contrast(&mut self, on: bool) -> bool;
 
+    /// As [`Fixture::set_reduced_motion`], for a dark theme.
+    fn set_prefers_dark(&mut self, on: bool) -> bool;
+
     /// Let queued notifications arrive.
     fn settle(&mut self) {}
 }
@@ -49,6 +52,7 @@ pub fn run(fixture: &mut dyn Fixture) -> Report {
     check("high_contrast_is_read_back", &mut |f| {
         high_contrast_is_read_back(f)
     });
+    check("dark_is_read_back", &mut |f| dark_is_read_back(f));
     check("watch_hears_a_change_until_dropped", &mut |f| {
         watch_hears_a_change_until_dropped(f)
     });
@@ -76,6 +80,10 @@ fn a_plain_desktop_reads_as_no_preference(fixture: &mut dyn Fixture) {
     assert!(
         !readings.high_contrast,
         "a_plain_desktop_reads_as_no_preference: contrast"
+    );
+    assert!(
+        !readings.prefers_dark,
+        "a_plain_desktop_reads_as_no_preference: dark"
     );
 }
 
@@ -126,9 +134,25 @@ fn high_contrast_is_read_back(fixture: &mut dyn Fixture) -> bool {
     true
 }
 
+fn dark_is_read_back(fixture: &mut dyn Fixture) -> bool {
+    let appearance = fixture.setup();
+    if !fixture.set_prefers_dark(true) {
+        return false;
+    }
+    fixture.settle();
+    assert!(appearance.read().prefers_dark, "dark_is_read_back: on");
+    assert!(fixture.set_prefers_dark(false));
+    fixture.settle();
+    assert!(
+        !appearance.read().prefers_dark,
+        "dark_is_read_back: off again"
+    );
+    true
+}
+
 /// Flip whichever preference the desktop lets the fixture set.
 fn flip(fixture: &mut dyn Fixture, on: bool) -> bool {
-    fixture.set_reduced_motion(on) || fixture.set_high_contrast(on)
+    fixture.set_reduced_motion(on) || fixture.set_high_contrast(on) || fixture.set_prefers_dark(on)
 }
 
 fn watch_hears_a_change_until_dropped(fixture: &mut dyn Fixture) -> bool {

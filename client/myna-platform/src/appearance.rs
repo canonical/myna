@@ -32,6 +32,8 @@ pub struct AppearanceReadings {
     pub accent: Option<Rgb>,
     pub reduced_motion: bool,
     pub high_contrast: bool,
+    /// The desktop's theme is a dark one.
+    pub prefers_dark: bool,
 }
 
 /// Whether readings taken inside a `watch` callback already reflect the
@@ -62,8 +64,45 @@ pub fn is_high_contrast_theme(name: &str) -> bool {
     name.contains("highcontrast") || name.contains("high-contrast")
 }
 
+/// Whether a GTK theme name is a dark variant: a `dark` or `darker` word
+/// (`Adwaita-dark`, `Greybird-dark`, `Arc-Darker`, `Adwaita:dark`) or the
+/// high-contrast inverse.
+pub fn is_dark_theme(name: &str) -> bool {
+    let name = name.to_ascii_lowercase();
+    name.contains("highcontrastinverse")
+        || name
+            .split(|c: char| !c.is_ascii_alphanumeric())
+            .any(|word| matches!(word, "dark" | "darker"))
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn dark_themes_are_recognised_by_name() {
+        for name in [
+            "Adwaita-dark",
+            "Greybird-dark",
+            "Arc-Darker",
+            "Adwaita:dark",
+            "Materia-dark-compact",
+            "Yaru-blue-dark",
+            "HighContrastInverse",
+            "dark",
+        ] {
+            assert!(is_dark_theme(name), "{name}");
+        }
+        for name in [
+            "Adwaita",
+            "Greybird",
+            "HighContrast",
+            "Yaru",
+            "Darkroom",
+            "",
+        ] {
+            assert!(!is_dark_theme(name), "{name}");
+        }
+    }
+
     #[test]
     fn high_contrast_themes_are_recognised_by_name() {
         for name in [
@@ -102,6 +141,7 @@ mod tests {
                 accent: None,
                 reduced_motion: false,
                 high_contrast: false,
+                prefers_dark: false,
             }
         );
     }

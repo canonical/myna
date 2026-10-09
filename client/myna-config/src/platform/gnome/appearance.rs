@@ -40,6 +40,8 @@ impl Appearance for GnomeAppearance {
             reduced_motion: !animations_enabled(),
             high_contrast: adw::StyleManager::default().is_high_contrast()
                 || high_contrast_preference(),
+            // The portal drives libadwaita here, so its answer is the desktop's.
+            prefers_dark: adw::StyleManager::default().is_dark(),
         }
     }
 
@@ -49,6 +51,10 @@ impl Appearance for GnomeAppearance {
         let contrast = {
             let changed = changed.clone();
             manager.connect_high_contrast_notify(move |_| changed(Freshness::Current))
+        };
+        let dark = {
+            let changed = changed.clone();
+            manager.connect_dark_notify(move |_| changed(Freshness::Current))
         };
         let settings = gtk::Settings::default();
         let animations = settings.as_ref().map(|settings| {
@@ -64,6 +70,7 @@ impl Appearance for GnomeAppearance {
         });
         Subscription::new(move || {
             manager.disconnect(contrast);
+            manager.disconnect(dark);
             if let (Some(settings), Some(handle)) = (&settings, animations) {
                 settings.disconnect(handle);
             }
