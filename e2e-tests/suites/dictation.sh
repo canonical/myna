@@ -54,6 +54,8 @@ assert_on "precondition: the backend is the fake" \
     'snap connections myna | grep -q "myna:backend.*myna-fake-backend:provider"'
 assert_on "precondition: the daemon is idle" \
     "$LIB; wait_until 20 dictation_state_is idle"
+assert_on "the virtual microphone is made the default source" \
+    "$LIB; mic_make_default"
 assert_on "precondition: the virtual microphone is the default source" \
     "$LIB; default_source_is myna-e2e-mic"
 dict 'mic_start myna-shot/speech.wav'

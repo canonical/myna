@@ -91,9 +91,20 @@ journal_count() {
 # is what changes.
 ibus_restart() {
     local before
+    # The bus address file is named after the display (ibus 1.5.34 names it
+    # for WAYLAND_DISPLAY), so the CLI needs the session's environment.
+    session_env
     before=$(ibus address)
     ibus restart >/dev/null 2>&1
     wait_until 20 sh -c "[ \"\$(ibus address)\" != '$before' ] && ibus engine >/dev/null"
+}
+
+# The virtual microphone's node id. On PipeWire 1.6 wpctl files a loopback's
+# source under Filters, which the session manager never picks as the default.
+mic_node_id() { pw-dump | jq -er '.[] | select(.info.props["node.name"] == "myna-e2e-mic") | .id'; }
+# Make it the default source ourselves (waiting for the node to exist).
+mic_make_default() {
+    wait_until 20 mic_node_id && wpctl set-default "$(mic_node_id)"
 }
 
 default_source_is() { wpctl inspect @DEFAULT_AUDIO_SOURCE@ | grep -q "node.name = \"$1\""; }
