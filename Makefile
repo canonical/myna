@@ -453,12 +453,15 @@ bench-long-%: build-bench ## Run the long-form clip against an already-running <
 # first run provisions the VM (cloud image, desktop, edge snaps, snapshots);
 # later runs restore a snapshot per suite. See e2e-tests/AGENTS.md. The
 # dictation suite also needs the fake backend snap: `make snap-fake` first.
+# E2E_VM_MEMORY (default 6GiB, what CI gives the guest) sizes the VM, e.g.
+# `make e2e E2E_VM_MEMORY=4GiB` on a laptop; E2E_MYNA_SNAP=PATH tests the
+# snap `make snap-myna` built instead of the store's edge one.
 E2E_RELEASE ?= noble
 E2E_DESKTOP ?= gnome
 SUITES ?=
 
 .PHONY: e2e
-e2e: ## Myna Settings AT-SPI suites in an LXD desktop VM (E2E_RELEASE=noble, E2E_DESKTOP=gnome|xubuntu, SUITES=all)
+e2e: ## Settings and dictation suites in an LXD desktop VM (E2E_RELEASE=noble, E2E_DESKTOP=gnome|xubuntu, SUITES=all, E2E_VM_MEMORY=6GiB)
 	e2e-tests/vm/provision.sh --release $(E2E_RELEASE) --desktop $(E2E_DESKTOP)
 	e2e-tests/run-suite.sh --release $(E2E_RELEASE) --desktop $(E2E_DESKTOP) $(SUITES)
 

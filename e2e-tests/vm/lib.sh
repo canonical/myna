@@ -9,6 +9,10 @@ E2E_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 export RUN_DIR=$E2E_ROOT/.run
 RELEASES="noble resolute stonking"
 DESKTOPS="gnome xubuntu"
+# The guest's RAM. CI's runners take the 6GiB the desktops were sized for; a
+# laptop that is also somebody's desktop sets E2E_VM_MEMORY=4GiB (it applies
+# to every copy a suite runs in, whatever the VM was provisioned with).
+export E2E_VM_MEMORY=${E2E_VM_MEMORY:-6GiB}
 # Which desktop the VM runs; scripts take --desktop to override.
 export E2E_DESKTOP=${E2E_DESKTOP:-gnome}
 
