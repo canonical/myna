@@ -51,6 +51,7 @@ use myna_desktop::indicator::dynamic::DynamicIndicator;
 use myna_desktop::indicator::notify::NotifyIndicator;
 use myna_desktop::indicator::readiness::{Readiness, ReadinessTee};
 use myna_desktop::inject::lazy::{IbusConnect, LazyInjector};
+use myna_desktop::inject::Injector as _;
 use myna_desktop::platform::Platform;
 use myna_desktop::shortcut::control::{default_socket_path, listen, send_toggle, ControlTrigger};
 use myna_desktop::sound::{
@@ -685,8 +686,12 @@ async fn run_controller(
     let _settings_watch = live.follow(&args, pump_bus.clone());
     let restart = Arc::new(tokio::sync::Notify::new());
 
+    let injector = LazyInjector::new(IbusConnect);
+    // Every poke reaches the text input backend at once, a held key's repeats
+    // too: they keep its grab's blip open while the controller is busy.
+    trigger.hear(injector.activation());
     let builder = DesktopController::builder()
-        .injector(LazyInjector::new(IbusConnect))
+        .injector(injector)
         .indicator(with_sounds(indicator, sounds.player, &live))
         .session(make_session(
             &args,

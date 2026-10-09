@@ -9,6 +9,7 @@
 //! ([`Target::activated`]).
 
 use std::fmt;
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use futures_util::stream::BoxStream;
@@ -98,6 +99,42 @@ pub trait Injector: Send {
     /// What this backend can do. Answered without a live field.
     fn capabilities(&self) -> TextInputCapabilities {
         TextInputCapabilities::COMMIT_ONLY
+    }
+
+    /// How to tell this backend of the user's activation as it happens, a
+    /// held key's repeats included, whatever the caller is busy with: also
+    /// while it acquires, when there is no target to call
+    /// [`Target::activated`] on, as a start key held down may keep focus off
+    /// the field until it is released.
+    fn activation(&self) -> Activation {
+        Activation::none()
+    }
+}
+
+/// A handle that tells a backend the user's activation continues, as a held
+/// key's repeats do. Cheap to clone, and usable while the backend is busy
+/// acquiring. Signalled with nothing being acquired or held, it does nothing.
+#[derive(Clone)]
+pub struct Activation(Arc<dyn Fn() + Send + Sync>);
+
+impl Activation {
+    pub fn new(signal: impl Fn() + Send + Sync + 'static) -> Self {
+        Self(Arc::new(signal))
+    }
+
+    /// For a backend that needs no word of it.
+    pub fn none() -> Self {
+        Self::new(|| {})
+    }
+
+    pub fn signal(&self) {
+        (self.0)();
+    }
+}
+
+impl fmt::Debug for Activation {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("Activation")
     }
 }
 

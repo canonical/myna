@@ -14,7 +14,9 @@
 
 use async_trait::async_trait;
 
-use super::{InjectError, Injector, Target, TextInputCapabilities};
+use std::sync::{Arc, Mutex};
+
+use super::{Activation, InjectError, Injector, Target, TextInputCapabilities};
 
 /// Opens a fresh connection to an injection backend.
 #[async_trait]
@@ -33,6 +35,9 @@ pub trait Connect: Send {
 pub struct LazyInjector {
     connect: Box<dyn Connect>,
     inner: Option<Box<dyn Injector>>,
+    /// The connected backend's activation handle, which the one this hands
+    /// out forwards to: it is taken before the acquire that connects.
+    activation: Arc<Mutex<Activation>>,
 }
 
 impl LazyInjector {
@@ -42,7 +47,16 @@ impl LazyInjector {
         Self {
             connect: Box::new(connect),
             inner: None,
+            activation: Arc::new(Mutex::new(Activation::none())),
         }
+    }
+
+    async fn reconnect(&mut self) -> Result<(), InjectError> {
+        self.inner = None;
+        let inner = self.connect.connect().await?;
+        *self.activation.lock().unwrap_or_else(|e| e.into_inner()) = inner.activation();
+        self.inner = Some(inner);
+        Ok(())
     }
 
     /// Drop the connection when the backend reported itself unreachable, so
@@ -61,7 +75,7 @@ impl Injector for LazyInjector {
     async fn acquire(&mut self) -> Result<Box<dyn Target>, InjectError> {
         let held = self.inner.is_some();
         if !held {
-            self.inner = Some(self.connect.connect().await?);
+            self.reconnect().await?;
         }
         let result = self
             .inner
@@ -76,8 +90,7 @@ impl Injector for LazyInjector {
             // press the one that merely notices.
             Err(InjectError::Unavailable(why)) if held => {
                 myna_core::dbg_log!("inject", "held connection is stale ({why}); reconnecting");
-                self.inner = None;
-                self.inner = Some(self.connect.connect().await?);
+                self.reconnect().await?;
                 let result = self
                     .inner
                     .as_mut()
@@ -99,6 +112,14 @@ impl Injector for LazyInjector {
 
     fn capabilities(&self) -> TextInputCapabilities {
         self.connect.capabilities()
+    }
+
+    fn activation(&self) -> Activation {
+        let current = Arc::clone(&self.activation);
+        Activation::new(move || {
+            let current = current.lock().unwrap_or_else(|e| e.into_inner()).clone();
+            current.signal();
+        })
     }
 }
 
@@ -122,7 +143,7 @@ impl Connect for IbusConnect {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::inject::mock::MockInjector;
+    use crate::inject::mock::{InjectorLog, MockInjector};
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
 
@@ -154,6 +175,51 @@ mod tests {
             attempts: Arc::clone(&attempts),
         });
         (injector, attempts)
+    }
+
+    /// Hands out mocks whose acquire takes a second, keeping the last one's
+    /// log.
+    struct Logged(Arc<std::sync::Mutex<Option<Arc<std::sync::Mutex<InjectorLog>>>>>);
+
+    #[async_trait]
+    impl Connect for Logged {
+        async fn connect(&mut self) -> Result<Box<dyn Injector>, InjectError> {
+            let mock = MockInjector::new().with_acquire_delay(std::time::Duration::from_secs(1));
+            *self.0.lock().unwrap() = Some(mock.log());
+            Ok(Box::new(mock))
+        }
+
+        fn capabilities(&self) -> TextInputCapabilities {
+            MockInjector::new().capabilities()
+        }
+    }
+
+    /// The controller takes the handle before the acquire that connects; a
+    /// signal while that acquire runs still reaches the backend it connected,
+    /// and the one a reconnect replaces it with.
+    #[tokio::test(start_paused = true)]
+    async fn the_activation_handle_reaches_the_connected_backend() {
+        let logs = Arc::new(std::sync::Mutex::new(None));
+        let mut injector = LazyInjector::new(Logged(Arc::clone(&logs)));
+        let activation = injector.activation();
+        let signal = async {
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            activation.signal();
+        };
+        let (acquired, ()) = tokio::join!(injector.acquire(), signal);
+        acquired.expect("acquire");
+        let log = logs.lock().unwrap().clone().expect("connected");
+        assert_eq!(log.lock().unwrap().acquire_activations, 1);
+
+        injector.inner = None;
+        let signal = async {
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            activation.signal();
+        };
+        let (acquired, ()) = tokio::join!(injector.acquire(), signal);
+        acquired.expect("acquire after a reconnect");
+        let log = logs.lock().unwrap().clone().expect("reconnected");
+        assert_eq!(log.lock().unwrap().acquire_activations, 1);
     }
 
     /// The whole point: constructing the injector connects to nothing, so a

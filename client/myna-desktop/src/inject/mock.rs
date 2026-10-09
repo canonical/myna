@@ -19,7 +19,9 @@ use async_trait::async_trait;
 use futures_util::stream::{self, BoxStream, StreamExt};
 use tokio::sync::watch;
 
-use super::{FocusEvent, InjectError, Injector, Support, Target, TextInputCapabilities};
+use super::{
+    Activation, FocusEvent, InjectError, Injector, Support, Target, TextInputCapabilities,
+};
 
 /// A recording of what the controller did to the injector. Shared with the test
 /// via [`MockInjector::log`] so assertions survive the controller owning the
@@ -43,6 +45,8 @@ pub struct InjectorLog {
     pub releases: usize,
     /// Number of `activated` calls on held targets.
     pub activations: usize,
+    /// Number of signals through [`Injector::activation`].
+    pub acquire_activations: usize,
 }
 
 impl InjectorLog {
@@ -150,6 +154,8 @@ pub struct MockInjector {
     field: MockField,
     capabilities: TextInputCapabilities,
     log: Arc<Mutex<InjectorLog>>,
+    /// How long `acquire` takes.
+    acquire_delay: std::time::Duration,
 }
 
 impl Default for MockInjector {
@@ -180,7 +186,14 @@ impl MockInjector {
                 secure_field_detection: Support::Supported,
             },
             log: Arc::new(Mutex::new(InjectorLog::default())),
+            acquire_delay: std::time::Duration::ZERO,
         }
+    }
+
+    /// `acquire` takes `delay`, as one waiting for a key grab to end does.
+    pub fn with_acquire_delay(mut self, delay: std::time::Duration) -> Self {
+        self.acquire_delay = delay;
+        self
     }
 
     /// Report a replacement-safe preedit region and show what `set_preedit`
@@ -247,6 +260,9 @@ impl MockInjector {
 impl Injector for MockInjector {
     async fn acquire(&mut self) -> Result<Box<dyn Target>, InjectError> {
         self.log.lock().unwrap().acquires += 1;
+        if !self.acquire_delay.is_zero() {
+            tokio::time::sleep(self.acquire_delay).await;
+        }
         let lease = &self.field.lease;
         let id = lease.borrow().id + 1;
         lease.send_replace(Lease {
@@ -282,6 +298,11 @@ impl Injector for MockInjector {
 
     fn capabilities(&self) -> TextInputCapabilities {
         self.capabilities
+    }
+
+    fn activation(&self) -> Activation {
+        let log = self.log.clone();
+        Activation::new(move || log.lock().unwrap().acquire_activations += 1)
     }
 }
 

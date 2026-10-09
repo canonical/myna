@@ -6,7 +6,9 @@
 //! `myna-desktop --toggle` (`/snap/bin/myna.toggle`) connects to a Unix control
 //! socket ([`listen`]), which shortcuts older Myna Settings wrote still run.
 //! Both feed one channel, so they share one press/release parity, and a held
-//! key's repeats, from either, toggle nothing ([`REPEAT_QUIET`]).
+//! key's repeats, from either, toggle nothing ([`REPEAT_QUIET`]); every poke
+//! still tells the text input backend the activation continues
+//! ([`ControlTrigger::hear`]).
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -19,6 +21,7 @@ use tokio::sync::mpsc;
 use tokio::time::Instant;
 
 use super::{Trigger, TriggerEdge};
+use crate::inject::Activation;
 
 /// The default control-socket path (`$XDG_RUNTIME_DIR/myna-desktop.sock`,
 /// else `/tmp`). Under snap confinement `$XDG_RUNTIME_DIR` is already
@@ -81,11 +84,21 @@ struct Arrival {
 pub struct Poke {
     tx: mpsc::Sender<Arrival>,
     last: Arc<Mutex<Option<Instant>>>,
+    /// Told of every poke, set once the backend exists ([`ControlTrigger::hear`]).
+    activation: Arc<Mutex<Activation>>,
 }
 
 impl Poke {
-    /// Never blocks: a full backlog drops the poke.
+    /// Never blocks: a full backlog drops the poke. Every poke is the user's
+    /// activation, a repeat too, and the backend hears it at once: a held key
+    /// may keep focus off the field while the controller is busy elsewhere.
     pub fn poke(&self) {
+        let activation = self
+            .activation
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
+        activation.signal();
         let at = Instant::now();
         let mut last = self.last.lock().unwrap_or_else(|e| e.into_inner());
         let gap = last.map(|before| at.duration_since(before));
@@ -105,6 +118,7 @@ impl ControlTrigger {
             poke: Poke {
                 tx,
                 last: Arc::new(Mutex::new(None)),
+                activation: Arc::new(Mutex::new(Activation::none())),
             },
             rx,
             pressed: false,
@@ -117,6 +131,15 @@ impl ControlTrigger {
 
     pub fn poke(&self) -> Poke {
         self.poke.clone()
+    }
+
+    /// Tell `activation` of every poke as it arrives.
+    pub fn hear(&self, activation: Activation) {
+        *self
+            .poke
+            .activation
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = activation;
     }
 
     fn toggle(&mut self) -> TriggerEdge {
@@ -374,6 +397,30 @@ mod tests {
             Ok(Some(TriggerEdge::Release)),
             "the press was not taken at once"
         );
+    }
+
+    // Every poke is the user's activation, a held key's repeats included: the
+    // backend hears each as it arrives, whoever reads the edges and whenever,
+    // through pokes handed out before it was set.
+    #[tokio::test(start_paused = true)]
+    async fn every_poke_signals_the_activation() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let trigger = ControlTrigger::new();
+        let poke = trigger.poke();
+        let heard = Arc::new(AtomicUsize::new(0));
+        trigger.hear(Activation::new({
+            let heard = Arc::clone(&heard);
+            move || {
+                heard.fetch_add(1, Ordering::SeqCst);
+            }
+        }));
+        poke.poke();
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        for _ in 0..20 {
+            poke.poke();
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        assert_eq!(heard.load(Ordering::SeqCst), 21);
     }
 
     // A second press soon after the first is one, once no repeat follows it.
