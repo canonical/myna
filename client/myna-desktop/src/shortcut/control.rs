@@ -328,6 +328,8 @@ mod tests {
 
         toggle(&path).await;
         assert_eq!(trigger.next_edge().await, Some(TriggerEdge::Press));
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        assert!(!has_edge(&mut trigger).await, "spam survived the drain");
     }
 
     #[tokio::test]
@@ -354,16 +356,24 @@ mod tests {
 
         poke.poke();
         tokio::time::sleep(Duration::from_millis(500)).await;
+        let mut last = Instant::now();
         for _ in 0..20 {
             poke.poke();
+            last = Instant::now();
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
         assert_eq!(trigger.next_edge().await, Some(TriggerEdge::Press));
         assert!(!has_edge(&mut trigger).await, "a repeat toggled again");
 
-        tokio::time::sleep(REPEAT_QUIET).await;
+        // Quiet as long as a repeat may lag: a press, taken at once.
+        tokio::time::sleep_until(last + REPEAT_QUIET).await;
         poke.poke();
-        assert_eq!(trigger.next_edge().await, Some(TriggerEdge::Release));
+        let now = tokio::time::timeout(Duration::from_millis(1), trigger.next_edge()).await;
+        assert_eq!(
+            now,
+            Ok(Some(TriggerEdge::Release)),
+            "the press was not taken at once"
+        );
     }
 
     // A second press soon after the first is one, once no repeat follows it.
@@ -446,6 +456,7 @@ mod tests {
         poke.poke();
         let _ = tokio::time::timeout(Duration::from_millis(10), trigger.next_edge()).await;
         trigger.discard_pending().await;
+        tokio::time::sleep(REPEAT_FOLLOW).await;
         assert!(!has_edge(&mut trigger).await, "the discarded press toggled");
         tokio::time::sleep(REPEAT_QUIET).await;
         poke.poke();
