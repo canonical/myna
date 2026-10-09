@@ -207,29 +207,22 @@ const ISSUE_FORM: &str = "https://github.com/canonical/myna/issues/new?template=
 /// GitHub answers 414 to a URL much past 8 KB; this leaves it headroom.
 const ISSUE_URL_BUDGET: usize = 7_500;
 
-/// A new issue on the report form, its diagnostics field already holding
-/// `report`. A report too long for a URL loses lines from its end and says
-/// where the rest is.
-pub fn issue_url(report: &str) -> String {
-    let prefix = format!("{ISSUE_FORM}&diagnostics=");
-    let full = format!("{prefix}{}", form_encode(report));
-    if full.len() <= ISSUE_URL_BUDGET {
-        return full;
-    }
-    let note = format!(
-        "\n({})\n",
-        gettextrs::gettext("Shortened. The full report is in About and Diagnostics.")
-    );
-    let budget = ISSUE_URL_BUDGET - prefix.len() - form_encode(&note).len();
-    let mut kept = String::new();
-    for line in report.lines() {
-        let next = format!("{kept}{line}\n");
-        if form_encode(&next).len() > budget {
-            break;
-        }
-        kept = next;
-    }
-    format!("{prefix}{}", form_encode(&format!("{kept}{note}")))
+/// A new issue on the report form, its diagnostics field holding `report`;
+/// `None` when the report is too long for a URL GitHub accepts.
+pub fn issue_url(report: &str) -> Option<String> {
+    let url = prefilled_issue(report);
+    (url.len() <= ISSUE_URL_BUDGET).then_some(url)
+}
+
+/// The report form for a report that went to the clipboard instead.
+pub fn issue_paste_url() -> String {
+    prefilled_issue(&gettextrs::gettext(
+        "Paste the diagnostics report from your clipboard here.",
+    ))
+}
+
+fn prefilled_issue(text: &str) -> String {
+    format!("{ISSUE_FORM}&diagnostics={}", form_encode(text))
 }
 
 /// `application/x-www-form-urlencoded`, which GitHub decodes prefilled form
@@ -1051,28 +1044,27 @@ mod tests {
     #[test]
     fn the_issue_carries_the_report_verbatim() {
         let report = "Myna Settings 1.0\n    CPU   x86 & co, 100% 粵語 a+b=c?#\n";
-        let url = issue_url(report);
-        assert!(url.len() <= ISSUE_URL_BUDGET);
+        let url = issue_url(report).expect("a short report fits");
         assert!(!url.contains(' ') && !url.contains('#'), "{url}");
         assert_eq!(prefilled(&url), report);
     }
 
-    /// GitHub refuses an oversized URL outright, which would lose the whole
-    /// report rather than its tail.
+    /// GitHub refuses an oversized URL outright; the report then goes
+    /// through the clipboard whole rather than losing its tail.
     #[test]
-    fn an_oversized_report_keeps_its_head_and_says_so() {
+    fn an_oversized_report_is_not_put_in_the_url() {
         let report: String = (0..2_000).map(|n| format!("line {n}\n")).collect();
-        let url = issue_url(&report);
-        assert!(url.len() <= ISSUE_URL_BUDGET, "{}", url.len());
-        let field = prefilled(&url);
-        assert!(field.starts_with("line 0\nline 1\n"), "{field}");
-        assert!(field.ends_with("(Shortened. The full report is in About and Diagnostics.)\n"));
-        let kept = field
-            .lines()
-            .filter(|line| line.starts_with("line "))
-            .count();
-        assert!(kept > 500, "{kept}");
-        assert!(report.starts_with(&field[..field.find("\n\n(").unwrap() + 1]));
+        assert_eq!(issue_url(&report), None);
+    }
+
+    #[test]
+    fn the_paste_form_asks_for_the_clipboard() {
+        let url = issue_paste_url();
+        assert!(url.len() <= ISSUE_URL_BUDGET);
+        assert_eq!(
+            prefilled(&url),
+            "Paste the diagnostics report from your clipboard here."
+        );
     }
 
     #[test]

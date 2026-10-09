@@ -1974,7 +1974,8 @@ impl BackendUi {
     }
 
     /// Opens a new GitHub issue with the diagnostics already in it, so the
-    /// user only has to say what went wrong.
+    /// user only has to say what went wrong. A report too long for the URL
+    /// goes through the clipboard whole, never shortened.
     fn report_issue(self: &Rc<Self>, window: &ui::MainWindow) {
         let ui = Rc::downgrade(self);
         let window = window.downgrade();
@@ -1987,7 +1988,13 @@ impl BackendUi {
                 *ui.host.borrow_mut() = host;
             }
             let text = present_diagnostics(ui.diagnostic_input()).copy_text();
-            let url = diagnostics::issue_url(&text);
+            let url = diagnostics::issue_url(&text).unwrap_or_else(|| {
+                window.clipboard().set_text(&text);
+                ui.overlay.add_toast(adw::Toast::new(&gettextrs::gettext(
+                    "Diagnostics copied. Paste them into the issue.",
+                )));
+                diagnostics::issue_paste_url()
+            });
             let overlay = ui.overlay.clone();
             gtk::UriLauncher::new(&url).launch(
                 Some(&window),
