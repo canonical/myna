@@ -64,8 +64,8 @@ pub struct ControlTrigger {
     candidate: Option<Arrival>,
     /// Read while deciding a candidate, and not one of its repeats.
     later: Option<Arrival>,
-    /// A repeat stream is under way: pokes within `quiet` of the one before
-    /// are dropped until the pokes go quiet.
+    /// A repeat stream is under way: pokes within [`REPEAT_FOLLOW`] of the
+    /// one before are dropped.
     streaming: bool,
     quiet: Duration,
 }
@@ -191,9 +191,13 @@ impl Trigger for ControlTrigger {
                 self.streaming = false;
                 return Some(self.toggle());
             }
-            if !self.streaming {
-                self.candidate = Some(arrival);
+            // Repeats come close together; a person's next press does not, even
+            // right after letting go of a held key.
+            if self.streaming && arrival.gap.is_some_and(|gap| gap < REPEAT_FOLLOW) {
+                continue;
             }
+            self.streaming = false;
+            self.candidate = Some(arrival);
         }
     }
 
@@ -421,6 +425,31 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
         assert_eq!(heard.load(Ordering::SeqCst), 21);
+    }
+
+    // A press soon after a held key's release is a press: repeats come close
+    // together, a person's next press does not.
+    #[tokio::test(start_paused = true)]
+    async fn a_press_soon_after_a_hold_toggles() {
+        let mut trigger = ControlTrigger::new();
+        let poke = trigger.poke();
+
+        poke.poke();
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        for _ in 0..30 {
+            poke.poke();
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        assert_eq!(trigger.next_edge().await, Some(TriggerEdge::Press));
+        assert!(!has_edge(&mut trigger).await, "a repeat toggled");
+        tokio::time::sleep(Duration::from_millis(650)).await;
+        poke.poke();
+        let edge = tokio::time::timeout(REPEAT_QUIET, trigger.next_edge()).await;
+        assert_eq!(
+            edge,
+            Ok(Some(TriggerEdge::Release)),
+            "the press was dropped"
+        );
     }
 
     // A second press soon after the first is one, once no repeat follows it.
