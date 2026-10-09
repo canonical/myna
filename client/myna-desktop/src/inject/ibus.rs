@@ -1689,6 +1689,28 @@ mod tests {
         assert_eq!(standing_now(&state, lease), Some(Standing::Held));
     }
 
+    /// While the lease waits for a field, the fake context passes, and a
+    /// focus the daemon still cannot name is the field's.
+    #[tokio::test(start_paused = true)]
+    async fn a_lease_waiting_after_an_unnamed_focus_skips_the_fake_context() {
+        for named in [true, false] {
+            let state = engine_state();
+            let lease = state.mint();
+            let engine = engine(&state);
+            engine.focus_in().await;
+            engine.focus_out().await;
+            engine.focus_in_id(FAKE.into(), "fake".into()).await;
+            engine.focus_out_id(FAKE.into()).await;
+            if named {
+                engine.focus_in_id(FIELD.into(), APP.into()).await;
+            } else {
+                engine.focus_in().await;
+            }
+            assert!(state.holds(lease), "named: {named}");
+            assert_eq!(standing_now(&state, lease), Some(Standing::Held));
+        }
+    }
+
     /// The wait for the field is bounded like a key grab's.
     #[tokio::test(start_paused = true)]
     async fn no_field_after_an_unnamed_focus_left_is_a_loss() {
