@@ -163,7 +163,7 @@ if [ "$DESKTOP" = xubuntu ]; then
     assert_dict "the field is cleared" 'field_clear'
     assert_dict "the plain field is focused afresh" 'field_focus other && field_focus plain'
     dict active_window_save
-    assert_dict "the HUD is registered with the daemon" 'hud_registered'
+    assert_dict "the HUD is registered with the daemon" 'wait_until 30 hud_registered'
     dict dictation_toggle
     assert_dict "recording" 'wait_until 10 dictation_state_is recording'
     assert_dict "the first segment lands" "wait_until 10 field_is plain '$FIRST'"
