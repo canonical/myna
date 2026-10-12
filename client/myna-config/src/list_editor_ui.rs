@@ -1,4 +1,4 @@
-//! A string-list setting as its own preferences group: an entry row that adds
+//! A string-list setting filling a preferences group: an entry row that adds
 //! a word, then one row per word with a button that removes it.
 
 use std::cell::RefCell;
@@ -23,9 +23,11 @@ pub struct ListEditor {
 }
 
 impl ListEditor {
-    /// `commit` receives the whole edited list; the editor shows it once it
-    /// comes back through [`ListEditor::apply`].
+    /// Fill `group` with the editor. `commit` receives the whole edited
+    /// list; the editor shows it once it comes back through
+    /// [`ListEditor::apply`].
     pub fn new(
+        group: adw::PreferencesGroup,
         plan: &WidgetPlan,
         values: &[String],
         overlay: adw::ToastOverlay,
@@ -34,12 +36,10 @@ impl ListEditor {
         let count = gtk::Label::builder().valign(gtk::Align::Center).build();
         count.add_css_class("dim-label");
         count.add_css_class("numeric");
-        let group = adw::PreferencesGroup::builder()
-            .name(&plan.key)
-            .title(&plan.title)
-            .description(&plan.description)
-            .header_suffix(&count)
-            .build();
+        group.set_widget_name(&plan.key);
+        group.set_title(&plan.title);
+        group.set_description(Some(&plan.description));
+        group.set_header_suffix(Some(&count));
         let entry = adw::EntryRow::builder()
             .title(gettextrs::gettext("Add a word or phrase"))
             .sensitive(plan.writable)
@@ -75,10 +75,6 @@ impl ListEditor {
         });
         entry.connect_changed(|entry| entry.remove_css_class("error"));
         editor
-    }
-
-    pub fn group(&self) -> adw::PreferencesGroup {
-        self.group.clone()
     }
 
     pub fn apply(self: &Rc<Self>, values: &[String]) {

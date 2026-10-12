@@ -156,10 +156,11 @@ pub fn widget_plan(metadata: &ClientSettingMetadata) -> WidgetPlan {
             _ => None,
         },
         writable: metadata.writable(),
-        placement: if metadata.key().as_str() == myna_core::settings::KEY_LANGUAGE {
-            Placement::ActiveModel
-        } else {
-            Placement::Dictation
+        placement: match metadata.key().as_str() {
+            myna_core::settings::KEY_LANGUAGE | myna_core::settings::KEY_VOCABULARY => {
+                Placement::ActiveModel
+            }
+            _ => Placement::Dictation,
         },
     }
 }

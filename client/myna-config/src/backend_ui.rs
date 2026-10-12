@@ -407,9 +407,10 @@ pub struct BackendUi {
     diagnostics_nav: adw::NavigationView,
     overlay: adw::ToastOverlay,
     myna_selector: Option<ui::MynaPage>,
-    /// The spoken-language row's group, built with General's rows and shown
-    /// on the Model tab while the active backend takes it.
-    spoken_language: Option<adw::PreferencesGroup>,
+    /// Groups built with General's rows and shown on the Model tab while the
+    /// active backend's family takes them: the spoken language, the
+    /// vocabulary.
+    follows_model: Vec<FollowsModel>,
     /// General's settings, told what the active backend does by default so
     /// "When to transcribe" can show it.
     client_settings: Option<Rc<crate::myna_settings::MynaSettingsController>>,
@@ -529,9 +530,33 @@ fn abandon_all_apply_state(
     }
 }
 
+/// A group the Model tab shows while the active backend's family `takes` it.
+#[derive(Clone)]
+pub(crate) struct FollowsModel {
+    group: adw::PreferencesGroup,
+    takes: fn(myna_core::language::ModelFamily) -> bool,
+}
+
+impl FollowsModel {
+    pub(crate) fn spoken_language(group: adw::PreferencesGroup) -> Self {
+        Self {
+            group,
+            takes: myna_core::language::ModelFamily::takes_spoken_language,
+        }
+    }
+
+    pub(crate) fn vocabulary(group: adw::PreferencesGroup) -> Self {
+        Self {
+            group,
+            takes: myna_core::language::ModelFamily::takes_vocabulary,
+        }
+    }
+}
+
 /// General's GSettings rows that follow the connected backend.
 pub struct GeneralSettings {
     pub spoken_language: adw::PreferencesGroup,
+    pub vocabulary: adw::PreferencesGroup,
     pub controller: Rc<crate::myna_settings::MynaSettingsController>,
 }
 
@@ -581,9 +606,18 @@ impl BackendUi {
         diagnostics_page: adw::NavigationPage,
     ) -> Rc<Self> {
         let controller = BackendController::new(repository);
-        let (spoken_language, client_settings) = general_settings
-            .map(|settings| (settings.spoken_language, settings.controller))
+        let (follows_model, client_settings) = general_settings
+            .map(|settings| {
+                (
+                    vec![
+                        FollowsModel::spoken_language(settings.spoken_language),
+                        FollowsModel::vocabulary(settings.vocabulary),
+                    ],
+                    settings.controller,
+                )
+            })
             .unzip();
+        let follows_model = follows_model.unwrap_or_default();
         let myna_selector = myna_page.downcast::<ui::MynaPage>().ok();
         let operation_coordinator = OperationCoordinator::new();
         diagnostics_nav.replace(std::slice::from_ref(&diagnostics_page));
@@ -600,7 +634,7 @@ impl BackendUi {
             diagnostics_nav: diagnostics_nav.clone(),
             overlay: overlay.clone(),
             myna_selector,
-            spoken_language,
+            follows_model,
             client_settings,
             active_backend: ActiveBackendController::with_coordinator(
                 crate::domain::ConnectionSnapshot::new(
@@ -1844,29 +1878,33 @@ impl BackendUi {
                 gettextrs::gettext("Choose one model on the General tab."),
             ),
         };
-        self.detach_spoken_language();
+        self.detach_model_groups();
         let page = model_status_page(&title, &description, "emblem-system-symbolic");
         self.backend_nav.replace(&[page]);
     }
 
-    /// The spoken-language group, off any page, when `snap_name`'s family
-    /// takes it, for the shown backend's page to show.
-    fn spoken_language_for(&self, snap_name: &str) -> Option<adw::PreferencesGroup> {
-        self.detach_spoken_language();
-        let takes = myna_core::language::ModelFamily::from_snap_name(snap_name)
-            .is_some_and(|family| family.takes_spoken_language());
-        takes.then(|| self.spoken_language.clone()).flatten()
+    /// The groups `snap_name`'s family takes, off any page, for the shown
+    /// backend's page to show.
+    fn model_groups_for(&self, snap_name: &str) -> Vec<adw::PreferencesGroup> {
+        self.detach_model_groups();
+        let Some(family) = myna_core::language::ModelFamily::from_snap_name(snap_name) else {
+            return Vec::new();
+        };
+        self.follows_model
+            .iter()
+            .filter(|follows| (follows.takes)(family))
+            .map(|follows| follows.group.clone())
+            .collect()
     }
 
-    fn detach_spoken_language(&self) {
-        let Some(group) = &self.spoken_language else {
-            return;
-        };
-        if let Some(page) = group
-            .ancestor(adw::PreferencesPage::static_type())
-            .and_downcast::<adw::PreferencesPage>()
-        {
-            page.remove(group);
+    fn detach_model_groups(&self) {
+        for FollowsModel { group, .. } in &self.follows_model {
+            if let Some(page) = group
+                .ancestor(adw::PreferencesPage::static_type())
+                .and_downcast::<adw::PreferencesPage>()
+            {
+                page.remove(group);
+            }
         }
     }
 
@@ -2686,6 +2724,12 @@ pub(crate) fn spoken_language_group() -> adw::PreferencesGroup {
         .build()
 }
 
+/// The Model tab's group for the vocabulary, which General's settings page
+/// fills with its list editor.
+pub(crate) fn vocabulary_group() -> adw::PreferencesGroup {
+    adw::PreferencesGroup::new()
+}
+
 /// Widget name of a row General builds from GSettings and the Model tab
 /// shows, so a page rebuild hands focus back to it.
 pub(crate) fn client_setting_widget_name(key: &str) -> String {
@@ -2795,7 +2839,7 @@ fn populate_backend_page(page_widget: &ui::BackendPage, page: &BackendPage, ui: 
     }
     groups.push(overview);
     if ui.shown_backend().as_deref() == Some(page.identity().snap_name()) {
-        groups.extend(ui.spoken_language_for(page.identity().snap_name()));
+        groups.extend(ui.model_groups_for(page.identity().snap_name()));
     }
 
     if page.loading() && page.snapshot().is_none() {
@@ -3538,18 +3582,18 @@ mod tests {
         controller: Rc<BackendController>,
         myna_selector: Option<ui::MynaPage>,
     ) -> TestUi {
-        test_ui_full(controller, myna_selector, None)
+        test_ui_full(controller, myna_selector, Vec::new())
     }
 
     fn test_ui_full(
         controller: Rc<BackendController>,
         myna_selector: Option<ui::MynaPage>,
-        spoken_language: Option<adw::PreferencesGroup>,
+        follows_model: Vec<FollowsModel>,
     ) -> TestUi {
         test_ui_ports(
             controller,
             myna_selector,
-            spoken_language,
+            follows_model,
             Rc::new(PkexecSystemConfigurator::new(Arc::new(GioCommandRunner))),
         )
     }
@@ -3557,7 +3601,7 @@ mod tests {
     fn test_ui_ports(
         controller: Rc<BackendController>,
         myna_selector: Option<ui::MynaPage>,
-        spoken_language: Option<adw::PreferencesGroup>,
+        follows_model: Vec<FollowsModel>,
         configurator: Rc<dyn SystemConfigurator>,
     ) -> TestUi {
         let view_stack = adw::ViewStack::new();
@@ -3586,7 +3630,7 @@ mod tests {
             diagnostics_nav,
             overlay: adw::ToastOverlay::new(),
             myna_selector,
-            spoken_language,
+            follows_model,
             client_settings: None,
             active_backend: ActiveBackendController::with_coordinator(
                 crate::domain::ConnectionSnapshot::new(
@@ -3669,7 +3713,11 @@ mod tests {
             .build();
         let group = adw::PreferencesGroup::new();
         group.add(&row);
-        let TestUi { ui, view_stack } = test_ui_full(discovered(connections), None, Some(group));
+        let TestUi { ui, view_stack } = test_ui_full(
+            discovered(connections),
+            None,
+            vec![FollowsModel::spoken_language(group)],
+        );
         view_stack.set_visible_child_name("model");
         let window = gtk::Window::builder().child(&view_stack).build();
         window.present();
@@ -3702,6 +3750,38 @@ mod tests {
 
             rediscover_as(&ui, WHISPER_CONNECTED_PARAKEET_INSTALLED);
             assert!(on_model_tab(&ui, &row), "missing after switching back");
+
+            rediscover_as(&ui, NEITHER_CONNECTED);
+            assert!(row.root().is_none(), "left on a page with nothing active");
+        });
+    }
+
+    #[test]
+    fn the_vocabulary_shows_on_the_model_tab_only_for_parakeet() {
+        on_gtk_thread(|| {
+            ui::register_resources();
+            let row = adw::EntryRow::builder().title("Add a word").build();
+            let group = vocabulary_group();
+            group.add(&row);
+            let TestUi { ui, view_stack } = test_ui_full(
+                discovered(PARAKEET_CONNECTED_WHISPER_INSTALLED),
+                None,
+                vec![FollowsModel::vocabulary(group)],
+            );
+            view_stack.set_visible_child_name("model");
+            let window = gtk::Window::builder().child(&view_stack).build();
+            window.present();
+            ui.sync_active_backend();
+            assert!(on_model_tab(&ui, &row), "missing with Parakeet active");
+
+            rediscover_as(&ui, WHISPER_CONNECTED_PARAKEET_INSTALLED);
+            assert!(
+                row.root().is_none(),
+                "shown with Whisper, which takes no keywords"
+            );
+
+            rediscover_as(&ui, (&["myna-parakeet", "myna-funasr"], &["myna-funasr"]));
+            assert!(row.root().is_none(), "shown with FunASR, which ignores it");
 
             rediscover_as(&ui, NEITHER_CONNECTED);
             assert!(row.root().is_none(), "left on a page with nothing active");
@@ -4959,7 +5039,8 @@ mod tests {
         });
         let controller = BackendController::new(repository.clone());
         let snapd = Rc::new(InstallMachine::new(Rc::clone(&repository)));
-        let TestUi { ui, .. } = test_ui_ports(controller, Some(ui::MynaPage::new()), None, snapd);
+        let TestUi { ui, .. } =
+            test_ui_ports(controller, Some(ui::MynaPage::new()), Vec::new(), snapd);
         ui.controller.observe({
             let ui = Rc::downgrade(&ui);
             move |event| {
@@ -5128,8 +5209,12 @@ mod tests {
         });
         let snapd = Rc::new(InstallMachine::new(Rc::clone(&repository)));
         let controller = BackendController::new(repository);
-        let TestUi { ui, .. } =
-            test_ui_ports(controller, Some(ui::MynaPage::new()), None, snapd.clone());
+        let TestUi { ui, .. } = test_ui_ports(
+            controller,
+            Some(ui::MynaPage::new()),
+            Vec::new(),
+            snapd.clone(),
+        );
         ui.controller.observe({
             let ui = Rc::downgrade(&ui);
             move |event| {
@@ -5348,8 +5433,12 @@ mod tests {
             snapd.pending.borrow_mut().push("myna-whisper".to_owned());
             snapd.downloading.set(Some(23));
             let controller = BackendController::new(repository);
-            let TestUi { ui, .. } =
-                test_ui_ports(controller, Some(ui::MynaPage::new()), None, snapd.clone());
+            let TestUi { ui, .. } = test_ui_ports(
+                controller,
+                Some(ui::MynaPage::new()),
+                Vec::new(),
+                snapd.clone(),
+            );
             ui.controller.observe({
                 let ui = Rc::downgrade(&ui);
                 move |event| {
@@ -5778,7 +5867,8 @@ mod tests {
         ui::register_resources();
         let machine = Rc::new(ApplyMachine::new());
         let controller = BackendController::new(machine.clone());
-        let TestUi { ui, view_stack } = test_ui_ports(controller, None, None, machine.clone());
+        let TestUi { ui, view_stack } =
+            test_ui_ports(controller, None, Vec::new(), machine.clone());
         ui.controller.observe({
             let ui = Rc::downgrade(&ui);
             move |event| {

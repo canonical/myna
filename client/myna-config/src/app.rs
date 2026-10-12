@@ -1479,10 +1479,17 @@ fn build_settings_window(application: &adw::Application) {
                     let controller =
                         MynaSettingsController::load(Rc::new(settings) as Rc<dyn ClientSettings>);
                     let spoken_language = crate::backend_ui::spoken_language_group();
-                    let page =
-                        build_myna_page(controller.clone(), writer, &overlay, &spoken_language);
+                    let vocabulary = crate::backend_ui::vocabulary_group();
+                    let page = build_myna_page(
+                        controller.clone(),
+                        writer,
+                        &overlay,
+                        &spoken_language,
+                        &vocabulary,
+                    );
                     let general = crate::backend_ui::GeneralSettings {
                         spoken_language,
+                        vocabulary,
                         controller,
                     };
                     (page, Some(general))
@@ -1604,7 +1611,15 @@ fn typing_probe() -> glib::ExitCode {
     };
     // The only text row is the spoken language, which the Model tab shows.
     let model_settings = adw::PreferencesGroup::new();
-    let _page = ready_page(controller.clone(), writer, rows, &overlay, &model_settings);
+    let vocabulary = adw::PreferencesGroup::new();
+    let _page = ready_page(
+        controller.clone(),
+        writer,
+        rows,
+        &overlay,
+        &model_settings,
+        &vocabulary,
+    );
     overlay.set_child(Some(&model_settings));
     let window = adw::Window::builder().content(&overlay).build();
     window.present();
@@ -1700,9 +1715,18 @@ fn vocabulary_probe() -> glib::ExitCode {
         eprintln!("myna-config vocabulary probe found no settings rows");
         return glib::ExitCode::FAILURE;
     };
+    // The editor fills the group the Model tab shows.
     let model_settings = adw::PreferencesGroup::new();
-    let page = ready_page(controller, writer, rows, &overlay, &model_settings);
-    overlay.set_child(Some(&page));
+    let vocabulary = adw::PreferencesGroup::new();
+    let _page = ready_page(
+        controller,
+        writer,
+        rows,
+        &overlay,
+        &model_settings,
+        &vocabulary,
+    );
+    overlay.set_child(Some(&vocabulary));
     let window = adw::Window::builder().content(&overlay).build();
     window.present();
     settle_gtk();
@@ -2159,6 +2183,7 @@ fn shortcut_unsupported_probe() -> glib::ExitCode {
         rows,
         &overlay,
         &adw::PreferencesGroup::new(),
+        &adw::PreferencesGroup::new(),
     );
     let Ok(myna) = page.clone().downcast::<ui::MynaPage>() else {
         eprintln!("the settings page is not the Myna page");
@@ -2228,6 +2253,7 @@ fn shortcut_probe() -> glib::ExitCode {
         writer,
         rows,
         &overlay,
+        &adw::PreferencesGroup::new(),
         &adw::PreferencesGroup::new(),
     );
     let Ok(myna) = page.clone().downcast::<ui::MynaPage>() else {
@@ -3167,6 +3193,7 @@ fn backends_probe() -> glib::ExitCode {
     let diagnostics_nav = window.diagnostics_nav();
     let overlay = window.overlay();
     let spoken_language = crate::backend_ui::spoken_language_group();
+    let vocabulary = crate::backend_ui::vocabulary_group();
     let client_settings = match GioClientSettings::open() {
         Ok(settings) => MynaSettingsController::load(Rc::new(settings) as Rc<dyn ClientSettings>),
         Err(error) => {
@@ -3179,6 +3206,7 @@ fn backends_probe() -> glib::ExitCode {
         PersistenceWriter::spawn(GioClientSettings::open),
         &overlay,
         &spoken_language,
+        &vocabulary,
     );
     general_nav.replace(std::slice::from_ref(&myna_page));
     window.present();
@@ -3198,6 +3226,7 @@ fn backends_probe() -> glib::ExitCode {
         myna_page,
         Some(crate::backend_ui::GeneralSettings {
             spoken_language,
+            vocabulary: vocabulary.clone(),
             controller: client_settings,
         }),
         status_page("About and Diagnostics", "", "dialog-information-symbolic"),
@@ -3229,7 +3258,7 @@ fn backends_probe() -> glib::ExitCode {
         .iter()
         .map(|group| group.title().to_string())
         .collect();
-    if group_titles != ["Keyboard shortcut", "Dictation", "Model", "Vocabulary"] {
+    if group_titles != ["Keyboard shortcut", "Dictation", "Model"] {
         eprintln!("General's groups read {group_titles:?}");
         return glib::ExitCode::FAILURE;
     }
@@ -3722,6 +3751,13 @@ fn backends_probe() -> glib::ExitCode {
         return glib::ExitCode::FAILURE;
     }
     println!("backend-snapshot: read");
+
+    // Parakeet biases toward the vocabulary, so its page carries the editor.
+    if !content().is_some_and(|page| vocabulary.is_ancestor(&page)) {
+        eprintln!("the active Parakeet page does not show the vocabulary");
+        return glib::ExitCode::FAILURE;
+    }
+    println!("model-vocabulary: shown");
 
     // A change applies on its own, with no question but polkit's.
     let apply_idle = |text: &str| {
@@ -5581,13 +5617,14 @@ fn close_dialog(window: &impl IsA<adw::ApplicationWindow>, dialog: &impl IsA<adw
     })
 }
 
-/// Rows placed with the active model go into `model_settings`, which the
-/// Model tab shows.
+/// Rows placed with the active model go into `model_settings`, and the
+/// vocabulary editor into `vocabulary`; the Model tab shows both.
 fn build_myna_page(
     controller: Rc<MynaSettingsController>,
     writer: PersistenceWriter,
     overlay: &adw::ToastOverlay,
     model_settings: &adw::PreferencesGroup,
+    vocabulary: &adw::PreferencesGroup,
 ) -> adw::NavigationPage {
     match controller.state() {
         PageState::Loading => status_page(
@@ -5601,7 +5638,14 @@ fn build_myna_page(
             "edit-clear-all-symbolic",
         ),
         PageState::Error(message) => error_page(&message),
-        PageState::Ready(rows) => ready_page(controller, writer, rows, overlay, model_settings),
+        PageState::Ready(rows) => ready_page(
+            controller,
+            writer,
+            rows,
+            overlay,
+            model_settings,
+            vocabulary,
+        ),
     }
 }
 
@@ -5763,6 +5807,7 @@ fn ready_page(
     rows: Vec<SettingRow>,
     overlay: &adw::ToastOverlay,
     model_settings: &adw::PreferencesGroup,
+    vocabulary: &adw::PreferencesGroup,
 ) -> adw::NavigationPage {
     let page = ui::MynaPage::new();
     crate::shortcut_ui::ShortcutControl::attach(
@@ -5806,6 +5851,7 @@ fn ready_page(
         match plan.kind {
             WidgetKind::List => {
                 let editor = crate::list_editor_ui::ListEditor::new(
+                    vocabulary.clone(),
                     &plan,
                     setting.value().as_list().unwrap_or_default(),
                     overlay.clone(),
@@ -5822,7 +5868,6 @@ fn ready_page(
                         }
                     }),
                 );
-                page.preferences_page().add(&editor.group());
                 bindings
                     .borrow_mut()
                     .insert(plan.key.clone(), RowBinding::List(editor));

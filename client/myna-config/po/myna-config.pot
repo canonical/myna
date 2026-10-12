@@ -1041,11 +1041,11 @@ msgstr ""
 msgid "Add"
 msgstr ""
 
-#: src/list_editor_ui.rs:107
+#: src/list_editor_ui.rs:103
 msgid "Remove"
 msgstr ""
 
-#: src/list_editor_ui.rs:113
+#: src/list_editor_ui.rs:109
 msgid "Remove {word}"
 msgstr ""
 
@@ -1452,43 +1452,43 @@ msgstr ""
 msgid "The list holds at most {limit} words. Remove one to add another."
 msgstr ""
 
-#: src/myna_settings.rs:194
+#: src/myna_settings.rs:195
 msgid "Ribbon"
 msgstr ""
 
-#: src/myna_settings.rs:195
+#: src/myna_settings.rs:196
 msgid "VU meter"
 msgstr ""
 
-#: src/myna_settings.rs:196
+#: src/myna_settings.rs:197
 msgid "Default"
 msgstr ""
 
-#: src/myna_settings.rs:197
+#: src/myna_settings.rs:198
 msgid "Bird"
 msgstr ""
 
-#: src/myna_settings.rs:198
+#: src/myna_settings.rs:199
 msgid "Chime"
 msgstr ""
 
-#: src/myna_settings.rs:199
+#: src/myna_settings.rs:200
 msgid "Voice"
 msgstr ""
 
-#: src/myna_settings.rs:200
+#: src/myna_settings.rs:201
 msgid "Marimba"
 msgstr ""
 
-#: src/myna_settings.rs:201
+#: src/myna_settings.rs:202
 msgid "Water"
 msgstr ""
 
-#: src/myna_settings.rs:202
+#: src/myna_settings.rs:203
 msgid "Radio"
 msgstr ""
 
-#: src/myna_settings.rs:203
+#: src/myna_settings.rs:204
 msgid "Strings"
 msgstr ""
 
