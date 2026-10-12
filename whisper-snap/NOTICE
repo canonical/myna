@@ -14,6 +14,10 @@ model-large-v3-turbo: CTranslate2 conversion of OpenAI's Whisper
 large-v3-turbo, published as dropbox-dash/faster-whisper-large-v3-turbo on
 Hugging Face (https://huggingface.co/dropbox-dash) under the MIT License.
 
+model-large-v3-turbo-npu: FastFlowLM NPU2 conversion of OpenAI's Whisper
+large-v3-turbo, published as FastFlowLM/Whisper-V3-Turbo-NPU2 on Hugging Face
+(https://huggingface.co/FastFlowLM/Whisper-V3-Turbo-NPU2).
+
 The original Whisper weights are Copyright (c) 2022 OpenAI, MIT License
 (https://github.com/openai/whisper). No model was retrained; the conversion
 changes the storage format only.
@@ -25,6 +29,11 @@ gpu-nvidia: the faster-whisper and CTranslate2 wheels (MIT) and the
 NVIDIA cuBLAS and cuDNN redistributable wheels, which ship under the NVIDIA
 Software License Agreement carried inside each wheel. Every wheel's own
 license file is installed alongside it.
+
+fastflowlm-hrx: FastFlowLM (Copyright Advanced Micro Devices, Inc., MIT) and
+the HRX userspace runtime for AMD XDNA2 NPUs (Copyright Advanced Micro
+Devices, Inc., Apache License 2.0), distributed from the FastFlowLM v1.0.8
+Linux HRX release archive.
 
 The server code in this snap is part of Myna and is licensed under the GNU
 Affero General Public License, version 3 or later; see LICENSE next to this

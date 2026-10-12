@@ -56,7 +56,7 @@ def _text(rel: str) -> str:
 def test_every_revision_map_entry_is_a_commit(rel: str) -> None:
     body = re.search(r"declare -A REVISIONS=\((.*?)\n\)", _text(rel), re.S)
     assert body, f"{rel}: no `declare -A REVISIONS=(...)` map"
-    entries = re.findall(r"^\s*\[([\w.]+)\]=(\S+)$", body.group(1), re.M)
+    entries = re.findall(r"^\s*\[([\w.-]+)\]=(\S+)$", body.group(1), re.M)
     assert entries, f"{rel}: REVISIONS map is empty"
     floating = [k for k, v in entries if not re.fullmatch(r"[0-9a-f]{40}", v)]
     assert not floating, (

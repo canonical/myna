@@ -35,7 +35,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--adapter",
         default="whisper",
-        choices=("whisper", "parakeet", "funasr", "fake"),
+        choices=("whisper", "parakeet", "funasr", "fastflowlm", "fake"),
         help="ASR backend ('fake' = scripted, no model — for wire/contract testing)",
     )
     parser.add_argument(
@@ -164,6 +164,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="SenseVoice decoder prompt: withitn (punctuation, casing and "
         "digits/dates, default), woitn (spoken form, unpunctuated)",
     )
+    parser.add_argument(
+        "--fastflowlm-endpoint",
+        default="http://127.0.0.1:52625",
+        help="private FastFlowLM HTTP endpoint (fastflowlm adapter)",
+    )
     return parser
 
 
@@ -238,6 +243,11 @@ def build_adapter(args: argparse.Namespace) -> Adapter:
             language=args.funasr_language,
             textnorm=args.funasr_textnorm,
         )
+
+    if args.adapter == "fastflowlm":
+        from myna.testbed.fastflowlm import FastFlowLMAdapter
+
+        return FastFlowLMAdapter(endpoint=args.fastflowlm_endpoint)
 
     raise ValueError(f"unknown adapter: {args.adapter!r}")
 

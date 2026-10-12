@@ -1,2 +1,3 @@
 # Downloaded model weights (dev/download-models.sh) — not committed.
 model-*-ct2/
+model-large-v3-turbo-npu/

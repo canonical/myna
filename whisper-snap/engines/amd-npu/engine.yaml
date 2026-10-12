@@ -1,0 +1,34 @@
+name: amd-npu
+summary: AMD NPU Whisper via FastFlowLM and HRX
+description: |
+  Runs Whisper large-v3-turbo on Ryzen AI XDNA2 NPUs through FastFlowLM's
+  HRX runtime. This engine is experimental while Linux HRX and snapd's accel
+  interface are still preview technology.
+vendor: AMD
+experimental: true
+
+devices:
+  allof:
+    - type: cpu
+      architecture: amd64
+    # AMD XDNA2 (Strix/Krackan) exposes PCI 1022:17f0 and /dev/accel/accel*.
+    # Keep this typeless: modelctl's generic `type: npu` PCI class matcher
+    # does not yet include XDNA's signal-processing-controller class.
+    - bus: pci
+      vendor-id: 0x1022
+      device-id: 0x17f0
+      snap-connections:
+        - accel
+        - process-control
+
+runtime: fastflowlm-hrx
+
+model:
+  default: large-v3-turbo-npu
+  options:
+    - large-v3-turbo-npu
+
+configurations:
+  # FastFlowLM exposes no unload operation and this snap is not socket
+  # activated, so exiting on idle would leave the daemon stopped.
+  sleep-idle-seconds: 0
