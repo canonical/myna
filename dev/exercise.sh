@@ -146,7 +146,8 @@ notice "scenario 2: fake-adapter dictation, IE115 dialect"
 SOCK="$WORK/ie115.sock"; rm -f "$SOCK"
 start_server ie115 "$SOCK"
 (cd "$CLIENT" && cargo llvm-cov run --no-report --bin myna-testbed -- \
-  --socket "$SOCK" --clip "$CLIP" --dialect ie115) </dev/null | tee "$WORK/ie115.out"
+  --socket "$SOCK" --clip "$CLIP" --dialect ie115 --vocabulary Myna) </dev/null \
+  | tee "$WORK/ie115.out"
 stop_server
 grep -qF "$EXPECTED" "$WORK/ie115.out" \
   || die "IE115-dialect session missed expected transcript (see $WORK/ie115.out)"

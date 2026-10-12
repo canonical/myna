@@ -10,6 +10,8 @@
 //! Client→server: `session.update` (nested config) up front, then PCM as raw
 //! binary frames (default) or base64 `input_audio_buffer.append` (OpenAI-parity,
 //! `--base64-audio`), then `input_audio_buffer.commit` at end-of-audio.
+//! A session with keywords first reads the `session.created` greeting and
+//! sends them only if its transcription defaults list `keywords`.
 //! Server→client: `session.created`/`session.updated` (ignored control frames),
 //! additive `STATUS{state}` liveness, committed `…transcription.delta` segments
 //! (→ `final`), the utterance's `…transcription.completed` (→ `done`, the
@@ -23,7 +25,7 @@
 //! successful, possibly truncated, utterance).
 
 use base64::Engine as _;
-use futures_util::SinkExt;
+use futures_util::{SinkExt, StreamExt};
 use myna_core::{
     ErrorData, PcmChunk, Progress, SessionConfig, TranscriptionEvent, TranscriptionFinal,
     PHASE_PREPARING, PHASE_READY, PHASE_TRANSCRIBING,
@@ -38,8 +40,12 @@ use super::{BackendClient, BackendError, BackendHandle, Outbound};
 const OUTBOUND_CAPACITY: usize = 16;
 const EVENT_CAPACITY: usize = 64;
 const DEFAULT_WS_PATH: &str = "/";
+/// How long a session with keywords waits for the server's greeting. IE115
+/// servers send it on connect, so this only bounds one that never does.
+const GREETING_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
 
 // IE115 frame type strings.
+const SESSION_CREATED: &str = "session.created";
 const SESSION_UPDATE: &str = "session.update";
 const INPUT_AUDIO_APPEND: &str = "input_audio_buffer.append";
 const INPUT_AUDIO_COMMIT: &str = "input_audio_buffer.commit";
@@ -116,9 +122,40 @@ fn session_update_frame(config: &SessionConfig) -> Value {
     })
 }
 
+/// The server's first text frame, or `None` if it sends none within
+/// [`GREETING_TIMEOUT`].
+async fn read_greeting<S>(ws: &mut S) -> Option<Value>
+where
+    S: futures_util::Stream<Item = Result<Message, tokio_tungstenite::tungstenite::Error>> + Unpin,
+{
+    tokio::time::timeout(GREETING_TIMEOUT, async {
+        while let Some(Ok(message)) = ws.next().await {
+            if let Message::Text(text) = message {
+                return serde_json::from_str(&text).ok();
+            }
+        }
+        None
+    })
+    .await
+    .ok()
+    .flatten()
+}
+
+/// Whether a `session.created` greeting lists `keywords` among the
+/// transcription defaults: how an IE115 server says it takes them.
+fn takes_keywords(greeting: Option<&Value>) -> bool {
+    greeting.is_some_and(|greeting| {
+        greeting.get("type").and_then(Value::as_str) == Some(SESSION_CREATED)
+            && greeting
+                .pointer("/session/audio/input/transcription/keywords")
+                .is_some_and(Value::is_array)
+    })
+}
+
 #[async_trait::async_trait]
 impl BackendClient for WsUnixIe115Backend {
     async fn open_session(&self, config: SessionConfig) -> Result<BackendHandle, BackendError> {
+        let mut config = config;
         let stream = UnixStream::connect(&self.socket_path).await.map_err(|e| {
             myna_core::info_log!(
                 "backend",
@@ -132,6 +169,16 @@ impl BackendClient for WsUnixIe115Backend {
         let (mut ws, _resp) = tokio_tungstenite::client_async(&ws_url, stream)
             .await
             .map_err(|e| BackendError::Handshake(e.to_string()))?;
+
+        // IE115 refuses an optional field a server does not support, so
+        // keywords go only where the greeting lists them.
+        if !config.keywords.is_empty() && !takes_keywords(read_greeting(&mut ws).await.as_ref()) {
+            myna_core::info_log!(
+                "backend",
+                "vocabulary not sent: the backend does not take keywords"
+            );
+            config.keywords.clear();
+        }
 
         // Send `session.update` if we have meaningful config to communicate.
         // For external servers (ws_path != "/") that don't need the shape-sniff
@@ -460,6 +507,23 @@ mod tests {
             other => panic!("commit is a text frame, got {other:?}"),
         };
         assert_eq!(commit["type"], INPUT_AUDIO_COMMIT);
+    }
+
+    #[test]
+    fn a_greeting_listing_keywords_takes_them() {
+        let greeting = |transcription: Value| {
+            json!({"type": "session.created",
+                   "session": {"audio": {"input": {"transcription": transcription}}}})
+        };
+        assert!(takes_keywords(Some(&greeting(json!({"keywords": []})))));
+        assert!(!takes_keywords(Some(&greeting(
+            json!({"model": "whisper"})
+        ))));
+        assert!(!takes_keywords(Some(&greeting(json!({"keywords": null})))));
+        assert!(!takes_keywords(Some(
+            &json!({"type": "session.updated", "session": {"audio": {"input": {"transcription": {"keywords": []}}}}})
+        )));
+        assert!(!takes_keywords(None));
     }
 
     #[test]
