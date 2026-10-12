@@ -592,7 +592,7 @@ async def test_ie115_normalizes_keywords_before_echoing_them(tmp_path):
     from websockets.asyncio.client import unix_connect
 
     socket_path = tmp_path / "myna.sock"
-    async with serve_unix(FakeAdapter(), socket_path):
+    async with serve_unix(FakeAdapter(keywords=True), socket_path):
         async with unix_connect(str(socket_path)) as ws:
             json.loads(await ws.recv())  # the greeting
             await ws.send(
@@ -691,3 +691,73 @@ async def test_ie115_carries_timed_segments_over_the_wire(tmp_path):
 
     finals = [te.event for te in record.events if te.event.type == "transcription.final"]
     assert [f.segments for f in finals] == [segments]
+
+
+# ─── keywords discovery: the session.created defaults name what a backend takes ─
+
+
+async def _greeting_transcription(adapter, socket_path) -> dict:
+    import json
+
+    from websockets.asyncio.client import unix_connect
+
+    async with serve_unix(adapter, socket_path):
+        async with unix_connect(str(socket_path)) as ws:
+            greeting = json.loads(await ws.recv())
+    assert greeting["type"] == w.SESSION_CREATED
+    return greeting["session"]["audio"]["input"]["transcription"]
+
+
+async def test_the_greeting_lists_keywords_when_the_backend_takes_them(tmp_path):
+    transcription = await _greeting_transcription(
+        FakeAdapter(keywords=True), tmp_path / "myna.sock"
+    )
+    assert transcription["keywords"] == []
+
+
+async def test_the_greeting_leaves_keywords_out_when_the_backend_ignores_them(tmp_path):
+    transcription = await _greeting_transcription(FakeAdapter(), tmp_path / "myna.sock")
+    assert "keywords" not in transcription
+
+
+async def _ie115_update_reply(adapter, socket_path, keywords: list[str]) -> dict:
+    import json
+
+    from websockets.asyncio.client import unix_connect
+
+    async with serve_unix(adapter, socket_path):
+        async with unix_connect(str(socket_path)) as ws:
+            json.loads(await ws.recv())  # the greeting
+            await ws.send(
+                json.dumps(
+                    {
+                        "type": w.SESSION_UPDATE,
+                        "session": {
+                            "type": "transcription",
+                            "audio": {"input": {"transcription": {"keywords": keywords}}},
+                        },
+                    }
+                )
+            )
+            return json.loads(await ws.recv())
+
+
+async def test_ie115_refuses_keywords_the_backend_does_not_take(tmp_path):
+    """An unsupported optional field is refused, never silently ignored."""
+    reply = await _ie115_update_reply(FakeAdapter(), tmp_path / "myna.sock", ["Siobhan"])
+    assert reply["type"] == w.ERROR
+    assert reply["error"]["code"] == "invalid_parameter"
+    assert "keywords" in reply["error"]["message"]
+
+
+async def test_ie115_admits_a_blank_keyword_list_on_any_backend(tmp_path):
+    """Nothing left after normalization asks the backend for nothing."""
+    reply = await _ie115_update_reply(FakeAdapter(), tmp_path / "myna.sock", [" ", ""])
+    assert reply["type"] == w.SESSION_UPDATED
+    assert "keywords" not in reply["session"]["audio"]["input"]["transcription"]
+
+
+async def test_ie115_echoes_keywords_support_on_session_updated(tmp_path):
+    reply = await _ie115_update_reply(FakeAdapter(keywords=True), tmp_path / "myna.sock", [])
+    assert reply["type"] == w.SESSION_UPDATED
+    assert reply["session"]["audio"]["input"]["transcription"]["keywords"] == []

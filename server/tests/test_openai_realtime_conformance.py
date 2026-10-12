@@ -242,7 +242,7 @@ async def test_keywords_round_trips_as_a_stock_openai_field(tmp_path):
     receiving it back on ``session.updated``, parses every frame as a valid
     OpenAI event with no schema violation."""
     socket_path = tmp_path / "myna.sock"
-    async with serve_unix(FakeAdapter(), socket_path):
+    async with serve_unix(FakeAdapter(keywords=True), socket_path):
         async with unix_connect(str(socket_path), ping_interval=None) as ws:
             as_openai_server_event(json.loads(await ws.recv()))  # greeting
             await ws.send(

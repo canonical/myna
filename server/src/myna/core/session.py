@@ -17,7 +17,7 @@ shape is versioned with ``myna.core.protocol.PROTOCOL_VERSION``.
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from typing import Any
 
 from myna.core.audio import AudioFormat
@@ -65,3 +65,14 @@ def normalize_keywords(entries: tuple[str, ...]) -> tuple[str, ...]:
         if len(entry) > KEYWORDS_MAX_ENTRY_CHARS:
             raise ValueError(f"keyword {entry!r} exceeds {KEYWORDS_MAX_ENTRY_CHARS} characters")
     return trimmed
+
+
+def admit_keywords(config: SessionConfig, *, supported: bool) -> SessionConfig:
+    """``config`` with its keywords normalized, or ``ValueError`` when they
+    break a limit or the backend does not bias toward keywords at all. An
+    unsupported optional field is refused, never ignored (IE115), and a
+    client learns support from the ``session.created`` defaults first."""
+    keywords = normalize_keywords(config.keywords)
+    if keywords and not supported:
+        raise ValueError("this backend does not take keywords")
+    return replace(config, keywords=keywords)

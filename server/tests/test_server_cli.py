@@ -62,6 +62,10 @@ def test_fake_adapter_streams_only_with_streaming():
     assert streaming.capabilities().streaming is True
 
 
+def test_the_served_fake_takes_keywords_so_wire_clients_can_cover_them():
+    assert build_adapter(parse("--adapter", "fake")).capabilities().keywords is True
+
+
 def test_whisper_streaming_defaults_are_the_measured_ones():
     """The re-decode cadence is a measured value, not a taste.
 

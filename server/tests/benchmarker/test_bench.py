@@ -39,7 +39,9 @@ class Recording(FakeAdapter):
     """Transcribes 'hello world' and keeps every session config it was given."""
 
     def __init__(self):
-        super().__init__(script=[ScriptStep(0.0, TranscriptionFinal(text="hello world"))])
+        super().__init__(
+            script=[ScriptStep(0.0, TranscriptionFinal(text="hello world"))], keywords=True
+        )
         self.configs: list[SessionConfig] = []
 
     async def run_session(self, config, audio, emit):
@@ -826,6 +828,8 @@ async def test_starved_rows_are_counted_on_screen(tmp_path, socket, monkeypatch,
         realtime=True,
     )
     assert "STARVED" in capsys.readouterr().out
+
+
 # ─── keywords ────────────────────────────────────────────────────────────────
 
 

@@ -141,10 +141,18 @@ def segments_to_ie115(segments: tuple[Segment, ...]) -> list[dict[str, Any]]:
 
 
 def session_config_to_ie115(
-    config: SessionConfig, *, model: str | None = None, streaming: bool | None = None
+    config: SessionConfig,
+    *,
+    model: str | None = None,
+    streaming: bool | None = None,
+    keywords_supported: bool = False,
 ) -> dict[str, Any]:
     """Flat ``SessionConfig`` -> the nested IE115 ``session`` object (the body of
-    ``session.update`` / ``session.created`` / ``session.updated``)."""
+    ``session.update`` / ``session.created`` / ``session.updated``).
+
+    ``keywords_supported`` lists ``keywords`` even when empty: in the
+    ``session.created`` defaults, that presence is how a client learns the
+    backend takes them."""
     transcription: dict[str, Any] = {}
     if model is not None:
         transcription["model"] = model
@@ -154,7 +162,7 @@ def session_config_to_ie115(
         transcription["prompt"] = config.prompt  # note §7.3: kept here, not top-level
     if config.timestamp_granularity is not None:
         transcription["timestamp_granularity"] = config.timestamp_granularity
-    if config.keywords:
+    if config.keywords or keywords_supported:
         transcription["keywords"] = list(config.keywords)
     session: dict[str, Any] = {
         "type": "transcription",

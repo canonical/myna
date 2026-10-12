@@ -79,7 +79,7 @@ from myna.core.protocol import (
 )
 from myna.core.session import (
     SessionConfig,
-    normalize_keywords,
+    admit_keywords,
     session_config_from_wire,
     session_config_to_wire,
 )
@@ -376,6 +376,7 @@ class _SessionHandler:
                             ie115_session_defaults(),
                             model=default_model,
                             streaming=streaming,
+                            keywords_supported=caps.keywords,
                         ),
                     }
                 )
@@ -426,6 +427,14 @@ class _SessionHandler:
         async def emit(event: TranscriptionEvent) -> None:
             with contextlib.suppress(ConnectionClosed):
                 await ws.send(json.dumps(event_to_wire(event)))
+
+        try:
+            config = admit_keywords(config, supported=self._service.capabilities().keywords)
+        except ValueError as exc:
+            await emit(TranscriptionError(code="invalid_parameter", message=str(exc)))
+            with contextlib.suppress(ConnectionClosed):
+                await _close(ws)
+            return
 
         await self._pump_session(ws, config, emit=emit)
 
@@ -490,7 +499,7 @@ class _SessionHandler:
         model = requested_model or (caps.models[0] if caps.models else None)
 
         try:
-            config = dataclasses.replace(config, keywords=normalize_keywords(config.keywords))
+            config = admit_keywords(config, supported=caps.keywords)
         except ValueError as exc:
             await send_all(
                 encoder.frames(TranscriptionError(code="invalid_parameter", message=str(exc)))
@@ -505,7 +514,9 @@ class _SessionHandler:
                     {
                         "type": SESSION_UPDATED,
                         "event_id": new_event_id(),
-                        "session": session_config_to_ie115(config, model=model),
+                        "session": session_config_to_ie115(
+                            config, model=model, keywords_supported=caps.keywords
+                        ),
                     }
                 )
             )

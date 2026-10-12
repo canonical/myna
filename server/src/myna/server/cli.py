@@ -179,10 +179,11 @@ def build_adapter(args: argparse.Namespace) -> Adapter:
     if args.adapter == "fake":
         # No model, no extra: the permanent regression fixture, served over the
         # wire so transport/contract clients (e.g. the Rust orchestrator) can
-        # integration-test without a GPU or model. See myna.testbed.fake.
+        # integration-test without a GPU or model. See myna.testbed.fake. It
+        # takes keywords (and ignores them) so those clients cover that too.
         from myna.testbed.fake import FakeAdapter
 
-        return FakeAdapter(streaming=args.streaming)
+        return FakeAdapter(streaming=args.streaming, keywords=True)
 
     if args.adapter == "whisper":
         from myna.testbed.whisper import (

@@ -83,12 +83,14 @@ class FakeAdapter:
         *,
         done_after_audio_ends: bool = True,
         streaming: bool = False,
+        keywords: bool = False,
     ) -> None:
         if script is None:
             script = streaming_script() if streaming else default_script()
         self._script = tuple(script)
         self._done_after_audio_ends = done_after_audio_ends
         self._streaming = streaming
+        self._keywords = keywords
 
     @property
     def candidate(self) -> Candidate:
@@ -98,7 +100,7 @@ class FakeAdapter:
         # The fixture pins the discovery surface (T24) without a model: a single
         # default format, batch unless built streaming, no language/punctuation/
         # translation claims.
-        return Capabilities(models=("fake",), streaming=self._streaming)
+        return Capabilities(models=("fake",), streaming=self._streaming, keywords=self._keywords)
 
     async def run_session(
         self,

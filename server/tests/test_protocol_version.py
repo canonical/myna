@@ -91,3 +91,38 @@ async def test_missing_version_is_accepted(server):
     finally:
         await ws.close()
     assert reply["event"] == "transcription.done"
+
+
+async def _internal_start_reply(adapter, socket_path, keywords: list[str]) -> dict:
+    async with serve_unix(adapter, socket_path):
+        ws = await unix_connect(str(socket_path))
+        try:
+            json.loads(await ws.recv())  # the greeting
+            await ws.send(json.dumps({"type": "session.start", "config": {"keywords": keywords}}))
+            await ws.send(json.dumps({"type": "session.finish"}))
+            reply = json.loads(await ws.recv())
+            while reply.get("event") not in ("transcription.done", "transcription.error"):
+                reply = json.loads(await ws.recv())
+        finally:
+            await ws.close()
+    return reply
+
+
+async def test_the_internal_dialect_refuses_keywords_the_backend_does_not_take(tmp_path):
+    reply = await _internal_start_reply(FakeAdapter(), tmp_path / "myna.sock", ["Siobhan"])
+    assert reply["event"] == "transcription.error"
+    assert reply["data"]["code"] == "invalid_parameter"
+
+
+async def test_the_internal_dialect_holds_keywords_to_the_same_limits(tmp_path):
+    entries = [f"word{i}" for i in range(101)]
+    reply = await _internal_start_reply(FakeAdapter(keywords=True), tmp_path / "myna.sock", entries)
+    assert reply["event"] == "transcription.error"
+    assert "101" in reply["data"]["message"]
+
+
+async def test_the_internal_dialect_passes_keywords_to_a_backend_that_takes_them(tmp_path):
+    reply = await _internal_start_reply(
+        FakeAdapter(keywords=True), tmp_path / "myna.sock", [" Siobhan "]
+    )
+    assert reply["event"] == "transcription.done"
