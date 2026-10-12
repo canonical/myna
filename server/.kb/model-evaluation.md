@@ -155,6 +155,18 @@ the decode rewinds to its first boosted token and takes the model's choice.
 | ordinary slice + 100-list, batch | 1.57 -> 1.42 | 2/7 -> 6/7 | 1/8294 |
 | ordinary slice + 100-list, streaming | 1.46 -> 1.30 | 2/7 -> 6/7 | 1/8294 |
 
+Re-measured 2026-10-13 on the shipped upstream int8 encoder (the table above
+predates the 2026-09-21 encoder swap), same frozen set and stress list:
+
+| run | WER off -> on | KW recall off -> on | false hits on |
+|---|---|---|---|
+| full, batch | 6.00 -> 3.63 | 19.0 -> 67.6% | 0.12% |
+| full, streaming | 6.05 -> 3.71 | 19.0 -> 67.0% | 0.12% |
+| ordinary slice + 100-list, batch | 1.46 -> 1.34 | 3/7 -> 6/7 | 1/8294 |
+
+RTFx 49.7 -> 49.4 batch: no measurable cost. The one stress false hit is
+still "interdicted" for "entered".
+
 - Ordinary-slice clips with no listed keyword in the reference (77): WER
   1.25% -> 1.21% batch, 1.13% -> 1.09% streaming.
 - Cost: +1.6 to +2.7 ms mean decode per clip over ~150 ms (about 1%), median
