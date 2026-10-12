@@ -1,0 +1,17 @@
+# FastFlowLM's portable Linux HRX build. The runtime and model are separate
+# components; neither is downloaded after installation.
+name: fastflowlm-hrx
+
+servers:
+  myna:
+    protocol: ws+unix
+    base-path: /v1
+
+environment:
+  - FASTFLOWLM_ROOT=$SNAP_COMPONENTS/fastflowlm-hrx
+  - FLM_CONFIG_PATH=$SNAP_COMPONENTS/fastflowlm-hrx/model_list.json
+  - FLM_XCLBIN_PATH=$SNAP_COMPONENTS/fastflowlm-hrx/xclbins
+  - LD_LIBRARY_PATH=$SNAP_COMPONENTS/fastflowlm-hrx/lib:$LD_LIBRARY_PATH
+
+components:
+  - fastflowlm-hrx

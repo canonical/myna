@@ -38,3 +38,13 @@ The upstream source of truth for `modelctl` behaviour is https://github.com/cano
 - Leave ONNX Runtime's CUDA arena at its default power-of-two growth. `kSameAsRequested` fragments on variable input lengths: streaming exhausted a 12 GB card within 30 s.
 - Match GPU engines on `vendor-id` only. modelctl reads `vram` and `compute-capability` through `nvidia-smi`, which these snaps do not stage, so either key makes the engine never match.
 - Do not drive a CUDA session through IOBinding onto host buffers that are rewritten in place between runs: the device copy is taken at bind time and the outputs come back stale.
+
+## AMD NPU engines
+
+- The Whisper AMD NPU engine uses FastFlowLM's portable HRX Linux release, not HRX directly: FastFlowLM supplies the Whisper graph, tokenizer, preprocessing, NPU kernels and transcription API that bare HRX does not.
+- Pin the FastFlowLM release archive by version and sha256, and ship it as a runtime component. Pin `FastFlowLM/Whisper-V3-Turbo-NPU2` by commit and stage it under `models/Whisper-V3-Turbo-NPU2` in a separate model component; `FLM_MODEL_PATH` names the parent of `models/`.
+- Match XDNA2 with a typeless PCI `1022:17f0` device plus `snap-connections: [accel, process-control]`. Do not use modelctl's `type: npu` for this device until its PCI class matcher includes XDNA's signal-processing-controller class.
+- Plug snapd's `accel` interface for `/dev/accel/accel*` and assume snapd 2.76 or newer. Keep the engine experimental while `accel` and Linux HRX are preview technology.
+- FastFlowLM needs an unlimited `RLIMIT_MEMLOCK` for XDNA userptr buffers. Plug `process-control` on the daemon, require both `accel` and `process-control` in the engine matcher, and have the engine launcher run `ulimit -l unlimited` before starting FLM. `process-control` is manual-connect; this mirrors Lemonade Server's FastFlowLM snap setup and prevents auto-selection until the permission is present.
+- Run FastFlowLM's standalone `serve --asr 1` endpoint on loopback only and supervise it with `myna-server`; the public contract remains WebSocket-over-Unix. `network-bind` is sufficient for the private listener and the public Unix listener. Do not add `network`, and pre-stage all model files so FastFlowLM never enters its download path.
+- FastFlowLM has no ASR unload operation. Keep `sleep-idle-seconds=0` for this engine until modelctl can socket-activate the supervised process; `idle-action=exit` on the current simple daemon would stop service permanently.

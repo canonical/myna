@@ -56,6 +56,16 @@ def test_fake_adapter_builds_without_any_extra():
     assert isinstance(build_adapter(parse("--adapter", "fake")), FakeAdapter)
 
 
+def test_fastflowlm_adapter_uses_configured_private_endpoint():
+    from myna.testbed.fastflowlm import FastFlowLMAdapter
+
+    adapter = build_adapter(
+        parse("--adapter", "fastflowlm", "--fastflowlm-endpoint", "http://127.0.0.1:19432")
+    )
+    assert isinstance(adapter, FastFlowLMAdapter)
+    assert adapter.endpoint == "http://127.0.0.1:19432"
+
+
 def test_whisper_streaming_defaults_are_the_measured_ones():
     """The re-decode cadence is a measured value, not a taste.
 

@@ -1,7 +1,8 @@
 # Follows the gemma4-snap pattern (engine/runtime/model manifests + modelctl
 # v2 from inference-snaps-cli). Differences from the LLM snaps:
-#   - the server is the Myna session server (myna-server) on a Unix socket,
-#     not an HTTP llama-server: no microphone access, no TCP port.
+#   - the public server is myna-server on a Unix socket. The AMD NPU engine
+#     additionally runs FastFlowLM on private loopback; neither has microphone
+#     access and no TCP endpoint leaves the snap.
 #   - model weights ship as per-model snap components (T15): run
 #     ./dev/download-models.sh before packing. No runtime download / `network`.
 #   - cpu engine venv is baked into the base snap (server-app part); the
@@ -10,14 +11,15 @@ name: myna-whisper
 base: core24
 adopt-info: version
 assumes:
-  - snapd2.68 # components support
+  - snapd2.76 # components plus the accel interface used by AMD XDNA2
 license: AGPL-3.0-or-later
 summary: Whisper speech-to-text inference snap for Myna
 description: |
   Local, offline speech-to-text service exposing the Myna session API on a
   Unix domain socket. Wraps Whisper models served via faster-whisper
-  (CTranslate2), with hardware-based engine selection and switchable model
-  sizes via the modelctl CLI.
+  (CTranslate2) on CPU/NVIDIA GPU or FastFlowLM with HRX on AMD XDNA2 NPUs,
+  with hardware-based engine selection and switchable model sizes via the
+  modelctl CLI.
 
   The service receives PCM audio pushed by clients; it has no access to the
   microphone or any audio hardware.
@@ -43,6 +45,7 @@ apps:
       # `use-engine --auto`, `show-engine` and `status`.
       - hardware-observe
       - opengl
+      - accel
 
   server:
     command: bin/server.sh
@@ -51,6 +54,11 @@ apps:
       - hardware-observe
       - system-observe # ONNX Runtime reads /sys/fs/cgroup/** + /proc/** for CPU topology
       - opengl
+      - accel # /dev/accel/accel* for the experimental AMD NPU engine
+      # FastFlowLM's XDNA buffers require an unlimited memlock rlimit. This
+      # grants CAP_SYS_RESOURCE so the NPU launcher can raise its hard limit;
+      # it is manual-connect, matching Lemonade Server's FLM snap setup.
+      - process-control
       # Weights are components now (no runtime download), so no `network`.
       - network-bind # snapd seccomp gates listen() behind this, even for Unix sockets
 
@@ -59,9 +67,12 @@ hooks:
     plugs: &hook-plugs
       - hardware-observe
       - opengl
+      - accel
   post-refresh:
     plugs: *hook-plugs
   connect-plug-hardware-observe:
+    plugs: *hook-plugs
+  connect-plug-accel:
     plugs: *hook-plugs
 
 # The inference-provider content share. Consumers (the myna snap's `backend`
@@ -120,6 +131,10 @@ parts:
     source: wheels
     python-packages:
       - ./myna-0.0.0-py3-none-any.whl[whisper]
+      # The install hook reads engine/model manifests before an engine exists.
+      # Use the packed venv, not core24's Python, and keep its YAML dependency
+      # explicit instead of relying on another adapter's transitive packages.
+      - pyyaml>=6
     build-packages:
       - python3-venv
     override-build: |
@@ -176,6 +191,19 @@ parts:
       "model-small-ct2/*": (component/model-small)/
       "model-large-v3-ct2/*": (component/model-large-v3)/
       "model-large-v3-turbo-ct2/*": (component/model-large-v3-turbo)/
+      "model-large-v3-turbo-npu/*": (component/model-large-v3-turbo-npu)/
+    prime:
+      - -*
+
+  # Pinned portable FastFlowLM v1.0.8 build using HRX. It carries the HRX
+  # userspace runtime, Whisper engine library and XDNA2 xclbins; no host ROCm
+  # installation and no runtime download are required.
+  fastflowlm-hrx:
+    plugin: dump
+    source: https://github.com/ROCm/FastFlowLM/releases/download/v1.0.8/HRX_fastflowlm_1.0.8_linux.tar.gz
+    source-checksum: sha256/b5b25de40b807dc938f8a63bff066ec4dcc729e235b196dd0c730a830b71de7e
+    organize:
+      "*": (component/fastflowlm-hrx)/
     prime:
       - -*
 
@@ -254,6 +282,16 @@ components:
     type: standard
     summary: Whisper large-v3-turbo CTranslate2 weights
     description: faster-whisper (CTranslate2) conversion of Whisper large-v3-turbo (MIT).
+  model-large-v3-turbo-npu:
+    type: standard
+    summary: Whisper large-v3-turbo weights for AMD XDNA2 NPUs
+    description: FastFlowLM Q4_1 NPU2 conversion of Whisper large-v3-turbo.
+  fastflowlm-hrx:
+    type: standard
+    summary: FastFlowLM runtime with HRX for AMD XDNA2 NPUs
+    description: |
+      Pinned FastFlowLM and HRX userspace runtime, Whisper NPU engine and
+      XDNA2 xclbins. amd64 only.
   gpu-nvidia:
     type: standard
     summary: NVIDIA GPU runtime (faster-whisper on CUDA CTranslate2 + cuBLAS)

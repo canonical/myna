@@ -1,0 +1,52 @@
+#!/bin/bash -eu
+
+# FastFlowLM owns HRX/NPU inference and exposes it only on loopback. The Myna
+# adapter remains the public Unix-socket service and translates pushed PCM to
+# FastFlowLM's OpenAI-compatible transcription endpoint.
+socket_path="$(modelctl get ws.unix-socket)"
+# The package-wide value defaults to 300 for the unload-capable CPU/GPU
+# engines. FastFlowLM has no ASR unload operation, so do not inherit it here.
+idle=0
+port=52625
+
+# XDNA maps model buffers as userptr BOs and accounts them against
+# RLIMIT_MEMLOCK. process-control supplies CAP_SYS_RESOURCE, as in the
+# Lemonade Server snap, so this shell can raise both limits for FLM's child.
+if ! ulimit -l unlimited; then
+    echo "FastFlowLM requires the myna-whisper:process-control connection to raise memlock" >&2
+    exit 1
+fi
+
+flm_pid=""
+myna_pid=""
+# Called indirectly by the signal/EXIT traps below.
+# shellcheck disable=SC2317
+cleanup() {
+    [ -z "$myna_pid" ] || kill "$myna_pid" 2>/dev/null || true
+    [ -z "$flm_pid" ] || kill "$flm_pid" 2>/dev/null || true
+    [ -z "$myna_pid" ] || wait "$myna_pid" 2>/dev/null || true
+    [ -z "$flm_pid" ] || wait "$flm_pid" 2>/dev/null || true
+}
+trap cleanup EXIT INT TERM
+
+"${FASTFLOWLM_ROOT:?FastFlowLM runtime component is not installed}/flm" \
+    serve --asr 1 --port "$port" &
+flm_pid="$!"
+
+"$SNAP/bin/myna-server" \
+    --socket "$socket_path" \
+    --share-provider \
+    --adapter fastflowlm \
+    --fastflowlm-endpoint "http://127.0.0.1:$port" \
+    --sleep-idle-seconds "${idle:-0}" \
+    --idle-action unload \
+    "$@" &
+myna_pid="$!"
+
+set +e
+# Whichever side fails first tears the pair down: leaving the Myna adapter
+# alive after HRX exits would turn every dictation into a five-minute timeout.
+wait -n "$myna_pid" "$flm_pid"
+status="$?"
+set -e
+exit "$status"
