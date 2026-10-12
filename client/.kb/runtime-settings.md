@@ -25,11 +25,15 @@ The daemon asks the backend with `capabilities.query` at every press, beside the
 
 The mode is a client presentation preference, not wire negotiation. A streaming backend can feed a batch client, which accumulates committed deltas until completion.
 
-`silence-timeout` (unsigned seconds, 0 = off, schema default 30) is the toggle session's idle limit. `Settings::default()` carries the schema default too, so a machine without the schema still ends a forgotten session. The daemon reads it live at every stats tick, so a change applies to the session in progress. Myna Settings renders any bounded integer key as a spin row; a key with a GVariant type the adapter cannot widen to `i64` fails the whole page, so add the conversion before adding such a key.
+`silence-timeout` (unsigned seconds, 0 = off, schema default 30) is the toggle session's idle limit. `Settings::default()` carries the schema default too, so a machine without the schema still ends a forgotten session. The daemon reads it live at every stats tick, so a change applies to the session in progress. Myna Settings renders any bounded integer key as a spin row.
 
 `sounds` (boolean, schema default true) turns the session cues on and off (`.kb/desktop-integration.md`). The daemon reads it live, at the next cue. Myna Settings renders any boolean key as a switch row.
 
 `sound-set` (enum `myna` | `tine` | `hum` | `marimba` | `drop` | `radio` | `koto`, schema default `tine`) picks which cues play; `myna_core::SoundSet` mirrors the enum, and a value outside it reads as the default, never as silence. The daemon reads it live, at the next cue. Myna Settings shows it as "Sound style" (Chime, Bird, Voice, Marimba, Water, Radio, Strings) with a Preview button that asks the daemon to play the selected set over D-Bus and is insensitive while `sounds` is off.
+
+`vocabulary` (`as`, default `[]`) is the user's word list (GitHub issue #1): names and terms the model biases recognition toward. Raw and unvalidated in `Settings`/`Store::strings`; a caller builds `SessionConfig.keywords` by running it through `myna_core::normalize_keywords` (in `session.rs`, mirroring the server's `KEYWORDS_MAX_ENTRIES`/`KEYWORDS_MAX_ENTRY_CHARS`), which trims, drops empties, dedupes and caps rather than rejecting - a setting that has drifted past the server's limits must not fail every dictation. `myna-desktop` reads it live per press like `language`, with no argv override; `myna-testbed` takes it via repeatable `--vocabulary`. The IE115 client sends it only to a backend whose greeting lists `keywords` (the top-level `.kb/session-contract.md`), so a model that ignores it, such as FunASR's, costs nothing. Myna Settings edits it as its own group, last on General (`list_editor_ui.rs`), refusing with a message an entry past those same limits, a duplicate or a blank, so the clamp never drops a word the user saw accepted.
+
+Myna Settings holds `i`, `u`, `b`, `s` (and enums) and `as` keys (`client/myna-config/src/adapters/client_settings.rs`). A key of any other type is left off the page rather than failing it, so a new type needs its conversion and widget before the schema key lands.
 
 # Important
 
