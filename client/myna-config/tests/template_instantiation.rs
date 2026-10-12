@@ -175,6 +175,39 @@ fn bare_session_bus(dir: &Path) -> PathBuf {
     config
 }
 
+/// Add, refuse and remove on the vocabulary editor, each checked against
+/// the store it writes.
+#[test]
+fn the_vocabulary_editor_adds_refuses_and_removes_words_when_enabled() {
+    if std::env::var_os("MYNA_CONFIG_GTK_TESTS").is_none() {
+        eprintln!("skipped: set MYNA_CONFIG_GTK_TESTS=1 under Xvfb");
+        return;
+    }
+
+    let (store, schemas) = scratch_store("vocabulary");
+    let output = Command::new(env!("CARGO_BIN_EXE_myna-config"))
+        .env("GSETTINGS_BACKEND", "keyfile")
+        .env("GSETTINGS_SCHEMA_DIR", &schemas)
+        .env("XDG_CONFIG_HOME", &store)
+        .env("MYNA_CONFIG_VOCABULARY_TEST", "1")
+        .output()
+        .expect("run vocabulary probe");
+    std::fs::remove_dir_all(&store).ok();
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "vocabulary probe failed: {stderr}");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for line in [
+        "vocabulary-add: persisted",
+        "vocabulary-duplicate: refused",
+        "vocabulary-length: refused",
+        "vocabulary-full: refused",
+        "vocabulary-remove: persisted",
+    ] {
+        assert!(stdout.contains(line), "vocabulary probe missing: {line}");
+    }
+}
+
 /// The wizard's buttons must actually drive it: the regression was a presented
 /// window whose controller had already been dropped.
 #[test]

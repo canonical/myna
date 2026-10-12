@@ -1033,6 +1033,22 @@ msgstr ""
 msgid "Myna is not running"
 msgstr ""
 
+#: src/list_editor_ui.rs:44
+msgid "Add a word or phrase"
+msgstr ""
+
+#: src/list_editor_ui.rs:49
+msgid "Add"
+msgstr ""
+
+#: src/list_editor_ui.rs:107
+msgid "Remove"
+msgstr ""
+
+#: src/list_editor_ui.rs:113
+msgid "Remove {word}"
+msgstr ""
+
 #: src/sound_preview.rs:67
 msgid "Update Myna to preview sounds"
 msgstr ""
@@ -1420,43 +1436,59 @@ msgstr ""
 msgid "other system copy"
 msgstr ""
 
-#: src/myna_settings.rs:107
+#: src/myna_settings.rs:77
+msgid "Type a word or phrase to add."
+msgstr ""
+
+#: src/myna_settings.rs:78
+msgid "That word is already in the list."
+msgstr ""
+
+#: src/myna_settings.rs:80
+msgid "A word or phrase can be at most {limit} characters long."
+msgstr ""
+
+#: src/myna_settings.rs:84
+msgid "The list holds at most {limit} words. Remove one to add another."
+msgstr ""
+
+#: src/myna_settings.rs:194
 msgid "Ribbon"
 msgstr ""
 
-#: src/myna_settings.rs:108
+#: src/myna_settings.rs:195
 msgid "VU meter"
 msgstr ""
 
-#: src/myna_settings.rs:109
+#: src/myna_settings.rs:196
 msgid "Default"
 msgstr ""
 
-#: src/myna_settings.rs:110
+#: src/myna_settings.rs:197
 msgid "Bird"
 msgstr ""
 
-#: src/myna_settings.rs:111
+#: src/myna_settings.rs:198
 msgid "Chime"
 msgstr ""
 
-#: src/myna_settings.rs:112
+#: src/myna_settings.rs:199
 msgid "Voice"
 msgstr ""
 
-#: src/myna_settings.rs:113
+#: src/myna_settings.rs:200
 msgid "Marimba"
 msgstr ""
 
-#: src/myna_settings.rs:114
+#: src/myna_settings.rs:201
 msgid "Water"
 msgstr ""
 
-#: src/myna_settings.rs:115
+#: src/myna_settings.rs:202
 msgid "Radio"
 msgstr ""
 
-#: src/myna_settings.rs:116
+#: src/myna_settings.rs:203
 msgid "Strings"
 msgstr ""
 
@@ -1709,6 +1741,16 @@ msgid ""
 "With tap-to-start activation, end the dictation session on its own after "
 "this many seconds without speech. 0 keeps it running until the next tap. "
 "Hold-to-talk always ends with the key."
+msgstr ""
+
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:101
+msgid "Vocabulary"
+msgstr ""
+
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:102
+msgid ""
+"Names and terms the model should prefer when it is unsure, such as "
+"\"Siobhan\" or \"PipeWire\". Up to 100 words or short phrases."
 msgstr ""
 
 #: data/com.canonical.Myna.Config.metainfo.xml:9

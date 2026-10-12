@@ -23,6 +23,7 @@ use crate::APP_ID;
 const TEMPLATE_ENV: &str = "MYNA_CONFIG_TEMPLATE_TEST";
 const ACCESSIBILITY_ENV: &str = "MYNA_CONFIG_ACCESSIBILITY_TEST";
 const TYPING_ENV: &str = "MYNA_CONFIG_TYPING_TEST";
+const VOCABULARY_ENV: &str = "MYNA_CONFIG_VOCABULARY_TEST";
 const ONBOARDING_ENV: &str = "MYNA_CONFIG_ONBOARDING_TEST";
 const SHORTCUT_UNSUPPORTED_ENV: &str = "MYNA_CONFIG_SHORTCUT_UNSUPPORTED_TEST";
 const SHORTCUT_ENV: &str = "MYNA_CONFIG_SHORTCUT_TEST";
@@ -66,6 +67,10 @@ pub fn run() -> glib::ExitCode {
 
     if smoke_requested(std::env::var_os(TYPING_ENV).as_deref()) {
         return typing_probe();
+    }
+
+    if smoke_requested(std::env::var_os(VOCABULARY_ENV).as_deref()) {
+        return vocabulary_probe();
     }
 
     if smoke_requested(std::env::var_os(ONBOARDING_ENV).as_deref()) {
@@ -1654,6 +1659,136 @@ fn typing_probe() -> glib::ExitCode {
     glib::ExitCode::SUCCESS
 }
 
+/// Drive the vocabulary editor on the real page against a scratch store: add,
+/// the three refusals, and remove, each read back from the store.
+fn vocabulary_probe() -> glib::ExitCode {
+    ui::register_resources();
+    if let Err(error) = gtk::init() {
+        eprintln!("myna-config vocabulary probe could not initialize GTK: {error}");
+        return glib::ExitCode::FAILURE;
+    }
+    adw::init().expect("libadwaita init");
+    let key = myna_core::settings::KEY_VOCABULARY;
+    let stored = || {
+        GioClientSettings::open()
+            .and_then(|settings| settings.get(key))
+            .ok()
+            .and_then(|value| value.as_list().map(<[String]>::to_vec))
+            .unwrap_or_default()
+    };
+    let preset: Vec<String> = (1..myna_core::KEYWORDS_MAX_ENTRIES)
+        .map(|index| format!("word{index}"))
+        .collect();
+    if let Err(error) = GioClientSettings::open()
+        .and_then(|settings| settings.set(key, ClientSettingValue::List(preset.clone())))
+    {
+        eprintln!("myna-config vocabulary probe could not seed the store: {error}");
+        return glib::ExitCode::FAILURE;
+    }
+
+    let settings = match GioClientSettings::open() {
+        Ok(settings) => settings,
+        Err(error) => {
+            eprintln!("myna-config vocabulary probe could not open the settings store: {error}");
+            return glib::ExitCode::FAILURE;
+        }
+    };
+    let controller = MynaSettingsController::load(Rc::new(settings) as Rc<dyn ClientSettings>);
+    let writer = PersistenceWriter::spawn(GioClientSettings::open);
+    let overlay = adw::ToastOverlay::new();
+    let PageState::Ready(rows) = controller.state() else {
+        eprintln!("myna-config vocabulary probe found no settings rows");
+        return glib::ExitCode::FAILURE;
+    };
+    let model_settings = adw::PreferencesGroup::new();
+    let page = ready_page(controller, writer, rows, &overlay, &model_settings);
+    overlay.set_child(Some(&page));
+    let window = adw::Window::builder().content(&overlay).build();
+    window.present();
+    settle_gtk();
+
+    let Some(group) = find_descendant(overlay.upcast_ref(), &|widget| {
+        widget.is::<adw::PreferencesGroup>() && widget.widget_name() == key
+    }) else {
+        eprintln!("myna-config vocabulary probe found no {key} group");
+        return glib::ExitCode::FAILURE;
+    };
+    let Some(entry) = first_entry_row(&group) else {
+        eprintln!("myna-config vocabulary probe found no entry row");
+        return glib::ExitCode::FAILURE;
+    };
+    let word_rows = || {
+        let mut titles = Vec::new();
+        collect_action_row_titles(&group, &mut titles);
+        titles
+    };
+    let wait_for_store = |expected: &[String]| {
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while stored() != expected && std::time::Instant::now() < deadline {
+            settle_gtk();
+        }
+        stored() == expected
+    };
+    let submit = |text: &str| {
+        entry.set_text(text);
+        entry.emit_by_name::<()>("entry-activated", &[]);
+        settle_gtk();
+    };
+
+    let mut expected = preset.clone();
+    expected.push("Siobhan".into());
+    submit("  Siobhan ");
+    if !wait_for_store(&expected) || word_rows() != expected || !entry.text().is_empty() {
+        eprintln!("the added word did not reach the store and the list");
+        return glib::ExitCode::FAILURE;
+    }
+    println!("vocabulary-add: persisted");
+
+    let long = "x".repeat(myna_core::KEYWORDS_MAX_ENTRY_CHARS + 1);
+    for (label, text) in [
+        ("duplicate", "Siobhan"),
+        ("length", long.as_str()),
+        ("full", "kernel"),
+    ] {
+        submit(text);
+        if stored() != expected || word_rows() != expected || !entry.has_css_class("error") {
+            eprintln!("the {label} entry was not refused visibly");
+            return glib::ExitCode::FAILURE;
+        }
+        println!("vocabulary-{label}: refused");
+    }
+
+    let Some(remove) = find_descendant(&group, &|widget| {
+        widget.is::<adw::ActionRow>()
+            && widget.downcast_ref::<adw::ActionRow>().unwrap().title() == "Siobhan"
+    })
+    .and_then(|row| find_descendant(&row, &|widget| widget.is::<gtk::Button>()))
+    .and_then(|button| button.downcast::<gtk::Button>().ok()) else {
+        eprintln!("myna-config vocabulary probe found no remove button");
+        return glib::ExitCode::FAILURE;
+    };
+    remove.emit_clicked();
+    if !wait_for_store(&preset) || word_rows() != preset {
+        eprintln!("the removed word stayed in the store or the list");
+        return glib::ExitCode::FAILURE;
+    }
+    println!("vocabulary-remove: persisted");
+    glib::ExitCode::SUCCESS
+}
+
+fn collect_action_row_titles(widget: &gtk::Widget, titles: &mut Vec<String>) {
+    if let Some(row) = widget.downcast_ref::<adw::ActionRow>() {
+        if !widget.is::<adw::EntryRow>() {
+            titles.push(row.title().to_string());
+        }
+    }
+    let mut child = widget.first_child();
+    while let Some(current) = child {
+        collect_action_row_titles(&current, titles);
+        child = current.next_sibling();
+    }
+}
+
 /// The part of the daemon's interface Myna Settings reads, served in-process
 /// by the shortcut probes on a bus the caller makes private. A `legacy` daemon
 /// also publishes `Shortcut`, as the daemons whose `Toggle` does nothing do.
@@ -3094,7 +3229,7 @@ fn backends_probe() -> glib::ExitCode {
         .iter()
         .map(|group| group.title().to_string())
         .collect();
-    if group_titles != ["Keyboard shortcut", "Dictation", "Model"] {
+    if group_titles != ["Keyboard shortcut", "Dictation", "Model", "Vocabulary"] {
         eprintln!("General's groups read {group_titles:?}");
         return glib::ExitCode::FAILURE;
     }
@@ -3119,14 +3254,14 @@ fn backends_probe() -> glib::ExitCode {
     }
     println!("general-order: ok");
 
-    // General lists the installed models last, each a radio row that
+    // General lists the installed models after Dictation, each a radio row that
     // describes its family, with the connected one chosen.
     let model_rows = || {
         let groups = descendants(&general, &|widget| widget.is::<adw::PreferencesGroup>());
         let Some(group) = groups
-            .last()
-            .and_then(|group| group.downcast_ref::<adw::PreferencesGroup>())
-            .filter(|group| group.title() == gettextrs::gettext("Model").as_str())
+            .iter()
+            .filter_map(|group| group.downcast_ref::<adw::PreferencesGroup>())
+            .find(|group| group.title() == gettextrs::gettext("Model").as_str())
             .cloned()
         else {
             return Vec::new();
@@ -3173,7 +3308,7 @@ fn backends_probe() -> glib::ExitCode {
     ];
     if !settles(&|| described(&model_rows()) == expected && chosen() == ["Parakeet"]) {
         eprintln!(
-            "the General tab's last group does not list the models as radio rows with Parakeet chosen: {:?}, chosen {:?}",
+            "the General tab's Model group does not list the models as radio rows with Parakeet chosen: {:?}, chosen {:?}",
             described(&model_rows()),
             chosen()
         );
@@ -5518,6 +5653,7 @@ enum RowBinding {
         controller: Rc<MynaSettingsController>,
         writer: PersistenceWriter,
     },
+    List(Rc<crate::list_editor_ui::ListEditor>),
 }
 
 impl Drop for RowBinding {
@@ -5609,6 +5745,7 @@ impl RowBinding {
                 row.set_sensitive(*writable);
                 updating.set(false);
             }
+            Self::List(editor) => editor.apply(value.as_list().unwrap_or_default()),
         }
     }
 }
@@ -5667,7 +5804,29 @@ fn ready_page(
             group.add(row);
         };
         match plan.kind {
-            WidgetKind::List => continue,
+            WidgetKind::List => {
+                let editor = crate::list_editor_ui::ListEditor::new(
+                    &plan,
+                    setting.value().as_list().unwrap_or_default(),
+                    overlay.clone(),
+                    Box::new({
+                        let controller = controller.clone();
+                        let key = plan.key.clone();
+                        let writer = writer.clone();
+                        move |values| {
+                            if let Ok(request) =
+                                controller.set(&key, ClientSettingValue::List(values))
+                            {
+                                persist_request(writer.clone(), controller.clone(), request, None);
+                            }
+                        }
+                    }),
+                );
+                page.preferences_page().add(&editor.group());
+                bindings
+                    .borrow_mut()
+                    .insert(plan.key.clone(), RowBinding::List(editor));
+            }
             WidgetKind::Choice => {
                 let display_labels: Vec<_> = plan
                     .choices
