@@ -8,7 +8,7 @@ msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-10-11 11:54+0100\n"
-"PO-Revision-Date: 2026-10-12 13:49+0000\n"
+"PO-Revision-Date: 2026-10-12 18:03+0000\n"
 "Last-Translator: Peter Vančo <peva@users.noreply.hosted.weblate.org>\n"
 "Language-Team: Slovak <https://hosted.weblate.org/projects/ubuntu-desktop-"
 "translations/myna-config/sk/>\n"
@@ -161,6 +161,8 @@ msgid ""
 "Dictation requires some additional components, including the optimal speech-"
 "to-text model for your computer. Installation might take a few minutes."
 msgstr ""
+"Diktovanie vyžaduje niektoré ďalšie komponenty, vrátane optimálneho modelu "
+"prevodu reči na text pre váš počítač. Inštalácia môže trvať niekoľko minút."
 
 #: data/onboarding-components.blp:44 src/app.rs:491 src/app.rs:3959
 #: src/app.rs:4024 src/app.rs:4434
@@ -942,7 +944,7 @@ msgstr "Odhláste sa a znova prihláste na dokončenie nastavenia metódy vstupu
 #. TRANSLATORS: a download size in megabytes, such as "776 MB"; the space is a no-break space.
 #: src/onboarding_ui.rs:1286
 msgid "{megabytes} MB"
-msgstr ""
+msgstr "{megabytes} MB"
 
 #: src/onboarding_ui.rs:1294
 msgid "Checking the installation"
@@ -1461,7 +1463,7 @@ msgstr "Je k dispozícii odporúčaný model"
 #. TRANSLATORS: Shown under "Install more models" while a model installs. {model} is a model family, such as "Whisper", and {percent} how much of its download has arrived, a number from 0 to 100.
 #: src/model_family.rs:306
 msgid "Installing {model} {percent}%"
-msgstr "Inštaluje sa {model} {percent}%"
+msgstr "Inštaluje sa {model} {percent} %"
 
 #. TRANSLATORS: Shown under "Install more models" while a model installs. {model} is a model family, such as "Whisper".
 #: src/model_family.rs:309
