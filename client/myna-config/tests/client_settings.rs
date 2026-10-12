@@ -160,6 +160,9 @@ fn every_real_schema_key_round_trips_in_the_private_keyfile() {
                     .unwrap_or(&choices[0])
                     .clone(),
             ),
+            (SettingRange::Unrestricted, ClientSettingValue::List(_)) => {
+                ClientSettingValue::List(vec!["round".into(), "trip".into()])
+            }
             (SettingRange::Unrestricted, _) => ClientSettingValue::Text("round trip".into()),
             (SettingRange::Range { minimum, .. }, _) => {
                 let floor = minimum.as_integer().expect("integer range");
@@ -390,6 +393,48 @@ fn listing_skips_keys_of_a_type_the_page_cannot_hold() {
 }
 
 #[test]
+fn string_list_keys_round_trip_and_refuse_other_types() {
+    let files = TestFiles::new("string-list");
+    let source = fixture_schema_source(
+        &files,
+        r#"<key name="words" type="as"><default>['kernel']</default></key>
+    <key name="name" type="s"><default>''</default></key>"#,
+    );
+    let open =
+        || GioClientSettings::open_with_source(&source, files.0.join("settings/keyfile")).unwrap();
+    let adapter = open();
+    let words = |list: &[&str]| {
+        ClientSettingValue::List(list.iter().map(|word| (*word).to_owned()).collect())
+    };
+
+    let listed = adapter.list().unwrap();
+    let metadata = listed
+        .iter()
+        .find(|setting| setting.key().as_str() == "words")
+        .unwrap();
+    assert_eq!(metadata.default_value(), &words(&["kernel"]));
+    assert_eq!(metadata.range(), &SettingRange::Unrestricted);
+
+    adapter.set("words", words(&["Siobhan", "kernel"])).unwrap();
+    assert_eq!(open().get("words").unwrap(), words(&["Siobhan", "kernel"]));
+    adapter.set("words", words(&[])).unwrap();
+    assert_eq!(open().get("words").unwrap(), words(&[]));
+
+    assert!(matches!(
+        adapter.set("words", ClientSettingValue::Text("kernel".into())),
+        Err(ClientSettingsError::InvalidValue { .. })
+    ));
+    assert!(matches!(
+        adapter.set("name", words(&["kernel"])),
+        Err(ClientSettingsError::InvalidValue { .. })
+    ));
+    assert_eq!(words(&["a"]).as_list(), Some(&["a".to_owned()][..]));
+    assert_eq!(words(&["a"]).as_str(), None);
+    assert_eq!(words(&["a"]).as_integer(), None);
+    assert_eq!(ClientSettingValue::Text("a".into()).as_list(), None);
+}
+
+#[test]
 fn explicit_backend_does_not_change_process_settings_environment() {
     let files = TestFiles::new("environment");
     let backend = std::env::var_os("GSETTINGS_BACKEND");
@@ -424,8 +469,14 @@ fn headless_widget_smoke_covers_every_real_schema_key() {
 
     let plans: Vec<_> = adapter.list().unwrap().iter().map(widget_plan).collect();
 
-    assert_eq!(plans.len(), 6);
+    assert_eq!(plans.len(), 7);
     assert!(plans.iter().any(|plan| plan.kind == WidgetKind::Choice));
+    let vocabulary = plans
+        .iter()
+        .find(|plan| plan.key == "vocabulary")
+        .expect("vocabulary is listed");
+    assert_eq!(vocabulary.kind, WidgetKind::List);
+    assert!(vocabulary.limits.is_some());
     let sound_set = plans
         .iter()
         .find(|plan| plan.key == "sound-set")

@@ -111,6 +111,7 @@ impl ClientSettings for GioClientSettings {
             (SettingRange::Choices(_), ClientSettingValue::Choice(value))
             | (SettingRange::Unrestricted, ClientSettingValue::Text(value)) => value.to_variant(),
             (_, ClientSettingValue::Boolean(value)) => value.to_variant(),
+            (SettingRange::Unrestricted, ClientSettingValue::List(values)) => values.to_variant(),
             (
                 SettingRange::Range { .. } | SettingRange::Unrestricted,
                 ClientSettingValue::Integer(value),
@@ -231,6 +232,9 @@ fn value_from_variant(
     if let Some(boolean) = value.get::<bool>() {
         return Ok(ClientSettingValue::Boolean(boolean));
     }
+    if let Some(values) = value.get::<Vec<String>>() {
+        return Ok(ClientSettingValue::List(values));
+    }
     let value = value
         .get::<String>()
         .ok_or_else(|| ClientSettingsError::InvalidValue {
@@ -251,6 +255,7 @@ fn holds(kind: &glib::VariantTy) -> bool {
         glib::VariantTy::UINT32,
         glib::VariantTy::BOOLEAN,
         glib::VariantTy::STRING,
+        glib::VariantTy::STRING_ARRAY,
     ]
     .contains(&kind)
 }

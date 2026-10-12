@@ -20,6 +20,8 @@ pub enum WidgetKind {
     Number,
     /// A boolean key.
     Switch,
+    /// A string list: words added and removed one at a time.
+    List,
 }
 
 /// Where a setting's row sits in the window.
@@ -40,8 +42,88 @@ pub struct WidgetPlan {
     pub choices: Vec<String>,
     /// The schema's inclusive bounds; present exactly for [`WidgetKind::Number`].
     pub bounds: Option<(i64, i64)>,
+    /// What a [`WidgetKind::List`] editor accepts; `None` is unbounded.
+    pub limits: Option<ListLimits>,
     pub writable: bool,
     pub placement: Placement,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ListLimits {
+    pub entries: usize,
+    pub entry_chars: usize,
+}
+
+/// The vocabulary is clamped to these before every session; the editor
+/// refuses past them so nothing the user typed is dropped unseen.
+fn list_limits(key: &str) -> Option<ListLimits> {
+    (key == myna_core::settings::KEY_VOCABULARY).then_some(ListLimits {
+        entries: myna_core::KEYWORDS_MAX_ENTRIES,
+        entry_chars: myna_core::KEYWORDS_MAX_ENTRY_CHARS,
+    })
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ListEntryError {
+    Empty,
+    Duplicate,
+    TooLong { limit: usize },
+    Full { limit: usize },
+}
+
+impl ListEntryError {
+    pub fn message(&self) -> String {
+        match self {
+            Self::Empty => gettextrs::gettext("Type a word or phrase to add."),
+            Self::Duplicate => gettextrs::gettext("That word is already in the list."),
+            Self::TooLong { limit } => {
+                gettextrs::gettext("A word or phrase can be at most {limit} characters long.")
+                    .replace("{limit}", &limit.to_string())
+            }
+            Self::Full { limit } => gettextrs::gettext(
+                "The list holds at most {limit} words. Remove one to add another.",
+            )
+            .replace("{limit}", &limit.to_string()),
+        }
+    }
+}
+
+/// `current` with `candidate`, trimmed, appended - or why it cannot be.
+pub fn add_list_entry(
+    current: &[String],
+    candidate: &str,
+    limits: Option<ListLimits>,
+) -> Result<Vec<String>, ListEntryError> {
+    let entry = candidate.trim();
+    if entry.is_empty() {
+        return Err(ListEntryError::Empty);
+    }
+    if current.iter().any(|existing| existing == entry) {
+        return Err(ListEntryError::Duplicate);
+    }
+    if let Some(limits) = limits {
+        if entry.chars().count() > limits.entry_chars {
+            return Err(ListEntryError::TooLong {
+                limit: limits.entry_chars,
+            });
+        }
+        if current.len() >= limits.entries {
+            return Err(ListEntryError::Full {
+                limit: limits.entries,
+            });
+        }
+    }
+    let mut updated = current.to_vec();
+    updated.push(entry.to_owned());
+    Ok(updated)
+}
+
+pub fn remove_list_entry(current: &[String], entry: &str) -> Vec<String> {
+    let mut updated = current.to_vec();
+    if let Some(index) = updated.iter().position(|existing| existing == entry) {
+        updated.remove(index);
+    }
+    updated
 }
 
 pub fn widget_plan(metadata: &ClientSettingMetadata) -> WidgetPlan {
@@ -53,6 +135,7 @@ pub fn widget_plan(metadata: &ClientSettingMetadata) -> WidgetPlan {
         _ if metadata.default_value().as_bool().is_some() => WidgetKind::Switch,
         SettingRange::Choices(_) => WidgetKind::Choice,
         _ if bounds.is_some() => WidgetKind::Number,
+        _ if metadata.default_value().as_list().is_some() => WidgetKind::List,
         _ => WidgetKind::Text,
     };
     WidgetPlan {
@@ -68,6 +151,10 @@ pub fn widget_plan(metadata: &ClientSettingMetadata) -> WidgetPlan {
             _ => Vec::new(),
         },
         bounds,
+        limits: match kind {
+            WidgetKind::List => list_limits(metadata.key().as_str()),
+            _ => None,
+        },
         writable: metadata.writable(),
         placement: if metadata.key().as_str() == myna_core::settings::KEY_LANGUAGE {
             Placement::ActiveModel

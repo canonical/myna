@@ -6,8 +6,9 @@ use myna_config::domain::{
     ClientSetting, ClientSettingKey, ClientSettingMetadata, ClientSettingValue, SettingRange,
 };
 use myna_config::myna_settings::{
-    choice_display_label, widget_plan, DebouncedTextCommit, MynaSettingsController, PageState,
-    Placement, SettingsEvent, WidgetKind,
+    add_list_entry, choice_display_label, remove_list_entry, widget_plan, DebouncedTextCommit,
+    ListEntryError, ListLimits, MynaSettingsController, PageState, Placement, SettingsEvent,
+    WidgetKind,
 };
 use myna_config::ports::{
     ClientSettings, ClientSettingsCallback, ClientSettingsError, ClientSettingsSubscription,
@@ -740,4 +741,115 @@ fn only_the_mode_follows_the_backend() {
         controller.shown_value("language").unwrap(),
         ClientSettingValue::Text(String::new())
     );
+}
+
+#[test]
+fn a_string_list_key_plans_a_list_editor() {
+    let words = metadata(
+        "words",
+        ClientSettingValue::List(vec!["kernel".into()]),
+        SettingRange::Unrestricted,
+        true,
+    );
+
+    let plan = widget_plan(&words);
+
+    assert_eq!(plan.kind, WidgetKind::List);
+    assert!(plan.choices.is_empty());
+    assert_eq!(plan.bounds, None);
+    assert_eq!(plan.limits, None);
+}
+
+#[test]
+fn the_vocabulary_editor_holds_the_limits_the_session_normalizes_to() {
+    let vocabulary = metadata(
+        "vocabulary",
+        ClientSettingValue::List(Vec::new()),
+        SettingRange::Unrestricted,
+        true,
+    );
+
+    assert_eq!(
+        widget_plan(&vocabulary).limits,
+        Some(ListLimits {
+            entries: myna_core::KEYWORDS_MAX_ENTRIES,
+            entry_chars: myna_core::KEYWORDS_MAX_ENTRY_CHARS,
+        })
+    );
+}
+
+fn owned(words: &[&str]) -> Vec<String> {
+    words.iter().map(|word| (*word).to_owned()).collect()
+}
+
+const LIMITS: Option<ListLimits> = Some(ListLimits {
+    entries: 3,
+    entry_chars: 6,
+});
+
+#[test]
+fn adding_a_list_entry_trims_it_and_appends_it() {
+    assert_eq!(
+        add_list_entry(&owned(&["kernel"]), "  Siobh ", LIMITS),
+        Ok(owned(&["kernel", "Siobh"]))
+    );
+    assert_eq!(
+        add_list_entry(&owned(&[]), "any length at all", None),
+        Ok(owned(&["any length at all"]))
+    );
+}
+
+#[test]
+fn a_list_entry_past_a_limit_is_refused_rather_than_clamped() {
+    let full = owned(&["a", "b", "c"]);
+    assert_eq!(
+        add_list_entry(&owned(&["a"]), " \t", LIMITS),
+        Err(ListEntryError::Empty)
+    );
+    assert_eq!(
+        add_list_entry(&owned(&["a"]), " a ", LIMITS),
+        Err(ListEntryError::Duplicate)
+    );
+    assert_eq!(
+        add_list_entry(&owned(&["a"]), "Mörkö", LIMITS),
+        Ok(owned(&["a", "Mörkö"])),
+        "the limit counts characters, not bytes"
+    );
+    assert_eq!(
+        add_list_entry(&owned(&["a"]), "abcdef", LIMITS),
+        Ok(owned(&["a", "abcdef"]))
+    );
+    assert_eq!(
+        add_list_entry(&owned(&["a"]), "abcdefg", LIMITS),
+        Err(ListEntryError::TooLong { limit: 6 })
+    );
+    assert_eq!(
+        add_list_entry(&full, "d", LIMITS),
+        Err(ListEntryError::Full { limit: 3 })
+    );
+    assert_eq!(
+        add_list_entry(&owned(&["a", "b", "c", "d"]), "e", LIMITS),
+        Err(ListEntryError::Full { limit: 3 })
+    );
+}
+
+#[test]
+fn list_entry_errors_say_what_to_do_and_name_the_limit() {
+    assert!(!ListEntryError::Empty.message().is_empty());
+    assert!(ListEntryError::Duplicate.message().contains("already"));
+    assert!(ListEntryError::TooLong { limit: 64 }
+        .message()
+        .contains("64"));
+    assert!(ListEntryError::Full { limit: 100 }
+        .message()
+        .contains("100"));
+}
+
+#[test]
+fn removing_a_list_entry_drops_only_its_first_copy() {
+    assert_eq!(
+        remove_list_entry(&owned(&["a", "b", "a"]), "a"),
+        owned(&["b", "a"])
+    );
+    assert_eq!(remove_list_entry(&owned(&["a"]), "z"), owned(&["a"]));
 }

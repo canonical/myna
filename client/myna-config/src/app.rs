@@ -5667,6 +5667,7 @@ fn ready_page(
             group.add(row);
         };
         match plan.kind {
+            WidgetKind::List => continue,
             WidgetKind::Choice => {
                 let display_labels: Vec<_> = plan
                     .choices

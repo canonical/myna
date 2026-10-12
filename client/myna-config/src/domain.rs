@@ -63,6 +63,8 @@ pub enum ClientSettingValue {
     /// bounds it.
     Integer(i64),
     Boolean(bool),
+    /// A string-list (`as`) key, in stored order.
+    List(Vec<String>),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -89,21 +91,28 @@ impl ClientSettingValue {
     pub fn as_str(&self) -> Option<&str> {
         match self {
             Self::Choice(value) | Self::Text(value) => Some(value),
-            Self::Integer(_) | Self::Boolean(_) => None,
+            Self::Integer(_) | Self::Boolean(_) | Self::List(_) => None,
         }
     }
 
     pub fn as_integer(&self) -> Option<i64> {
         match self {
             Self::Integer(value) => Some(*value),
-            Self::Choice(_) | Self::Text(_) | Self::Boolean(_) => None,
+            Self::Choice(_) | Self::Text(_) | Self::Boolean(_) | Self::List(_) => None,
         }
     }
 
     pub fn as_bool(&self) -> Option<bool> {
         match self {
             Self::Boolean(value) => Some(*value),
-            Self::Choice(_) | Self::Text(_) | Self::Integer(_) => None,
+            Self::Choice(_) | Self::Text(_) | Self::Integer(_) | Self::List(_) => None,
+        }
+    }
+
+    pub fn as_list(&self) -> Option<&[String]> {
+        match self {
+            Self::List(values) => Some(values),
+            Self::Choice(_) | Self::Text(_) | Self::Integer(_) | Self::Boolean(_) => None,
         }
     }
 }
