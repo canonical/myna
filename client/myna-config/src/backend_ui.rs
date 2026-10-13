@@ -1938,7 +1938,12 @@ impl BackendUi {
         populate_backend_page(&widget, &page, self);
         if self.shown_backend().as_deref() == Some(snap_name) {
             let widget = widget.upcast::<adw::NavigationPage>();
-            if self.backend_nav.visible_page().as_ref() != Some(&widget) {
+            // A page the user opened over this one, the vocabulary, stays open.
+            let visible = self.backend_nav.visible_page();
+            let under = visible
+                .as_ref()
+                .and_then(|page| self.backend_nav.previous_page(page));
+            if visible.as_ref() != Some(&widget) && under.as_ref() != Some(&widget) {
                 self.backend_nav.replace(&[widget]);
             }
             if let Some(focus) = focus {

@@ -243,7 +243,13 @@ msgstr ""
 msgid "Diagnostics appear once Myna finds your models."
 msgstr ""
 
-#: src/app.rs:3167 src/backend_ui.rs:3877 src/model_family.rs:27
+#: src/app.rs:1819 src/list_editor_ui.rs:131
+msgid "{count} word or phrase"
+msgid_plural "{count} words or phrases"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/app.rs:3488 src/backend_ui.rs:3869 src/model_family.rs:27
 msgid "Fastest and most accurate in its 25 languages"
 msgstr ""
 
@@ -1033,19 +1039,19 @@ msgstr ""
 msgid "Myna is not running"
 msgstr ""
 
-#: src/list_editor_ui.rs:44
+#: src/list_editor_ui.rs:78
 msgid "Add a word or phrase"
 msgstr ""
 
-#: src/list_editor_ui.rs:49
+#: src/list_editor_ui.rs:83
 msgid "Add"
 msgstr ""
 
-#: src/list_editor_ui.rs:103
+#: src/list_editor_ui.rs:146
 msgid "Remove"
 msgstr ""
 
-#: src/list_editor_ui.rs:109
+#: src/list_editor_ui.rs:152
 msgid "Remove {word}"
 msgstr ""
 

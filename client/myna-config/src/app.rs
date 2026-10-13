@@ -1726,12 +1726,49 @@ fn vocabulary_probe() -> glib::ExitCode {
         &model_settings,
         &vocabulary,
     );
-    overlay.set_child(Some(&vocabulary));
+    // The Model tab shows one row for the list, which opens it on a page of
+    // its own over the tab's navigation.
+    let model_page = adw::PreferencesPage::new();
+    model_page.add(&vocabulary);
+    let root = adw::NavigationPage::builder()
+        .title("Model")
+        .child(&model_page)
+        .build();
+    let navigation = adw::NavigationView::new();
+    navigation.add(&root);
+    overlay.set_child(Some(&navigation));
     let window = adw::Window::builder().content(&overlay).build();
     window.present();
     settle_gtk();
 
-    let Some(group) = find_descendant(overlay.upcast_ref(), &|widget| {
+    let link_subtitle = |count: usize| {
+        gettextrs::ngettext(
+            "{count} word or phrase",
+            "{count} words or phrases",
+            count as u32,
+        )
+        .replace("{count}", &count.to_string())
+    };
+    let Some(link) = find_descendant(vocabulary.upcast_ref(), &|widget| {
+        widget.is::<adw::ActionRow>()
+    })
+    .and_then(|row| row.downcast::<adw::ActionRow>().ok()) else {
+        eprintln!("myna-config vocabulary probe found no row for the list");
+        return glib::ExitCode::FAILURE;
+    };
+    if link.subtitle().as_deref() != Some(link_subtitle(preset.len()).as_str()) {
+        eprintln!("the vocabulary row reads {:?}", link.subtitle());
+        return glib::ExitCode::FAILURE;
+    }
+    adw::prelude::ActionRowExt::activate(&link);
+    settle_gtk();
+    let Some(list_page) = navigation.visible_page().filter(|page| page != &root) else {
+        eprintln!("activating the vocabulary row opened no page");
+        return glib::ExitCode::FAILURE;
+    };
+    println!("vocabulary-link: opens the list");
+
+    let Some(group) = find_descendant(list_page.upcast_ref(), &|widget| {
         widget.is::<adw::PreferencesGroup>() && widget.widget_name() == key
     }) else {
         eprintln!("myna-config vocabulary probe found no {key} group");
@@ -1764,6 +1801,13 @@ fn vocabulary_probe() -> glib::ExitCode {
     submit("  Siobhan ");
     if !wait_for_store(&expected) || word_rows() != expected || !entry.text().is_empty() {
         eprintln!("the added word did not reach the store and the list");
+        return glib::ExitCode::FAILURE;
+    }
+    if link.subtitle().as_deref() != Some(link_subtitle(expected.len()).as_str()) {
+        eprintln!(
+            "after an add the vocabulary row reads {:?}",
+            link.subtitle()
+        );
         return glib::ExitCode::FAILURE;
     }
     println!("vocabulary-add: persisted");
@@ -3758,6 +3802,40 @@ fn backends_probe() -> glib::ExitCode {
         return glib::ExitCode::FAILURE;
     }
     println!("model-vocabulary: shown");
+
+    // The list opens over the Model tab, and a re-read of the model's
+    // settings leaves it open rather than going back under the user.
+    let model_page = content().expect("model page");
+    let Some(link) = find_descendant(vocabulary.upcast_ref(), &|widget| {
+        widget.is::<adw::ActionRow>()
+    })
+    .and_then(|row| row.downcast::<adw::ActionRow>().ok()) else {
+        eprintln!("the Model tab's vocabulary has no row to open it");
+        return glib::ExitCode::FAILURE;
+    };
+    adw::prelude::ActionRowExt::activate(&link);
+    if !settles(&|| content().is_some_and(|page| page != model_page)) {
+        eprintln!("the vocabulary row opened no page over the Model tab");
+        return glib::ExitCode::FAILURE;
+    }
+    let list_page = content().expect("list page");
+    let reads = quiesce();
+    let _ = WidgetExt::activate_action(&model_page, "backend.refresh", None);
+    if !settles(&|| machine.reads() > reads) {
+        eprintln!("re-reading the model under the open vocabulary read nothing");
+        return glib::ExitCode::FAILURE;
+    }
+    quiesce();
+    if content().as_ref() != Some(&list_page) {
+        eprintln!("a refresh closed the open vocabulary");
+        return glib::ExitCode::FAILURE;
+    }
+    backend_nav.pop();
+    if !settles(&|| content().as_ref() == Some(&model_page)) {
+        eprintln!("going back from the vocabulary did not return to the model");
+        return glib::ExitCode::FAILURE;
+    }
+    println!("model-vocabulary: opens over the tab and survives a refresh");
 
     // A change applies on its own, with no question but polkit's.
     let apply_idle = |text: &str| {

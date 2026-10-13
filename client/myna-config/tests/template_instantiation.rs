@@ -198,6 +198,7 @@ fn the_vocabulary_editor_adds_refuses_and_removes_words_when_enabled() {
     assert!(output.status.success(), "vocabulary probe failed: {stderr}");
     let stdout = String::from_utf8_lossy(&output.stdout);
     for line in [
+        "vocabulary-link: opens the list",
         "vocabulary-add: persisted",
         "vocabulary-duplicate: refused",
         "vocabulary-length: refused",
@@ -539,6 +540,8 @@ fn backend_pages_discover_and_apply_against_a_fixture_machine() {
         "sounds: the switch writes the setting",
         "sounds: Sound style offers the three sets and previews while on",
         "backend-snapshot: read",
+        "model-vocabulary: shown",
+        "model-vocabulary: opens over the tab and survives a refresh",
         "backend-apply: read back",
         "backend-apply: a refused change reverts with a toast",
         "diagnostics-report: lists backends",

@@ -1,5 +1,6 @@
-//! A string-list setting filling a preferences group: an entry row that adds
-//! a word, then one row per word with a button that removes it.
+//! A string-list setting: one row in a preferences group that opens the list
+//! on a page of its own, where an entry row adds a word and each word's row
+//! has a button that removes it. A long list stays off the page it is on.
 
 use std::cell::RefCell;
 use std::rc::{Rc, Weak};
@@ -11,6 +12,7 @@ use libadwaita::prelude::*;
 use crate::myna_settings::{add_list_entry, remove_list_entry, ListLimits, WidgetPlan};
 
 pub struct ListEditor {
+    link: adw::ActionRow,
     group: adw::PreferencesGroup,
     entry: adw::EntryRow,
     count: gtk::Label,
@@ -23,23 +25,55 @@ pub struct ListEditor {
 }
 
 impl ListEditor {
-    /// Fill `group` with the editor. `commit` receives the whole edited
-    /// list; the editor shows it once it comes back through
+    /// Put the row that opens the editor in `owner`; activating it pushes the
+    /// editor onto the navigation view the row sits in. `commit` receives the
+    /// whole edited list; the editor shows it once it comes back through
     /// [`ListEditor::apply`].
     pub fn new(
-        group: adw::PreferencesGroup,
+        owner: adw::PreferencesGroup,
         plan: &WidgetPlan,
         values: &[String],
         overlay: adw::ToastOverlay,
         commit: Box<dyn Fn(Vec<String>)>,
     ) -> Rc<Self> {
+        let link = adw::ActionRow::builder()
+            .title(&plan.title)
+            .activatable(true)
+            .build();
+        link.add_suffix(&gtk::Image::from_icon_name("go-next-symbolic"));
+        owner.add(&link);
+
         let count = gtk::Label::builder().valign(gtk::Align::Center).build();
         count.add_css_class("dim-label");
         count.add_css_class("numeric");
+        let group = adw::PreferencesGroup::builder()
+            .description(&plan.description)
+            .header_suffix(&count)
+            .build();
         group.set_widget_name(&plan.key);
-        group.set_title(&plan.title);
-        group.set_description(Some(&plan.description));
-        group.set_header_suffix(Some(&count));
+        let content = adw::PreferencesPage::new();
+        content.add(&group);
+        // The window's header holds the tab switcher; this one holds the way
+        // back.
+        let header = adw::HeaderBar::builder()
+            .show_start_title_buttons(false)
+            .show_end_title_buttons(false)
+            .build();
+        let toolbar = adw::ToolbarView::new();
+        toolbar.add_top_bar(&header);
+        toolbar.set_content(Some(&content));
+        let page = adw::NavigationPage::builder()
+            .title(&plan.title)
+            .child(&toolbar)
+            .build();
+        link.connect_activated(move |link| {
+            if let Some(navigation) = link
+                .ancestor(adw::NavigationView::static_type())
+                .and_downcast::<adw::NavigationView>()
+            {
+                navigation.push(&page);
+            }
+        });
         let entry = adw::EntryRow::builder()
             .title(gettextrs::gettext("Add a word or phrase"))
             .sensitive(plan.writable)
@@ -54,6 +88,7 @@ impl ListEditor {
         group.add(&entry);
 
         let editor = Rc::new(Self {
+            link,
             group,
             entry: entry.clone(),
             count,
@@ -91,6 +126,14 @@ impl ListEditor {
             Some(limits) => format!("{} / {}", values.len(), limits.entries),
             None => values.len().to_string(),
         });
+        self.link.set_subtitle(
+            &gettextrs::ngettext(
+                "{count} word or phrase",
+                "{count} words or phrases",
+                values.len() as u32,
+            )
+            .replace("{count}", &values.len().to_string()),
+        );
     }
 
     fn row(self: &Rc<Self>, value: &str) -> adw::ActionRow {
