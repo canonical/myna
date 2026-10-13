@@ -382,6 +382,11 @@ case " $* " in *" --stderr "*) cat >&2 ;; *) cat >/dev/null ;; esac
         (bin_dir / tool).write_text(body, encoding="utf-8")
         (bin_dir / tool).chmod(0o755)
     _fake_python(bin_dir, gpu=gpu)  # the snap's python has PyYAML
+    snap_root = tmp_path / "snap"
+    (snap_root / "bin").mkdir(parents=True)
+    (snap_root / "engines").symlink_to(root / "engines", target_is_directory=True)
+    (snap_root / "models").symlink_to(root / "models", target_is_directory=True)
+    _fake_python(snap_root / "bin", gpu=gpu)
     result = subprocess.run(
         [str(root / "snap" / "hooks" / "install")],
         env={
@@ -389,7 +394,7 @@ case " $* " in *" --stderr "*) cat >&2 ;; *) cat >/dev/null ;; esac
             "SNAP_INSTANCE_NAME": INFERENCE_SNAPS[snap_dir],
             "SNAP_COMPONENTS": str(comps),
             "SNAP_COMMON": str(tmp_path),
-            "SNAP": str(root),
+            "SNAP": str(snap_root),
         },
         capture_output=True,
         text=True,
@@ -444,11 +449,33 @@ def test_reselection_keeps_the_gpu_engine_off_a_driver_it_cannot_use(
     assert not any("--auto" in c for c in ran), ran
 
 
-@pytest.mark.parametrize("snap_dir", MULTI_ENGINE_SNAPS)
+CUDA_ONLY_MULTI_ENGINE_SNAPS = [
+    snap_dir for snap_dir in MULTI_ENGINE_SNAPS if set(_engines(snap_dir)) == {"cpu", "nvidia-gpu"}
+]
+
+
+@pytest.mark.parametrize("snap_dir", CUDA_ONLY_MULTI_ENGINE_SNAPS)
 def test_the_probe_guards_the_only_gpu_engine(snap_dir: str) -> None:
     """The probe answers for NVIDIA alone: a snap gaining another accelerator
-    engine must not have it skipped because NVIDIA is unusable."""
+    engine needs its own eligibility path rather than this assertion."""
     assert _engines(snap_dir) == ["cpu", "nvidia-gpu"]
+
+
+def test_an_npu_only_sideload_defers_engine_selection(tmp_path: Path) -> None:
+    """Disconnected hardware plugs must not make an NPU-only install fetch CPU weights."""
+    ran = _run_install_hook("whisper-snap", tmp_path, components=["model-large-v3-turbo-npu"])
+    assert not any(call.startswith("modelctl use-engine") for call in ran), ran
+
+
+def test_whisper_install_hook_uses_its_bundled_yaml_runtime() -> None:
+    """The core snap's Python has no PyYAML; hooks must use the packed venv."""
+    root = REPO_ROOT / "whisper-snap"
+    hook = (root / "snap" / "hooks" / "install").read_text(encoding="utf-8")
+    recipe = _recipe("whisper-snap")
+    packages = recipe["parts"]["server-app"]["python-packages"]
+
+    assert '"$SNAP/bin/python3"' in hook
+    assert any(str(package).lower().startswith("pyyaml") for package in packages)
 
 
 def test_declares_every_engine_it_ships(snap) -> None:
@@ -726,6 +753,90 @@ def test_gpu_engines_reach_the_gpu(snap) -> None:
     )
 
 
+def test_amd_npu_engine_is_confined_and_reproducible() -> None:
+    """The preview engine must not fall back to host libraries or downloads."""
+    recipe = _recipe("whisper-snap")
+    _, daemon = _daemon_app(recipe)
+    engine = yaml.safe_load(
+        (REPO_ROOT / "whisper-snap/engines/amd-npu/engine.yaml").read_text(encoding="utf-8")
+    )
+    npu = engine["devices"]["allof"][1]
+
+    assert engine["experimental"] is True
+    assert npu == {
+        "bus": "pci",
+        "vendor-id": 0x1022,
+        "device-id": 0x17F0,
+        "snap-connections": ["accel", "process-control"],
+    }
+    assert "accel" in daemon["plugs"]
+    assert "process-control" in daemon["plugs"]
+    assert "accel" in recipe["apps"]["whisper"]["plugs"]
+    assert "accel" in recipe["hooks"]["install"]["plugs"]
+    assert "accel" in recipe["hooks"]["connect-plug-accel"]["plugs"]
+    assert "network" not in daemon["plugs"]
+
+    accel_hook = REPO_ROOT / "whisper-snap/snap/hooks/connect-plug-accel"
+    assert accel_hook.stat().st_mode & 0o111
+    assert "use-engine --auto --assume-yes" in accel_hook.read_text(encoding="utf-8")
+
+    lemond = recipe["parts"]["lemond"]
+    assert (
+        "/download/v2026.39.1/lemonade-embeddable-2026.39.1-ubuntu-x64.tar.gz" in lemond["source"]
+    )
+    assert lemond["source-checksum"] == (
+        "sha256/d93c8c726a2c27aa7dee92db9d26f8042cf4e93a67b9c6ca8def094da15bf92a"
+    )
+    assert "libdrm-amdgpu1" in lemond["stage-packages"]
+    flm = recipe["parts"]["fastflowlm-hrx"]
+    assert "/download/v1.0.8/HRX_fastflowlm_1.0.8_linux.tar.gz" in flm["source"]
+    assert flm["source-checksum"] == (
+        "sha256/b5b25de40b807dc938f8a63bff066ec4dcc729e235b196dd0c730a830b71de7e"
+    )
+    assert "lemond-flm" in recipe["components"]
+
+    launcher = (REPO_ROOT / "whisper-snap/engines/amd-npu/server").read_text(encoding="utf-8")
+    assert '"$runtime/lemond"' in launcher
+    assert "-m myna.server.lemond_config" in launcher
+    assert "LEMONADE_API_KEY" in launcher
+    assert "MYNA_LEMOND_API_KEY" in launcher
+    assert "--adapter lemond" in launcher
+    assert "--lemond-api-key" not in launcher
+    assert "secrets.token_urlsafe" in launcher
+    assert 'bind(("127.0.0.1", 0))' in launcher
+    assert "websocket_port" in launcher
+    assert "http://127.0.0.1:" in launcher
+    assert "ulimit -l unlimited" in launcher
+    assert "idle=0" in launcher
+    assert "--idle-action unload" in launcher
+    assert "--idle-action exit" not in launcher
+
+
+def test_embedded_lemond_config_is_offline_and_uses_the_packaged_flm(
+    tmp_path: Path,
+) -> None:
+    """The private server must never install a backend or model at runtime."""
+    from myna.server.lemond_config import main
+
+    output = tmp_path / "config.json"
+    flm = Path("/snap/myna-whisper/components/1/lemond-flm/fastflowlm/flm")
+
+    assert main([str(output), str(flm), "19433"]) == 0
+
+    config = yaml.safe_load(output.read_text(encoding="utf-8"))
+    assert output.stat().st_mode & 0o777 == 0o600
+    assert config["offline"] is True
+    assert config["no_fetch_executables"] is True
+    assert config["auto_check_model_updates"] is False
+    assert config["broadcast"] is False
+    assert config["inhibit_suspend"] is False
+    assert config["websocket_port"] == 19433
+    assert config["flm"] == {"npu_bin": str(flm)}
+
+    with pytest.raises(ValueError, match="websocket port"):
+        main([str(output), str(flm), "0"])
+
+
 def test_whisper_quantization_describes_the_packaged_artifact() -> None:
     """Model metadata describes disk weights, not a runtime compute policy."""
     model_dir = REPO_ROOT / "whisper-snap" / "models"
@@ -746,9 +857,13 @@ def test_whisper_quantization_describes_the_packaged_artifact() -> None:
 # (T65). Empty, and that is the finding rather than an oversight: every ORT
 # adapter here measured faster with a small explicit pool than with ORT's own
 # sizing, pinning included (parakeet ~2x, funasr 12%), so none of them pins
-# and none of them may plug process-control. whisper is not ORT at all
-# (CTranslate2) and never pinned either.
+# for ORT. The separate MEMLOCK_SNAPS exception below covers a non-ORT use of
+# the same interface.
 ORT_PINNING_SNAPS: set[str] = set()
+
+# FLM needs CAP_SYS_RESOURCE to raise the daemon's hard memlock limit before
+# embedded Lemonade starts HRX. This follows the Lemonade Server snap setup.
+MEMLOCK_SNAPS = {"whisper-snap"}
 
 # Adapters that cap ORT's intra-op pool, and so give up pinning. Kept as an
 # explicit list because the cap is the load-bearing decision: each value was
@@ -758,31 +873,32 @@ ORT_PINNING_SNAPS: set[str] = set()
 THREAD_CAPPED_ADAPTERS = {"parakeet.py", "funasr.py"}
 
 
-def test_pinning_daemons_plug_process_control(snap) -> None:
-    """ORT can only pin its thread pool if seccomp's argument filter is lifted.
+def test_only_declared_daemons_plug_process_control(snap) -> None:
+    """Broad process control is present only for a declared runtime need.
 
     The default snapd template allows `sched_setaffinity 0 - -` - a *literal*
     pid 0 - but glibc's pthread_setaffinity_np always passes the target's real
     tid, even when a thread pins itself. So every pin is refused with EPERM and
     the daemon logs a wall of "pthread_setaffinity_np failed ... Operation not
     permitted" on each model load, silently running unpinned. `process-control`
-    drops the filter. Caught in the field on parakeet, 2026-08-24.
+    drops the filter. It also grants CAP_SYS_RESOURCE, which the embedded
+    Lemonade/FLM launcher needs to raise its hard memlock limit. Caught in the
+    field on parakeet, 2026-08-24; FLM behavior mirrored from Lemonade Server.
     """
     snap_dir, name, recipe = snap
     daemon_name, daemon = _daemon_app(recipe)
     plugs = set(daemon.get("plugs") or [])
-    if snap_dir in ORT_PINNING_SNAPS:
+    if snap_dir in ORT_PINNING_SNAPS or snap_dir in MEMLOCK_SNAPS:
         assert "process-control" in plugs, (
-            f"{name}: daemon app {daemon_name!r} does not plug process-control, so "
-            "ORT cannot pin its thread pool - seccomp refuses every "
-            "sched_setaffinity with EPERM and the snap runs unpinned"
+            f"{name}: daemon app {daemon_name!r} needs process-control for "
+            "declared runtime behavior but does not plug it"
         )
     else:
         assert "process-control" not in plugs, (
             f"{name}: daemon app {daemon_name!r} plugs process-control, but this snap "
-            "does not let ORT size its own pool, so nothing here ever pins - drop the "
-            "plug rather than grant a broad interface (kill/setscheduler/cgroup "
-            f"writes) that has no effect, or add {snap_dir!r} to ORT_PINNING_SNAPS"
+            "declares no need for the broad interface (kill/setscheduler/cgroup "
+            "writes) - drop the plug, or add the reviewed runtime need to "
+            f"ORT_PINNING_SNAPS or MEMLOCK_SNAPS ({snap_dir!r})"
         )
 
 

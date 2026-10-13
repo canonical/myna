@@ -1,0 +1,18 @@
+#!/bin/bash -eu
+
+# shellcheck disable=SC2034  # used via process substitution below
+tag="snap.$SNAP_INSTANCE_NAME.hook.connect-plug-accel"
+
+exec 1> >(tee >(logger --tag="$tag"))
+exec 2> >(logger --stderr --priority error --tag="$tag")
+
+# The NPU engine is ineligible until /dev/accel access is connected. Re-run
+# automatic selection at that edge, just as hardware-observe's hook does.
+engine="$(modelctl status --format=json | jq -r '.engine // empty')"
+if [ -z "$engine" ]; then
+    echo "no active engine yet: leaving selection to the install hook"
+    exit 0
+fi
+
+modelctl use-engine --auto --assume-yes --verbose ||
+    echo "re-selecting the engine failed: keeping $engine" >&2

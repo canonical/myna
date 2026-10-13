@@ -37,12 +37,14 @@ modelctl set --package streaming="false"
 # The cpu engine's default model (base) needs the store, which a sideload or
 # an offline machine cannot reach, and a failing hook fails the whole install.
 # modelctl keeps the active model when the engine offers it, so seed the first
-# installed one, default first.
+# installed one, default first. An accelerator-only sideload has no CPU model
+# to seed: leave its engine unset until the administrator connects the required
+# hardware interfaces and explicitly selects that engine.
 #
 installed_model() {
     # modelctl's engine/models commands score hardware or need an active
     # engine, neither of which works here, so read the manifests directly.
-    python3 - "$1" <<'EOF'
+    "$SNAP/bin/python3" - "$1" <<'EOF'
 import os, sys, yaml
 snap, installed = os.environ["SNAP"], os.environ["SNAP_COMPONENTS"]
 with open(f"{snap}/engines/{sys.argv[1]}/engine.yaml") as f:
@@ -59,9 +61,11 @@ EOF
 use_cpu() {
     local model
     model="$(installed_model cpu)"
-    if [ -n "$model" ]; then
-        snapctl set cache.active-model="$model"
+    if [ -z "$model" ]; then
+        echo "no CPU model component is installed: deferring engine selection"
+        return 0
     fi
+    snapctl set cache.active-model="$model"
     modelctl use-engine cpu --assume-yes --no-restart
 }
 

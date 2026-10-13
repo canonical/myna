@@ -1,0 +1,18 @@
+# Embeddable Lemonade plus its portable FastFlowLM/HRX backend. The runtime
+# and model are separate components; neither is downloaded after installation.
+name: lemond-flm
+
+servers:
+  myna:
+    protocol: ws+unix
+    base-path: /v1
+
+environment:
+  - LEMOND_ROOT=$SNAP_COMPONENTS/lemond-flm
+  - XDG_RUNTIME_DIR=$SNAP_COMMON
+  - FLM_CONFIG_PATH=$SNAP_COMPONENTS/lemond-flm/fastflowlm/model_list.json
+  - FLM_XCLBIN_PATH=$SNAP_COMPONENTS/lemond-flm/fastflowlm/xclbins
+  - LD_LIBRARY_PATH=$SNAP_COMPONENTS/lemond-flm/fastflowlm/lib:$SNAP_COMPONENTS/lemond-flm/usr/lib/$ARCH_TRIPLET:$LD_LIBRARY_PATH
+
+components:
+  - lemond-flm
