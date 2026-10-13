@@ -8,7 +8,7 @@ msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-10-11 11:54+0100\n"
-"PO-Revision-Date: 2026-10-13 11:48+0000\n"
+"PO-Revision-Date: 2026-10-14 12:51+0000\n"
 "Last-Translator: Quentin PAGÈS <quenti@users.noreply.hosted.weblate.org>\n"
 "Language-Team: Occitan <https://hosted.weblate.org/projects/ubuntu-desktop-"
 "translations/myna-config/oc/>\n"
@@ -37,49 +37,54 @@ msgstr "Avertiment de performanças"
 
 #: data/diagnostics-page.blp:33
 msgid "This machine is not currently delivering the CPU that dictation needs."
-msgstr ""
+msgstr "Aquesta maquina fornís pas actualament lo CPU que la dictada requerís."
 
 #: data/diagnostics-page.blp:38 data/main-window.blp:46
 msgid "Diagnostics"
-msgstr ""
+msgstr "Diagnostics"
 
 #: data/diagnostics-page.blp:40
 msgid "No audio, transcript, or filesystem path is ever included."
 msgstr ""
+"Cap d’àudio, de transcripcion nimai de camin dins lo sistèma de fichièrs es "
+"pas jamai inclús."
 
 #: data/diagnostics-page.blp:49 src/backend_ui.rs:3114 src/backend_ui.rs:3394
 msgid "Refresh"
-msgstr ""
+msgstr "Refrescar"
 
 #: data/diagnostics-page.blp:53 src/backend_ui.rs:2071 src/backend_ui.rs:2073
 msgid "Refresh diagnostics"
-msgstr ""
+msgstr "Refrescar lo diagnostic"
 
 #: data/diagnostics-page.blp:54
 msgid "Check this computer, Myna and every model again."
-msgstr ""
+msgstr "Verificatz tornarmai aqueste ordenador, Myna e cada modèl."
 
 #: data/diagnostics-page.blp:60
 msgid "Copy"
-msgstr ""
+msgstr "Copiar"
 
 #: data/diagnostics-page.blp:64 src/backend_ui.rs:2086
 msgid "Copy diagnostics"
-msgstr ""
+msgstr "Copiar lo diagnostic"
 
 #: data/diagnostics-page.blp:66
 msgid ""
 "Copies a privacy-safe diagnostic report to the clipboard. Does not include "
 "audio, transcripts, or filesystem paths."
 msgstr ""
+"Còpia un rapòrt de diagnostic respectuós de la vida privada dins lo "
+"quichapapièrs. Inclutz pas d’àudio, de transcripcions nimai de camins del "
+"sistèma de fichièrs."
 
 #: data/diagnostics-page.blp:94 src/backend_ui.rs:2119
 msgid "Diagnostic report"
-msgstr ""
+msgstr "Rapòrt de diagnostic"
 
 #: data/diagnostics-page.blp:95
 msgid "Read-only privacy-safe diagnostic text."
-msgstr ""
+msgstr "Tèxte de diagnostic en lectura sola que protegís la vida privada."
 
 #: data/install-control.blp:54 data/onboarding-components.blp:60
 #: src/app.rs:3931
@@ -88,13 +93,13 @@ msgstr "Installat"
 
 #: data/install-models-dialog.blp:5 data/myna-page.blp:79 data/myna-page.blp:94
 msgid "Install more models"
-msgstr ""
+msgstr "Installar mai de modèls"
 
 #: data/main-window.blp:9 src/app.rs:122 src/diagnostics.rs:443
 #: data/com.canonical.Myna.Config.metainfo.xml:8
 #: data/com.canonical.Myna.Config.desktop:3
 msgid "Myna Settings"
-msgstr ""
+msgstr "Paramètres de Myna"
 
 #: data/main-window.blp:24
 msgid "Main Menu"
@@ -102,7 +107,7 @@ msgstr "Menú principal"
 
 #: data/main-window.blp:32 src/backend_ui.rs:2815
 msgid "General"
-msgstr ""
+msgstr "General"
 
 #: data/main-window.blp:39 data/myna-page.blp:71 src/app.rs:1480
 #: src/app.rs:3154 src/app.rs:3578 src/backend_apply.rs:379
@@ -112,31 +117,31 @@ msgstr "Modèl"
 
 #: data/main-window.blp:71
 msgid "_Set Up Dictation…"
-msgstr ""
+msgstr "_Parametrar la dictada…"
 
 #: data/main-window.blp:75
 msgid "_Report an Issue…"
-msgstr ""
+msgstr "_Senhalar una anomalia…"
 
 #: data/main-window.blp:76
 msgid "_About Myna Settings"
-msgstr ""
+msgstr "_A prepaus dels paramètres de Myna"
 
 #: data/myna-page.blp:5 data/myna-page.blp:8 data/status-page.blp:5
 msgid "Myna"
-msgstr ""
+msgstr "Myna"
 
 #: data/myna-page.blp:12
 msgid "Keyboard shortcut"
-msgstr ""
+msgstr "Acorchi de clavièr"
 
 #: data/myna-page.blp:15
 msgid "Press to start and stop"
-msgstr ""
+msgstr "Cachatz per aviar e arrestar"
 
 #: data/myna-page.blp:47 src/shortcut_ui.rs:324
 msgid "Press a shortcut…"
-msgstr ""
+msgstr "Cachatz sus un acorchi…"
 
 #: data/myna-page.blp:57 data/onboarding-shortcut.blp:134
 #: src/shortcut_ui.rs:501
@@ -150,18 +155,21 @@ msgstr "Dictada"
 
 #: data/onboarding-components.blp:18 src/app.rs:3883 src/onboarding_ui.rs:1341
 msgid "Install components"
-msgstr ""
+msgstr "Installar compausants"
 
 #: data/onboarding-components.blp:27 src/app.rs:3887
 msgid ""
 "Dictation requires some additional components, including the optimal speech-"
 "to-text model for your computer. Installation might take a few minutes."
 msgstr ""
+"La dictada requerís qualques compaunents suplementaris, en particular lo "
+"modèl de transcripcion de la paraula en tèxte mai adaptat a vòstre "
+"ordenador. L’installacion pòt durar qualques minutas."
 
 #: data/onboarding-components.blp:44 src/app.rs:491 src/app.rs:3959
 #: src/app.rs:4024 src/app.rs:4434
 msgid "Install all components"
-msgstr ""
+msgstr "Installar totes los compausents"
 
 #: data/onboarding-components.blp:52 src/app.rs:3948
 #: src/ui/install_control.rs:134
@@ -174,27 +182,33 @@ msgstr "Cossí dictar"
 
 #: data/onboarding-shortcut.blp:51 src/shortcut_ui.rs:285
 msgid "Set up shortcut"
-msgstr ""
+msgstr "Configurar un acorchi"
 
 #: data/onboarding-shortcut.blp:58 src/onboarding_ui.rs:1065
 msgid ""
 "Log out and back in to turn on the dictation indicator (GNOME Shell "
 "extension)."
 msgstr ""
+"Tampatz la session puèi tornatz-vos connectar per activar l’indicador de "
+"dictada (extension GNOME Shell)."
 
 #: data/onboarding-shortcut.blp:78 src/shortcut_ui.rs:322
 msgid "Press the new shortcut…"
-msgstr ""
+msgstr "Cachatz sus l’acorchi novèl…"
 
 #: data/onboarding-shortcut.blp:104
 msgid ""
 "Use Ctrl, Alt or Super with another key, or a function key. Press Escape to "
 "cancel."
 msgstr ""
+"Utilizatz Ctrl, Alt o Supèr amb una autra tòca, o una tòca de foncion. "
+"Cachatz sus Escape per anullar."
 
 #: data/onboarding-welcome.blp:34
 msgid "Dictation runs locally, with no data leaving your computer."
 msgstr ""
+"La dictada fonciona localament, sens que cap de donada sortisca de vòstre "
+"ordenador."
 
 #: data/onboarding-window.blp:24 src/app.rs:414 src/onboarding_ui.rs:776
 msgid "Next"
@@ -202,11 +216,13 @@ msgstr "Seguent"
 
 #: data/operation-error-dialog.blp:5
 msgid "Operation failed"
-msgstr ""
+msgstr "Operacion en fracàs"
 
 #: data/operation-error-dialog.blp:6
 msgid "Full details are shown below. You can copy them to share with support."
 msgstr ""
+"Totes los detalhs son indicats çai-jos. Los podètz copiar per los partejar "
+"amb l’assisténcia."
 
 #: data/operation-error-dialog.blp:12
 msgid "Close"
@@ -214,19 +230,19 @@ msgstr "Tampar"
 
 #: data/operation-error-dialog.blp:34 src/app.rs:4103
 msgid "Copy Details"
-msgstr ""
+msgstr "Copiar los detalhs"
 
 #: data/operation-error-dialog.blp:35
 msgid "Copy the full failure details to the clipboard"
-msgstr ""
+msgstr "Copiatz totes los detalhs del fracàs dins lo cachapapièrs"
 
 #: data/status-page.blp:8 src/app.rs:1475 src/app.rs:5239
 msgid "Loading Myna Settings"
-msgstr ""
+msgstr "Cargament dels paramètres de Myna"
 
 #: data/status-page.blp:9 src/app.rs:1476 src/app.rs:5240
 msgid "Reading the installed settings schema…"
-msgstr ""
+msgstr "Lectura de l’esquèma dels paramètres installats…"
 
 #: src/app.rs:130
 msgid "translator-credits"
@@ -234,7 +250,7 @@ msgstr "Quentin PAGÈS"
 
 #: src/app.rs:1185 src/onboarding_ui.rs:781
 msgid "Done"
-msgstr ""
+msgstr "Acabada"
 
 #: src/app.rs:1481
 msgid "Model details appear once Myna finds your models."
