@@ -1154,6 +1154,18 @@ def test_a_boosted_keyword_that_completes_is_kept():
     assert timestamps == pytest.approx([0.0, 0.08, 0.16])
 
 
+def test_an_unsure_near_miss_of_a_keyword_is_corrected_in_the_decode():
+    # " Si" barely beats " the", so the word is unsure; "Sioba" is one edit
+    # from the keyword.
+    frames = [{" Si": 5.0, " the": 4.9}, {"ob": 5.0}, {"a": 5.0}]
+    assert _decode(frames, ["Siobax"]) == ([" Siobax"], pytest.approx([0.0]))
+
+
+def test_a_sure_near_miss_of_a_keyword_is_kept_in_the_decode():
+    frames = [{" Si": 9.0, " the": 4.9}, {"ob": 9.0}, {"a": 9.0}]
+    assert _decode(frames, ["Siobax"])[0] == [" Si", "ob", "a"]
+
+
 def test_blank_is_never_overridden():
     frames = [{" Si": -1.0}, {"ob": -1.0}, {"han": -1.0}]
     assert _decode(frames, ["Siobhan"]) == ([], [])
@@ -1263,7 +1275,9 @@ def _random_decode(joint, frames, keywords):
 
 @pytest.mark.parametrize("durations", [0, 3])
 @pytest.mark.parametrize("seed", range(12))
-def test_a_keyword_that_never_completes_never_changes_the_transcript(seed, durations):
+def test_a_keyword_that_never_completes_never_changes_the_transcript(seed, durations, monkeypatch):
+    # The decode's own property; correcting near misses afterwards is not.
+    monkeypatch.setattr(KeywordBias, "correct", lambda self, tokens, times, _p: (tokens, times))
     joint = _RandomJoint(seed, durations, hot_frames=(0,) if seed % 2 else ())
     unbiased = _random_decode(joint, 24, ())
     assert unbiased[0], "sanity: the script emits tokens"

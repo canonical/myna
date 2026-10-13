@@ -382,6 +382,12 @@ def _tokens_to_words(tokens: list[str], timestamps: list[float]) -> list[Word]:
     return words
 
 
+def _probability(logits: NDArray[np.float32], token: int) -> float:
+    """``token``'s softmax probability over ``logits``."""
+    exp = np.exp(logits - logits.max())
+    return float(exp[token] / exp.sum())
+
+
 def _encoder_threads() -> int:
     """Intra-op threads for the encoder.
 
@@ -682,10 +688,14 @@ class _ParakeetOnnx:
         and takes the model's own choice there: a wrong guess costs the joint
         calls since, not the transcript. The duration head is read as it
         comes: it is a separate head, not conditioned on the token chosen.
+
+        Each emitted token's probability before the bonus is kept for
+        ``bias.correct``, which the result passes through.
         """
         buffers = self._joint_buffers()
         tokens: list[str] = []
         timestamps: list[float] = []
+        confidences: list[float] = []
         t = 0
         emitted_at_frame = 0
         prev_token = self._blank_idx
@@ -726,6 +736,7 @@ class _ParakeetOnnx:
                         prev_token = token
                         tokens.append(self._vocab[token])
                         timestamps.append(t * FRAME_S)
+                        confidences.append(_probability(vocab_logits, token))
                         emitted_at_frame += 1
                 if not broken:
                     duration = int(np.argmax(dur_logits)) if len(dur_logits) else 0
@@ -740,10 +751,11 @@ class _ParakeetOnnx:
                 t, emitted_at_frame = rewind.t, rewind.emitted_at_frame
                 prev_token, state = rewind.prev_token, rewind.state
                 del tokens[rewind.n_tokens :], timestamps[rewind.n_tokens :]
+                del confidences[rewind.n_tokens :]
                 buffers.state_in[0][...] = rewind.decoder_state[0]
                 buffers.state_in[1][...] = rewind.decoder_state[1]
                 rewind, unbiased = None, True
-        return tokens, timestamps
+        return bias.correct(tokens, timestamps, confidences)
 
     def transcribe(
         self, samples: NDArray[np.float32], *, bias: KeywordBias | None = None

@@ -10,11 +10,16 @@ A token that extends a match earns a bonus per keyword character it spells,
 so the one-letter pieces every word could start with earn little and a piece
 that commits to the keyword earns most. The bonus only re-ranks non-blank
 tokens: the decoder calls `rerank` only when its own choice is not blank.
+
+After the decode, `correct` rewrites a word that is a keyword but for accents
+and case to the keyword as written, and an unsure word a near miss of one to
+it (murmure's post-correction, gated on the model's confidence).
 """
 
 from __future__ import annotations
 
 import re
+import unicodedata
 from collections.abc import Sequence
 
 import numpy as np
@@ -26,6 +31,19 @@ from numpy.typing import NDArray
 BOOST_PER_CHAR = 3.0
 
 ROOT = 0
+
+# A word the decoder was less sure of than this (its least likely token's
+# softmax probability, before any bonus) may be corrected to a keyword it
+# nearly spells. Measured 2026-10-13 (server/.kb/model-evaluation.md): false
+# hits hold flat up to 0.8 and climb past it.
+CORRECT_BELOW_CONFIDENCE = 0.8
+
+# murmure's distances: none under five letters, one edit under eight, two from
+# eight. Two edits on a shorter word reach ordinary words.
+_CORRECT_MIN_LETTERS = 5
+_CORRECT_TWO_EDITS_LETTERS = 8
+
+_WORD = re.compile(r"(\s*)(\W*?)([^\W\d_]+(?:'[^\W\d_]+)*)(\W*)", re.DOTALL)
 
 _SPECIAL = re.compile(r"<.+>")
 
@@ -63,6 +81,21 @@ def _segments(spelling: str, pieces: dict[str, int]) -> list[tuple[int, int, int
     return [(i, j, t) for i, j, t in edges if i in reached and j in finishing]
 
 
+def _fold(text: str) -> str:
+    decomposed = unicodedata.normalize("NFKD", text)
+    return "".join(c for c in decomposed if not unicodedata.combining(c)).casefold()
+
+
+def _edits(a: str, b: str) -> int:
+    previous = list(range(len(b) + 1))
+    for i, x in enumerate(a, 1):
+        current = [i]
+        for j, y in enumerate(b, 1):
+            current.append(min(previous[j] + 1, current[j - 1] + 1, previous[j - 1] + (x != y)))
+        previous = current
+    return previous[-1]
+
+
 class KeywordBias:
     """A session's keywords as a match automaton over token ids. States are
     ints, `ROOT` is no match in progress; built once per session and shared by
@@ -74,8 +107,10 @@ class KeywordBias:
         children: list[dict[int, int]],
         complete: set[int],
         bonus: NDArray[np.float64],
+        spellings: dict[str, str],
     ) -> None:
         self._children = children
+        self._spellings = spellings
         self._complete = frozenset(complete)
         self._bonus = bonus
         index = {prefix: state for state, prefix in enumerate(prefixes)}
@@ -125,6 +160,61 @@ class KeywordBias:
                 return child, False
         return ROOT, False
 
+    def correct(
+        self, tokens: list[str], timestamps: list[float], confidences: list[float]
+    ) -> tuple[list[str], list[float]]:
+        """``tokens`` with each corrected word folded into one token, timed
+        at its first. ``confidences`` are the tokens' unboosted probabilities."""
+        out_tokens: list[str] = []
+        out_times: list[float] = []
+        start = 0
+        while start < len(tokens):
+            end = start + 1
+            while end < len(tokens) and not tokens[end].startswith(" "):
+                end += 1
+            word = "".join(tokens[start:end])
+            replaced = self._corrected(word, min(confidences[start:end]))
+            if replaced is None:
+                out_tokens += tokens[start:end]
+                out_times += timestamps[start:end]
+            else:
+                out_tokens.append(replaced)
+                out_times.append(timestamps[start])
+            start = end
+        return out_tokens, out_times
+
+    def _corrected(self, word: str, confidence: float) -> str | None:
+        match = _WORD.fullmatch(word)
+        if match is None:
+            return None
+        space, before, core, after = match.groups()
+        folded = _fold(core)
+        keyword = self._spellings.get(folded)
+        if keyword is None and confidence < CORRECT_BELOW_CONFIDENCE:
+            keyword = self._nearest(folded)
+        if keyword is None or keyword == core:
+            return None
+        if keyword.islower() and core[0].isupper():
+            keyword = keyword[0].upper() + keyword[1:]
+        return space + before + keyword + after
+
+    def _nearest(self, folded: str) -> str | None:
+        """The one keyword strictly closest to ``folded`` within its reach."""
+        if len(folded) < _CORRECT_MIN_LETTERS:
+            return None
+        reach = 2 if len(folded) >= _CORRECT_TWO_EDITS_LETTERS else 1
+        best: list[str] = []
+        best_edits = reach
+        for spelling, keyword in self._spellings.items():
+            edits = _edits(folded, spelling)
+            if edits > reach:
+                continue
+            if edits < best_edits or not best:
+                best, best_edits = [keyword], edits
+            elif edits == best_edits:
+                best.append(keyword)
+        return best[0] if len(best) == 1 else None
+
 
 def keyword_bias(
     keywords: Sequence[str],
@@ -160,4 +250,9 @@ def keyword_bias(
     if len(prefixes) == 1:
         return None
     chars = np.array([max(1, len(piece.strip())) for piece in vocab])
-    return KeywordBias(prefixes, children, complete, boost_per_char * chars)
+    spellings: dict[str, str] = {}
+    for keyword in keywords:
+        text = " ".join(keyword.split())
+        if text and " " not in text:
+            spellings.setdefault(_fold(text), text)
+    return KeywordBias(prefixes, children, complete, boost_per_char * chars, spellings)

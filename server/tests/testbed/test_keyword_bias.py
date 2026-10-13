@@ -201,3 +201,60 @@ def test_the_argmax_itself_is_kept_when_it_is_the_best_candidate():
     bias = _bias("Siobhan", boost=1.0)
     logits = _logits(**{" Sio": 9.0})
     assert bias.rerank(ROOT, logits, ID[" Sio"]) == ID[" Sio"]
+
+
+def _correct(keywords, *pieces):
+    """Run ``correct`` over (token, confidence) pairs; tokens time 0.1 s apart."""
+    tokens = [token for token, _ in pieces]
+    confidences = [confidence for _, confidence in pieces]
+    timestamps = [0.1 * i for i in range(len(tokens))]
+    return _bias(*keywords).correct(tokens, timestamps, confidences)
+
+
+def test_a_word_spelt_as_a_keyword_but_for_accents_and_case_takes_its_spelling():
+    assert _correct(["Siobhan", "Sepúlveda"], (" the", 0.99), (" sepulveda", 0.99)) == (
+        [" the", " Sepúlveda"],
+        pytest.approx([0.0, 0.1]),
+    )
+
+
+def test_a_lowercase_keyword_keeps_the_capital_it_was_written_with():
+    assert _correct(["Siobhan", "asparagus"], (" Asparagus", 0.99))[0] == [" Asparagus"]
+
+
+def test_an_unsure_word_one_edit_from_a_keyword_becomes_it():
+    assert _correct(["Siobhan"], (" Sio", 0.95), ("bhn", 0.5), (",", 0.99), (" the", 0.9)) == (
+        [" Siobhan,", " the"],
+        pytest.approx([0.0, 0.3]),
+    )
+
+
+def test_a_confident_word_is_never_corrected():
+    tokens = [(" Sio", 0.95), ("bhn", 0.85)]
+    assert _correct(["Siobhan"], *tokens)[0] == [" Sio", "bhn"]
+
+
+def test_a_long_word_may_be_two_edits_away():
+    assert _correct(["Siobhan", "Noirtier"], (" Noartyer", 0.5))[0] == [" Noirtier"]
+
+
+def test_a_short_word_two_edits_away_is_left_alone():
+    # "Minya" for "Myna", heard live 2026-10-13: two edits on five letters
+    # reach too many ordinary words to correct without a false hit.
+    assert _correct(["Siobhan", "Myna"], (" Minya", 0.1))[0] == [" Minya"]
+
+
+def test_a_word_under_five_letters_is_never_fuzzy_corrected():
+    assert _correct(["Siobhan", "Kivu"], (" Kibu", 0.1))[0] == [" Kibu"]
+
+
+def test_a_word_equally_close_to_two_keywords_is_left_alone():
+    assert _correct(["Siobhan", "Siobhen", "Siobhun"], (" Siobhin", 0.1))[0] == [" Siobhin"]
+
+
+def test_a_phrase_keyword_is_not_a_correction_target():
+    assert _correct(["Siobhan", "New York"], (" Yorke", 0.1))[0] == [" Yorke"]
+
+
+def test_a_word_with_no_letters_is_left_alone():
+    assert _correct(["Siobhan"], (" 42", 0.1))[0] == [" 42"]
