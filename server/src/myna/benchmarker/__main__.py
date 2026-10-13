@@ -189,7 +189,8 @@ def build_parser() -> argparse.ArgumentParser:
             "ready for bench.yaml. Requires ffmpeg for FLAC decode.\n\n"
             "--preset instead takes a whole published test split, for numbers quoted\n"
             "in papers: librispeech-test-clean, librispeech-test-other, or\n"
-            "fleurs-test:<lang> (a FLEURS locale such as fr_fr). Presets cache under\n"
+            "fleurs-test:<lang> (a FLEURS locale such as fr_fr); fleurs-keywords:<lang>\n"
+            "is that locale's keyword tier. Presets cache under\n"
             "~/.cache/myna/corpus-src and write to corpus/publication/<preset>."
         ),
     )
@@ -197,7 +198,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--preset",
         default=None,
         help="a whole test split: librispeech-test-clean, librispeech-test-other,"
-        " fleurs-test:<lang>; the subset flags below do not apply",
+        " fleurs-test:<lang>, fleurs-keywords:<lang>; the subset flags below do not apply",
     )
     # The subset flags default to None so a preset can tell one that was passed
     # (and refuse it) from one that was not; `main` fills in the defaults below.

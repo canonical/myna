@@ -10,6 +10,7 @@ seam stubbed out, and the network is never touched.
 from __future__ import annotations
 
 import array
+import hashlib
 import io
 import json
 import tarfile
@@ -23,6 +24,7 @@ from myna.benchmarker.corpus_publication import (
     FLEURS_REVISION,
     Preset,
     build_fleurs,
+    build_fleurs_keywords,
     build_fleurs_smoke,
     build_librispeech,
     cmd_preset,
@@ -475,6 +477,7 @@ def test_the_module_names_every_preset_it_accepts():
         "librispeech-test-other",
         "fleurs-test:<lang>",
         "fleurs-smoke",
+        "fleurs-keywords:<lang>",
     )
 
 
@@ -509,3 +512,96 @@ def test_the_smoke_tier_records_every_source_archive(tmp_path):
         "fr_fr/test.tsv": sha256_file(tsv),
         "fr_fr/audio/test.tar.gz": sha256_file(tar),
     }
+
+
+# ─── FLEURS keyword tier: a frozen keyword set over one locale ───────────────
+
+
+def keyword_set(tmp_path: Path, **overrides) -> Path:
+    frozen = {
+        "locale": "fr_fr",
+        "derivation": "test",
+        "clips": {
+            "111.wav": {
+                "text": 'Les "voyageurs" peuvent, parfois.',
+                "keywords": ["voyageurs"],
+                "distractors": ["autre"],
+            }
+        },
+        "ordinary": ["333.wav"],
+        **overrides,
+    }
+    path = tmp_path / "keywords.json"
+    path.write_text(json.dumps(frozen), encoding="utf-8")
+    return path
+
+
+def test_a_fleurs_keywords_preset_carries_its_locale():
+    assert parse_preset("fleurs-keywords:es_419") == Preset(
+        "fleurs-keywords:es_419", "fleurs-keywords", "test", "es_419"
+    )
+
+
+def test_fleurs_keywords_takes_the_set_clips_with_their_lists_and_the_ordinary_slice(tmp_path):
+    tsv, tar = fleurs_files(tmp_path)
+    manifest = build_fleurs_keywords(tmp_path / "out", tsv, tar, "fr_fr", keyword_set(tmp_path))
+    clips = {c.id: c for c in load_manifest(manifest)}
+
+    assert set(clips) == {"fleurs-fr_fr-111", "fleurs-fr_fr-333"}
+    assert clips["fleurs-fr_fr-111"].category == "keywords"
+    assert clips["fleurs-fr_fr-111"].keywords == ("voyageurs", "autre")
+    assert clips["fleurs-fr_fr-333"].category == "ordinary"
+    assert not clips["fleurs-fr_fr-333"].keywords
+    assert json.loads(manifest.read_text(encoding="utf-8"))["preset"] == "fleurs-keywords:fr_fr"
+
+
+def test_fleurs_keywords_writes_the_stress_list_by_keyword_hash(tmp_path):
+    tsv, tar = fleurs_files(tmp_path)
+    build_fleurs_keywords(tmp_path / "out", tsv, tar, "fr_fr", keyword_set(tmp_path))
+    listed = (tmp_path / "out" / "stress-keywords.txt").read_text(encoding="utf-8").split()
+    assert listed == sorted(
+        ["voyageurs", "autre"], key=lambda k: hashlib.sha256(k.encode()).hexdigest()
+    )
+
+
+def test_fleurs_keywords_refuses_a_set_whose_reference_drifted(tmp_path):
+    tsv, tar = fleurs_files(tmp_path)
+    drifted = keyword_set(
+        tmp_path, clips={"111.wav": {"text": "Autre.", "keywords": ["x"], "distractors": []}}
+    )
+    with pytest.raises(SystemExit, match="111.wav"):
+        build_fleurs_keywords(tmp_path / "out", tsv, tar, "fr_fr", drifted)
+
+
+def test_fleurs_keywords_refuses_a_set_naming_a_clip_the_split_lacks(tmp_path):
+    tsv, tar = fleurs_files(tmp_path)
+    with pytest.raises(SystemExit, match="999.wav"):
+        build_fleurs_keywords(
+            tmp_path / "out", tsv, tar, "fr_fr", keyword_set(tmp_path, ordinary=["999.wav"])
+        )
+
+
+def test_fleurs_keywords_refuses_another_locale_s_set(tmp_path):
+    tsv, tar = fleurs_files(tmp_path)
+    with pytest.raises(SystemExit, match="es_419"):
+        build_fleurs_keywords(
+            tmp_path / "out", tsv, tar, "fr_fr", keyword_set(tmp_path, locale="es_419")
+        )
+
+
+def test_cmd_preset_builds_a_keyword_tier_from_its_frozen_set(tmp_path, fetched, monkeypatch):
+    cache = tmp_path / "cache"
+    (cache / "fleurs" / "fr_fr").mkdir(parents=True)
+    fleurs_files(cache / "fleurs" / "fr_fr")
+    frozen = keyword_set(tmp_path)
+    monkeypatch.setattr(corpus_publication, "keyword_set_path", lambda locale: frozen)
+    out = tmp_path / "kw"
+
+    cmd_preset(Args("fleurs-keywords:fr_fr", cache, out))
+
+    assert {c.category for c in load_manifest(out / "manifest.json")} == {"keywords", "ordinary"}
+
+
+def test_cmd_preset_refuses_a_locale_with_no_frozen_keyword_set(tmp_path, fetched):
+    with pytest.raises(SystemExit, match="no frozen keyword set for xx_yy"):
+        cmd_preset(Args("fleurs-keywords:xx_yy", tmp_path / "cache", tmp_path / "kw"))

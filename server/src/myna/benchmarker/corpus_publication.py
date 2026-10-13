@@ -4,10 +4,14 @@
     myna-bench download-corpus --preset librispeech-test-other
     myna-bench download-corpus --preset fleurs-test:fr_fr
     myna-bench download-corpus --preset fleurs-smoke
+    myna-bench download-corpus --preset fleurs-keywords:es_419
 
 ``fleurs-smoke`` is the exception, and no publication number: a few clips of
 each language Myna's backends claim, in one manifest, for a nightly accuracy
 gate that has to fail on a broken language rather than measure one.
+``fleurs-keywords:<lang>`` is the other: the keyword tier outside English, a
+frozen keyword set (``keywords-fleurs-<lang>.json``) over that locale's test
+split, with an ordinary slice to count false hits on.
 
 The other corpus tiers are subsets picked for a quick, representative sweep.
 A number meant for a paper or the Open ASR Leaderboard is quoted on a whole
@@ -34,6 +38,7 @@ CC-BY-NC-ND licence does not allow the derived audio this writes.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -46,7 +51,13 @@ from myna.benchmarker._audio import RATE, write_wav
 from myna.benchmarker.corpus_chinese import _clean_reference
 from myna.testbed.corpus import sha256_file, stamp_corpus, verify_corpus
 
-PRESETS = ("librispeech-test-clean", "librispeech-test-other", "fleurs-test:<lang>", "fleurs-smoke")
+PRESETS = (
+    "librispeech-test-clean",
+    "librispeech-test-other",
+    "fleurs-test:<lang>",
+    "fleurs-smoke",
+    "fleurs-keywords:<lang>",
+)
 
 LICENSE = "CC-BY-4.0"
 LIBRISPEECH_SPLITS = ("test-clean", "test-other")
@@ -96,6 +107,8 @@ def parse_preset(name: str) -> Preset:
     prefix, _, locale = name.partition(":")
     if prefix == "fleurs-test" and _FLEURS_LOCALE.fullmatch(locale):
         return Preset(name, "fleurs", "test", locale)
+    if prefix == "fleurs-keywords" and _FLEURS_LOCALE.fullmatch(locale):
+        return Preset(name, "fleurs-keywords", "test", locale)
     raise SystemExit(
         f"unknown preset {name!r}; choose one of: {', '.join(PRESETS)}"
         " (<lang> is a FLEURS locale such as fr_fr or cmn_hans_cn)"
@@ -242,9 +255,10 @@ def _fleurs_entries(
     *,
     limit: int | None = None,
     category: str | None = None,
+    only: set[str] | None = None,
 ) -> list[dict[str, object]]:
     """The listed clips of one FLEURS locale's archive, decoded into ``out``:
-    every one, or the first ``limit`` by filename."""
+    every one, the first ``limit`` by filename, or those named in ``only``."""
     subtag = locale.split("_", 1)[0]
     language = _LANGUAGE.get(subtag, subtag)
     category = category or ("quiet" if language == "en" else "non-english")
@@ -258,6 +272,8 @@ def _fleurs_entries(
             reference[fields[1]] = _clean_reference(fields[2])
     if limit is not None:
         reference = {name: reference[name] for name in sorted(reference)[:limit]}
+    if only is not None:
+        reference = {name: text for name, text in reference.items() if name in only}
 
     audio_dir = out / "audio"
     audio_dir.mkdir(parents=True, exist_ok=True)
@@ -371,6 +387,88 @@ def build_fleurs_smoke(
     return _write(out, manifest_name, header, entries, _fleurs_notice(title, "fleurs-smoke"))
 
 
+# The keyword tier's stress list: this many of the set's keywords, the first
+# by sha256 of the keyword, sent to every ordinary clip (as for dev-clean).
+STRESS_KEYWORDS = 100
+
+
+def keyword_set_path(locale: str) -> Path:
+    return Path(__file__).with_name(f"keywords-fleurs-{locale}.json")
+
+
+def build_fleurs_keywords(
+    out: Path,
+    tsv_path: Path,
+    tar_path: Path,
+    locale: str,
+    keyword_set: Path,
+    *,
+    manifest_name: str = "manifest.json",
+) -> Path:
+    """The clips a frozen FLEURS keyword set names, each with its keyword list
+    (keywords, then distractors), and its ordinary slice with none; plus
+    ``stress-keywords.txt``, the list to send to every ordinary clip.
+
+    The set was mined once from the split, like dev-clean's
+    (``corpus_english.collect_keyword_set``): reference words the shipped
+    Parakeet int8 encoder got wrong in batch mode, in at most three distinct
+    sentences, hand-pruned to the names and rare words a user would list (no
+    number words, reference typos or accent-variant spellings). Per keyword up
+    to three clips, misses first; distractors are the two keywords spelled
+    closest to one of the clip's words and one at random. The ordinary slice
+    is 80 other clips at random.
+    """
+    frozen = json.loads(keyword_set.read_text(encoding="utf-8"))
+    if frozen["locale"] != locale:
+        raise SystemExit(f"{keyword_set} is a {frozen['locale']} keyword set, not {locale}")
+    clips: dict[str, dict[str, Any]] = frozen["clips"]
+    wanted = set(clips) | set(frozen["ordinary"])
+    entries = _fleurs_entries(out, tsv_path, tar_path, locale, only=wanted)
+    found: set[str] = set()
+    drifted: list[str] = []
+    for entry in entries:
+        name = str(entry["source"]).rsplit(":", 1)[-1]
+        found.add(name)
+        clip = clips.get(name)
+        if clip is None:
+            entry["category"] = "ordinary"
+            continue
+        if entry["text"] != clip["text"]:
+            drifted.append(name)
+        entry["category"] = "keywords"
+        entry["keywords"] = clip["keywords"] + clip["distractors"]
+    if missing := sorted(wanted - found):
+        raise SystemExit(f"{keyword_set}: {locale} test has no clip " + ", ".join(missing[:10]))
+    if drifted:
+        raise SystemExit(f"{keyword_set}: a different reference for " + ", ".join(drifted[:10]))
+
+    keywords = {k for clip in clips.values() for k in clip["keywords"] + clip["distractors"]}
+    stress = sorted(keywords, key=lambda k: hashlib.sha256(k.encode()).hexdigest())
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "stress-keywords.txt").write_text(
+        "".join(f"{k}\n" for k in stress[:STRESS_KEYWORDS]), encoding="utf-8"
+    )
+    header = {
+        "preset": f"fleurs-keywords:{locale}",
+        "dataset": "fleurs",
+        "split": "test",
+        "language": locale,
+        "license": LICENSE,
+        "source": fleurs_url(locale, "audio/test.tar.gz"),
+        "source_sha256": {
+            "test.tsv": sha256_file(tsv_path),
+            "audio/test.tar.gz": sha256_file(tar_path),
+        },
+        "keyword_set": keyword_set.name,
+        "reference": "raw_transcription",
+        "citation": _FLEURS_CITATION,
+    }
+    title = f"Keyword corpus: FLEURS {locale} test clips of {keyword_set.name}"
+    return _write(
+        out, manifest_name, header, entries, _fleurs_notice(title, f"fleurs-keywords:{locale}")
+    )
+
+
 _SUBSET_FLAGS = (
     ("subset", "--subset"),
     ("n", "-n"),
@@ -445,6 +543,14 @@ def cmd_preset(args: argparse.Namespace) -> None:
     elif preset.locale is None:
         sources = {locale: _fetch_fleurs(cache, locale) for locale in SMOKE_LOCALES}
         manifest = build_fleurs_smoke(out, sources, manifest_name=args.manifest_name)
+    elif preset.dataset == "fleurs-keywords":
+        keyword_set = keyword_set_path(preset.locale)
+        if not keyword_set.is_file():
+            raise SystemExit(f"no frozen keyword set for {preset.locale} ({keyword_set.name})")
+        tsv_path, tar_path = _fetch_fleurs(cache, preset.locale)
+        manifest = build_fleurs_keywords(
+            out, tsv_path, tar_path, preset.locale, keyword_set, manifest_name=args.manifest_name
+        )
     else:
         tsv_path, tar_path = _fetch_fleurs(cache, preset.locale)
         manifest = build_fleurs(
