@@ -8,7 +8,7 @@ msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-10-11 11:54+0100\n"
-"PO-Revision-Date: 2026-10-13 05:21+0000\n"
+"PO-Revision-Date: 2026-10-13 11:48+0000\n"
 "Last-Translator: Peter Vančo <peva@users.noreply.hosted.weblate.org>\n"
 "Language-Team: Slovak <https://hosted.weblate.org/projects/ubuntu-desktop-"
 "translations/myna-config/sk/>\n"
@@ -33,12 +33,12 @@ msgstr "Nastaviť"
 
 #: data/diagnostics-page.blp:32
 msgid "Performance warnings"
-msgstr "Varovania týkajúce sa výkonu"
+msgstr "Upozornenia na výkon"
 
 #: data/diagnostics-page.blp:33
 msgid "This machine is not currently delivering the CPU that dictation needs."
 msgstr ""
-"Tento počítač v súčasnosti neposkytuje výkon procesora potrebný na "
+"Toto zariadenie momentálne neposkytuje potrebný výkon procesora pre "
 "diktovanie."
 
 #: data/diagnostics-page.blp:38 data/main-window.blp:46
@@ -47,7 +47,7 @@ msgstr "Diagnostika"
 
 #: data/diagnostics-page.blp:40
 msgid "No audio, transcript, or filesystem path is ever included."
-msgstr "Správa nikdy neobsahuje zvuk, prepis ani cestu k súborovému systému."
+msgstr "Nikdy neobsahuje zvuk, prepis ani cestu k súborovému systému."
 
 #: data/diagnostics-page.blp:49 src/backend_ui.rs:3114 src/backend_ui.rs:3394
 msgid "Refresh"
@@ -59,7 +59,7 @@ msgstr "Obnoviť diagnostiku"
 
 #: data/diagnostics-page.blp:54
 msgid "Check this computer, Myna and every model again."
-msgstr "Znova skontrolovať tento počítač, Mynu a všetky modely."
+msgstr "Znova skontrolovať tento počítač, Mynu a každý model."
 
 #: data/diagnostics-page.blp:60
 msgid "Copy"
@@ -124,7 +124,7 @@ msgstr "_Nahlásiť problém…"
 
 #: data/main-window.blp:76
 msgid "_About Myna Settings"
-msgstr "_O nastaveniach Myna"
+msgstr "_O Nastaveniach Myna"
 
 #: data/myna-page.blp:5 data/myna-page.blp:8 data/status-page.blp:5
 msgid "Myna"
@@ -136,7 +136,7 @@ msgstr "Klávesová skratka"
 
 #: data/myna-page.blp:15
 msgid "Press to start and stop"
-msgstr "Stlačením spustíte alebo zastavíte"
+msgstr "Stlačením spustíte a zastavíte"
 
 #: data/myna-page.blp:47 src/shortcut_ui.rs:324
 msgid "Press a shortcut…"
@@ -205,7 +205,7 @@ msgstr ""
 
 #: data/onboarding-welcome.blp:34
 msgid "Dictation runs locally, with no data leaving your computer."
-msgstr "Diktovanie beží lokálne a žiadne dáta neopúšťajú váš počítač."
+msgstr "Diktovanie beží lokálne, žiadne dáta neopúšťajú váš počítač."
 
 #: data/onboarding-window.blp:24 src/app.rs:414 src/onboarding_ui.rs:776
 msgid "Next"
@@ -263,7 +263,7 @@ msgstr "Najrýchlejší a najpresnejší vo svojich 25 jazykoch"
 
 #: src/app.rs:3196 src/backend_ui.rs:4291 src/model_family.rs:31
 msgid "Most languages, with uneven accuracy"
-msgstr "Najviac jazykov, ale nerovnomerná presnosť"
+msgstr "Najviac jazykov, s nerovnomernou presnosťou"
 
 #: src/app.rs:3331 src/myna_settings.rs:105
 msgid "As you speak"
@@ -271,19 +271,19 @@ msgstr "Počas hovorenia"
 
 #: src/app.rs:3332 src/myna_settings.rs:106
 msgid "When you stop"
-msgstr "Po ukončení"
+msgstr "Po ukončení hovorenia"
 
 #: src/app.rs:3472 src/app.rs:5729
 msgid "Preview"
-msgstr "Ukážka"
+msgstr "Náhľad"
 
 #: src/app.rs:3486 src/sound_preview.rs:69
 msgid "Could not preview sounds"
-msgstr "Zvuky sa nepodarilo zobraziť v ukážke"
+msgstr "Nepodarilo sa zobraziť náhľad zvukov"
 
 #: src/app.rs:3520 src/backend_ui.rs:721
 msgid "Changing to {model} failed"
-msgstr "Prepnutie na {model} zlyhalo"
+msgstr "Zmena na {model} zlyhala"
 
 #: src/app.rs:3521 src/app.rs:4056 src/app.rs:4065 src/app.rs:4454
 #: src/app.rs:5103 src/app.rs:5109 src/backend_ui.rs:1291
@@ -307,7 +307,7 @@ msgstr "Až {size}"
 
 #: src/app.rs:4057 src/onboarding_ui.rs:1011
 msgid "Could not let Myna run in the background"
-msgstr "Mynu sa nepodarilo nechať bežať na pozadí"
+msgstr "Nepodarilo sa povoliť beh Myny na pozadí"
 
 #: src/app.rs:4087 src/app.rs:4237 src/backend_ui.rs:2419
 msgid "Executable:"
@@ -341,11 +341,11 @@ msgstr "{step} ({percent} %)"
 
 #: src/app.rs:4203 src/onboarding_ui.rs:992
 msgid "Installing speech-to-text model"
-msgstr "Inštaluje sa model prevodu reči na text"
+msgstr "Inštaluje sa model na prevod reči na text"
 
 #: src/app.rs:4217 src/onboarding_ui.rs:1013
 msgid "Installing the speech-to-text model failed"
-msgstr "Inštalácia modelu prevodu reči na text zlyhala"
+msgstr "Inštalácia modelu na prevod reči na text zlyhala"
 
 #: src/app.rs:4280 src/onboarding_ui.rs:994
 msgid "Enabling shell extension"
@@ -366,7 +366,7 @@ msgstr "Diktovanie môžete kedykoľvek spustiť pomocou klávesovej skratky:"
 #: src/app.rs:5102 src/onboarding_ui.rs:676 src/onboarding_ui.rs:683
 #: src/onboarding_ui.rs:925
 msgid "Could not set up Dictation"
-msgstr "Diktovanie sa nepodarilo nastaviť"
+msgstr "Nepodarilo sa nastaviť diktovanie"
 
 #: src/app.rs:5140 src/onboarding_ui.rs:876
 msgid "Dictation is not set up yet. Select Next to try again."
@@ -390,11 +390,11 @@ msgstr "Nastavenia Myna sa nepodarilo spustiť."
 
 #: src/app.rs:5697
 msgid "Could not save the setting"
-msgstr "Nastavenie sa nepodarilo uložiť"
+msgstr "Nepodarilo sa uložiť nastavenie"
 
 #: src/app.rs:5734
 msgid "Preview sound style"
-msgstr "Ukážka štýlu zvuku"
+msgstr "Náhľad štýlu zvuku"
 
 #: src/active_backend.rs:293
 msgid "The change was cancelled."
@@ -440,26 +440,26 @@ msgstr "Tento model už nie je nainštalovaný."
 
 #: src/backend_ui.rs:723
 msgid "Changing to {model} could not be confirmed"
-msgstr "Prepnutie na {model} sa nepodarilo potvrdiť"
+msgstr "Zmenu na {model} nebolo možné potvrdiť"
 
 #: src/backend_ui.rs:786
 msgid ""
 "Final connections could not be verified. Switching is disabled until refresh "
 "succeeds."
 msgstr ""
-"Konečné pripojenia sa nepodarilo overiť. Prepnutie je zakázané, kým "
-"obnovenie neprebehne úspešne."
+"Konečné pripojenia nebolo možné overiť. Prepnutie je zakázané, kým obnovenie "
+"neprebehne úspešne."
 
 #: src/backend_ui.rs:791 src/diagnostics.rs:658
 msgid "No model is connected. Choose one to use for dictation."
 msgstr ""
-"Nie je pripojený žiadny model. Vyberte jeden, ktorý sa má používať na "
+"Nie je pripojený žiadny model. Vyberte jeden, ktorý sa má použiť na "
 "diktovanie."
 
 #: src/backend_ui.rs:794
 msgid "Several models are connected. Choose one to use for dictation."
 msgstr ""
-"Je pripojených viacero modelov. Vyberte jeden, ktorý sa má používať na "
+"Je pripojených viacero modelov. Vyberte jeden, ktorý sa má použiť na "
 "diktovanie."
 
 #: src/backend_ui.rs:893
@@ -490,11 +490,11 @@ msgstr "Uplatňujú sa zmeny a reštartuje sa model…"
 #. TRANSLATORS: {setting} is a setting's name on the Model tab, such as "Unload when idle (seconds)".
 #: src/backend_ui.rs:1691
 msgid "Changing “{setting}” could not be confirmed"
-msgstr "Zmena „{setting}“ sa nepodarila potvrdiť"
+msgstr "Zmenu „{setting}“ nebolo možné potvrdiť"
 
 #: src/backend_ui.rs:1727
 msgid "Could not read the installed models."
-msgstr "Nainštalované modely sa nepodarilo načítať."
+msgstr "Nepodarilo sa načítať nainštalované modely."
 
 #: src/backend_ui.rs:1782
 msgid "No active model"
@@ -514,11 +514,11 @@ msgstr "Vyberte jeden model na karte Všeobecné."
 
 #: src/backend_ui.rs:1993
 msgid "Diagnostics copied. Paste them into the issue."
-msgstr "Diagnostika bola skopírovaná. Vložte ju do hlásenia problému."
+msgstr "Diagnostika skopírovaná. Vložte ju do hlásenia o probléme."
 
 #: src/backend_ui.rs:2004
 msgid "Could not open the web browser"
-msgstr "Webový prehliadač sa nepodarilo otvoriť"
+msgstr "Nepodarilo sa otvoriť webový prehliadač"
 
 #: src/backend_ui.rs:2084
 msgid "Copy privacy-safe diagnostics"
@@ -526,7 +526,7 @@ msgstr "Kopírovať diagnostiku chrániacu súkromie"
 
 #: src/backend_ui.rs:2095
 msgid "Diagnostics copied to clipboard"
-msgstr "Diagnostika bola skopírovaná do schránky"
+msgstr "Diagnostika skopírovaná do schránky"
 
 #: src/backend_ui.rs:2124 src/diagnostics.rs:419
 msgid "Dictation is not installed"
@@ -542,7 +542,7 @@ msgstr "Nie je nainštalovaná žiadna vstupná metóda"
 
 #: src/backend_ui.rs:2314
 msgid "The model kept a different value than the one you chose."
-msgstr "Model si zachoval inú hodnotu, než ktorú ste zvolili."
+msgstr "Model si ponechal inú hodnotu než tú, ktorú ste zvolili."
 
 #: src/backend_ui.rs:2321
 msgid "The setting was saved, but the model did not start again."
@@ -550,11 +550,11 @@ msgstr "Nastavenie bolo uložené, ale model sa znova nespustil."
 
 #: src/backend_ui.rs:2328
 msgid "The setting was changed, but it could not be read back."
-msgstr "Nastavenie bolo zmenené, ale nepodarilo sa ho spätne načítať."
+msgstr "Nastavenie bolo zmenené, ale nepodarilo sa ho spätne prečítať."
 
 #: src/backend_ui.rs:2335
 msgid "The setting was changed, but reading it back was interrupted."
-msgstr "Nastavenie bolo zmenené, ale spätné čítanie bolo prerušené."
+msgstr "Nastavenie bolo zmenené, ale jeho spätné čítanie bolo prerušené."
 
 #: src/backend_ui.rs:2353 src/backend_ui.rs:2380
 msgid "The system did not allow the change."
@@ -566,15 +566,15 @@ msgstr "Model odmietol hodnotu."
 
 #: src/backend_ui.rs:2367 src/backend_ui.rs:2386 src/backend_ui.rs:3165
 msgid "The change could not be made."
-msgstr "Zmenu sa nepodarilo vykonať."
+msgstr "Zmenu nebolo možné vykonať."
 
 #: src/backend_ui.rs:2377
 msgid "The change was interrupted after it started."
-msgstr "Zmena bola prerušená po svojom začatí."
+msgstr "Zmena bola prerušená po jej začatí."
 
 #: src/backend_ui.rs:2440 src/backend_ui.rs:2519 src/backend_ui.rs:3240
 msgid "Standard error:"
-msgstr "Štandardný chybový výstup:"
+msgstr "Štandardná chyba:"
 
 #: src/backend_ui.rs:2450
 msgid "Request:"
@@ -634,8 +634,7 @@ msgstr "Jazyk"
 
 #: src/backend_ui.rs:2602
 msgid "A code such as en, fr or zh. Leave it empty to detect the language."
-msgstr ""
-"Kód ako en, fr alebo zh. Ak chcete jazyk detegovať, ponechajte pole prázdne."
+msgstr "Kód, napr. en, fr alebo zh. Nechajte prázdne na detekciu jazyka."
 
 #: src/backend_ui.rs:2655
 msgid "Overview"
@@ -651,11 +650,11 @@ msgstr "Aktívne. Myna používa tento model na diktovanie."
 
 #: src/backend_ui.rs:2671
 msgid "Several models are connected. Only one should be active."
-msgstr "Je pripojených viacero modelov. Aktívny by mal byť len jeden."
+msgstr "Je pripojených viacero modelov. Mal by byť aktívny len jeden."
 
 #: src/backend_ui.rs:2673
 msgid "Not connected to Myna."
-msgstr "Nepripojené k Myne."
+msgstr "Nie je pripojené k Myne."
 
 #: src/backend_ui.rs:2679
 msgid "Active model"
@@ -663,11 +662,11 @@ msgstr "Aktívny model"
 
 #: src/backend_ui.rs:2685
 msgid "Active engine"
-msgstr "Aktívny motor"
+msgstr "Aktívny engine"
 
 #: src/backend_ui.rs:2688
 msgid "None selected. Choose one below."
-msgstr "Nič nie je vybrané. Vyberte jednu možnosť nižšie."
+msgstr "Nič nie je vybrané. Vyberte jeden nižšie."
 
 #: src/backend_ui.rs:2705 src/diagnostics.rs:641
 msgid "Services"
@@ -675,7 +674,7 @@ msgstr "Služby"
 
 #: src/backend_ui.rs:2707
 msgid "No service health reported"
-msgstr "Nie je hlásená žiadna stavová informácia služieb"
+msgstr "Nie je hlásený stav služieb"
 
 #: src/backend_ui.rs:2721
 msgid "Loading"
@@ -719,11 +718,11 @@ msgstr "Citlivé"
 
 #: src/backend_ui.rs:2825
 msgid "Common settings for this model."
-msgstr "Bežné nastavenia tohto modelu."
+msgstr "Bežné nastavenia pre tento model."
 
 #: src/backend_ui.rs:2828
 msgid "Runtime and performance related settings."
-msgstr "Nastavenia súvisiace s behovým prostredím a výkonom."
+msgstr "Nastavenia týkajúce sa behového prostredia a výkonu."
 
 #: src/backend_ui.rs:2831
 msgid "Advanced settings."
@@ -731,11 +730,11 @@ msgstr "Pokročilé nastavenia."
 
 #: src/backend_ui.rs:2834
 msgid "Internal and sensitive values are shown for diagnostics only."
-msgstr "Interné a citlivé hodnoty sa zobrazujú iba na účely diagnostiky."
+msgstr "Interné a citlivé hodnoty sú zobrazené len pre diagnostické účely."
 
 #: src/backend_ui.rs:2858
 msgid "Sensitive value (redacted)"
-msgstr "Citlivá hodnota (redigovaná)"
+msgstr "Citlivá hodnota (zablokovaná)"
 
 #. TRANSLATORS: {name} is the model part or snap being downloaded, such as "model-small"; {done} and {total} are sizes such as "210.0 MB".
 #: src/backend_ui.rs:3006
@@ -784,11 +783,11 @@ msgstr "Dostupné modely"
 
 #: src/backend_ui.rs:3093
 msgid "Available engines"
-msgstr "Dostupné motory"
+msgstr "Dostupné enginy"
 
 #: src/backend_ui.rs:3099
 msgid "Persisted values could not be read."
-msgstr "Uložené hodnoty sa nepodarilo prečítať."
+msgstr "Uložené hodnoty nebolo možné prečítať."
 
 #: src/backend_ui.rs:3110 src/backend_ui.rs:3398
 msgid "Applying changes…"
@@ -801,7 +800,8 @@ msgstr "chýba"
 #. TRANSLATORS: {key} is a setting's key, such as "streaming"; {requested} and {actual} are its values.
 #: src/backend_ui.rs:3135
 msgid "{key}: asked for {requested}, read back {actual}"
-msgstr "{key}: požadované {requested}, spätne načítané {actual}"
+msgstr ""
+"{key}: požadovaná hodnota {requested}, spätne prečítaná hodnota {actual}"
 
 #: src/backend_ui.rs:3163
 msgid "Error:\n"
@@ -813,7 +813,7 @@ msgstr "Zmena prebehla, ale pripojenia s ňou nesúhlasia."
 
 #: src/backend_ui.rs:3177
 msgid "The connections changed before the change could start. Try again."
-msgstr "Pripojenia sa zmenili skôr, než mohla začať zmena. Skúste to znova."
+msgstr "Pripojenia sa zmenili pred začatím zmeny. Skúste to znova."
 
 #: src/backend_ui.rs:3181
 msgid "Discovery error:\n"
@@ -821,7 +821,7 @@ msgstr "Chyba zisťovania:\n"
 
 #: src/backend_ui.rs:3183
 msgid "The change ran, but the connections could not be read back."
-msgstr "Zmena prebehla, ale pripojenia sa nepodarilo spätne načítať."
+msgstr "Zmena prebehla, ale pripojenia nebolo možné spätne prečítať."
 
 #: src/backend_ui.rs:3200
 msgid "Final connections:"
@@ -829,7 +829,7 @@ msgstr "Konečné pripojenia:"
 
 #: src/backend_ui.rs:3205
 msgid "Final connections could not be verified:"
-msgstr "Konečné pripojenia sa nepodarilo overiť:"
+msgstr "Konečné pripojenia nebolo možné overiť:"
 
 #: src/backend_ui.rs:3209
 msgid "Final connections could not be verified.\n"
@@ -849,7 +849,7 @@ msgstr "nie je pripojený žiadny model"
 
 #: src/backend_ui.rs:3254
 msgid "connected"
-msgstr "pripojené"
+msgstr "pripojený"
 
 #: src/backend_ui.rs:3264
 msgid "several models"
@@ -865,7 +865,7 @@ msgstr "hodnota selektora musí byť text"
 
 #: src/backend_apply.rs:95
 msgid "the model's settings command could not be found"
-msgstr "príkaz nastavení modelu sa nepodarilo nájsť"
+msgstr "príkaz nastavení modelu sa nenašiel"
 
 #: src/backend_apply.rs:380
 msgid "the model's restart command could not be built"
@@ -877,7 +877,7 @@ msgstr "hodnota musí byť konečné číslo"
 
 #: src/backend_apply.rs:504
 msgid "The model's restart could not be confirmed."
-msgstr "Reštart modelu sa nepodarilo potvrdiť."
+msgstr "Reštart modelu nebolo možné potvrdiť."
 
 #: src/backend_apply.rs:529
 msgid "The model did not restart."
@@ -896,7 +896,7 @@ msgstr "neaktívny"
 #: src/backend_apply.rs:553
 msgctxt "service state"
 msgid "failed"
-msgstr "zlyhaný"
+msgstr "zlyhal"
 
 #: src/backend_apply.rs:554
 msgctxt "service state"
@@ -909,7 +909,7 @@ msgstr "Systém je zaneprázdnený inštaláciou softvéru. Skúste to o chvíľ
 
 #: src/onboarding_ui.rs:778
 msgid "Continue to the next onboarding step."
-msgstr "Pokračujte na ďalší krok zavádzania."
+msgstr "Pokračujte na ďalší krok úvodného nastavenia."
 
 #: src/onboarding_ui.rs:783
 msgid "Close Myna Settings."
@@ -925,7 +925,7 @@ msgstr ""
 
 #: src/onboarding_ui.rs:878
 msgid "Setup status unavailable. The log has the details."
-msgstr "Stav nastavenia nie je dostupný. Podrobnosti sú v denníku."
+msgstr "Stav nastavenia nie je dostupný. Podrobnosti sú v logu."
 
 #: src/onboarding_ui.rs:993
 msgid "Setting up the input method"
@@ -959,7 +959,7 @@ msgstr "Čaká sa na dokončenie ostatných zmien softvéru"
 
 #: src/onboarding_ui.rs:1301
 msgid "Setting up speech-to-text model"
-msgstr "Nastavuje sa model prevodu reči na text"
+msgstr "Nastavuje sa model na prevod reči na text"
 
 #: src/onboarding_ui.rs:1302
 msgid "Starting dictation"
@@ -984,7 +984,7 @@ msgstr "Aktuálna skratka: {shortcut}."
 
 #: src/shortcut_ui.rs:347
 msgid "Keep the shortcut as it was."
-msgstr "Ponechať skratku tak, ako bola."
+msgstr "Nechať skratku tak, ako bola."
 
 #: src/shortcut_ui.rs:477
 msgid "{keys} is reserved for “{action}”. Press a different shortcut."
@@ -1005,7 +1005,7 @@ msgstr "Nahradiť"
 
 #: src/shortcut_ui.rs:562
 msgid "Could not set up the shortcut"
-msgstr "Skratku sa nepodarilo nastaviť"
+msgstr "Nepodarilo sa nastaviť skratku"
 
 #: src/shortcut_ui.rs:666
 msgid "Set up a keyboard shortcut to trigger Dictation."
@@ -1025,7 +1025,7 @@ msgstr ""
 
 #: src/shortcut_ui.rs:690
 msgid "Not set up"
-msgstr "Nenastavené"
+msgstr "Nie je nastavené"
 
 #: src/shortcut_ui.rs:691 src/sound_preview.rs:66
 msgid "Myna is not running"
@@ -1033,11 +1033,11 @@ msgstr "Myna nebeží"
 
 #: src/sound_preview.rs:67
 msgid "Update Myna to preview sounds"
-msgstr "Aktualizujte Mynu, aby ste si mohli prezrieť zvuky"
+msgstr "Aktualizujte Mynu, aby ste si mohli prezrieť náhľad zvukov"
 
 #: src/sound_preview.rs:68
 msgid "Finish dictating to preview sounds"
-msgstr "Dokončite diktovanie, aby ste si mohli prezrieť zvuky"
+msgstr "Dokončite diktovanie, aby ste si mohli prezrieť náhľad zvukov"
 
 #: src/diagnostics.rs:225
 msgid "Paste the diagnostics report from your clipboard here."
@@ -1045,11 +1045,11 @@ msgstr "Sem vložte diagnostickú správu zo schránky."
 
 #: src/diagnostics.rs:280
 msgid "The CPU clock is capped by system policy"
-msgstr "Frekvenciu procesora obmedzuje systémová politika"
+msgstr "Frekvencia procesora je obmedzená systémovou politikou"
 
 #: src/diagnostics.rs:282
 msgid "limited to"
-msgstr "obmedzené na"
+msgstr "obmedzená na"
 
 #: src/diagnostics.rs:284 src/diagnostics.rs:362 src/diagnostics.rs:714
 msgid "of"
@@ -1074,7 +1074,7 @@ msgstr ""
 
 #: src/diagnostics.rs:312
 msgid "Firmware is holding the CPU at its lowest clock"
-msgstr "Firmvér drží procesor na najnižšej frekvencii"
+msgstr "Firmvér udržiava procesor na najnižšej frekvencii"
 
 #: src/diagnostics.rs:316
 msgid ""
@@ -1082,7 +1082,7 @@ msgid ""
 "back in. If that does not help, power off fully and start again."
 msgstr ""
 "Diktovanie bude pomalé. Odpojte nabíjačku, počkajte niekoľko sekúnd a znovu "
-"ju zapojte. Ak to nepomôže, úplne vypnite a znova zapnite."
+"ju pripojte. Ak to nepomôže, úplne vypnite zariadenie a znova ho spustite."
 
 #: src/diagnostics.rs:325
 msgid "The system is short of memory"
@@ -1092,8 +1092,8 @@ msgstr "Systém nemá dostatok pamäte"
 msgid ""
 "Dictation will stutter. Close applications until the machine stops swapping."
 msgstr ""
-"Diktovanie bude sekať. Zatvorte aplikácie, kým zariadenie prestane využívať "
-"odkladací priestor."
+"Diktovanie bude sekať. Zatvorte aplikácie, kým zariadenie prestane používať "
+"swap."
 
 #: src/diagnostics.rs:335
 msgid "Disk activity is stalling the system"
@@ -1119,7 +1119,7 @@ msgstr "dosiahnuté"
 
 #: src/diagnostics.rs:372
 msgid "of the last 10 s stalled"
-msgstr "posledných 10 s bolo spomalených"
+msgstr "za posledných 10 s zadržiavané"
 
 #: src/diagnostics.rs:421
 msgid "No model connected"
@@ -1147,7 +1147,7 @@ msgstr "Nepripojené"
 
 #: src/diagnostics.rs:447
 msgid "Onboarding"
-msgstr "Zavádzanie"
+msgstr "Úvodné nastavenie"
 
 #: src/diagnostics.rs:454
 msgid "System"
@@ -1163,7 +1163,7 @@ msgstr "jadro"
 
 #: src/diagnostics.rs:470
 msgid "Desktop"
-msgstr "Pracovné prostredie"
+msgstr "Prostredie"
 
 #: src/diagnostics.rs:481
 msgid "Machine"
@@ -1171,7 +1171,7 @@ msgstr "Zariadenie"
 
 #: src/diagnostics.rs:485 src/diagnostics.rs:500
 msgid "CPU"
-msgstr "Procesor"
+msgstr "CPU"
 
 #: src/diagnostics.rs:486 src/diagnostics.rs:563 src/diagnostics.rs:648
 msgid "Memory"
@@ -1179,11 +1179,11 @@ msgstr "Pamäť"
 
 #: src/diagnostics.rs:490 src/diagnostics.rs:495
 msgid "GPU"
-msgstr "Grafický procesor"
+msgstr "GPU"
 
 #: src/diagnostics.rs:491 src/diagnostics.rs:856
 msgid "none"
-msgstr "žiadny"
+msgstr "žiadne"
 
 #: src/diagnostics.rs:501
 msgid "(no model answered show-machine)"
@@ -1216,11 +1216,11 @@ msgstr "Tlak"
 #. TRANSLATORS: {cpu}, {memory} and {io} are shares such as "0.03%"; cpu, memory and io are kernel resource names, keep them.
 #: src/diagnostics.rs:536
 msgid "cpu {cpu}, memory {memory}, io {io} of the last 10 s stalled"
-msgstr "cpu {cpu}, memory {memory}, io {io} posledných 10 s bolo spomalených"
+msgstr "cpu {cpu}, memory {memory}, io {io} za posledných 10 s zadržiavané"
 
 #: src/diagnostics.rs:547
 msgid "(not measured yet)"
-msgstr "(zatiaľ nezmerané)"
+msgstr "(zatiaľ nemerané)"
 
 #: src/diagnostics.rs:552
 msgid "Daemon"
@@ -1248,7 +1248,7 @@ msgstr "nebeží"
 
 #: src/diagnostics.rs:591 src/diagnostics.rs:819 src/diagnostics.rs:828
 msgid "not installed"
-msgstr "nenainštalované"
+msgstr "nie je nainštalované"
 
 #: src/diagnostics.rs:597
 msgid "Shell extension"
@@ -1264,11 +1264,11 @@ msgstr "(žiadne objavené)"
 
 #: src/diagnostics.rs:629 src/presentation.rs:164
 msgid "Engine"
-msgstr "Motor"
+msgstr "Engine"
 
 #: src/diagnostics.rs:633
 msgid "none selected"
-msgstr "nič nie je vybrané"
+msgstr "žiadny nie je vybraný"
 
 #: src/diagnostics.rs:655
 msgid "Problems"
@@ -1279,7 +1279,7 @@ msgid ""
 "IBus is not installed, so Myna cannot type. Install the “ibus” package, then "
 "log out and back in."
 msgstr ""
-"IBus nie je nainštalovaný, preto Myna nemôže písať. Nainštalujte balík „ibus"
+"IBus nie je nainštalovaný, takže Myna nemôže písať. Nainštalujte balík „ibus"
 "“, potom sa odhláste a znova prihláste."
 
 #: src/diagnostics.rs:673 src/diagnostics.rs:687
@@ -1288,11 +1288,11 @@ msgstr "(žiadne)"
 
 #: src/diagnostics.rs:683
 msgid "Warnings"
-msgstr "Varovania"
+msgstr "Upozornenia"
 
 #: src/diagnostics.rs:708
 msgid "not probed"
-msgstr "nezisťované"
+msgstr "nezistené"
 
 #: src/diagnostics.rs:721
 msgid "policy allows"
@@ -1304,7 +1304,7 @@ msgstr "jadrá v tejto triede"
 
 #: src/diagnostics.rs:735
 msgid "mains"
-msgstr "sieťový adaptér"
+msgstr "sieť"
 
 #: src/diagnostics.rs:736 src/diagnostics.rs:741
 msgid "battery"
@@ -1328,11 +1328,11 @@ msgstr "aktívne"
 
 #: src/diagnostics.rs:805
 msgid "set up, starts at the next login"
-msgstr "nastavené, spustí sa pri nasledujúcom prihlásení"
+msgstr "nastavené, spustí sa pri ďalšom prihlásení"
 
 #: src/diagnostics.rs:808
 msgid "not set up"
-msgstr "nenastavené"
+msgstr "nie je nastavené"
 
 #: src/diagnostics.rs:809
 msgid "turned off"
@@ -1352,7 +1352,7 @@ msgstr "používa sa iná vstupná metóda"
 
 #: src/diagnostics.rs:816
 msgid "not supported on this desktop"
-msgstr "nie je podporované v tomto pracovnom prostredí"
+msgstr "nie je podporované v tomto prostredí"
 
 #: src/diagnostics.rs:818
 msgid "failed"
@@ -1364,11 +1364,11 @@ msgstr "gnome-shell neodpovedal"
 
 #: src/diagnostics.rs:831
 msgid "installed since login, starts at the next one"
-msgstr "nainštalované po prihlásení, spustí sa pri ďalšom"
+msgstr "nainštalované od prihlásenia, spustí sa pri ďalšom"
 
 #: src/diagnostics.rs:834
 msgid "installed since login, not enabled"
-msgstr "nainštalované po prihlásení, nepovolené"
+msgstr "nainštalované od prihlásenia, nie je povolené"
 
 #: src/diagnostics.rs:837
 msgid "myna-config package"
@@ -1380,7 +1380,7 @@ msgstr "Balík Ubuntu"
 
 #: src/diagnostics.rs:839
 msgid "development override"
-msgstr "vývojárske prepísanie"
+msgstr "vývojové prekrytie"
 
 #: src/diagnostics.rs:840
 msgid "user copy"
@@ -1408,7 +1408,7 @@ msgstr "Vták"
 
 #: src/myna_settings.rs:111
 msgid "Chime"
-msgstr "Zvonenie"
+msgstr "Zvonček"
 
 #: src/myna_settings.rs:112
 msgid "Voice"
@@ -1507,55 +1507,55 @@ msgstr "hodnota musí byť jedna z {choices}"
 
 #: src/presentation.rs:59
 msgid "this value cannot be edited"
-msgstr "túto hodnotu nemožno upravovať"
+msgstr "túto hodnotu nie je možné upravovať"
 
 #: src/presentation.rs:158
 msgid "Which version of this model to run."
-msgstr "Ktorú verziu tohto modelu spustiť."
+msgstr "Ktorá verzia tohto modelu sa má spustiť."
 
 #: src/presentation.rs:165
 msgid "The inference engine this model runs on."
-msgstr "Inferenčný motor, na ktorom tento model beží."
+msgstr "Inferenčný engine, na ktorom tento model beží."
 
 #: src/presentation.rs:171
 msgid "Streaming output"
-msgstr "Prúdový výstup"
+msgstr "Streamovaný výstup"
 
 #: src/presentation.rs:172
 msgid "Emit partial transcription results while speech is being processed."
-msgstr "Počas spracovania reči odosielať čiastočné výsledky prepisu."
+msgstr "Emitovať čiastočné výsledky prepisu počas spracovania reči."
 
 #: src/presentation.rs:179
 msgid ""
 "Unload the inference service after this many idle seconds; zero disables the "
 "delay."
 msgstr ""
-"Uvoľniť inferenčnú službu po tomto počte sekúnd nečinnosti; nula oneskorenie "
-"zakáže."
+"Uvoľniť inferenčnú službu po tomto počte sekúnd nečinnosti; nula zakáže "
+"oneskorenie."
 
 #: src/presentation.rs:185
 msgid "Verbose logging"
-msgstr "Podrobné protokolovanie"
+msgstr "Podrobné logovanie"
 
 #: src/presentation.rs:186
 msgid "Write additional diagnostics to the system log."
-msgstr "Zapísať dodatočnú diagnostiku do systémového denníka."
+msgstr "Zapísať dodatočnú diagnostiku do systémového logu."
 
 #: src/presentation.rs:192
 msgid "Socket path"
-msgstr "Cesta soketu"
+msgstr "Cesta k soketu"
 
 #: src/presentation.rs:193
 msgid "Raw Unix socket path used by the transcription service."
-msgstr "Surová cesta Unix soketu používaná službou prepisu."
+msgstr "Surová cesta k Unix soketu používaná službou na prepis."
 
 #: src/presentation.rs:199
 msgid "Minimum speech before pause commit (seconds)"
-msgstr "Minimálna reč pred potvrdením pauzy (sekundy)"
+msgstr "Minimálne trvanie reči pred potvrdením pauzy (sekundy)"
 
 #: src/presentation.rs:200
 msgid "Speech required before a pause can commit a transcript chunk."
-msgstr "Miera reči potrebná pred tým, než pauza môže potvrdiť časť prepisu."
+msgstr "Reč potrebná pred tým, ako pauza môže potvrdiť časť prepisu."
 
 #: src/presentation.rs:205
 msgid "Pause length for commit (seconds)"
@@ -1567,7 +1567,7 @@ msgstr "Trvanie ticha, ktoré potvrdí aktuálnu časť prepisu."
 
 #: src/presentation.rs:211
 msgid "Maximum uncommitted audio (seconds)"
-msgstr "Maximálny nepotvrdený zvuk (sekundy)"
+msgstr "Maximálne nepotvrdené zvuky (sekundy)"
 
 #: src/presentation.rs:212
 msgid ""
@@ -1596,7 +1596,7 @@ msgid ""
 "Recent uncommitted audio used for partial results; zero uses the whole "
 "window."
 msgstr ""
-"Nedávny nepotvrdený zvuk použitý na čiastočné výsledky; nula používa celé "
+"Nedávne nepotvrdené zvuky použité na čiastočné výsledky; nula použije celé "
 "okno."
 
 #: src/presentation.rs:229
@@ -1608,8 +1608,8 @@ msgid ""
 "Runtime numeric format override. Leave the model's own value unchanged "
 "unless required."
 msgstr ""
-"Prepis číselného formátu za behu. Vlastnú hodnotu modelu nechajte nezmenenú, "
-"pokiaľ to nie je nevyhnutné."
+"Prekrytie číselného formátu za behu. Hodnotu modelu nechajte nezmenenú, ak "
+"to nie je nevyhnutné."
 
 #: src/presentation.rs:236
 msgid "Attention context size"
@@ -1619,8 +1619,8 @@ msgstr "Veľkosť kontextu pozornosti"
 msgid ""
 "Model-specific latency and accuracy context. Empty uses the engine default."
 msgstr ""
-"Kontext latencie a presnosti špecifický pre model. Prázdna hodnota použije "
-"predvolené nastavenie motora."
+"Kontext latencie a presnosti špecifický pre model. Prázdne pole použije "
+"predvolené nastavenie enginu."
 
 #: src/presentation.rs:296
 msgid "This model provides no description for this setting."
@@ -1653,9 +1653,9 @@ msgid ""
 "hums people make while listening, Marimba a rising fifth, Water falling "
 "drops, Radio a walkie-talkie and Strings a plucked koto."
 msgstr ""
-"Aké zvuky sa prehrávajú: Zvonenie je úder do tyče, Vták pískavé cvrlikanie, "
-"Hlas bručanie ľudí pri počúvaní, Marimba vzostupná kvinta, Voda padajúce "
-"kvapky, Rádio vysielačka a Struny brnkanie na koto."
+"Aké zvuky sa hrajú: Zvonček je úder do tyče, Vták pískavé cvrlikanie, Hlas "
+"bručanie ľudí pri počúvaní, Marimba stúpajúca kvinta, Voda padajúce kvapky, "
+"Rádio vysielačka a Struny brnkanie na koto."
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:60
 msgid "When to transcribe"
@@ -1667,7 +1667,7 @@ msgid ""
 "injects the whole transcript once the utterance ends."
 msgstr ""
 "Počas hovorenia zobrazuje čiastočný text v poli počas hovoru; Po ukončení "
-"hovorenia vloží celý prepis po skončení výroku."
+"hovorenia vloží celý prepis po skončení výreku."
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:69
 msgid "Spoken language"
@@ -1679,9 +1679,10 @@ msgid ""
 "skips language detection and decodes in this language; a code that does not "
 "match what is spoken degrades the transcript. Empty lets the model decide."
 msgstr ""
-"Kód v štýle BCP-47 (en, fr, zh) pre jazyk, v ktorom diktujete. Model vynechá "
-"detekciu jazyka a dekóduje v tomto jazyku; kód, ktorý nezodpovedá hovorenému "
-"obsahu, zhorší kvalitu prepisu. Prázdna hodnota nechá rozhodnúť model."
+"Kód približne podľa BCP-47 (en, fr, zh) pre jazyk, v ktorom diktujete. Model "
+"preskočí detekciu jazyka a dekóduje v tomto jazyku; kód, ktorý nezodpovedá "
+"tomu, čo sa hovorí, zhoršuje kvalitu prepisu. Prázdne pole nechá rozhodnúť "
+"model."
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:80
 msgid "Indicator style"
@@ -1692,9 +1693,9 @@ msgid ""
 "All three render the same calibrated audio envelope: Default is a level bar "
 "in the accent colour, Ribbon a flowing GPU wave, VU meter a segmented meter."
 msgstr ""
-"Všetky tri vykresľujú rovnaký kalibrovaný zvukový obálkový priebeh: "
-"Predvolené je úrovňový pás v akcentnej farbe, Stuha plynulá GPU vlna, VU "
-"meter segmentovaný merač."
+"Všetky tri vykresľujú rovnaký kalibrovaný zvukový obálkový tvar: Predvolené "
+"je úrovňový pruh v akcentnej farbe, Stuha je plynúca GPU vlna, VU meter je "
+"segmentovaný merač."
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:91
 msgid "Stop after silence (seconds)"
@@ -1706,9 +1707,9 @@ msgid ""
 "this many seconds without speech. 0 keeps it running until the next tap. "
 "Hold-to-talk always ends with the key."
 msgstr ""
-"Pri aktivácii klepnutím na spustenie ukončí diktačnú reláciu samostatne po "
-"tomto počte sekúnd bez reči. 0 ju nechá bežať do ďalšieho klepnutia. "
-"Podržanie-hovorenie vždy končí uvoľnením klávesu."
+"Pri aktivácii klepnutím na spustenie ukončí reláciu dikovania samostatne po "
+"tomto počte sekúnd bez reči. 0 necháva bežať do ďalšieho klepnutia. Držanie "
+"pre hovorenie vždy končí s pustením klávesu."
 
 #: data/com.canonical.Myna.Config.metainfo.xml:9
 msgid "Set up and configure local dictation"
@@ -1720,9 +1721,9 @@ msgid ""
 "it. Myna Settings guides you through installing it and a speech model, then "
 "configures dictation and its speech models."
 msgstr ""
-"Myna mení reč na text vo vašom počítači bez toho, aby zvuk alebo text "
-"opustili zariadenie. Nastavenia Myna vás prevedú inštaláciou aplikácie a "
-"hlasového modelu a následne nakonfigurujú diktovanie a jeho hlasové modely."
+"Myna prevádza reč na text na vašom počítači, pričom žiadny zvuk ani text "
+"neopúšťa zariadenie. Nastavenia Myna vás prevedú inštaláciou aplikácie a "
+"modelu reči, následne nakonfigurujú diktovanie a jeho modely reči."
 
 #: data/com.canonical.Myna.Config.desktop:4
 msgid "Dictation Settings"
