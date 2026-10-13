@@ -8,616 +8,622 @@ msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-10-11 11:54+0100\n"
-"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
-"Last-Translator: Automatically generated\n"
-"Language-Team: none\n"
+"PO-Revision-Date: 2026-10-13 07:38+0000\n"
+"Last-Translator: taijuin Lee <taijuin@users.noreply.hosted.weblate.org>\n"
+"Language-Team: Chinese (Traditional Han script) <https://hosted.weblate.org/"
+"projects/ubuntu-desktop-translations/myna-config/zh_Hant/>\n"
 "Language: zh_Hant\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=1; plural=0;\n"
+"X-Generator: Weblate 2026.11.dev0\n"
 
 #: data/diagnostics-page.blp:5 data/diagnostics-page.blp:8 src/app.rs:1485
 msgid "About and Diagnostics"
-msgstr ""
+msgstr "關於與診斷"
 
 #: data/diagnostics-page.blp:15 data/onboarding-welcome.blp:25
 msgid "Set up Dictation"
-msgstr ""
+msgstr "設定語音輸入"
 
 #: data/diagnostics-page.blp:20 data/myna-page.blp:33 src/shortcut_ui.rs:287
 msgid "Set up"
-msgstr ""
+msgstr "設定"
 
 #: data/diagnostics-page.blp:32
 msgid "Performance warnings"
-msgstr ""
+msgstr "效能警示"
 
 #: data/diagnostics-page.blp:33
 msgid "This machine is not currently delivering the CPU that dictation needs."
-msgstr ""
+msgstr "這台機器目前的CPU效能不足以滿足語音辨識的需求。"
 
 #: data/diagnostics-page.blp:38 data/main-window.blp:46
 msgid "Diagnostics"
-msgstr ""
+msgstr "診斷"
 
 #: data/diagnostics-page.blp:40
 msgid "No audio, transcript, or filesystem path is ever included."
-msgstr ""
+msgstr "絕不會包含任何音訊、文字紀錄或檔案系統路徑。"
 
 #: data/diagnostics-page.blp:49 src/backend_ui.rs:3114 src/backend_ui.rs:3394
 msgid "Refresh"
-msgstr ""
+msgstr "重新整理"
 
 #: data/diagnostics-page.blp:53 src/backend_ui.rs:2071 src/backend_ui.rs:2073
 msgid "Refresh diagnostics"
-msgstr ""
+msgstr "更新診斷資訊"
 
 #: data/diagnostics-page.blp:54
 msgid "Check this computer, Myna and every model again."
-msgstr ""
+msgstr "請再次檢查這台電腦、Myna 以及所有模型。"
 
 #: data/diagnostics-page.blp:60
 msgid "Copy"
-msgstr ""
+msgstr "複製"
 
 #: data/diagnostics-page.blp:64 src/backend_ui.rs:2086
 msgid "Copy diagnostics"
-msgstr ""
+msgstr "複製診斷"
 
 #: data/diagnostics-page.blp:66
 msgid ""
 "Copies a privacy-safe diagnostic report to the clipboard. Does not include "
 "audio, transcripts, or filesystem paths."
 msgstr ""
+"將一份符合隱私保護規範的診斷報告複製到剪貼簿。該報告不包含音訊、文字記錄或檔"
+"案系統路徑。"
 
 #: data/diagnostics-page.blp:94 src/backend_ui.rs:2119
 msgid "Diagnostic report"
-msgstr ""
+msgstr "診斷報告"
 
 #: data/diagnostics-page.blp:95
 msgid "Read-only privacy-safe diagnostic text."
-msgstr ""
+msgstr "唯讀且符合隱私安全的診斷文字。"
 
 #: data/install-control.blp:54 data/onboarding-components.blp:60
 #: src/app.rs:3931
 msgid "Installed"
-msgstr ""
+msgstr "已安裝"
 
 #: data/install-models-dialog.blp:5 data/myna-page.blp:79 data/myna-page.blp:94
 msgid "Install more models"
-msgstr ""
+msgstr "安裝更多模型"
 
 #: data/main-window.blp:9 src/app.rs:122 src/diagnostics.rs:443
 #: data/com.canonical.Myna.Config.metainfo.xml:8
 #: data/com.canonical.Myna.Config.desktop:3
 msgid "Myna Settings"
-msgstr ""
+msgstr "Myna 設定"
 
 #: data/main-window.blp:24
 msgid "Main Menu"
-msgstr ""
+msgstr "主選單"
 
 #: data/main-window.blp:32 src/backend_ui.rs:2815
 msgid "General"
-msgstr ""
+msgstr "一般的"
 
 #: data/main-window.blp:39 data/myna-page.blp:71 src/app.rs:1480
 #: src/app.rs:3154 src/app.rs:3578 src/backend_apply.rs:379
 #: src/diagnostics.rs:636 src/presentation.rs:157
 msgid "Model"
-msgstr ""
+msgstr "模型"
 
 #: data/main-window.blp:71
 msgid "_Set Up Dictation…"
-msgstr ""
+msgstr "設定語音輸入(_S)…"
 
 #: data/main-window.blp:75
 msgid "_Report an Issue…"
-msgstr ""
+msgstr "回報問題(_R)…"
 
 #: data/main-window.blp:76
 msgid "_About Myna Settings"
-msgstr ""
+msgstr "關於 Myna 設定(_A)"
 
 #: data/myna-page.blp:5 data/myna-page.blp:8 data/status-page.blp:5
 msgid "Myna"
-msgstr ""
+msgstr "Myna"
 
 #: data/myna-page.blp:12
 msgid "Keyboard shortcut"
-msgstr ""
+msgstr "鍵盤快捷鍵"
 
 #: data/myna-page.blp:15
 msgid "Press to start and stop"
-msgstr ""
+msgstr "按下以開始或停止"
 
 #: data/myna-page.blp:47 src/shortcut_ui.rs:324
 msgid "Press a shortcut…"
-msgstr ""
+msgstr "按下快捷鍵…"
 
 #: data/myna-page.blp:57 data/onboarding-shortcut.blp:134
 #: src/shortcut_ui.rs:501
 msgid "Cancel"
-msgstr ""
+msgstr "取消"
 
 #: data/myna-page.blp:67 data/onboarding-window.blp:7 src/app.rs:1816
 #: src/app.rs:4996 src/onboarding_ui.rs:1340 src/shortcut_ui.rs:591
 msgid "Dictation"
-msgstr ""
+msgstr "聽寫"
 
 #: data/onboarding-components.blp:18 src/app.rs:3883 src/onboarding_ui.rs:1341
 msgid "Install components"
-msgstr ""
+msgstr "安裝元件"
 
 #: data/onboarding-components.blp:27 src/app.rs:3887
 msgid ""
 "Dictation requires some additional components, including the optimal speech-"
 "to-text model for your computer. Installation might take a few minutes."
 msgstr ""
+"語音輸入需要一些額外的元件，包括適合您電腦的最佳語音轉文字模型。安裝過程可能"
+"需要幾分鐘。"
 
 #: data/onboarding-components.blp:44 src/app.rs:491 src/app.rs:3959
 #: src/app.rs:4024 src/app.rs:4434
 msgid "Install all components"
-msgstr ""
+msgstr "安裝所有元件"
 
 #: data/onboarding-components.blp:52 src/app.rs:3948
 #: src/ui/install_control.rs:134
 msgid "Installing…"
-msgstr ""
+msgstr "安裝中…"
 
 #: data/onboarding-shortcut.blp:18 src/app.rs:4715 src/onboarding_ui.rs:1342
 msgid "How to dictate"
-msgstr ""
+msgstr "如何進行語音輸入"
 
 #: data/onboarding-shortcut.blp:51 src/shortcut_ui.rs:285
 msgid "Set up shortcut"
-msgstr ""
+msgstr "設定快捷鍵"
 
 #: data/onboarding-shortcut.blp:58 src/onboarding_ui.rs:1065
 msgid ""
 "Log out and back in to turn on the dictation indicator (GNOME Shell "
 "extension)."
-msgstr ""
+msgstr "請登出並重新登入，以啟用語音輸入指示器（GNOME Shell 擴充功能）。"
 
 #: data/onboarding-shortcut.blp:78 src/shortcut_ui.rs:322
 msgid "Press the new shortcut…"
-msgstr ""
+msgstr "按下新的快捷鍵…"
 
 #: data/onboarding-shortcut.blp:104
 msgid ""
 "Use Ctrl, Alt or Super with another key, or a function key. Press Escape to "
 "cancel."
-msgstr ""
+msgstr "請將 Ctrl、Alt 或 Super 鍵與其他鍵或功能鍵搭配使用。按下 Escape 鍵即可取消。"
 
 #: data/onboarding-welcome.blp:34
 msgid "Dictation runs locally, with no data leaving your computer."
-msgstr ""
+msgstr "語音輸入是在本地執行，資料不會離開您的電腦。"
 
 #: data/onboarding-window.blp:24 src/app.rs:414 src/onboarding_ui.rs:776
 msgid "Next"
-msgstr ""
+msgstr "下一個"
 
 #: data/operation-error-dialog.blp:5
 msgid "Operation failed"
-msgstr ""
+msgstr "操作失敗"
 
 #: data/operation-error-dialog.blp:6
 msgid "Full details are shown below. You can copy them to share with support."
-msgstr ""
+msgstr "詳細資訊如下所示。您可以複製這些內容，以便與技術支援團隊分享。"
 
 #: data/operation-error-dialog.blp:12
 msgid "Close"
-msgstr ""
+msgstr "關閉"
 
 #: data/operation-error-dialog.blp:34 src/app.rs:4103
 msgid "Copy Details"
-msgstr ""
+msgstr "複製詳細資訊"
 
 #: data/operation-error-dialog.blp:35
 msgid "Copy the full failure details to the clipboard"
-msgstr ""
+msgstr "將完整的故障詳細資訊複製到剪貼簿"
 
 #: data/status-page.blp:8 src/app.rs:1475 src/app.rs:5239
 msgid "Loading Myna Settings"
-msgstr ""
+msgstr "正在載入 Myna 設定"
 
 #: data/status-page.blp:9 src/app.rs:1476 src/app.rs:5240
 msgid "Reading the installed settings schema…"
-msgstr ""
+msgstr "正在讀取已安裝的設定架構…"
 
 #: src/app.rs:130
 msgid "translator-credits"
-msgstr ""
+msgstr "譯者名單"
 
 #: src/app.rs:1185 src/onboarding_ui.rs:781
 msgid "Done"
-msgstr ""
+msgstr "完成"
 
 #: src/app.rs:1481
 msgid "Model details appear once Myna finds your models."
-msgstr ""
+msgstr "當 Myna 找到您的模型後，模型詳細資訊便會顯示出來。"
 
 #: src/app.rs:1486
 msgid "Diagnostics appear once Myna finds your models."
-msgstr ""
+msgstr "當 Myna 找到您的模型後，診斷資訊便會顯示出來。"
 
 #: src/app.rs:3192 src/backend_ui.rs:3762 src/model_family.rs:27
 msgid "Fastest and most accurate in its 25 languages"
-msgstr ""
+msgstr "在 25 種語言中速度最快且最精準"
 
 #: src/app.rs:3196 src/backend_ui.rs:4291 src/model_family.rs:31
 msgid "Most languages, with uneven accuracy"
-msgstr ""
+msgstr "大多數語言，準確度參差不齊"
 
 #: src/app.rs:3331 src/myna_settings.rs:105
 msgid "As you speak"
-msgstr ""
+msgstr "就像您說話時那樣"
 
 #: src/app.rs:3332 src/myna_settings.rs:106
 msgid "When you stop"
-msgstr ""
+msgstr "當您停下時"
 
 #: src/app.rs:3472 src/app.rs:5729
 msgid "Preview"
-msgstr ""
+msgstr "預覽"
 
 #: src/app.rs:3486 src/sound_preview.rs:69
 msgid "Could not preview sounds"
-msgstr ""
+msgstr "無法預覽聲音"
 
 #: src/app.rs:3520 src/backend_ui.rs:721
 msgid "Changing to {model} failed"
-msgstr ""
+msgstr "無法切換至 {model}"
 
 #: src/app.rs:3521 src/app.rs:4056 src/app.rs:4065 src/app.rs:4454
 #: src/app.rs:5103 src/app.rs:5109 src/backend_ui.rs:1291
 #: src/onboarding_ui.rs:556 src/ui/status_page.rs:70
 msgid "Details"
-msgstr ""
+msgstr "詳細資訊"
 
 #. TRANSLATORS: {setting} is a setting's name on the Model tab, such as "Unload when idle (seconds)".
 #: src/app.rs:3627 src/backend_ui.rs:1688
 msgid "Changing “{setting}” failed"
-msgstr ""
+msgstr "無法變更「{setting}」"
 
 #: src/app.rs:3629 src/presentation.rs:178
 msgid "Unload when idle (seconds)"
-msgstr ""
+msgstr "閒置時卸載（秒）"
 
 #. TRANSLATORS: {size} is a download size, such as "4.2 GB".
 #: src/app.rs:3921 src/onboarding_ui.rs:855
 msgid "Up to {size}"
-msgstr ""
+msgstr "最多 {size}"
 
 #: src/app.rs:4057 src/onboarding_ui.rs:1011
 msgid "Could not let Myna run in the background"
-msgstr ""
+msgstr "無法讓 Myna 在背景中執行"
 
 #: src/app.rs:4087 src/app.rs:4237 src/backend_ui.rs:2419
 msgid "Executable:"
-msgstr ""
+msgstr "可執行檔："
 
 #: src/app.rs:4088 src/app.rs:4238 src/backend_ui.rs:2423
 msgid "Arguments:"
-msgstr ""
+msgstr "參數："
 
 #: src/app.rs:4089 src/app.rs:4239 src/backend_ui.rs:2432
 #: src/backend_ui.rs:2510 src/backend_ui.rs:3231
 msgid "Exit status:"
-msgstr ""
+msgstr "結束狀態："
 
 #: src/app.rs:4090 src/app.rs:4240 src/app.rs:4466 src/backend_ui.rs:2477
 msgid "Message:"
-msgstr ""
+msgstr "訊息："
 
 #: src/app.rs:4156 src/onboarding_ui.rs:990
 msgid "Enabling user daemons support"
-msgstr ""
+msgstr "啟用使用者常駐程式支援"
 
 #: src/app.rs:4179 src/onboarding_ui.rs:991
 msgid "Installing Dictation app"
-msgstr ""
+msgstr "正在安裝語音辨識應用程式"
 
 #. TRANSLATORS: {step} is what is installing, such as "Installing speech-to-text model", and {percent} how much of its download has arrived.
 #: src/app.rs:4189 src/app.rs:4252 src/app.rs:4352 src/onboarding_ui.rs:999
 msgid "{step} ({percent}%)"
-msgstr ""
+msgstr "{step} ({percent}%)"
 
 #: src/app.rs:4203 src/onboarding_ui.rs:992
 msgid "Installing speech-to-text model"
-msgstr ""
+msgstr "安裝語音轉文字模型"
 
 #: src/app.rs:4217 src/onboarding_ui.rs:1013
 msgid "Installing the speech-to-text model failed"
-msgstr ""
+msgstr "安裝語音轉文字模型失敗"
 
 #: src/app.rs:4280 src/onboarding_ui.rs:994
 msgid "Enabling shell extension"
-msgstr ""
+msgstr "啟用 Shell 擴充功能"
 
 #: src/app.rs:4452 src/onboarding_ui.rs:1015
 msgid "Enabling the shell extension failed"
-msgstr ""
+msgstr "啟用 Shell 擴充功能失敗"
 
 #: src/app.rs:4465 src/backend_ui.rs:2463
 msgid "D-Bus call:"
-msgstr ""
+msgstr "D-Bus 呼叫："
 
 #: src/app.rs:4730 src/shortcut_ui.rs:669
 msgid "You can trigger Dictation anytime by using the keyboard shortcut:"
-msgstr ""
+msgstr "您可以隨時使用以下鍵盤快捷鍵來啟動「語音輸入」功能："
 
 #: src/app.rs:5102 src/onboarding_ui.rs:676 src/onboarding_ui.rs:683
 #: src/onboarding_ui.rs:925
 msgid "Could not set up Dictation"
-msgstr ""
+msgstr "無法設定語音輸入"
 
 #: src/app.rs:5140 src/onboarding_ui.rs:876
 msgid "Dictation is not set up yet. Select Next to try again."
-msgstr ""
+msgstr "語音輸入功能尚未設定完成。請點選「下一步」以重新嘗試。"
 
 #: src/app.rs:5244
 msgid "No Myna Settings"
-msgstr ""
+msgstr "無 Myna 設定"
 
 #: src/app.rs:5245
 msgid "The installed schema does not declare any settings."
-msgstr ""
+msgstr "已安裝的架構未宣告任何設定。"
 
 #: src/app.rs:5265
 msgid "Myna Settings Unavailable"
-msgstr ""
+msgstr "無法使用 Myna 設定"
 
 #: src/app.rs:5266
 msgid "Myna Settings could not start."
-msgstr ""
+msgstr "無法啟動 Myna 設定。"
 
 #: src/app.rs:5697
 msgid "Could not save the setting"
-msgstr ""
+msgstr "無法儲存設定"
 
 #: src/app.rs:5734
 msgid "Preview sound style"
-msgstr ""
+msgstr "預覽音效風格"
 
 #: src/active_backend.rs:293
 msgid "The change was cancelled."
-msgstr ""
+msgstr "變更已取消。"
 
 #: src/active_backend.rs:368
 msgid "No model is connected."
-msgstr ""
+msgstr "目前未連接任何模型。"
 
 #: src/active_backend.rs:373
 msgid "The model is not available to switch to."
-msgstr ""
+msgstr "無法切換至該模型。"
 
 #: src/active_backend.rs:387
 msgid "The model changed while it was being switched on. Try again."
-msgstr ""
+msgstr "在開啟裝置的過程中，模型發生了變更。請重新嘗試。"
 
 #: src/backend_ui.rs:121 src/model_family.rs:283
 msgid "Recommended"
-msgstr ""
+msgstr "推薦"
 
 #: src/backend_ui.rs:182 src/diagnostics.rs:474
 msgid "Languages"
-msgstr ""
+msgstr "語言"
 
 #: src/backend_ui.rs:217
 msgid "Your language"
-msgstr ""
+msgstr "您的語言"
 
 #. TRANSLATORS: an upper bound on a download size, such as "up to 1.4 GB": it is less on a machine whose GPU cannot be used.
 #: src/backend_ui.rs:365
 msgid "up to {size}"
-msgstr ""
+msgstr "最多 {size}"
 
 #. TRANSLATORS: {description} says what a model is good at, such as "Most languages, with uneven accuracy", and {size} what installing it downloads, such as "198 MB" or "up to 1.4 GB". The spaces around the dot are no-break spaces, so the size never starts a line of its own.
 #: src/backend_ui.rs:371
 msgid "{description}\\u{a0}·\\u{a0}{size}"
-msgstr ""
+msgstr "{description}\\u{a0}·\\u{a0}{size}"
 
 #: src/backend_ui.rs:670
 msgid "This model is no longer installed."
-msgstr ""
+msgstr "此模型已停用。"
 
 #: src/backend_ui.rs:723
 msgid "Changing to {model} could not be confirmed"
-msgstr ""
+msgstr "無法確認變更為 {model}"
 
 #: src/backend_ui.rs:786
 msgid ""
 "Final connections could not be verified. Switching is disabled until refresh "
 "succeeds."
-msgstr ""
+msgstr "無法驗證最終連線。在重整成功之前，切換功能將被停用。"
 
 #: src/backend_ui.rs:791 src/diagnostics.rs:658
 msgid "No model is connected. Choose one to use for dictation."
-msgstr ""
+msgstr "未連接任何模型。請選擇一個用於語音輸入。"
 
 #: src/backend_ui.rs:794
 msgid "Several models are connected. Choose one to use for dictation."
-msgstr ""
+msgstr "系統連接了多個模型。請選擇其中一個用於語音輸入。"
 
 #: src/backend_ui.rs:893
 msgid "Changing model"
-msgstr ""
+msgstr "變更模型"
 
 #: src/backend_ui.rs:1108
 msgid "Install"
-msgstr ""
+msgstr "安裝"
 
 #. TRANSLATORS: the Install button's name to assistive technology; {model} is a model family, such as "Whisper".
 #: src/backend_ui.rs:1110
 msgid "Install {model}"
-msgstr ""
+msgstr "安裝 {model}"
 
 #: src/backend_ui.rs:1275
 msgid "Installing {model} failed"
-msgstr ""
+msgstr "安裝 {model} 失敗"
 
 #: src/backend_ui.rs:1388 src/backend_ui.rs:1527
 msgid "Wait for the current change to finish."
-msgstr ""
+msgstr "請等待目前的變更完成。"
 
 #: src/backend_ui.rs:1542
 msgid "Applying and restarting the model…"
-msgstr ""
+msgstr "正在套用並重新啟動模型…"
 
 #. TRANSLATORS: {setting} is a setting's name on the Model tab, such as "Unload when idle (seconds)".
 #: src/backend_ui.rs:1691
 msgid "Changing “{setting}” could not be confirmed"
-msgstr ""
+msgstr "無法確認變更「{setting}」"
 
 #: src/backend_ui.rs:1727
 msgid "Could not read the installed models."
-msgstr ""
+msgstr "無法讀取已安裝的模型。"
 
 #: src/backend_ui.rs:1782
 msgid "No active model"
-msgstr ""
+msgstr "沒有活躍的模型"
 
 #: src/backend_ui.rs:1783
 msgid "Choose a model on the General tab."
-msgstr ""
+msgstr "請在「一般」索引標籤中選擇一個模型。"
 
 #: src/backend_ui.rs:1786
 msgid "Several models are connected"
-msgstr ""
+msgstr "已連接數個模型"
 
 #: src/backend_ui.rs:1787
 msgid "Choose one model on the General tab."
-msgstr ""
+msgstr "請在「一般」索引標籤中選擇一個模型。"
 
 #: src/backend_ui.rs:1993
 msgid "Diagnostics copied. Paste them into the issue."
-msgstr ""
+msgstr "已複製診斷資訊。請將其貼到問題描述中。"
 
 #: src/backend_ui.rs:2004
 msgid "Could not open the web browser"
-msgstr ""
+msgstr "無法開啟網頁瀏覽器"
 
 #: src/backend_ui.rs:2084
 msgid "Copy privacy-safe diagnostics"
-msgstr ""
+msgstr "複製符合隱私保護規範的診斷資訊"
 
 #: src/backend_ui.rs:2095
 msgid "Diagnostics copied to clipboard"
-msgstr ""
+msgstr "診斷資訊已複製到剪貼簿"
 
 #: src/backend_ui.rs:2124 src/diagnostics.rs:419
 msgid "Dictation is not installed"
-msgstr ""
+msgstr "語音輸入功能未安裝"
 
 #: src/backend_ui.rs:2125 src/diagnostics.rs:420
 msgid "No model installed"
-msgstr ""
+msgstr "未安裝任何模型"
 
 #: src/backend_ui.rs:2126 src/diagnostics.rs:422
 msgid "No input method installed"
-msgstr ""
+msgstr "未安裝任何輸入法"
 
 #: src/backend_ui.rs:2314
 msgid "The model kept a different value than the one you chose."
-msgstr ""
+msgstr "模型儲存的數值與您選擇的不同。"
 
 #: src/backend_ui.rs:2321
 msgid "The setting was saved, but the model did not start again."
-msgstr ""
+msgstr "設定已儲存，但模型並未重新啟動。"
 
 #: src/backend_ui.rs:2328
 msgid "The setting was changed, but it could not be read back."
-msgstr ""
+msgstr "設定已變更，但無法讀取。"
 
 #: src/backend_ui.rs:2335
 msgid "The setting was changed, but reading it back was interrupted."
-msgstr ""
+msgstr "設定已變更，但讀取過程中斷。"
 
 #: src/backend_ui.rs:2353 src/backend_ui.rs:2380
 msgid "The system did not allow the change."
-msgstr ""
+msgstr "系統不允許進行此項變更。"
 
 #: src/backend_ui.rs:2360 src/backend_ui.rs:2383
 msgid "The model rejected the value."
-msgstr ""
+msgstr "模型拒絕了該數值。"
 
 #: src/backend_ui.rs:2367 src/backend_ui.rs:2386 src/backend_ui.rs:3165
 msgid "The change could not be made."
-msgstr ""
+msgstr "無法進行此變更。"
 
 #: src/backend_ui.rs:2377
 msgid "The change was interrupted after it started."
-msgstr ""
+msgstr "這項變更在開始後便被中斷了。"
 
 #: src/backend_ui.rs:2440 src/backend_ui.rs:2519 src/backend_ui.rs:3240
 msgid "Standard error:"
-msgstr ""
+msgstr "標準誤差："
 
 #: src/backend_ui.rs:2450
 msgid "Request:"
-msgstr ""
+msgstr "要求："
 
 #: src/backend_ui.rs:2456
 msgid "HTTP status:"
-msgstr ""
+msgstr "HTTP 狀態："
 
 #: src/backend_ui.rs:2469
 msgid "Setting:"
-msgstr ""
+msgstr "環境："
 
 #: src/backend_ui.rs:2494
 msgid "Some operations completed before the apply failed.\n"
-msgstr ""
+msgstr "某些在套用之前已完成的操作發生失敗。\n"
 
 #: src/backend_ui.rs:2498
 msgid "No privileged operations completed.\n"
-msgstr ""
+msgstr "未完成任何特權操作。\n"
 
 #: src/backend_ui.rs:2500
 msgid "Completed operations:\n"
-msgstr ""
+msgstr "已完成的操作：\n"
 
 #: src/backend_ui.rs:2526
 msgid "Failure:\n"
-msgstr ""
+msgstr "失敗：\n"
 
 #: src/backend_ui.rs:2530
 msgid "Reconciliation read-back:\n"
-msgstr ""
+msgstr "對帳回讀：\n"
 
 #: src/backend_ui.rs:2542
 msgid "Model:"
-msgstr ""
+msgstr "模型："
 
 #: src/backend_ui.rs:2548
 msgid "Services: none"
-msgstr ""
+msgstr "服務：無"
 
 #: src/backend_ui.rs:2550
 msgid "Services:"
-msgstr ""
+msgstr "服務："
 
 #: src/backend_ui.rs:2562
 msgid "Status: unavailable"
-msgstr ""
+msgstr "狀態：不可用"
 
 #: src/backend_ui.rs:2569
 msgid "Post-failure surface errors:"
-msgstr ""
+msgstr "故障後表面錯誤："
 
 #: src/backend_ui.rs:2600
 msgid "Language"
-msgstr ""
+msgstr "語言"
 
 #: src/backend_ui.rs:2602
 msgid "A code such as en, fr or zh. Leave it empty to detect the language."
-msgstr ""
+msgstr "例如 en、fr 或 zh 這樣的程式碼。留空則可自動偵測語言。"
 
 #: src/backend_ui.rs:2655
 msgid "Overview"
-msgstr ""
+msgstr "概覽"
 
 #: src/backend_ui.rs:2665
 msgid "Connection"
@@ -625,7 +631,7 @@ msgstr ""
 
 #: src/backend_ui.rs:2668
 msgid "Active. Myna uses this model for dictation."
-msgstr ""
+msgstr "已啟用。 Myna 使用此模型進行語音輸入。"
 
 #: src/backend_ui.rs:2671
 msgid "Several models are connected. Only one should be active."
