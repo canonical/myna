@@ -8,7 +8,7 @@ msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-10-11 11:54+0100\n"
-"PO-Revision-Date: 2026-10-13 11:48+0000\n"
+"PO-Revision-Date: 2026-10-14 12:51+0000\n"
 "Last-Translator: Peter Vančo <peva@users.noreply.hosted.weblate.org>\n"
 "Language-Team: Slovak <https://hosted.weblate.org/projects/ubuntu-desktop-"
 "translations/myna-config/sk/>\n"
@@ -120,7 +120,7 @@ msgstr "_Nastaviť diktovanie…"
 
 #: data/main-window.blp:75
 msgid "_Report an Issue…"
-msgstr "_Nahlásiť problém…"
+msgstr "Nahlásiť _problém…"
 
 #: data/main-window.blp:76
 msgid "_About Myna Settings"
@@ -271,7 +271,7 @@ msgstr "Počas hovorenia"
 
 #: src/app.rs:3332 src/myna_settings.rs:106
 msgid "When you stop"
-msgstr "Po ukončení hovorenia"
+msgstr "Keď prestanete"
 
 #: src/app.rs:3472 src/app.rs:5729
 msgid "Preview"
@@ -464,7 +464,7 @@ msgstr ""
 
 #: src/backend_ui.rs:893
 msgid "Changing model"
-msgstr "Mení sa model"
+msgstr "Zmena modelu"
 
 #: src/backend_ui.rs:1108
 msgid "Install"
