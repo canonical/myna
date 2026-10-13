@@ -1,0 +1,77 @@
+#!/bin/bash -eu
+
+# The embedded Lemonade server owns FLM/HRX inference on authenticated private
+# loopback. Myna remains the public Unix-socket service and translates pushed
+# PCM to Lemonade's OpenAI-compatible transcription endpoint.
+socket_path="$(modelctl get ws.unix-socket)"
+# Neither this snap nor the FLM ASR backend supports a useful idle restart.
+idle=0
+runtime="${LEMOND_ROOT:?embedded Lemonade runtime component is not installed}"
+cache_dir="$SNAP_COMMON/lemonade/cache"
+config_dir="$SNAP_COMMON/lemonade/config"
+
+# XDNA maps model buffers as userptr BOs and accounts them against
+# RLIMIT_MEMLOCK. process-control supplies CAP_SYS_RESOURCE, as in the
+# Lemonade Server snap, so this shell can raise both limits for lemond's FLM
+# child.
+if ! ulimit -l unlimited; then
+    echo "embedded FLM requires the myna-whisper:process-control connection to raise memlock" >&2
+    exit 1
+fi
+
+# A private instance gets fresh credentials and ephemeral loopback ports on
+# every daemon start. Lemonade uses one listener for HTTP and another for its
+# WebSocket API, even though Myna only consumes HTTP. Hold both probe sockets
+# at once so they are distinct. Releasing them before exec leaves a tiny race;
+# if another local process wins it, supervision fails this start rather than
+# connecting Myna to it, because that process does not know the fresh token.
+read -r port websocket_port < <("$SNAP/bin/python3" -c '
+import socket
+sockets = [socket.socket() for _ in range(2)]
+for listener in sockets:
+    listener.bind(("127.0.0.1", 0))
+print(*(listener.getsockname()[1] for listener in sockets))
+for listener in sockets:
+    listener.close()
+')
+api_key="$("$SNAP/bin/python3" -c 'import secrets; print(secrets.token_urlsafe(32))')"
+
+mkdir -p "$cache_dir" "$config_dir"
+"$SNAP/bin/python3" -m myna.server.lemond_config \
+    "$config_dir/config.json" "$runtime/fastflowlm/flm" "$websocket_port"
+
+lemond_pid=""
+myna_pid=""
+# Called indirectly by the signal/EXIT traps below.
+# shellcheck disable=SC2317
+cleanup() {
+    [ -z "$myna_pid" ] || kill "$myna_pid" 2>/dev/null || true
+    [ -z "$lemond_pid" ] || kill "$lemond_pid" 2>/dev/null || true
+    [ -z "$myna_pid" ] || wait "$myna_pid" 2>/dev/null || true
+    [ -z "$lemond_pid" ] || wait "$lemond_pid" 2>/dev/null || true
+}
+trap cleanup EXIT INT TERM
+
+echo "starting embedded lemond on private loopback" >&2
+LEMONADE_API_KEY="$api_key" "$runtime/lemond" \
+    "$cache_dir" "$config_dir" \
+    --host 127.0.0.1 --port "$port" --no-broadcast &
+lemond_pid="$!"
+
+MYNA_LEMOND_API_KEY="$api_key" "$SNAP/bin/myna-server" \
+    --socket "$socket_path" \
+    --share-provider \
+    --adapter lemond \
+    --lemond-endpoint "http://127.0.0.1:$port" \
+    --sleep-idle-seconds "${idle:-0}" \
+    --idle-action unload \
+    "$@" &
+myna_pid="$!"
+
+set +e
+# Whichever side fails first tears the pair down: keeping Myna alive after
+# lemond exits would turn every dictation into an API timeout.
+wait -n "$myna_pid" "$lemond_pid"
+status="$?"
+set -e
+exit "$status"

@@ -11,7 +11,10 @@ PCM frames.
 **Status:** model weights ship as per-model snap components (T15) — the
 service needs no network and downloads nothing at runtime. A `cpu` engine
 (baked-in venv) and the `nvidia-gpu` engine with its `gpu-nvidia` runtime
-component are both verified, the GPU one on an RTX 4080 Laptop GPU.
+component are both verified, the GPU one on an RTX 4080 Laptop GPU. An
+experimental `amd-npu` engine packages embeddable Lemonade 2026.39.1 with a
+FastFlowLM 1.0.8/HRX backend and the Whisper-v3-turbo NPU2 weights for AMD
+XDNA2 (`1022:17f0`). It requires snapd 2.76's preview `accel` interface.
 Confined clients reach the socket via the `inference-provider` content share
 (T14c, below); identity-based access control remains T17.
 
@@ -19,7 +22,7 @@ Confined clients reach the socket via the `inference-provider` content share
 
 ```shell
 ./dev/prepare.sh            # stage the myna wheel into wheels/
-./dev/download-models.sh    # fetch CTranslate2 weights into components/
+./dev/download-models.sh    # fetch CTranslate2 and pinned NPU2 weights
 snapcraft pack
 ```
 
@@ -38,10 +41,14 @@ sudo snap install --dangerous \
     ./myna-whisper+model-tiny.comp \
     ./myna-whisper+model-base.comp \
     ./myna-whisper+model-small.comp
-# (./myna-whisper+gpu-nvidia.comp is the GPU stack — only on a CUDA box.)
+# Optional hardware runtimes/models:
+#   ./myna-whisper+gpu-nvidia.comp
+#   ./myna-whisper+lemond-flm.comp
+#   ./myna-whisper+model-large-v3-turbo-npu.comp
 
 sudo snap connect myna-whisper:hardware-observe
 sudo snap connect myna-whisper:opengl   # if not auto-connected
+sudo snap connect myna-whisper:accel    # AMD NPU; auto-connects on supporting snapd
 
 # Sideloaded snaps don't auto-connect interfaces before the install hook,
 # so select the engine manually once:
@@ -77,7 +84,7 @@ T17. Unconfined clients keep using the socket path directly.
 ## Model selection
 
 ```shell
-myna-whisper.whisper list-models               # tiny / base / small (+ large-v3, large-v3-turbo on the nvidia-gpu engine)
+myna-whisper.whisper list-models               # options depend on active engine
 sudo myna-whisper.whisper use-model base       # installs the model component, restarts server
 myna-whisper.whisper show-engine               # active engine + model options
 ```
@@ -85,11 +92,42 @@ myna-whisper.whisper show-engine               # active engine + model options
 Switching a model installs that model's component (weights are already in the
 snap revision); nothing is fetched from the network at runtime.
 
+The AMD NPU engine is batch-only. The snap starts its embedded `lemond` on
+fresh random loopback ports with a fresh bearer token, and `lemond` launches
+the packaged FLM/HRX backend. Myna remains exposed only through the usual Unix
+socket. The `lemond-flm` runtime and NPU weights are separate components so CPU
+and NVIDIA installations do not carry them. Both are forced offline; the snap
+has no `network` plug and never installs a model or backend at runtime.
+
+FLM also needs to raise the service's locked-memory limit. Connect the
+manual `process-control` interface before selecting the NPU engine; automatic
+selection will ignore the engine until both required interfaces are connected:
+
+```shell
+sudo snap connect myna-whisper:process-control
+sudo snap connect myna-whisper:accel
+sudo myna-whisper.whisper use-engine amd-npu
+```
+
+FastFlowLM 1.0.8 validates Linux NPU firmware as part of a Lemonade model
+load and requires firmware 1.1.0.0 or newer. Older 1.0 firmware can happen to
+work when FLM is launched directly, but embedded Lemonade rejects it before
+starting inference. On Ubuntu 24.04, follow Lemonade's
+[Linux NPU setup guide](https://lemonade-server.ai/flm_npu_linux.html)
+to install the current `libxrt-npu2` and `amdxdna-dkms` packages, then reboot.
+With the runtime component installed and both interfaces connected, inspect
+the authoritative check with:
+
+```shell
+sudo snap run --shell myna-whisper.server \
+    -c '$SNAP_COMPONENTS/lemond-flm/fastflowlm/flm validate'
+```
+
 ## Compute precision
 
-`show-model` reports the precision of the packaged CTranslate2 weights. All
-five model components currently contain FP16 weights. Runtime precision is a
-separate engine setting:
+`show-model` reports the precision of the packaged weights. The five
+CTranslate2 model components contain FP16 weights; the NPU2 component is Q4_1.
+Runtime precision for the CPU/GPU engines is a separate setting:
 
 ```shell
 myna-whisper.whisper get compute-type
@@ -126,3 +164,7 @@ sudo snap restart myna-whisper.server
 Full process/VRAM release on idle (socket activation) is blocked upstream:
 `modelctl run` forks the server without passing the listening socket, so the
 snap uses in-process unload for now.
+
+FLM does not currently expose an ASR unload operation, so the
+experimental AMD NPU engine remains resident and does not inherit the shared
+`sleep-idle-seconds` setting.

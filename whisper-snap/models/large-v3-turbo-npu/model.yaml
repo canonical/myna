@@ -1,0 +1,12 @@
+name: large-v3-turbo-npu
+description: Whisper large-v3-turbo Q4_1 weights for AMD XDNA2 NPUs
+model-card-url: https://huggingface.co/FastFlowLM/Whisper-V3-Turbo-NPU2
+quantization: Q4_1
+capabilities:
+  - realtime-transcription
+disk-size: 1G
+components:
+  - model-large-v3-turbo-npu
+environment:
+  # FastFlowLM appends model_list.json's `models/<name>` to this root.
+  - FLM_MODEL_PATH=$SNAP_COMPONENTS/model-large-v3-turbo-npu

@@ -35,7 +35,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--adapter",
         default="whisper",
-        choices=("whisper", "parakeet", "funasr", "fake"),
+        choices=("whisper", "parakeet", "funasr", "lemond", "fake"),
         help="ASR backend ('fake' = scripted, no model — for wire/contract testing)",
     )
     parser.add_argument(
@@ -164,6 +164,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="SenseVoice decoder prompt: withitn (punctuation, casing and "
         "digits/dates, default), woitn (spoken form, unpunctuated)",
     )
+    parser.add_argument(
+        "--lemond-endpoint",
+        default="http://127.0.0.1:52625",
+        help="private embedded Lemonade HTTP endpoint (lemond adapter)",
+    )
+    parser.add_argument(
+        "--lemond-api-key",
+        default=os.environ.get("MYNA_LEMOND_API_KEY"),
+        help="bearer token for the private embedded Lemonade endpoint",
+    )
     return parser
 
 
@@ -238,6 +248,13 @@ def build_adapter(args: argparse.Namespace) -> Adapter:
             language=args.funasr_language,
             textnorm=args.funasr_textnorm,
         )
+
+    if args.adapter == "lemond":
+        from myna.testbed.lemond import LemondAdapter
+
+        if not args.lemond_api_key:
+            raise ValueError("--lemond-api-key is required for the lemond adapter")
+        return LemondAdapter(endpoint=args.lemond_endpoint, api_key=args.lemond_api_key)
 
     raise ValueError(f"unknown adapter: {args.adapter!r}")
 

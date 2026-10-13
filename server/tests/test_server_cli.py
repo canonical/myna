@@ -56,6 +56,29 @@ def test_fake_adapter_builds_without_any_extra():
     assert isinstance(build_adapter(parse("--adapter", "fake")), FakeAdapter)
 
 
+def test_lemond_adapter_uses_configured_private_endpoint_and_key():
+    from myna.testbed.lemond import LemondAdapter
+
+    adapter = build_adapter(
+        parse(
+            "--adapter",
+            "lemond",
+            "--lemond-endpoint",
+            "http://127.0.0.1:19432",
+            "--lemond-api-key",
+            "secret",
+        )
+    )
+    assert isinstance(adapter, LemondAdapter)
+    assert adapter.endpoint == "http://127.0.0.1:19432"
+    assert adapter.api_key == "secret"
+
+
+def test_lemond_adapter_requires_private_api_key():
+    with pytest.raises(ValueError, match="--lemond-api-key is required"):
+        build_adapter(parse("--adapter", "lemond"))
+
+
 def test_whisper_streaming_defaults_are_the_measured_ones():
     """The re-decode cadence is a measured value, not a taste.
 
