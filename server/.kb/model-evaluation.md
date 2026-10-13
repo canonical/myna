@@ -11,8 +11,9 @@ Read the top-level `.kb/agents.md` file before continuing below.
 # Overview
 
 Findings from the 2026-09-17 Parakeet GPU workstream (fp32 CUDA export, NeMo
-parity, fp16 attempt), the 2026-09-19 keyword-biasing tuning, and the parked
-Nemotron 3.5 ASR evaluation. Numbers are
+parity, fp16 attempt), the 2026-09-19 keyword-biasing tuning (Parakeet decode
+bias) and its 2026-10-13 follow-up (post-correction, the Spanish tier), and
+the parked Nemotron 3.5 ASR evaluation. Numbers are
 from zephyrus (RTX 4080 Laptop 12 GB, driver 595) on the 82-clip
 `corpus/english/manifest-balanced.json` (+ 5-minute long-form clip) or FLEURS
 (40 clips/language), unless noted.
@@ -176,6 +177,64 @@ still "interdicted" for "entered".
   "entered" turns into it. As-written recall trails recall because the
   capitalised spelling can surface a lowercase keyword capitalised
   mid-sentence.
+
+## Keyword post-correction and murmure's safeguards (2026-10-13)
+
+`KeywordBias.correct`, run on every biased decode: a word that is a keyword
+but for accents and case takes the keyword's spelling (a lowercase keyword
+keeps a capital the word was written with); a word whose least likely token
+had an unboosted probability under `CORRECT_BELOW_CONFIDENCE` (0.8) becomes
+the one keyword strictly closest to it within murmure's reach (none under
+five letters, one edit under eight, two from eight). Shipped int8 CPU, batch
+unless noted:
+
+| run | recall | WER | false hits |
+|---|---|---|---|
+| frozen set, bias only | 67.6% | 3.63 | 1/852 |
+| frozen set, + correction | 74.3% | 3.36 | 3/852 |
+| frozen set, streaming, + correction | 73.7% | 3.44 | 3/852 |
+| 100-list on every frozen clip, bias only | 65.5% | 4.95 | 7/28229 |
+| 100-list on every frozen clip, + correction | 69.5% | 4.89 | 10/28229 |
+| ordinary slice + 100-list, + correction | 7/7 | 1.34 | 2/8294 |
+
+- The gate's curve, frozen recall / false hits: 0.3 67.6% / 3, 0.5 69.4% / 3,
+  0.7 73.4% / 3, 0.8 74.3% / 3, 0.9 75.2% / 5, ungated 77.7% / 16. Chosen
+  at the English knee; the Spanish tier (below), not used to choose it, has
+  0 false hits up to 0.9.
+- Two edits on a five-to-seven-letter word (the reach "Minya" for "Myna"
+  needs, a miss heard live) gated at 0.3 or 0.15 never fired on either
+  corpus: no measured win, not shipped. A phonetic key instead took false
+  hits to 90/852 ("that" -> "Tait").
+- murmure's decode-time safeguards cost recall here, because the rewind
+  already stops the runaway matches they guard against. Top-K gate (boost a
+  token only inside the raw top 5, top 20 three tokens in): frozen recall
+  67.6 -> 61.2%, WER 3.63 -> 3.96, 100-list false hits 7 -> 4. Boost scaled
+  by list size (`3.0 - log10(words / 5)`, floor 1): 100-list recall 65.5 ->
+  52.9%, WER 4.95 -> 5.14, false hits 7 -> 1. Same direction on Spanish.
+- Folding accents into the automaton has no scope: of 105 Spanish and 100
+  English keywords only "Erdoğan" and "Chişinău" use a letter the
+  vocabulary lacks, and every Portuguese letter is in it.
+
+## Spanish keyword tier (FLEURS es_419, 2026-10-13)
+
+`download-corpus --preset fleurs-keywords:es_419` (frozen set
+`myna/benchmarker/keywords-fleurs-es_419.json`, mined as its docstring
+says): 199 keyword clips with 105 keywords, 80 ordinary clips, and
+`stress-keywords.txt`. Sweep with `bench --category keywords
+--send-keywords`, and `--category ordinary --send-keywords --keyword-list
+.../stress-keywords.txt` for false hits. Parakeet, shipped:
+
+| run | recall | WER | false hits |
+|---|---|---|---|
+| keywords off | 24.2% | 7.91 | - |
+| bias only | 43.6% | 6.79 | 0/597 |
+| + correction | 52.9% | 6.27 | 0/597 |
+| 100-list on every keyword clip | 53.1% | 6.41 | 1/19635 |
+| ordinary slice + 100-list | 3/4 | 2.78 -> 2.83 | 0/7996 |
+
+Recall starts lower than English because the set is mostly foreign names
+read in Spanish (Nyiragongo, Addenbrooke, Brzezinski). No Portuguese FLEURS
+split is cached; pt_br test is 621 MB.
 
 ## Nemotron 3.5 ASR (parked, not built)
 
