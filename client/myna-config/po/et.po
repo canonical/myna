@@ -8,18 +8,20 @@ msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-10-11 11:54+0100\n"
-"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
-"Last-Translator: Automatically generated\n"
-"Language-Team: none\n"
+"PO-Revision-Date: 2026-10-14 12:51+0000\n"
+"Last-Translator: Priit Jõerüüt <jrthwlate@users.noreply.hosted.weblate.org>\n"
+"Language-Team: Estonian <https://hosted.weblate.org/projects/ubuntu-desktop-"
+"translations/myna-config/et/>\n"
 "Language: et\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=n != 1;\n"
+"X-Generator: Weblate 2026.11.dev0\n"
 
 #: data/diagnostics-page.blp:5 data/diagnostics-page.blp:8 src/app.rs:1485
 msgid "About and Diagnostics"
-msgstr ""
+msgstr "Rakenduse teave ja diagnostika"
 
 #: data/diagnostics-page.blp:15 data/onboarding-welcome.blp:25
 msgid "Set up Dictation"
@@ -31,15 +33,15 @@ msgstr ""
 
 #: data/diagnostics-page.blp:32
 msgid "Performance warnings"
-msgstr ""
+msgstr "Jõudlusega seotud hoiatused"
 
 #: data/diagnostics-page.blp:33
 msgid "This machine is not currently delivering the CPU that dictation needs."
-msgstr ""
+msgstr "Selles seadmes pole hetkel protsessorit, mida etteütlus eeldaks."
 
 #: data/diagnostics-page.blp:38 data/main-window.blp:46
 msgid "Diagnostics"
-msgstr ""
+msgstr "Diagnostika"
 
 #: data/diagnostics-page.blp:40
 msgid "No audio, transcript, or filesystem path is ever included."
@@ -59,44 +61,46 @@ msgstr ""
 
 #: data/diagnostics-page.blp:60
 msgid "Copy"
-msgstr ""
+msgstr "Kopeeri"
 
 #: data/diagnostics-page.blp:64 src/backend_ui.rs:2086
 msgid "Copy diagnostics"
-msgstr ""
+msgstr "Kopeeri diagnostika"
 
 #: data/diagnostics-page.blp:66
 msgid ""
 "Copies a privacy-safe diagnostic report to the clipboard. Does not include "
 "audio, transcripts, or filesystem paths."
 msgstr ""
+"Kopeerib privaatsust tagava diagnostikaaruande lõikelauale. Ei sisalda "
+"helifaile, üleskirjutusi ega failisüsteemi asukohti."
 
 #: data/diagnostics-page.blp:94 src/backend_ui.rs:2119
 msgid "Diagnostic report"
-msgstr ""
+msgstr "Diagnostiline aruanne"
 
 #: data/diagnostics-page.blp:95
 msgid "Read-only privacy-safe diagnostic text."
-msgstr ""
+msgstr "Ainult lugemisõigustes privaatsust tagav diagnostiline tekst."
 
 #: data/install-control.blp:54 data/onboarding-components.blp:60
 #: src/app.rs:3931
 msgid "Installed"
-msgstr ""
+msgstr "Paigaldatud"
 
 #: data/install-models-dialog.blp:5 data/myna-page.blp:79 data/myna-page.blp:94
 msgid "Install more models"
-msgstr ""
+msgstr "Paigalda veel mudeleid"
 
 #: data/main-window.blp:9 src/app.rs:122 src/diagnostics.rs:443
 #: data/com.canonical.Myna.Config.metainfo.xml:8
 #: data/com.canonical.Myna.Config.desktop:3
 msgid "Myna Settings"
-msgstr ""
+msgstr "Myna seadistused"
 
 #: data/main-window.blp:24
 msgid "Main Menu"
-msgstr ""
+msgstr "Põhimenüü"
 
 #: data/main-window.blp:32 src/backend_ui.rs:2815
 msgid "General"
@@ -106,7 +110,7 @@ msgstr ""
 #: src/app.rs:3154 src/app.rs:3578 src/backend_apply.rs:379
 #: src/diagnostics.rs:636 src/presentation.rs:157
 msgid "Model"
-msgstr ""
+msgstr "Mudel"
 
 #: data/main-window.blp:71
 msgid "_Set Up Dictation…"
@@ -114,7 +118,7 @@ msgstr ""
 
 #: data/main-window.blp:75
 msgid "_Report an Issue…"
-msgstr ""
+msgstr "_Teata veast…"
 
 #: data/main-window.blp:76
 msgid "_About Myna Settings"
@@ -122,33 +126,33 @@ msgstr ""
 
 #: data/myna-page.blp:5 data/myna-page.blp:8 data/status-page.blp:5
 msgid "Myna"
-msgstr ""
+msgstr "Myna"
 
 #: data/myna-page.blp:12
 msgid "Keyboard shortcut"
-msgstr ""
+msgstr "Klaviatuuri kiirklahvid"
 
 #: data/myna-page.blp:15
 msgid "Press to start and stop"
-msgstr ""
+msgstr "Klõpsa käivitamiseks ja lõpetamiseks"
 
 #: data/myna-page.blp:47 src/shortcut_ui.rs:324
 msgid "Press a shortcut…"
-msgstr ""
+msgstr "Vajuta kiirklahvi…"
 
 #: data/myna-page.blp:57 data/onboarding-shortcut.blp:134
 #: src/shortcut_ui.rs:501
 msgid "Cancel"
-msgstr ""
+msgstr "Katkesta"
 
 #: data/myna-page.blp:67 data/onboarding-window.blp:7 src/app.rs:1816
 #: src/app.rs:4996 src/onboarding_ui.rs:1340 src/shortcut_ui.rs:591
 msgid "Dictation"
-msgstr ""
+msgstr "Etteütlus"
 
 #: data/onboarding-components.blp:18 src/app.rs:3883 src/onboarding_ui.rs:1341
 msgid "Install components"
-msgstr ""
+msgstr "Paigalda komponente"
 
 #: data/onboarding-components.blp:27 src/app.rs:3887
 msgid ""
@@ -159,12 +163,12 @@ msgstr ""
 #: data/onboarding-components.blp:44 src/app.rs:491 src/app.rs:3959
 #: src/app.rs:4024 src/app.rs:4434
 msgid "Install all components"
-msgstr ""
+msgstr "Paigalda kõik komponendid"
 
 #: data/onboarding-components.blp:52 src/app.rs:3948
 #: src/ui/install_control.rs:134
 msgid "Installing…"
-msgstr ""
+msgstr "Paigaldamisel…"
 
 #: data/onboarding-shortcut.blp:18 src/app.rs:4715 src/onboarding_ui.rs:1342
 msgid "How to dictate"
@@ -196,7 +200,7 @@ msgstr ""
 
 #: data/onboarding-window.blp:24 src/app.rs:414 src/onboarding_ui.rs:776
 msgid "Next"
-msgstr ""
+msgstr "Järgmine"
 
 #: data/operation-error-dialog.blp:5
 msgid "Operation failed"
@@ -208,19 +212,19 @@ msgstr ""
 
 #: data/operation-error-dialog.blp:12
 msgid "Close"
-msgstr ""
+msgstr "Sulge"
 
 #: data/operation-error-dialog.blp:34 src/app.rs:4103
 msgid "Copy Details"
-msgstr ""
+msgstr "Kopeeri üksikasjad"
 
 #: data/operation-error-dialog.blp:35
 msgid "Copy the full failure details to the clipboard"
-msgstr ""
+msgstr "Kopeeri vea üksikasjalik teave lõikelauale"
 
 #: data/status-page.blp:8 src/app.rs:1475 src/app.rs:5239
 msgid "Loading Myna Settings"
-msgstr ""
+msgstr "Laadin Myna seadistusi"
 
 #: data/status-page.blp:9 src/app.rs:1476 src/app.rs:5240
 msgid "Reading the installed settings schema…"
@@ -228,11 +232,11 @@ msgstr ""
 
 #: src/app.rs:130
 msgid "translator-credits"
-msgstr ""
+msgstr "Priit Jõerüüt 2026"
 
 #: src/app.rs:1185 src/onboarding_ui.rs:781
 msgid "Done"
-msgstr ""
+msgstr "Valmis"
 
 #: src/app.rs:1481
 msgid "Model details appear once Myna finds your models."
@@ -288,11 +292,11 @@ msgstr ""
 #. TRANSLATORS: {size} is a download size, such as "4.2 GB".
 #: src/app.rs:3921 src/onboarding_ui.rs:855
 msgid "Up to {size}"
-msgstr ""
+msgstr "Kuni {size}"
 
 #: src/app.rs:4057 src/onboarding_ui.rs:1011
 msgid "Could not let Myna run in the background"
-msgstr ""
+msgstr "Myna käivitamine taustal ei õnnestunud"
 
 #: src/app.rs:4087 src/app.rs:4237 src/backend_ui.rs:2419
 msgid "Executable:"
@@ -367,15 +371,15 @@ msgstr ""
 
 #: src/app.rs:5265
 msgid "Myna Settings Unavailable"
-msgstr ""
+msgstr "Myna seadistused pole saadaval"
 
 #: src/app.rs:5266
 msgid "Myna Settings could not start."
-msgstr ""
+msgstr "Myna seadistuste käivitamine ei õnnestunud."
 
 #: src/app.rs:5697
 msgid "Could not save the setting"
-msgstr ""
+msgstr "Seadistuste salvestamine ei õnnestunud"
 
 #: src/app.rs:5734
 msgid "Preview sound style"
@@ -383,11 +387,11 @@ msgstr ""
 
 #: src/active_backend.rs:293
 msgid "The change was cancelled."
-msgstr ""
+msgstr "Muutmine on katkestatud."
 
 #: src/active_backend.rs:368
 msgid "No model is connected."
-msgstr ""
+msgstr "Ühtegi mudelit pole ühendatud."
 
 #: src/active_backend.rs:373
 msgid "The model is not available to switch to."
@@ -399,20 +403,20 @@ msgstr ""
 
 #: src/backend_ui.rs:121 src/model_family.rs:283
 msgid "Recommended"
-msgstr ""
+msgstr "Soovitatud"
 
 #: src/backend_ui.rs:182 src/diagnostics.rs:474
 msgid "Languages"
-msgstr ""
+msgstr "Keeled"
 
 #: src/backend_ui.rs:217
 msgid "Your language"
-msgstr ""
+msgstr "Sinu keel"
 
 #. TRANSLATORS: an upper bound on a download size, such as "up to 1.4 GB": it is less on a machine whose GPU cannot be used.
 #: src/backend_ui.rs:365
 msgid "up to {size}"
-msgstr ""
+msgstr "kuni {size}"
 
 #. TRANSLATORS: {description} says what a model is good at, such as "Most languages, with uneven accuracy", and {size} what installing it downloads, such as "198 MB" or "up to 1.4 GB". The spaces around the dot are no-break spaces, so the size never starts a line of its own.
 #: src/backend_ui.rs:371
@@ -421,7 +425,7 @@ msgstr ""
 
 #: src/backend_ui.rs:670
 msgid "This model is no longer installed."
-msgstr ""
+msgstr "See mudel pole enam paigaldatud."
 
 #: src/backend_ui.rs:723
 msgid "Changing to {model} could not be confirmed"
@@ -447,7 +451,7 @@ msgstr ""
 
 #: src/backend_ui.rs:1108
 msgid "Install"
-msgstr ""
+msgstr "Paigalda"
 
 #. TRANSLATORS: the Install button's name to assistive technology; {model} is a model family, such as "Whisper".
 #: src/backend_ui.rs:1110
