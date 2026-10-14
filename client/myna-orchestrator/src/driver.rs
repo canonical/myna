@@ -107,6 +107,12 @@ pub async fn run_session<B: BackendClient>(
     // The one item waiting for room in the transport.
     let mut outbound: Option<Outbound> = None;
 
+    // Here rather than at each caller: no session can send a list past the
+    // server's limits.
+    let config = SessionConfig {
+        keywords: myna_core::normalize_keywords(&config.keywords),
+        ..config
+    };
     let opening = backend.open_session(config);
     tokio::pin!(opening);
     let handle = loop {
@@ -466,6 +472,39 @@ mod tests {
             let _ = self.0.send(End { out, events: ev_tx });
             Ok(BackendHandle::new(sink, events, None))
         }
+    }
+
+    /// A backend that records the keywords it was opened with, then refuses.
+    struct KeywordsSeen(std::sync::Mutex<Option<Vec<String>>>);
+
+    #[async_trait::async_trait]
+    impl BackendClient for KeywordsSeen {
+        async fn open_session(
+            &self,
+            config: SessionConfig,
+        ) -> Result<crate::backend::BackendHandle, BackendError> {
+            *self.0.lock().unwrap() = Some(config.keywords);
+            Err(BackendError::Connect("recorded".into()))
+        }
+    }
+
+    #[tokio::test]
+    async fn a_session_opens_with_its_keywords_normalized() {
+        // Every caller builds its own config; none can send a list the
+        // server refuses.
+        let backend = KeywordsSeen(std::sync::Mutex::new(None));
+        let (_audio, in_rx) = mpsc::channel(1);
+        let (_control, control_rx) = mpsc::channel(1);
+        let (out_tx, _out_rx) = mpsc::channel(1);
+        let config = SessionConfig {
+            keywords: [" Myna ", "", "Myna", "Siobhan"].map(String::from).to_vec(),
+            ..Default::default()
+        };
+        let _ = run_session(&backend, config, in_rx, control_rx, out_tx).await;
+        assert_eq!(
+            backend.0.lock().unwrap().as_deref(),
+            Some(&["Myna".to_owned(), "Siobhan".to_owned()][..])
+        );
     }
 
     /// A backend whose handshake never completes.

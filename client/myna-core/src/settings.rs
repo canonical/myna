@@ -117,10 +117,9 @@ impl SoundSet {
 pub const DEFAULT_SILENCE_TIMEOUT_SECS: u32 = 30;
 
 /// The user's local dictionary: names and jargon a backend biases
-/// recognition toward (GitHub issue #1). Raw as stored; a caller building a
-/// `SessionConfig` runs it through [`crate::session::normalize_keywords`]
-/// first, so a setting that has drifted past the server's limits never fails
-/// a session.
+/// recognition toward (GitHub issue #1). Raw as stored; every session runs
+/// it through [`crate::session::normalize_keywords`] as it opens, so a
+/// setting that has drifted past the server's limits never fails a session.
 pub const KEY_VOCABULARY: &str = "vocabulary";
 
 /// The settings, as a plain value: read once, no live binding. Callers that

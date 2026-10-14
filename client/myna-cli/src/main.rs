@@ -532,7 +532,7 @@ async fn dictate_clips<B: BackendClient>(backend: B, args: &Args) -> ExitCode {
         };
         let config = SessionConfig {
             language: args.language.clone(),
-            keywords: myna_core::normalize_keywords(&args.vocabulary),
+            keywords: args.vocabulary.clone(),
             ..Default::default()
         };
         let outcome = match mode {
@@ -592,7 +592,7 @@ async fn dictate_mic<B: BackendClient>(backend: B, args: &Args) -> ExitCode {
         let stop = source.stop_handle();
         let config = SessionConfig {
             language: args.language.clone(),
-            keywords: myna_core::normalize_keywords(&args.vocabulary),
+            keywords: args.vocabulary.clone(),
             ..Default::default()
         };
 
