@@ -323,6 +323,14 @@ async def _close(ws: ServerConnection, code: int = 1000, reason: str = "") -> No
         await asyncio.wait({discard})
 
 
+async def _refuse(ws: ServerConnection, frames: list[dict[str, Any]]) -> None:
+    """Send a dialect's error frames, then close."""
+    with contextlib.suppress(ConnectionClosed):
+        for frame in frames:
+            await ws.send(json.dumps(frame))
+        await _close(ws)
+
+
 class _SessionHandler:
     def __init__(self, service: SttService) -> None:
         self._service = service
@@ -401,40 +409,36 @@ class _SessionHandler:
         if start is None:
             await _close(ws, 1002, "expected session.start, session.update, or capabilities.query")
             return
-        await self._handle_internal(ws, *start)
+        await self._handle_internal(ws, *start, caps=caps)
 
     async def _handle_internal(
-        self, ws: ServerConnection, config: SessionConfig, client_version: str | None
+        self,
+        ws: ServerConnection,
+        config: SessionConfig,
+        client_version: str | None,
+        *,
+        caps: Capabilities,
     ) -> None:
         if not is_supported(client_version):
-            with contextlib.suppress(ConnectionClosed):
-                await ws.send(
-                    json.dumps(
-                        event_to_wire(
-                            TranscriptionError(
-                                code="unsupported_protocol_version",
-                                message=(
-                                    f"server speaks {sorted(SUPPORTED_PROTOCOL_VERSIONS)}, "
-                                    f"client requested {client_version!r}"
-                                ),
-                            )
-                        )
-                    )
-                )
-                await _close(ws)
+            error = TranscriptionError(
+                code="unsupported_protocol_version",
+                message=(
+                    f"server speaks {sorted(SUPPORTED_PROTOCOL_VERSIONS)}, "
+                    f"client requested {client_version!r}"
+                ),
+            )
+            await _refuse(ws, [event_to_wire(error)])
+            return
+        try:
+            config = admit_keywords(config, supported=caps.keywords)
+        except ValueError as exc:
+            error = TranscriptionError(code="invalid_parameter", message=str(exc))
+            await _refuse(ws, [event_to_wire(error)])
             return
 
         async def emit(event: TranscriptionEvent) -> None:
             with contextlib.suppress(ConnectionClosed):
                 await ws.send(json.dumps(event_to_wire(event)))
-
-        try:
-            config = admit_keywords(config, supported=self._service.capabilities().keywords)
-        except ValueError as exc:
-            await emit(TranscriptionError(code="invalid_parameter", message=str(exc)))
-            with contextlib.suppress(ConnectionClosed):
-                await _close(ws)
-            return
 
         await self._pump_session(ws, config, emit=emit)
 
@@ -460,6 +464,25 @@ class _SessionHandler:
         ``session.updated`` echo, the adapter runs on ``adapter_config``, and
         the PCM is resampled between the two here, per utterance."""
         encoder = Ie115Encoder()
+        # One model per process: a request for a model this server does not
+        # serve is REJECTED, never silently answered by a different model (a
+        # compat client asking for X must not get Y). Selecting *which* server
+        # to dial is the discovery layer's job (plan T48), not this session's.
+        if requested_model is not None and requested_model not in caps.models:
+            error = TranscriptionError(
+                code="model_not_available",
+                message=f"this server serves {list(caps.models)!r}, not {requested_model!r}",
+            )
+            await _refuse(ws, encoder.frames(error))
+            return
+        model = requested_model or (caps.models[0] if caps.models else None)
+        try:
+            config = admit_keywords(config, supported=caps.keywords)
+        except ValueError as exc:
+            error = TranscriptionError(code="invalid_parameter", message=str(exc))
+            await _refuse(ws, encoder.frames(error))
+            return
+
         served_format = caps.input_formats[0] if caps.input_formats else AudioFormat()
         adapter_format = dataclasses.replace(
             served_format, sample_rate_hz=served_format.sample_rate_hz
@@ -477,36 +500,6 @@ class _SessionHandler:
             with contextlib.suppress(ConnectionClosed):
                 for frame in frames:
                     await ws.send(json.dumps(frame))
-
-        # One model per process: a request for a model this server does not
-        # serve is REJECTED, never silently answered by a different model (a
-        # compat client asking for X must not get Y). Selecting *which* server
-        # to dial is the discovery layer's job (plan T48), not this session's.
-        if requested_model is not None and requested_model not in caps.models:
-            await send_all(
-                encoder.frames(
-                    TranscriptionError(
-                        code="model_not_available",
-                        message=(
-                            f"this server serves {list(caps.models)!r}, not {requested_model!r}"
-                        ),
-                    )
-                )
-            )
-            with contextlib.suppress(ConnectionClosed):
-                await _close(ws)
-            return
-        model = requested_model or (caps.models[0] if caps.models else None)
-
-        try:
-            config = admit_keywords(config, supported=caps.keywords)
-        except ValueError as exc:
-            await send_all(
-                encoder.frames(TranscriptionError(code="invalid_parameter", message=str(exc)))
-            )
-            with contextlib.suppress(ConnectionClosed):
-                await _close(ws)
-            return
 
         with contextlib.suppress(ConnectionClosed):
             await ws.send(

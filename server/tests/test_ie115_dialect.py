@@ -742,6 +742,45 @@ async def _ie115_update_reply(adapter, socket_path, keywords: list[str]) -> dict
             return json.loads(await ws.recv())
 
 
+async def test_ie115_hands_the_adapter_the_keywords_it_echoes(tmp_path):
+    """The adapter runs on the normalized list ``session.updated`` echoed,
+    not the raw one the client sent."""
+    import json
+
+    from websockets.asyncio.client import unix_connect
+
+    seen: list[tuple[str, ...]] = []
+
+    class Recording(FakeAdapter):
+        async def run_session(self, config, audio, emit):
+            seen.append(config.keywords)
+            await super().run_session(config, audio, emit)
+
+    socket_path = tmp_path / "myna.sock"
+    async with serve_unix(Recording(keywords=True), socket_path):
+        async with unix_connect(str(socket_path)) as ws:
+            json.loads(await ws.recv())  # the greeting
+            transcription = {"keywords": [" kernel ", "", "Siobhan"]}
+            await ws.send(
+                json.dumps(
+                    {
+                        "type": w.SESSION_UPDATE,
+                        "session": {
+                            "type": "realtime",
+                            "audio": {"input": {"transcription": transcription}},
+                        },
+                    }
+                )
+            )
+            assert json.loads(await ws.recv())["type"] == w.SESSION_UPDATED
+            await ws.send(b"\x00" * 3200)
+            await ws.send(json.dumps({"type": w.INPUT_AUDIO_COMMIT}))
+            while json.loads(await ws.recv())["type"] != w.TRANSCRIPTION_COMPLETED:
+                pass
+
+    assert seen and set(seen) == {("kernel", "Siobhan")}
+
+
 async def test_ie115_refuses_keywords_the_backend_does_not_take(tmp_path):
     """An unsupported optional field is refused, never silently ignored."""
     reply = await _ie115_update_reply(FakeAdapter(), tmp_path / "myna.sock", ["Siobhan"])
