@@ -1200,13 +1200,19 @@ def test_cmd_summarize_exits_1_on_a_gate_breach(tmp_path, capsys):
     assert "WER 30.0% > 25%" in capsys.readouterr().out
 
 
+def _kw(**counts):
+    """A row's keyword fields, as run_clips writes all five on every row."""
+    fields = ("in_reference", "recalled", "recalled_cased", "absent", "false_hits")
+    return {f"kw_{field}": counts.get(field, 0) for field in fields}
+
+
 def test_keyword_recall_and_false_hits_are_micro_averaged():
     summary = _summarize(
         [
-            record(clip="c1", kw_in_reference=2, kw_recalled=1, kw_recalled_cased=0),
-            record(clip="c2", kw_in_reference=2, kw_recalled=2, kw_recalled_cased=2),
-            record(clip="c3", kw_absent=3, kw_false_hits=1),
-            record(clip="c4", kw_absent=1, kw_false_hits=0),
+            record(clip="c1", **_kw(in_reference=2, recalled=1)),
+            record(clip="c2", **_kw(in_reference=2, recalled=2, recalled_cased=2)),
+            record(clip="c3", **_kw(absent=3, false_hits=1)),
+            record(clip="c4", **_kw(absent=1)),
         ]
     )
     stats = summary[UNKNOWN]
@@ -1229,7 +1235,7 @@ def test_overall_table_shows_keyword_columns_only_when_scored(capsys):
     assert "KW rec%" not in capsys.readouterr().out
 
     print_overall(
-        _summarize([record(kw_in_reference=4, kw_recalled=3, kw_recalled_cased=2, kw_absent=5)])
+        _summarize([record(**_kw(in_reference=4, recalled=3, recalled_cased=2, absent=5))])
     )
     out = capsys.readouterr().out
     assert "KW rec%" in out and "KW Aa%" in out and "KW FH%" in out

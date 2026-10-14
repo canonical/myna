@@ -207,7 +207,7 @@ def one_normalizer_version(records: list[Record]) -> None:
             f"records span normalizer versions ({detail}) - rescore everything with the "
             "current myna.testbed.metrics normalizer before comparing, or split the file"
         )
-    # Rows from before the secondary score have none; _whisper_rate leaves
+    # Rows from before the secondary score have none; _rate leaves
     # such a cell blank rather than refusing the primary table over it.
     secondary = {
         r["secondary_normalizer_version"] for r in records if r.get("secondary_normalizer_version")
@@ -219,13 +219,13 @@ def one_normalizer_version(records: list[Record]) -> None:
         )
 
 
-def _whisper_rate(records: list[Record], edits: str, total: str) -> float | None:
-    """A cell's micro-averaged rate under Whisper's normaliser, or None when
-    any row lacks it: a rate over a subset of the clips is not the cell's."""
+def _rate(records: list[Record], count: str, total: str) -> float | None:
+    """A cell's micro-averaged ``count`` over ``total``, or None when any row
+    lacks it: a rate over a subset of the clips is not the cell's."""
     if any(r.get(total) is None for r in records):
         return None
     reference = sum(r[total] for r in records)
-    return sum(r[edits] for r in records) / reference if reference else None
+    return sum(r[count] for r in records) / reference if reference else None
 
 
 def _latency(record: Record) -> float | None:
@@ -315,8 +315,6 @@ def _summarize(records: list[Record]) -> dict[RowKey, SummaryRow]:
         ref_words = sum(r["ref_words"] for r in warm)
         cer_edits = sum(r["cer_edits"] for r in warm)
         ref_chars = sum(r["ref_chars"] for r in warm)
-        kw_ref = sum(r.get("kw_in_reference", 0) for r in warm)
-        kw_absent = sum(r.get("kw_absent", 0) for r in warm)
         summary[key] = {
             "clips": len(warm),
             "label": label,
@@ -326,8 +324,8 @@ def _summarize(records: list[Record]) -> dict[RowKey, SummaryRow]:
             # would both print as flawless and rank first.
             "wer": wer_edits / ref_words if ref_words else None,
             "cer": cer_edits / ref_chars if ref_chars else None,
-            "wer_whisper": _whisper_rate(warm, "wer_whisper_norm_edits", "ref_words_whisper_norm"),
-            "cer_whisper": _whisper_rate(warm, "cer_whisper_norm_edits", "ref_chars_whisper_norm"),
+            "wer_whisper": _rate(warm, "wer_whisper_norm_edits", "ref_words_whisper_norm"),
+            "cer_whisper": _rate(warm, "cer_whisper_norm_edits", "ref_chars_whisper_norm"),
             "rtf": percentile(rtfs, 0.5),
             "rtfx": rtfx(clips),
             "median_final": latency_percentile(clips, 0.5),
@@ -346,13 +344,9 @@ def _summarize(records: list[Record]) -> dict[RowKey, SummaryRow]:
             "j_per_audio_s": None,
             "throttled": None,
             "starved": len(starved),
-            "kw_recall": sum(r.get("kw_recalled", 0) for r in warm) / kw_ref if kw_ref else None,
-            "kw_recall_cased": (
-                sum(r.get("kw_recalled_cased", 0) for r in warm) / kw_ref if kw_ref else None
-            ),
-            "kw_false_rate": (
-                sum(r.get("kw_false_hits", 0) for r in warm) / kw_absent if kw_absent else None
-            ),
+            "kw_recall": _rate(warm, "kw_recalled", "kw_in_reference"),
+            "kw_recall_cased": _rate(warm, "kw_recalled_cased", "kw_in_reference"),
+            "kw_false_rate": _rate(warm, "kw_false_hits", "kw_absent"),
         }
     return summary
 

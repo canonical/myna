@@ -354,4 +354,4 @@ def test_keyword_duplicates_and_blank_entries_count_once():
 
 
 def test_keyword_score_without_keywords_is_empty():
-    assert keyword_score("a b", "a b", []) == KeywordScore(0, 0, 0, 0, 0, (), ())
+    assert keyword_score("a b", "a b", []) == KeywordScore(0, 0, 0, 0, (), ())

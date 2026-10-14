@@ -316,9 +316,12 @@ class KeywordScore:
     recalled: int
     recalled_cased: int
     absent: int
-    false_hits: int
     missed: tuple[str, ...]
     false: tuple[str, ...]
+
+    @property
+    def false_hits(self) -> int:
+        return len(self.false)
 
 
 def _occurrences(tokens: list[str], phrase: list[str]) -> int:
@@ -331,7 +334,7 @@ def keyword_score(reference: str, hypothesis: str, keywords: Sequence[str]) -> K
     hyp = normalize(hypothesis).split()
     hyp_cased = _clean(hypothesis, fold_case=False).split()
     seen: set[str] = set()
-    in_reference = recalled = recalled_cased = absent = false_hits = 0
+    in_reference = recalled = recalled_cased = absent = 0
     missed: list[str] = []
     false: list[str] = []
     for keyword in keywords:
@@ -352,8 +355,5 @@ def keyword_score(reference: str, hypothesis: str, keywords: Sequence[str]) -> K
         else:
             absent += 1
             if found:
-                false_hits += 1
                 false.append(keyword.strip())
-    return KeywordScore(
-        in_reference, recalled, recalled_cased, absent, false_hits, tuple(missed), tuple(false)
-    )
+    return KeywordScore(in_reference, recalled, recalled_cased, absent, tuple(missed), tuple(false))
