@@ -47,6 +47,7 @@ import zlib
 from array import array
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 from myna.benchmarker._audio import NOISE_SEED, NOISE_SNR_DB, mix_noise, write_wav
 from myna.testbed.corpus import stamp_corpus
@@ -300,6 +301,20 @@ def collect_balanced(tar_path: Path, n: int, prefix: str) -> list[tuple[str, arr
 KEYWORD_SET = Path(__file__).with_name("keywords-dev-clean.json")
 
 
+def load_keyword_set(path: Path, field: str, expected: str) -> dict[str, Any]:
+    """A frozen keyword set, refused unless its ``field`` names ``expected``
+    (the split or locale it was mined from)."""
+    frozen: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
+    if frozen[field] != expected:
+        raise SystemExit(f"{path} is a {frozen[field]} keyword set, not {expected}")
+    return frozen
+
+
+def clip_keywords(clip: dict[str, Any]) -> list[str]:
+    """The list a keyword clip sends: its keywords, then its distractors."""
+    return [*clip["keywords"], *clip["distractors"]]
+
+
 def collect_keyword_set(
     tar_path: Path, prefix: str, subset: str, keyword_set: Path
 ) -> tuple[list[tuple[str, array[int], str]], dict[str, list[str]]]:
@@ -329,9 +344,7 @@ def collect_keyword_set(
     Refuses a set whose split, clips or references do not match the tarball,
     because a keyword scored against the wrong text measures nothing.
     """
-    frozen = json.loads(keyword_set.read_text(encoding="utf-8"))
-    if frozen["subset"] != subset:
-        raise SystemExit(f"{keyword_set} is a {frozen['subset']} keyword set, not {subset}")
+    frozen = load_keyword_set(keyword_set, "subset", subset)
     text, _ = _index(tar_path, prefix)
     drifted = [uid for uid, clip in frozen["clips"].items() if text.get(uid) != clip["text"]]
     if drifted:
@@ -340,10 +353,7 @@ def collect_keyword_set(
             "reference: " + ", ".join(drifted[:10])
         )
     wanted = sorted(frozen["clips"])
-    keywords = {
-        uid: frozen["clips"][uid]["keywords"] + frozen["clips"][uid]["distractors"]
-        for uid in wanted
-    }
+    keywords = {uid: clip_keywords(frozen["clips"][uid]) for uid in wanted}
     print(f"selected {len(wanted)} keyword clips")
     return _decode_selected(tar_path, wanted, text), keywords
 

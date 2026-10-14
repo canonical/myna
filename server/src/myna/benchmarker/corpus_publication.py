@@ -418,9 +418,7 @@ def build_fleurs_keywords(
     closest to one of the clip's words and one at random. The ordinary slice
     is 80 other clips at random.
     """
-    frozen = json.loads(keyword_set.read_text(encoding="utf-8"))
-    if frozen["locale"] != locale:
-        raise SystemExit(f"{keyword_set} is a {frozen['locale']} keyword set, not {locale}")
+    frozen = corpus_english.load_keyword_set(keyword_set, "locale", locale)
     clips: dict[str, dict[str, Any]] = frozen["clips"]
     wanted = set(clips) | set(frozen["ordinary"])
     entries = _fleurs_entries(out, tsv_path, tar_path, locale, only=wanted)
@@ -436,13 +434,13 @@ def build_fleurs_keywords(
         if entry["text"] != clip["text"]:
             drifted.append(name)
         entry["category"] = "keywords"
-        entry["keywords"] = clip["keywords"] + clip["distractors"]
+        entry["keywords"] = corpus_english.clip_keywords(clip)
     if missing := sorted(wanted - found):
         raise SystemExit(f"{keyword_set}: {locale} test has no clip " + ", ".join(missing[:10]))
     if drifted:
         raise SystemExit(f"{keyword_set}: a different reference for " + ", ".join(drifted[:10]))
 
-    keywords = {k for clip in clips.values() for k in clip["keywords"] + clip["distractors"]}
+    keywords = {k for clip in clips.values() for k in corpus_english.clip_keywords(clip)}
     stress = sorted(keywords, key=lambda k: hashlib.sha256(k.encode()).hexdigest())
     out.mkdir(parents=True, exist_ok=True)
     (out / "stress-keywords.txt").write_text(
