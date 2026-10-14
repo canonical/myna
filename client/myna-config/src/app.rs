@@ -1779,9 +1779,13 @@ fn vocabulary_probe() -> glib::ExitCode {
         return glib::ExitCode::FAILURE;
     };
     let word_rows = || {
-        let mut titles = Vec::new();
-        collect_action_row_titles(&group, &mut titles);
-        titles
+        descendants(group.upcast_ref(), &|w| {
+            w.is::<adw::ActionRow>() && !w.is::<adw::EntryRow>()
+        })
+        .into_iter()
+        .filter_map(|row| row.downcast::<adw::ActionRow>().ok())
+        .map(|row| row.title().to_string())
+        .collect::<Vec<_>>()
     };
     let wait_for_store = |expected: &[String]| {
         let deadline = std::time::Instant::now() + Duration::from_secs(5);
@@ -1842,19 +1846,6 @@ fn vocabulary_probe() -> glib::ExitCode {
     }
     println!("vocabulary-remove: persisted");
     glib::ExitCode::SUCCESS
-}
-
-fn collect_action_row_titles(widget: &gtk::Widget, titles: &mut Vec<String>) {
-    if let Some(row) = widget.downcast_ref::<adw::ActionRow>() {
-        if !widget.is::<adw::EntryRow>() {
-            titles.push(row.title().to_string());
-        }
-    }
-    let mut child = widget.first_child();
-    while let Some(current) = child {
-        collect_action_row_titles(&current, titles);
-        child = current.next_sibling();
-    }
 }
 
 /// The part of the daemon's interface Myna Settings reads, served in-process
