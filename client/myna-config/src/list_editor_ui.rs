@@ -113,15 +113,18 @@ impl ListEditor {
     }
 
     pub fn apply(self: &Rc<Self>, values: &[String]) {
-        for row in self.rows.borrow_mut().drain(..) {
-            self.group.remove(&row);
+        // A change reports its value as it starts and again as it lands.
+        if *self.values.borrow() != values {
+            for row in self.rows.borrow_mut().drain(..) {
+                self.group.remove(&row);
+            }
+            let rows: Vec<_> = values.iter().map(|value| self.row(value)).collect();
+            for row in &rows {
+                self.group.add(row);
+            }
+            *self.rows.borrow_mut() = rows;
+            *self.values.borrow_mut() = values.to_vec();
         }
-        let rows: Vec<_> = values.iter().map(|value| self.row(value)).collect();
-        for row in &rows {
-            self.group.add(row);
-        }
-        *self.rows.borrow_mut() = rows;
-        *self.values.borrow_mut() = values.to_vec();
         self.count.set_label(&match self.limits {
             Some(limits) => format!("{} / {}", values.len(), limits.entries),
             None => values.len().to_string(),
