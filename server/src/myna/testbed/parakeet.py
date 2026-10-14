@@ -542,6 +542,7 @@ class _ParakeetOnnx:
             _require_cuda(self._decoder_joint, "decoder_joint")
         self._encoder_run_options = encoder_run_options(ort, device)
         self._vocab, self._blank_idx = _load_vocab(model_dir)
+        self._bias: tuple[tuple[str, ...], KeywordBias | None] | None = None
         # Logits are vocab + TDT duration bins; the duration slice is the tail.
         self._vocab_size = len(self._vocab)
         # Static for this model (batch=1, one target, one encoder frame per
@@ -650,6 +651,13 @@ class _ParakeetOnnx:
         buffers.state_out[0][...] = state_1
         buffers.state_out[1][...] = state_2
         return buffers.logits
+
+    def keyword_bias(self, keywords: tuple[str, ...]) -> KeywordBias | None:
+        """The automaton for ``keywords`` over this model's vocab, rebuilt
+        only when they change."""
+        if self._bias is None or self._bias[0] != keywords:
+            self._bias = keywords, keyword_bias(keywords, self._vocab, self._blank_idx)
+        return self._bias[1]
 
     def _decode_sequence(
         self,
@@ -1026,11 +1034,7 @@ class ParakeetAdapter:
             # way LifecycleService itself re-arms idle-release on a fresh
             # session rather than staying silent forever after the first.
             model.pressure_monitor.begin_session()
-            bias = (
-                keyword_bias(config.keywords, model._vocab, model._blank_idx)
-                if config.keywords
-                else None
-            )
+            bias = model.keyword_bias(config.keywords)
             # Ready BEFORE pulling audio — the client gates on it.
             if model.gpu_unavailable:
                 await emit(

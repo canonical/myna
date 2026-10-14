@@ -74,6 +74,10 @@ class _FakeParakeetModel:
         self.pressure_monitor = MemoryPressureMonitor()
         self.gpu_unavailable = False
         self.device = "cpu"
+        self._vocab, self._blank_idx = list(_KW_VOCAB), _KW_BLANK
+        self._bias = None
+
+    keyword_bias = _ParakeetOnnx.keyword_bias
 
     def transcribe_words(self, samples, bias=None) -> list[Word]:
         self.calls.append(len(samples))
@@ -970,6 +974,21 @@ def test_a_loaded_cuda_provider_is_not_reported_unavailable(tmp_path, monkeypatc
     assert model.device == "cuda"
 
 
+def test_a_session_reuses_the_automaton_for_the_same_keywords(tmp_path, monkeypatch):
+    """Building it is up to ~40 ms for a full list, on the event loop before
+    ready; every press usually brings the same vocabulary."""
+    _touch(tmp_path, FP32_ENCODER_FILE, FP32_JOINT_FILE)
+    (tmp_path / "vocab.txt").write_text("▁Si 0\nob 1\nhan 2\n<blk> 3\n", encoding="utf-8")
+    _fake_ort(monkeypatch, _FakeSession)
+    model = _ParakeetOnnx(str(tmp_path), device="cpu")
+
+    first = model.keyword_bias(("Siobhan",))
+    assert first is not None
+    assert model.keyword_bias(("Siobhan",)) is first
+    assert model.keyword_bias(("Siobhan", "Han")) is not first
+    assert model.keyword_bias(()) is None
+
+
 def test_a_cuda_encoder_beside_a_cpu_joint_is_refused(tmp_path, monkeypatch):
     """No one device to drive both on: the joint's IOBinding is CPU-only."""
 
@@ -1321,7 +1340,6 @@ def test_the_parakeet_adapter_advertises_keywords():
 
 async def _session_biases(adapter, keywords):
     model = _FakeParakeetModel("hello")
-    model._vocab, model._blank_idx = list(_KW_VOCAB), _KW_BLANK
     adapter._model = model
     cfg = SessionConfig(audio_format=FORMAT, language="en", keywords=keywords)
 
