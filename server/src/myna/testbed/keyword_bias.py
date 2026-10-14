@@ -207,6 +207,8 @@ class KeywordBias:
         best: list[str] = []
         best_edits = reach
         for spelling, keyword in self._spellings.items():
+            if abs(len(spelling) - len(folded)) > reach:
+                continue
             edits = _edits(folded, spelling)
             if edits > reach:
                 continue
