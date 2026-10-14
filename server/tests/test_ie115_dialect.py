@@ -526,97 +526,35 @@ async def test_ie115_rejects_a_model_this_server_does_not_serve(tmp_path):
 async def test_ie115_rejects_keywords_with_too_many_entries(tmp_path):
     """The same invalid-parameter path as a rejected model: closes the
     connection rather than silently truncating the list."""
-    import json
-
-    from websockets.asyncio.client import unix_connect
-
-    socket_path = tmp_path / "myna.sock"
     entries = [f"word{i}" for i in range(101)]
-    async with serve_unix(FakeAdapter(), socket_path):  # serves only "fake"
-        async with unix_connect(str(socket_path)) as ws:
-            json.loads(await ws.recv())  # the greeting
-            await ws.send(
-                json.dumps(
-                    {
-                        "type": w.SESSION_UPDATE,
-                        "session": {
-                            "type": "realtime",
-                            "audio": {
-                                "input": {"transcription": {"model": "fake", "keywords": entries}}
-                            },
-                        },
-                    }
-                )
-            )
-            reply = json.loads(await ws.recv())
-            assert reply["type"] == w.ERROR
-            assert reply["error"]["type"] == "invalid_request_error"
-            assert reply["error"]["code"] == "invalid_parameter"
-            assert "101" in reply["error"]["message"]
+    reply = await _ie115_update_reply(
+        FakeAdapter(), tmp_path / "myna.sock", {"model": "fake", "keywords": entries}
+    )
+    assert reply["type"] == w.ERROR
+    assert reply["error"]["type"] == "invalid_request_error"
+    assert reply["error"]["code"] == "invalid_parameter"
+    assert "101" in reply["error"]["message"]
 
 
 async def test_ie115_rejects_a_keyword_that_is_too_long(tmp_path):
-    import json
-
-    from websockets.asyncio.client import unix_connect
-
-    socket_path = tmp_path / "myna.sock"
-    async with serve_unix(FakeAdapter(), socket_path):
-        async with unix_connect(str(socket_path)) as ws:
-            json.loads(await ws.recv())  # the greeting
-            await ws.send(
-                json.dumps(
-                    {
-                        "type": w.SESSION_UPDATE,
-                        "session": {
-                            "type": "realtime",
-                            "audio": {
-                                "input": {
-                                    "transcription": {"model": "fake", "keywords": ["a" * 65]}
-                                }
-                            },
-                        },
-                    }
-                )
-            )
-            reply = json.loads(await ws.recv())
-            assert reply["type"] == w.ERROR
-            assert reply["error"]["code"] == "invalid_parameter"
+    reply = await _ie115_update_reply(
+        FakeAdapter(), tmp_path / "myna.sock", {"model": "fake", "keywords": ["a" * 65]}
+    )
+    assert reply["type"] == w.ERROR
+    assert reply["error"]["code"] == "invalid_parameter"
 
 
 async def test_ie115_normalizes_keywords_before_echoing_them(tmp_path):
     """Trimmed and emptied of blanks before ``session.updated`` echoes it
     back - normalization, not an error."""
-    import json
-
-    from websockets.asyncio.client import unix_connect
-
-    socket_path = tmp_path / "myna.sock"
-    async with serve_unix(FakeAdapter(keywords=True), socket_path):
-        async with unix_connect(str(socket_path)) as ws:
-            json.loads(await ws.recv())  # the greeting
-            await ws.send(
-                json.dumps(
-                    {
-                        "type": w.SESSION_UPDATE,
-                        "session": {
-                            "type": "realtime",
-                            "audio": {
-                                "input": {
-                                    "transcription": {
-                                        "model": "fake",
-                                        "keywords": [" kernel ", "", "Siobhan"],
-                                    }
-                                }
-                            },
-                        },
-                    }
-                )
-            )
-            updated = json.loads(await ws.recv())
-            assert updated["type"] == w.SESSION_UPDATED
-            keywords = updated["session"]["audio"]["input"]["transcription"]["keywords"]
-            assert keywords == ["kernel", "Siobhan"]
+    reply = await _ie115_update_reply(
+        FakeAdapter(keywords=True),
+        tmp_path / "myna.sock",
+        {"model": "fake", "keywords": [" kernel ", "", "Siobhan"]},
+    )
+    assert reply["type"] == w.SESSION_UPDATED
+    keywords = reply["session"]["audio"]["input"]["transcription"]["keywords"]
+    assert keywords == ["kernel", "Siobhan"]
 
 
 async def test_ie115_serves_a_correctly_named_model(tmp_path):
@@ -720,7 +658,7 @@ async def test_the_greeting_leaves_keywords_out_when_the_backend_ignores_them(tm
     assert "keywords" not in transcription
 
 
-async def _ie115_update_reply(adapter, socket_path, keywords: list[str]) -> dict:
+async def _ie115_update_reply(adapter, socket_path, transcription: dict) -> dict:
     import json
 
     from websockets.asyncio.client import unix_connect
@@ -734,7 +672,7 @@ async def _ie115_update_reply(adapter, socket_path, keywords: list[str]) -> dict
                         "type": w.SESSION_UPDATE,
                         "session": {
                             "type": "transcription",
-                            "audio": {"input": {"transcription": {"keywords": keywords}}},
+                            "audio": {"input": {"transcription": transcription}},
                         },
                     }
                 )
@@ -783,7 +721,9 @@ async def test_ie115_hands_the_adapter_the_keywords_it_echoes(tmp_path):
 
 async def test_ie115_refuses_keywords_the_backend_does_not_take(tmp_path):
     """An unsupported optional field is refused, never silently ignored."""
-    reply = await _ie115_update_reply(FakeAdapter(), tmp_path / "myna.sock", ["Siobhan"])
+    reply = await _ie115_update_reply(
+        FakeAdapter(), tmp_path / "myna.sock", {"keywords": ["Siobhan"]}
+    )
     assert reply["type"] == w.ERROR
     assert reply["error"]["code"] == "invalid_parameter"
     assert "keywords" in reply["error"]["message"]
@@ -791,12 +731,16 @@ async def test_ie115_refuses_keywords_the_backend_does_not_take(tmp_path):
 
 async def test_ie115_admits_a_blank_keyword_list_on_any_backend(tmp_path):
     """Nothing left after normalization asks the backend for nothing."""
-    reply = await _ie115_update_reply(FakeAdapter(), tmp_path / "myna.sock", [" ", ""])
+    reply = await _ie115_update_reply(
+        FakeAdapter(), tmp_path / "myna.sock", {"keywords": [" ", ""]}
+    )
     assert reply["type"] == w.SESSION_UPDATED
     assert "keywords" not in reply["session"]["audio"]["input"]["transcription"]
 
 
 async def test_ie115_echoes_keywords_support_on_session_updated(tmp_path):
-    reply = await _ie115_update_reply(FakeAdapter(keywords=True), tmp_path / "myna.sock", [])
+    reply = await _ie115_update_reply(
+        FakeAdapter(keywords=True), tmp_path / "myna.sock", {"keywords": []}
+    )
     assert reply["type"] == w.SESSION_UPDATED
     assert reply["session"]["audio"]["input"]["transcription"]["keywords"] == []
