@@ -48,12 +48,16 @@ _WORD = re.compile(r"(\s*)(\W*?)([^\W\d_]+(?:'[^\W\d_]+)*)(\W*)", re.DOTALL)
 _SPECIAL = re.compile(r"<.+>")
 
 
+def _text(keyword: str) -> str:
+    """``keyword`` with its whitespace collapsed to single spaces."""
+    return " ".join(keyword.split())
+
+
 def _spellings(keywords: Sequence[str]) -> list[str]:
-    texts = [" ".join(keyword.split()) for keyword in keywords]
     return list(
         dict.fromkeys(
             spelling
-            for text in texts
+            for text in map(_text, keywords)
             if text
             for spelling in (" " + text, " " + text[0].upper() + text[1:])
         )
@@ -125,12 +129,9 @@ class KeywordBias:
     def complete(self, state: int) -> bool:
         return state in self._complete
 
-    def candidates(self, state: int) -> NDArray[np.intp]:
-        """Token ids that extend a match from ``state``: its own continuations,
-        its fallbacks', and every keyword's first piece."""
-        return self._offer(state)[0]
-
     def _offer(self, state: int) -> tuple[NDArray[np.intp], NDArray[np.float64]]:
+        """Token ids that extend a match from ``state`` (its own continuations,
+        its fallbacks', and every keyword's first piece), with their bonuses."""
         offer = self._offers.get(state)
         if offer is None:
             chain = [state, *self._fallback[state]]
@@ -252,7 +253,7 @@ def keyword_bias(
     chars = np.array([max(1, len(piece.strip())) for piece in vocab])
     spellings: dict[str, str] = {}
     for keyword in keywords:
-        text = " ".join(keyword.split())
+        text = _text(keyword)
         if text and " " not in text:
             spellings.setdefault(_fold(text), text)
     return KeywordBias(prefixes, children, complete, boost_per_char * chars, spellings)

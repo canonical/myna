@@ -39,6 +39,11 @@ BLANK = len(VOCAB) - 1
 ID = {token: i for i, token in enumerate(VOCAB)}
 
 
+def _candidates(bias, state):
+    """Token ids that extend a match from ``state``."""
+    return bias._offer(state)[0]
+
+
 def _bias(*keywords: str, boost: float = 1.0) -> KeywordBias:
     bias = keyword_bias(keywords, VOCAB, BLANK, boost_per_char=boost)
     assert bias is not None
@@ -80,8 +85,8 @@ def test_every_segmentation_the_vocab_allows_is_a_path():
 
 def test_a_keyword_matches_only_at_a_word_start():
     bias = _bias("Siobhan")
-    assert ID["ob"] not in bias.candidates(ROOT)
-    assert ID[" Si"] in bias.candidates(ROOT)
+    assert ID["ob"] not in _candidates(bias, ROOT)
+    assert ID[" Si"] in _candidates(bias, ROOT)
 
 
 def test_a_lowercase_keyword_also_matches_capitalised():
@@ -92,7 +97,7 @@ def test_a_lowercase_keyword_also_matches_capitalised():
 
 def test_a_capitalised_keyword_does_not_match_lowercase():
     bias = _bias("Siobhan")
-    assert ID[" si"] not in bias.candidates(ROOT)
+    assert ID[" si"] not in _candidates(bias, ROOT)
 
 
 def test_inner_whitespace_is_normalised():
@@ -142,22 +147,22 @@ def test_a_break_follows_the_longest_suffix_still_matching():
 
 def test_a_partial_match_offers_its_continuations_and_new_word_starts():
     bias = _bias("New Yak", "Yam", "Siobhan")
-    offered = set(bias.candidates(_walk(bias, " New", " Y")).tolist())
+    offered = set(_candidates(bias, _walk(bias, " New", " Y")).tolist())
     assert {ID["ak"], ID["am"], ID[" Si"], ID[" New"]} <= offered
     assert ID["ob"] not in offered
 
 
 def test_a_completed_keyword_offers_new_word_starts_only():
     bias = _bias("Siobhan")
-    offered = set(bias.candidates(_walk(bias, " Si", "ob", "han")).tolist())
-    assert offered == set(bias.candidates(ROOT).tolist())
+    offered = set(_candidates(bias, _walk(bias, " Si", "ob", "han")).tolist())
+    assert offered == set(_candidates(bias, ROOT).tolist())
 
 
 def test_blank_is_never_a_candidate():
     bias = _bias("Siobhan", "New York")
     state = _walk(bias, " Si")
-    assert BLANK not in bias.candidates(ROOT)
-    assert BLANK not in bias.candidates(state)
+    assert BLANK not in _candidates(bias, ROOT)
+    assert BLANK not in _candidates(bias, state)
 
 
 def test_rerank_prefers_a_candidate_within_its_bonus():
