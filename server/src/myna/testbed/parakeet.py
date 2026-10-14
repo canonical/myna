@@ -16,7 +16,7 @@ essentially free. The greedy TDT decode loop is a numpy/onnxruntime port of
 murmure's ``engine.rs`` (itself a port of NVIDIA's reference decoder):
 preprocess (nemo128 mel) → encode → per-frame ``decode_step`` with the
 duration-head skip. A session's keywords bias that loop (``keyword_bias``,
-``_ParakeetOnnx._decode_biased``); a session without them decodes exactly as
+``_ParakeetOnnx._decode_sequence``); a session without them decodes exactly as
 before.
 
 Emission is **chunked commit** (murmure ``audio/chunking.rs`` semantics, ported
@@ -438,9 +438,26 @@ class _JointBuffers:
     logits: NDArray[np.float32]  # (vocab+durations,), a view into the reused output buffer
 
 
+class _Unbiased:
+    """The decode's matcher for a session without keywords: keeps the
+    model's choice, and no match ever starts."""
+
+    def rerank(self, state: int, logits: NDArray[np.float32], token: int) -> int:
+        return token
+
+    def advance(self, state: int, token: int) -> tuple[int, bool]:
+        return ROOT, True
+
+    def complete(self, state: int) -> bool:
+        return False
+
+
+_UNBIASED = _Unbiased()
+
+
 @dataclass
 class _Rewind:
-    """Where `_decode_biased` resumes when a boosted match comes to nothing:
+    """Where `_decode_sequence` resumes when a boosted match comes to nothing:
     the loop state just before its first boosted token."""
 
     t: int
@@ -645,53 +662,17 @@ class _ParakeetOnnx:
         token; on non-blank update the decoder state; the duration head skips
         t forward; a blank (or MAX_TOKENS_PER_STEP at one frame) advances 1.
 
-        ``bias`` hands the decode to `_decode_biased`.
+        ``bias`` re-ranks every non-blank choice. Greedy decoding cannot take
+        a token back, so a boosted match stays provisional until its keyword
+        completes. If it breaks first, or the audio ends inside it, the decode
+        rewinds to the first boosted token and takes the model's own choice
+        there: a wrong guess costs the joint calls since, not the transcript.
+        The duration head is read as it comes: it is a separate head, not
+        conditioned on the token chosen. Each emitted token's probability
+        before the bonus is kept for ``bias.correct``, which the result passes
+        through. Without ``bias`` no match ever starts, so nothing rewinds.
         """
-        if bias is not None:
-            return self._decode_biased(encodings, encodings_len, bias)
-        buffers = self._joint_buffers()
-        tokens: list[str] = []
-        timestamps: list[float] = []
-        t = 0
-        emitted_at_frame = 0
-        prev_token = self._blank_idx
-        with _zone("decode_sequence"):
-            while t < encodings_len:
-                logits = self._decode_step(buffers, prev_token, encodings[t])
-                vocab_logits = logits[: self._vocab_size]
-                dur_logits = logits[self._vocab_size :]
-                token = int(np.argmax(vocab_logits))
-                if token != self._blank_idx:
-                    buffers.state_in[0][...] = buffers.state_out[0]
-                    buffers.state_in[1][...] = buffers.state_out[1]
-                    prev_token = token
-                    tokens.append(self._vocab[token])
-                    timestamps.append(t * FRAME_S)
-                    emitted_at_frame += 1
-                duration = int(np.argmax(dur_logits)) if len(dur_logits) else 0
-                if duration > 0:
-                    t += duration
-                    emitted_at_frame = 0
-                elif token == self._blank_idx or emitted_at_frame == MAX_TOKENS_PER_STEP:
-                    t += 1
-                    emitted_at_frame = 0
-        return tokens, timestamps
-
-    def _decode_biased(
-        self, encodings: NDArray[np.float32], encodings_len: int, bias: KeywordBias
-    ) -> tuple[list[str], list[float]]:
-        """`_decode_sequence` with ``bias`` re-ranking every non-blank choice.
-
-        Greedy decoding cannot take a token back, so a boosted match stays
-        provisional until its keyword completes. If it breaks first, or the
-        audio ends inside it, the decode rewinds to the first boosted token
-        and takes the model's own choice there: a wrong guess costs the joint
-        calls since, not the transcript. The duration head is read as it
-        comes: it is a separate head, not conditioned on the token chosen.
-
-        Each emitted token's probability before the bonus is kept for
-        ``bias.correct``, which the result passes through.
-        """
+        matcher: KeywordBias | _Unbiased = bias or _UNBIASED
         buffers = self._joint_buffers()
         tokens: list[str] = []
         timestamps: list[float] = []
@@ -702,59 +683,63 @@ class _ParakeetOnnx:
         state = ROOT
         rewind: _Rewind | None = None
         unbiased = False
-        while t < encodings_len or rewind is not None:
-            broken = t >= encodings_len
-            if not broken:
-                logits = self._decode_step(buffers, prev_token, encodings[t])
-                vocab_logits = logits[: self._vocab_size]
-                dur_logits = logits[self._vocab_size :]
-                token = int(np.argmax(vocab_logits))
-                fresh = False
-                if token != self._blank_idx and not unbiased:
-                    chosen = bias.rerank(state, vocab_logits, token)
-                    if chosen != token and rewind is None:
-                        rewind = _Rewind(
-                            t,
-                            emitted_at_frame,
-                            prev_token,
-                            state,
-                            len(tokens),
-                            (buffers.state_in[0].copy(), buffers.state_in[1].copy()),
-                        )
-                        fresh = True
-                    token = chosen
-                unbiased = False
-                if token != self._blank_idx:
-                    after, extended = bias.advance(state, token)
-                    broken = rewind is not None and not (extended or fresh)
-                    if not broken:
-                        state = after
-                        if bias.complete(state):
-                            rewind = None
-                        buffers.state_in[0][...] = buffers.state_out[0]
-                        buffers.state_in[1][...] = buffers.state_out[1]
-                        prev_token = token
-                        tokens.append(self._vocab[token])
-                        timestamps.append(t * FRAME_S)
-                        confidences.append(_probability(vocab_logits, token))
-                        emitted_at_frame += 1
+        with _zone("decode_sequence"):
+            while t < encodings_len or rewind is not None:
+                broken = t >= encodings_len
                 if not broken:
-                    duration = int(np.argmax(dur_logits)) if len(dur_logits) else 0
-                    if duration > 0:
-                        t += duration
-                        emitted_at_frame = 0
-                    elif token == self._blank_idx or emitted_at_frame == MAX_TOKENS_PER_STEP:
-                        t += 1
-                        emitted_at_frame = 0
-            if broken:
-                assert rewind is not None  # only a provisional match breaks
-                t, emitted_at_frame = rewind.t, rewind.emitted_at_frame
-                prev_token, state = rewind.prev_token, rewind.state
-                del tokens[rewind.n_tokens :], timestamps[rewind.n_tokens :]
-                del confidences[rewind.n_tokens :]
-                buffers.state_in[0][...] = rewind.decoder_state[0]
-                buffers.state_in[1][...] = rewind.decoder_state[1]
-                rewind, unbiased = None, True
+                    logits = self._decode_step(buffers, prev_token, encodings[t])
+                    vocab_logits = logits[: self._vocab_size]
+                    dur_logits = logits[self._vocab_size :]
+                    token = int(np.argmax(vocab_logits))
+                    fresh = False
+                    if token != self._blank_idx and not unbiased:
+                        chosen = matcher.rerank(state, vocab_logits, token)
+                        if chosen != token and rewind is None:
+                            rewind = _Rewind(
+                                t,
+                                emitted_at_frame,
+                                prev_token,
+                                state,
+                                len(tokens),
+                                (buffers.state_in[0].copy(), buffers.state_in[1].copy()),
+                            )
+                            fresh = True
+                        token = chosen
+                    unbiased = False
+                    if token != self._blank_idx:
+                        after, extended = matcher.advance(state, token)
+                        broken = rewind is not None and not (extended or fresh)
+                        if not broken:
+                            state = after
+                            if matcher.complete(state):
+                                rewind = None
+                            buffers.state_in[0][...] = buffers.state_out[0]
+                            buffers.state_in[1][...] = buffers.state_out[1]
+                            prev_token = token
+                            tokens.append(self._vocab[token])
+                            timestamps.append(t * FRAME_S)
+                            if bias is not None:
+                                confidences.append(_probability(vocab_logits, token))
+                            emitted_at_frame += 1
+                    if not broken:
+                        duration = int(np.argmax(dur_logits)) if len(dur_logits) else 0
+                        if duration > 0:
+                            t += duration
+                            emitted_at_frame = 0
+                        elif token == self._blank_idx or emitted_at_frame == MAX_TOKENS_PER_STEP:
+                            t += 1
+                            emitted_at_frame = 0
+                if broken:
+                    assert rewind is not None  # only a provisional match breaks
+                    t, emitted_at_frame = rewind.t, rewind.emitted_at_frame
+                    prev_token, state = rewind.prev_token, rewind.state
+                    del tokens[rewind.n_tokens :], timestamps[rewind.n_tokens :]
+                    del confidences[rewind.n_tokens :]
+                    buffers.state_in[0][...] = rewind.decoder_state[0]
+                    buffers.state_in[1][...] = rewind.decoder_state[1]
+                    rewind, unbiased = None, True
+        if bias is None:
+            return tokens, timestamps
         return bias.correct(tokens, timestamps, confidences)
 
     def transcribe(
