@@ -143,19 +143,16 @@ where
 
 /// Whether a `session.created` greeting lists `keywords` among the
 /// transcription defaults: how an IE115 server says it takes them.
-fn takes_keywords(greeting: Option<&Value>) -> bool {
-    greeting.is_some_and(|greeting| {
-        greeting.get("type").and_then(Value::as_str) == Some(SESSION_CREATED)
-            && greeting
-                .pointer("/session/audio/input/transcription/keywords")
-                .is_some_and(Value::is_array)
-    })
+fn takes_keywords(greeting: &Value) -> bool {
+    greeting.get("type").and_then(Value::as_str) == Some(SESSION_CREATED)
+        && greeting
+            .pointer("/session/audio/input/transcription/keywords")
+            .is_some_and(Value::is_array)
 }
 
 #[async_trait::async_trait]
 impl BackendClient for WsUnixIe115Backend {
-    async fn open_session(&self, config: SessionConfig) -> Result<BackendHandle, BackendError> {
-        let mut config = config;
+    async fn open_session(&self, mut config: SessionConfig) -> Result<BackendHandle, BackendError> {
         let stream = UnixStream::connect(&self.socket_path).await.map_err(|e| {
             myna_core::info_log!(
                 "backend",
@@ -172,7 +169,11 @@ impl BackendClient for WsUnixIe115Backend {
 
         // IE115 refuses an optional field a server does not support, so
         // keywords go only where the greeting lists them.
-        if !config.keywords.is_empty() && !takes_keywords(read_greeting(&mut ws).await.as_ref()) {
+        if !config.keywords.is_empty()
+            && !read_greeting(&mut ws)
+                .await
+                .is_some_and(|greeting| takes_keywords(&greeting))
+        {
             myna_core::info_log!(
                 "backend",
                 "vocabulary not sent: the backend does not take keywords"
@@ -515,15 +516,12 @@ mod tests {
             json!({"type": "session.created",
                    "session": {"audio": {"input": {"transcription": transcription}}}})
         };
-        assert!(takes_keywords(Some(&greeting(json!({"keywords": []})))));
-        assert!(!takes_keywords(Some(&greeting(
-            json!({"model": "whisper"})
-        ))));
-        assert!(!takes_keywords(Some(&greeting(json!({"keywords": null})))));
-        assert!(!takes_keywords(Some(
+        assert!(takes_keywords(&greeting(json!({"keywords": []}))));
+        assert!(!takes_keywords(&greeting(json!({"model": "whisper"}))));
+        assert!(!takes_keywords(&greeting(json!({"keywords": null}))));
+        assert!(!takes_keywords(
             &json!({"type": "session.updated", "session": {"audio": {"input": {"transcription": {"keywords": []}}}}})
-        )));
-        assert!(!takes_keywords(None));
+        ));
     }
 
     #[test]
