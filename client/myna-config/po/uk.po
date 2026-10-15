@@ -8,7 +8,7 @@ msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-10-11 11:54+0100\n"
-"PO-Revision-Date: 2026-10-15 12:05+0000\n"
+"PO-Revision-Date: 2026-10-15 17:20+0000\n"
 "Last-Translator: Ihor Hordiichuk <ihor_ck@users.noreply.hosted.weblate.org>\n"
 "Language-Team: Ukrainian <https://hosted.weblate.org/projects/ubuntu-desktop-"
 "translations/myna-config/uk/>\n"
@@ -26,7 +26,7 @@ msgstr "Про діагностику"
 
 #: data/diagnostics-page.blp:15 data/onboarding-welcome.blp:25
 msgid "Set up Dictation"
-msgstr "Налаштувати диктування"
+msgstr "Налаштувати Диктування"
 
 #: data/diagnostics-page.blp:20 data/myna-page.blp:33 src/shortcut_ui.rs:287
 msgid "Set up"
@@ -49,7 +49,7 @@ msgstr "Діагностика"
 #: data/diagnostics-page.blp:40
 msgid "No audio, transcript, or filesystem path is ever included."
 msgstr ""
-"Аудіозаписи, протоколи роботи чи шляхи до файлів ніколи не додаються до "
+"Аудіозаписи, історія розшифрування чи шляхи до файлів ніколи не додаються до "
 "звіту."
 
 #: data/diagnostics-page.blp:49 src/backend_ui.rs:3114 src/backend_ui.rs:3394
@@ -111,7 +111,7 @@ msgstr "Головне меню"
 
 #: data/main-window.blp:32 src/backend_ui.rs:2815
 msgid "General"
-msgstr "Загальні"
+msgstr "Загальне"
 
 #: data/main-window.blp:39 data/myna-page.blp:71 src/app.rs:1480
 #: src/app.rs:3154 src/app.rs:3578 src/backend_apply.rs:379
@@ -141,7 +141,7 @@ msgstr "Комбінація клавіш"
 
 #: data/myna-page.blp:15
 msgid "Press to start and stop"
-msgstr "Натисніть, щоб розпочати і зупинити"
+msgstr "Натисніть, щоб розпочати чи зупинити"
 
 #: data/myna-page.blp:47 src/shortcut_ui.rs:324
 msgid "Press a shortcut…"
@@ -159,16 +159,16 @@ msgstr "Диктування"
 
 #: data/onboarding-components.blp:18 src/app.rs:3883 src/onboarding_ui.rs:1341
 msgid "Install components"
-msgstr "Встановити компоненти"
+msgstr "Встановлення компонентів"
 
 #: data/onboarding-components.blp:27 src/app.rs:3887
 msgid ""
 "Dictation requires some additional components, including the optimal speech-"
 "to-text model for your computer. Installation might take a few minutes."
 msgstr ""
-"Для роботи функції диктування потрібні деякі додаткові компоненти, зокрема "
-"оптимальна модель перетворення мови у текст для вашого комп’ютера. "
-"Встановлення може зайняти кілька хвилин."
+"Для роботи Диктування потрібні деякі додаткові компоненти, зокрема "
+"оптимальна модель розпізнавання мовлення для вашого комп’ютера. Встановлення "
+"може тривати кілька хвилин."
 
 #: data/onboarding-components.blp:44 src/app.rs:491 src/app.rs:3959
 #: src/app.rs:4024 src/app.rs:4434
@@ -193,838 +193,864 @@ msgid ""
 "Log out and back in to turn on the dictation indicator (GNOME Shell "
 "extension)."
 msgstr ""
+"Вийдіть із системи та увійдіть знову, щоб увімкнути індикатор диктування "
+"(розширення GNOME Shell)."
 
 #: data/onboarding-shortcut.blp:78 src/shortcut_ui.rs:322
 msgid "Press the new shortcut…"
-msgstr ""
+msgstr "Натисніть нову комбінацію клавіш…"
 
 #: data/onboarding-shortcut.blp:104
 msgid ""
 "Use Ctrl, Alt or Super with another key, or a function key. Press Escape to "
 "cancel."
 msgstr ""
+"Використовуйте клавіші Ctrl, Alt або Super у поєднанні з іншою клавішею або "
+"функціональною клавішею. Натисніть Escape, щоб скасувати."
 
 #: data/onboarding-welcome.blp:34
 msgid "Dictation runs locally, with no data leaving your computer."
-msgstr ""
+msgstr "Диктування працює локально: дані не залишають ваш комп’ютер."
 
 #: data/onboarding-window.blp:24 src/app.rs:414 src/onboarding_ui.rs:776
 msgid "Next"
-msgstr ""
+msgstr "Далі"
 
 #: data/operation-error-dialog.blp:5
 msgid "Operation failed"
-msgstr ""
+msgstr "Збій операції"
 
 #: data/operation-error-dialog.blp:6
 msgid "Full details are shown below. You can copy them to share with support."
 msgstr ""
+"Усі подробиці наведені нижче. Ви можете скопіювати їх, щоб надіслати до "
+"служби підтримки."
 
 #: data/operation-error-dialog.blp:12
 msgid "Close"
-msgstr ""
+msgstr "Закрити"
 
 #: data/operation-error-dialog.blp:34 src/app.rs:4103
 msgid "Copy Details"
-msgstr ""
+msgstr "Скопіювати подробиці"
 
 #: data/operation-error-dialog.blp:35
 msgid "Copy the full failure details to the clipboard"
-msgstr ""
+msgstr "Скопіювати повну інформацію про помилку в буфер обміну"
 
 #: data/status-page.blp:8 src/app.rs:1475 src/app.rs:5239
 msgid "Loading Myna Settings"
-msgstr ""
+msgstr "Завантаження налаштувань Myna"
 
 #: data/status-page.blp:9 src/app.rs:1476 src/app.rs:5240
 msgid "Reading the installed settings schema…"
-msgstr ""
+msgstr "Зчитування схеми встановлених налаштувань…"
 
 #: src/app.rs:130
 msgid "translator-credits"
-msgstr ""
+msgstr "Ігор Гордійчук"
 
 #: src/app.rs:1185 src/onboarding_ui.rs:781
 msgid "Done"
-msgstr ""
+msgstr "Готово"
 
 #: src/app.rs:1481
 msgid "Model details appear once Myna finds your models."
-msgstr ""
+msgstr "Деталі моделей з’являються, щойно Myna знайде ваші моделі."
 
 #: src/app.rs:1486
 msgid "Diagnostics appear once Myna finds your models."
-msgstr ""
+msgstr "Діагностика з’являється, щойно Myna знайде ваші моделі."
 
 #: src/app.rs:3192 src/backend_ui.rs:3762 src/model_family.rs:27
 msgid "Fastest and most accurate in its 25 languages"
-msgstr ""
+msgstr "Найшвидша і найточніша для 25 мов"
 
 #: src/app.rs:3196 src/backend_ui.rs:4291 src/model_family.rs:31
 msgid "Most languages, with uneven accuracy"
-msgstr ""
+msgstr "Більшість мов, з різною точністю"
 
 #: src/app.rs:3331 src/myna_settings.rs:105
 msgid "As you speak"
-msgstr ""
+msgstr "Коли ви говорите"
 
 #: src/app.rs:3332 src/myna_settings.rs:106
 msgid "When you stop"
-msgstr ""
+msgstr "Коли ви закінчуєте говорити"
 
 #: src/app.rs:3472 src/app.rs:5729
 msgid "Preview"
-msgstr ""
+msgstr "Прослухати"
 
 #: src/app.rs:3486 src/sound_preview.rs:69
 msgid "Could not preview sounds"
-msgstr ""
+msgstr "Не вдалося відтворити звуки"
 
 #: src/app.rs:3520 src/backend_ui.rs:721
 msgid "Changing to {model} failed"
-msgstr ""
+msgstr "Не вдалося змінити на {model}"
 
 #: src/app.rs:3521 src/app.rs:4056 src/app.rs:4065 src/app.rs:4454
 #: src/app.rs:5103 src/app.rs:5109 src/backend_ui.rs:1291
 #: src/onboarding_ui.rs:556 src/ui/status_page.rs:70
 msgid "Details"
-msgstr ""
+msgstr "Подробиці"
 
 #. TRANSLATORS: {setting} is a setting's name on the Model tab, such as "Unload when idle (seconds)".
 #: src/app.rs:3627 src/backend_ui.rs:1688
 msgid "Changing “{setting}” failed"
-msgstr ""
+msgstr "Не вдалося змінити налаштування «{setting}»"
 
 #: src/app.rs:3629 src/presentation.rs:178
 msgid "Unload when idle (seconds)"
-msgstr ""
+msgstr "Вимкнення за бездіяльності (в секундах)"
 
 #. TRANSLATORS: {size} is a download size, such as "4.2 GB".
 #: src/app.rs:3921 src/onboarding_ui.rs:855
 msgid "Up to {size}"
-msgstr ""
+msgstr "До {size}"
 
 #: src/app.rs:4057 src/onboarding_ui.rs:1011
 msgid "Could not let Myna run in the background"
-msgstr ""
+msgstr "Не вдалося запустити Myna у фоновому режимі"
 
 #: src/app.rs:4087 src/app.rs:4237 src/backend_ui.rs:2419
 msgid "Executable:"
-msgstr ""
+msgstr "Виконуваний:"
 
 #: src/app.rs:4088 src/app.rs:4238 src/backend_ui.rs:2423
 msgid "Arguments:"
-msgstr ""
+msgstr "Аргументи:"
 
 #: src/app.rs:4089 src/app.rs:4239 src/backend_ui.rs:2432
 #: src/backend_ui.rs:2510 src/backend_ui.rs:3231
 msgid "Exit status:"
-msgstr ""
+msgstr "Статус завершення:"
 
 #: src/app.rs:4090 src/app.rs:4240 src/app.rs:4466 src/backend_ui.rs:2477
 msgid "Message:"
-msgstr ""
+msgstr "Повідомлення:"
 
 #: src/app.rs:4156 src/onboarding_ui.rs:990
 msgid "Enabling user daemons support"
-msgstr ""
+msgstr "Увімкнення підтримки користувацьких фонових процесів"
 
 #: src/app.rs:4179 src/onboarding_ui.rs:991
 msgid "Installing Dictation app"
-msgstr ""
+msgstr "Встановити застосунок Диктування"
 
 #. TRANSLATORS: {step} is what is installing, such as "Installing speech-to-text model", and {percent} how much of its download has arrived.
 #: src/app.rs:4189 src/app.rs:4252 src/app.rs:4352 src/onboarding_ui.rs:999
 msgid "{step} ({percent}%)"
-msgstr ""
+msgstr "{step} ({percent}%)"
 
 #: src/app.rs:4203 src/onboarding_ui.rs:992
 msgid "Installing speech-to-text model"
-msgstr ""
+msgstr "Встановлення моделі розпізнавання мовлення"
 
 #: src/app.rs:4217 src/onboarding_ui.rs:1013
 msgid "Installing the speech-to-text model failed"
-msgstr ""
+msgstr "Не вдалося встановити модель розпізнавання мовлення"
 
 #: src/app.rs:4280 src/onboarding_ui.rs:994
 msgid "Enabling shell extension"
-msgstr ""
+msgstr "Увімкнення розширення оболонки"
 
 #: src/app.rs:4452 src/onboarding_ui.rs:1015
 msgid "Enabling the shell extension failed"
-msgstr ""
+msgstr "Не вдалося ввімкнути розширення оболонки"
 
 #: src/app.rs:4465 src/backend_ui.rs:2463
 msgid "D-Bus call:"
-msgstr ""
+msgstr "Виклик D-Bus:"
 
 #: src/app.rs:4730 src/shortcut_ui.rs:669
 msgid "You can trigger Dictation anytime by using the keyboard shortcut:"
 msgstr ""
+"Ви можете запустити Диктування в будь-який момент за допомогою комбінації "
+"клавіш:"
 
 #: src/app.rs:5102 src/onboarding_ui.rs:676 src/onboarding_ui.rs:683
 #: src/onboarding_ui.rs:925
 msgid "Could not set up Dictation"
-msgstr ""
+msgstr "Не вдалося налаштувати Диктування"
 
 #: src/app.rs:5140 src/onboarding_ui.rs:876
 msgid "Dictation is not set up yet. Select Next to try again."
-msgstr ""
+msgstr "Диктування ще не налаштовано. Натисніть Далі, щоб повторити спробу."
 
 #: src/app.rs:5244
 msgid "No Myna Settings"
-msgstr ""
+msgstr "Налаштування Myna відсутні"
 
 #: src/app.rs:5245
 msgid "The installed schema does not declare any settings."
-msgstr ""
+msgstr "Установлена схема не містить налаштувань."
 
 #: src/app.rs:5265
 msgid "Myna Settings Unavailable"
-msgstr ""
+msgstr "Налаштування Myna недоступні"
 
 #: src/app.rs:5266
 msgid "Myna Settings could not start."
-msgstr ""
+msgstr "Не вдалося запустити налаштування Myna."
 
 #: src/app.rs:5697
 msgid "Could not save the setting"
-msgstr ""
+msgstr "Не вдалося зберегти налаштування"
 
 #: src/app.rs:5734
 msgid "Preview sound style"
-msgstr ""
+msgstr "Прослухати стилі звуків"
 
 #: src/active_backend.rs:293
 msgid "The change was cancelled."
-msgstr ""
+msgstr "Зміну скасовано."
 
 #: src/active_backend.rs:368
 msgid "No model is connected."
-msgstr ""
+msgstr "Жодної моделі не під'єднано."
 
 #: src/active_backend.rs:373
 msgid "The model is not available to switch to."
-msgstr ""
+msgstr "Модель недоступна для перемикання на неї."
 
 #: src/active_backend.rs:387
 msgid "The model changed while it was being switched on. Try again."
-msgstr ""
+msgstr "Модель змінилася під час увімкнення. Спробуйте ще раз."
 
 #: src/backend_ui.rs:121 src/model_family.rs:283
 msgid "Recommended"
-msgstr ""
+msgstr "Рекомендовано"
 
 #: src/backend_ui.rs:182 src/diagnostics.rs:474
 msgid "Languages"
-msgstr ""
+msgstr "Мови"
 
 #: src/backend_ui.rs:217
 msgid "Your language"
-msgstr ""
+msgstr "Ваша мова"
 
 #. TRANSLATORS: an upper bound on a download size, such as "up to 1.4 GB": it is less on a machine whose GPU cannot be used.
 #: src/backend_ui.rs:365
 msgid "up to {size}"
-msgstr ""
+msgstr "до {size}"
 
 #. TRANSLATORS: {description} says what a model is good at, such as "Most languages, with uneven accuracy", and {size} what installing it downloads, such as "198 MB" or "up to 1.4 GB". The spaces around the dot are no-break spaces, so the size never starts a line of its own.
 #: src/backend_ui.rs:371
 msgid "{description}\\u{a0}·\\u{a0}{size}"
-msgstr ""
+msgstr "{description}\\u{a0}·\\u{a0}{size}"
 
 #: src/backend_ui.rs:670
 msgid "This model is no longer installed."
-msgstr ""
+msgstr "Цю модель більше не встановлено."
 
 #: src/backend_ui.rs:723
 msgid "Changing to {model} could not be confirmed"
-msgstr ""
+msgstr "Не вдалося підтвердити зміну на {model}"
 
 #: src/backend_ui.rs:786
 msgid ""
 "Final connections could not be verified. Switching is disabled until refresh "
 "succeeds."
 msgstr ""
+"Не вдалося перевірити кінцеві з'єднання. Перемикання вимкнено до успішного "
+"оновлення."
 
 #: src/backend_ui.rs:791 src/diagnostics.rs:658
 msgid "No model is connected. Choose one to use for dictation."
-msgstr ""
+msgstr "Жодна модель не під'єднана. Оберіть модель для диктування."
 
 #: src/backend_ui.rs:794
 msgid "Several models are connected. Choose one to use for dictation."
-msgstr ""
+msgstr "Під'єднано декілька моделей. Оберіть одну для диктування."
 
 #: src/backend_ui.rs:893
 msgid "Changing model"
-msgstr ""
+msgstr "Зміна моделі"
 
 #: src/backend_ui.rs:1108
 msgid "Install"
-msgstr ""
+msgstr "Установити"
 
 #. TRANSLATORS: the Install button's name to assistive technology; {model} is a model family, such as "Whisper".
 #: src/backend_ui.rs:1110
 msgid "Install {model}"
-msgstr ""
+msgstr "Установити {model}"
 
 #: src/backend_ui.rs:1275
 msgid "Installing {model} failed"
-msgstr ""
+msgstr "Не вдалося встановити {model}"
 
 #: src/backend_ui.rs:1388 src/backend_ui.rs:1527
 msgid "Wait for the current change to finish."
-msgstr ""
+msgstr "Дочекайтеся завершення поточної зміни."
 
 #: src/backend_ui.rs:1542
 msgid "Applying and restarting the model…"
-msgstr ""
+msgstr "Застосування і перезапуск моделі…"
 
 #. TRANSLATORS: {setting} is a setting's name on the Model tab, such as "Unload when idle (seconds)".
 #: src/backend_ui.rs:1691
 msgid "Changing “{setting}” could not be confirmed"
-msgstr ""
+msgstr "Не вдалося підтвердити зміну налаштування «{setting}»"
 
 #: src/backend_ui.rs:1727
 msgid "Could not read the installed models."
-msgstr ""
+msgstr "Не вдалося прочитати встановлені моделі."
 
 #: src/backend_ui.rs:1782
 msgid "No active model"
-msgstr ""
+msgstr "Немає активної моделі"
 
 #: src/backend_ui.rs:1783
 msgid "Choose a model on the General tab."
-msgstr ""
+msgstr "Оберіть модель на вкладці Загальне."
 
 #: src/backend_ui.rs:1786
 msgid "Several models are connected"
-msgstr ""
+msgstr "Під'єднано кілька моделей"
 
 #: src/backend_ui.rs:1787
 msgid "Choose one model on the General tab."
-msgstr ""
+msgstr "Оберіть одну модель на вкладці Загальне."
 
 #: src/backend_ui.rs:1993
 msgid "Diagnostics copied. Paste them into the issue."
-msgstr ""
+msgstr "Діагностику скопійовано. Вставте її до опису вади."
 
 #: src/backend_ui.rs:2004
 msgid "Could not open the web browser"
-msgstr ""
+msgstr "Не вдалося відкрити браузер"
 
 #: src/backend_ui.rs:2084
 msgid "Copy privacy-safe diagnostics"
-msgstr ""
+msgstr "Скопіювати діагностику з дотриманням приватності"
 
 #: src/backend_ui.rs:2095
 msgid "Diagnostics copied to clipboard"
-msgstr ""
+msgstr "Діагностику скопійовано до буфера обміну"
 
 #: src/backend_ui.rs:2124 src/diagnostics.rs:419
 msgid "Dictation is not installed"
-msgstr ""
+msgstr "Диктування не встановлено"
 
 #: src/backend_ui.rs:2125 src/diagnostics.rs:420
 msgid "No model installed"
-msgstr ""
+msgstr "Модель не встановлено"
 
 #: src/backend_ui.rs:2126 src/diagnostics.rs:422
 msgid "No input method installed"
-msgstr ""
+msgstr "Метод введення не встановлено"
 
 #: src/backend_ui.rs:2314
 msgid "The model kept a different value than the one you chose."
-msgstr ""
+msgstr "Модель зберегла значення, яке відрізняється від обраного."
 
 #: src/backend_ui.rs:2321
 msgid "The setting was saved, but the model did not start again."
-msgstr ""
+msgstr "Налаштування збережено, але модель не перезапустилася."
 
 #: src/backend_ui.rs:2328
 msgid "The setting was changed, but it could not be read back."
-msgstr ""
+msgstr "Налаштування змінено, але не вдалося прочитати його."
 
 #: src/backend_ui.rs:2335
 msgid "The setting was changed, but reading it back was interrupted."
-msgstr ""
+msgstr "Налаштування змінено, але його зчитування перервано."
 
 #: src/backend_ui.rs:2353 src/backend_ui.rs:2380
 msgid "The system did not allow the change."
-msgstr ""
+msgstr "Система не дозволяє зміну."
 
 #: src/backend_ui.rs:2360 src/backend_ui.rs:2383
 msgid "The model rejected the value."
-msgstr ""
+msgstr "Модель відхилила значення."
 
 #: src/backend_ui.rs:2367 src/backend_ui.rs:2386 src/backend_ui.rs:3165
 msgid "The change could not be made."
-msgstr ""
+msgstr "Неможливо виконати зміну."
 
 #: src/backend_ui.rs:2377
 msgid "The change was interrupted after it started."
-msgstr ""
+msgstr "Зміну перервано після запуску."
 
 #: src/backend_ui.rs:2440 src/backend_ui.rs:2519 src/backend_ui.rs:3240
 msgid "Standard error:"
-msgstr ""
+msgstr "Стандартна помилка:"
 
 #: src/backend_ui.rs:2450
 msgid "Request:"
-msgstr ""
+msgstr "Запит:"
 
 #: src/backend_ui.rs:2456
 msgid "HTTP status:"
-msgstr ""
+msgstr "Статус HTTP:"
 
 #: src/backend_ui.rs:2469
 msgid "Setting:"
-msgstr ""
+msgstr "Налаштування:"
 
 #: src/backend_ui.rs:2494
 msgid "Some operations completed before the apply failed.\n"
-msgstr ""
+msgstr "Деякі операції завершено до збою застосування.\n"
 
 #: src/backend_ui.rs:2498
 msgid "No privileged operations completed.\n"
-msgstr ""
+msgstr "Привілейовані операції не виконано.\n"
 
 #: src/backend_ui.rs:2500
 msgid "Completed operations:\n"
-msgstr ""
+msgstr "Виконані операції:\n"
 
 #: src/backend_ui.rs:2526
 msgid "Failure:\n"
-msgstr ""
+msgstr "Збій:\n"
 
 #: src/backend_ui.rs:2530
 msgid "Reconciliation read-back:\n"
-msgstr ""
+msgstr "Звірення прочитаних значень:\n"
 
 #: src/backend_ui.rs:2542
 msgid "Model:"
-msgstr ""
+msgstr "Модель:"
 
 #: src/backend_ui.rs:2548
 msgid "Services: none"
-msgstr ""
+msgstr "Служби: немає"
 
 #: src/backend_ui.rs:2550
 msgid "Services:"
-msgstr ""
+msgstr "Служби:"
 
 #: src/backend_ui.rs:2562
 msgid "Status: unavailable"
-msgstr ""
+msgstr "Стан: недоступний"
 
 #: src/backend_ui.rs:2569
 msgid "Post-failure surface errors:"
-msgstr ""
+msgstr "Помилки верхнього рівня після збою:"
 
 #: src/backend_ui.rs:2600
 msgid "Language"
-msgstr ""
+msgstr "Мова"
 
 #: src/backend_ui.rs:2602
 msgid "A code such as en, fr or zh. Leave it empty to detect the language."
 msgstr ""
+"Код, наприклад, en, fr or zh. Залиште порожнім, щоб визначити мову "
+"автоматично."
 
 #: src/backend_ui.rs:2655
 msgid "Overview"
-msgstr ""
+msgstr "Огляд"
 
 #: src/backend_ui.rs:2665
 msgid "Connection"
-msgstr ""
+msgstr "З'єднання"
 
 #: src/backend_ui.rs:2668
 msgid "Active. Myna uses this model for dictation."
-msgstr ""
+msgstr "Активна. Myna використовує цю модель для диктування."
 
 #: src/backend_ui.rs:2671
 msgid "Several models are connected. Only one should be active."
-msgstr ""
+msgstr "Під'єднано кілька моделей. Активною повинна бути лише одна."
 
 #: src/backend_ui.rs:2673
 msgid "Not connected to Myna."
-msgstr ""
+msgstr "Не під'єднано до Myna."
 
 #: src/backend_ui.rs:2679
 msgid "Active model"
-msgstr ""
+msgstr "Активно модель"
 
 #: src/backend_ui.rs:2685
 msgid "Active engine"
-msgstr ""
+msgstr "Активний рушій"
 
 #: src/backend_ui.rs:2688
 msgid "None selected. Choose one below."
-msgstr ""
+msgstr "Не вибрано. Оберіть одну нижче."
 
 #: src/backend_ui.rs:2705 src/diagnostics.rs:641
 msgid "Services"
-msgstr ""
+msgstr "Служби"
 
 #: src/backend_ui.rs:2707
 msgid "No service health reported"
-msgstr ""
+msgstr "Немає даних про стан служби"
 
 #: src/backend_ui.rs:2721
 msgid "Loading"
-msgstr ""
+msgstr "Завантаження"
 
 #: src/backend_ui.rs:2722
 msgid "Reading this model's settings…"
-msgstr ""
+msgstr "Читання налаштувань цієї моделі…"
 
 #: src/backend_ui.rs:2731
 msgid "No configuration reported"
-msgstr ""
+msgstr "Конфігурацію не виявлено"
 
 #: src/backend_ui.rs:2733
 msgid "The model answered but reported no settings to change."
 msgstr ""
+"Модель відповіла, але повідомила, що налаштувань, які потрібно змінити, "
+"немає."
 
 #: src/backend_ui.rs:2743
 msgid "Some data is unavailable"
-msgstr ""
+msgstr "Деякі дані недоступні"
 
 #: src/backend_ui.rs:2745
 msgid "Raw failure details are recorded on the Diagnostics page."
-msgstr ""
+msgstr "Необроблені дані про збій записуються на сторінці Діагностика."
 
 #: src/backend_ui.rs:2788 src/backend_ui.rs:3112 src/backend_ui.rs:3390
 msgid "Refreshing…"
-msgstr ""
+msgstr "Оновлення…"
 
 #: src/backend_ui.rs:2816
 msgid "Runtime"
-msgstr ""
+msgstr "Середовище виконання"
 
 #: src/backend_ui.rs:2817
 msgid "Advanced"
-msgstr ""
+msgstr "Розширені"
 
 #: src/backend_ui.rs:2818
 msgid "Sensitive"
-msgstr ""
+msgstr "Конфіденційні"
 
 #: src/backend_ui.rs:2825
 msgid "Common settings for this model."
-msgstr ""
+msgstr "Загальні налаштування для цієї моделі."
 
 #: src/backend_ui.rs:2828
 msgid "Runtime and performance related settings."
-msgstr ""
+msgstr "Налаштування середовища виконання та швидкодії."
 
 #: src/backend_ui.rs:2831
 msgid "Advanced settings."
-msgstr ""
+msgstr "Розширені налаштування."
 
 #: src/backend_ui.rs:2834
 msgid "Internal and sensitive values are shown for diagnostics only."
-msgstr ""
+msgstr "Внутрішні та конфіденційні значення показані лише для діагностики."
 
 #: src/backend_ui.rs:2858
 msgid "Sensitive value (redacted)"
-msgstr ""
+msgstr "Конфіденційне значення (сховано)"
 
 #. TRANSLATORS: {name} is the model part or snap being downloaded, such as "model-small"; {done} and {total} are sizes such as "210.0 MB".
 #: src/backend_ui.rs:3006
 msgid "Downloading {name}: {done} of {total}"
-msgstr ""
+msgstr "Завантаження {name}: {done} із {total}"
 
 #: src/backend_ui.rs:3018
 msgid "Active"
-msgstr ""
+msgstr "Активно"
 
 #: src/backend_ui.rs:3019
 msgid "Inactive"
-msgstr ""
+msgstr "Неактивно"
 
 #: src/backend_ui.rs:3020
 msgid "Failed"
-msgstr ""
+msgstr "Збій"
 
 #: src/backend_ui.rs:3022
 msgid "Unknown"
-msgstr ""
+msgstr "Невідомо"
 
 #: src/backend_ui.rs:3087
 msgid "Installed snaps"
-msgstr ""
+msgstr "Установлені пакети snap"
 
 #: src/backend_ui.rs:3088
 msgid "Model connections"
-msgstr ""
+msgstr "З'єднання моделі"
 
 #: src/backend_ui.rs:3089
 msgid "Model control command"
-msgstr ""
+msgstr "Команда керування моделлю"
 
 #: src/backend_ui.rs:3090
 msgid "Model settings"
-msgstr ""
+msgstr "Налаштування моделі"
 
 #: src/backend_ui.rs:3091
 msgid "Model status"
-msgstr ""
+msgstr "Стан моделі"
 
 #: src/backend_ui.rs:3092
 msgid "Available models"
-msgstr ""
+msgstr "Доступні моделі"
 
 #: src/backend_ui.rs:3093
 msgid "Available engines"
-msgstr ""
+msgstr "Доступні рушії"
 
 #: src/backend_ui.rs:3099
 msgid "Persisted values could not be read."
-msgstr ""
+msgstr "Не вдалося прочитати збережені значення."
 
 #: src/backend_ui.rs:3110 src/backend_ui.rs:3398
 msgid "Applying changes…"
-msgstr ""
+msgstr "Застосування змін…"
 
 #: src/backend_ui.rs:3133
 msgid "missing"
-msgstr ""
+msgstr "немає"
 
 #. TRANSLATORS: {key} is a setting's key, such as "streaming"; {requested} and {actual} are its values.
 #: src/backend_ui.rs:3135
 msgid "{key}: asked for {requested}, read back {actual}"
-msgstr ""
+msgstr "{key}: запитує {requested}, прочитано {actual}"
 
 #: src/backend_ui.rs:3163
 msgid "Error:\n"
-msgstr ""
+msgstr "Помилка:\n"
 
 #: src/backend_ui.rs:3173
 msgid "The change ran, but the connections do not match it."
-msgstr ""
+msgstr "Зміна виконана, але з'єднання не відповідають їй."
 
 #: src/backend_ui.rs:3177
 msgid "The connections changed before the change could start. Try again."
-msgstr ""
+msgstr "З'єднання змінилися до того, як почалася зміна. Спробуйте ще раз."
 
 #: src/backend_ui.rs:3181
 msgid "Discovery error:\n"
-msgstr ""
+msgstr "Помилка виявлення:\n"
 
 #: src/backend_ui.rs:3183
 msgid "The change ran, but the connections could not be read back."
-msgstr ""
+msgstr "Зміна виконана, але з’єднання не вдалося прочитати."
 
 #: src/backend_ui.rs:3200
 msgid "Final connections:"
-msgstr ""
+msgstr "Кінцеві з'єднання:"
 
 #: src/backend_ui.rs:3205
 msgid "Final connections could not be verified:"
-msgstr ""
+msgstr "Не вдалося перевірити кінцеві з'єднання:"
 
 #: src/backend_ui.rs:3209
 msgid "Final connections could not be verified.\n"
-msgstr ""
+msgstr "Не вдалося перевірити кінцеві з'єднання.\n"
 
 #: src/backend_ui.rs:3217
 msgid "No snapd operations completed.\n"
-msgstr ""
+msgstr "Жодна операція snapd не завершена.\n"
 
 #: src/backend_ui.rs:3221
 msgid "Completed snapd operations:\n"
-msgstr ""
+msgstr "Завершені операції snapd:\n"
 
 #: src/backend_ui.rs:3250
 msgid "no model connected"
-msgstr ""
+msgstr "модель не під'єднана"
 
 #: src/backend_ui.rs:3254
 msgid "connected"
-msgstr ""
+msgstr "під'єднано"
 
 #: src/backend_ui.rs:3264
 msgid "several models"
-msgstr ""
+msgstr "кілька моделей"
 
 #: src/backend_ui.rs:4295 src/model_family.rs:35
 msgid "Best for Chinese, Japanese and Korean"
-msgstr ""
+msgstr "Найкраще підходить для китайської, японської та корейської мов"
 
 #: src/backend_apply.rs:81
 msgid "selector value must be text"
-msgstr ""
+msgstr "значення селектора має бути текстом"
 
 #: src/backend_apply.rs:95
 msgid "the model's settings command could not be found"
-msgstr ""
+msgstr "не вдалося знайти команду налаштувань моделі"
 
 #: src/backend_apply.rs:380
 msgid "the model's restart command could not be built"
-msgstr ""
+msgstr "не вдалося скомпілювати команду перезапуску моделі"
 
 #: src/backend_apply.rs:479
 msgid "value must be a finite number"
-msgstr ""
+msgstr "значення має бути скінченним числом"
 
 #: src/backend_apply.rs:504
 msgid "The model's restart could not be confirmed."
-msgstr ""
+msgstr "Не вдалося підтвердити перезапуск моделі."
 
 #: src/backend_apply.rs:529
 msgid "The model did not restart."
-msgstr ""
+msgstr "Модель не перезапустилася."
 
 #: src/backend_apply.rs:551
 msgctxt "service state"
 msgid "active"
-msgstr ""
+msgstr "активна"
 
 #: src/backend_apply.rs:552
 msgctxt "service state"
 msgid "inactive"
-msgstr ""
+msgstr "неактивна"
 
 #: src/backend_apply.rs:553
 msgctxt "service state"
 msgid "failed"
-msgstr ""
+msgstr "збій"
 
 #: src/backend_apply.rs:554
 msgctxt "service state"
 msgid "unknown"
-msgstr ""
+msgstr "невідомо"
 
 #: src/onboarding_ui.rs:678
 msgid "The system is busy installing software. Try again in a moment."
 msgstr ""
+"Система зараз встановлює програмне забезпечення. Спробуйте ще раз через "
+"деякий час."
 
 #: src/onboarding_ui.rs:778
 msgid "Continue to the next onboarding step."
-msgstr ""
+msgstr "Перейти до наступного етапу налаштування."
 
 #: src/onboarding_ui.rs:783
 msgid "Close Myna Settings."
-msgstr ""
+msgstr "Закрити налаштування Myna."
 
 #: src/onboarding_ui.rs:873
 msgid ""
 "The input method IBus is not installed. Install the “ibus” package, then log "
 "out and back in."
 msgstr ""
+"Метод введення IBus не встановлено. Встановіть пакет «ibus», а потім вийдіть "
+"із системи та увійдіть знову."
 
 #: src/onboarding_ui.rs:878
 msgid "Setup status unavailable. The log has the details."
-msgstr ""
+msgstr "Стан налаштування невідомий. Подробиці міститься в журналі."
 
 #: src/onboarding_ui.rs:993
 msgid "Setting up the input method"
-msgstr ""
+msgstr "Налаштування методу вводу"
 
 #: src/onboarding_ui.rs:1012
 msgid "Installing the Dictation app failed"
-msgstr ""
+msgstr "Не вдалося встановити застосунок Диктування"
 
 #: src/onboarding_ui.rs:1014
 msgid "Setting up the input method failed"
-msgstr ""
+msgstr "Не вдалося налаштувати метод вводу"
 
 #: src/onboarding_ui.rs:1062
 msgid "Log out and back in to finish setting up the input method."
 msgstr ""
+"Вийдіть із системи та ввійдіть знову, щоб завершити налаштування методу "
+"вводу."
 
 #. TRANSLATORS: a download size in megabytes, such as "776 MB"; the space is a no-break space.
 #: src/onboarding_ui.rs:1286
 msgid "{megabytes} MB"
-msgstr ""
+msgstr "{megabytes} МБ"
 
 #: src/onboarding_ui.rs:1294
 msgid "Checking the installation"
-msgstr ""
+msgstr "Перевірка встановлення"
 
 #: src/onboarding_ui.rs:1299
 msgid "Waiting for other software changes to finish"
-msgstr ""
+msgstr "Очікування завершення інших змін програмного забезпечення"
 
 #: src/onboarding_ui.rs:1301
 msgid "Setting up speech-to-text model"
-msgstr ""
+msgstr "Налаштування моделі розпізнавання мовлення"
 
 #: src/onboarding_ui.rs:1302
 msgid "Starting dictation"
-msgstr ""
+msgstr "Запуск Диктування"
 
 #: src/shortcut_ui.rs:284
 msgid "Change shortcut"
-msgstr ""
+msgstr "Змінити комбінацію клавіш"
 
 #: src/shortcut_ui.rs:286
 msgid "Change"
-msgstr ""
+msgstr "Змінити"
 
 #: src/shortcut_ui.rs:291
 msgid "Press a keyboard shortcut for dictation."
-msgstr ""
+msgstr "Натисніть комбінацію клавіш для диктування."
 
 #. TRANSLATORS: {shortcut} is a key combination, such as "Super + J".
 #: src/shortcut_ui.rs:294
 msgid "Current shortcut: {shortcut}."
-msgstr ""
+msgstr "Поточна комбінація клавіш: {shortcut}."
 
 #: src/shortcut_ui.rs:347
 msgid "Keep the shortcut as it was."
-msgstr ""
+msgstr "Залишити комбінацію клавіш, яка була."
 
 #: src/shortcut_ui.rs:477
 msgid "{keys} is reserved for “{action}”. Press a different shortcut."
-msgstr ""
+msgstr "{keys} зарезервовано для «{action}». Натисніть іншу комбінацію клавіш."
 
 #: src/shortcut_ui.rs:495
 msgid ""
 "{keys} is already used for “{action}”. Replacing it removes it from there."
 msgstr ""
+"{keys} уже використовується для «{action}». Якщо її замінити, вона звідти "
+"видалиться."
 
 #: src/shortcut_ui.rs:500
 msgid "Replace Shortcut?"
-msgstr ""
+msgstr "Замінити комбінацію клавіш?"
 
 #: src/shortcut_ui.rs:502
 msgid "Replace"
-msgstr ""
+msgstr "Замінити"
 
 #: src/shortcut_ui.rs:562
 msgid "Could not set up the shortcut"
-msgstr ""
+msgstr "Не вдалося налаштувати комбінацію клавіш"
 
 #: src/shortcut_ui.rs:666
 msgid "Set up a keyboard shortcut to trigger Dictation."
-msgstr ""
+msgstr "Налаштуйте комбінацію клавіш для запуску Диктування."
 
 #: src/shortcut_ui.rs:672
 msgid "Myna is not running yet. The shortcut can be set up once it starts."
 msgstr ""
+"Myna ще не запущено. Комбінацію клавіш можна налаштувати після запуску "
+"застосунку."
 
 #: src/shortcut_ui.rs:680
 msgid ""
 "This desktop cannot set up the shortcut. Bind this command to a key in its "
 "settings: {command}"
 msgstr ""
+"На цій стільниці неможливо створити комбінацію клавіш. Прив’яжіть цю команду "
+"до клавіші в налаштуваннях: {command}"
 
 #: src/shortcut_ui.rs:690
 msgid "Not set up"
-msgstr ""
+msgstr "Не налаштовано"
 
 #: src/shortcut_ui.rs:691 src/sound_preview.rs:66
 msgid "Myna is not running"
-msgstr ""
+msgstr "Myna не запущено"
 
 #: src/sound_preview.rs:67
 msgid "Update Myna to preview sounds"
-msgstr ""
+msgstr "Оновіть Myna, щоб прослуховувати звуки"
 
 #: src/sound_preview.rs:68
 msgid "Finish dictating to preview sounds"
-msgstr ""
+msgstr "Заверште диктування, щоб прослухати звуки"
 
 #: src/diagnostics.rs:225
 msgid "Paste the diagnostics report from your clipboard here."
@@ -1617,7 +1643,7 @@ msgstr ""
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:60
 msgid "When to transcribe"
-msgstr ""
+msgstr "Коли розшифровувати"
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:61
 msgid ""
@@ -1638,7 +1664,7 @@ msgstr ""
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:80
 msgid "Indicator style"
-msgstr ""
+msgstr "Стиль індикатора"
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:81
 msgid ""
@@ -1648,7 +1674,7 @@ msgstr ""
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:91
 msgid "Stop after silence (seconds)"
-msgstr ""
+msgstr "Зупиняти після тиші (в секундах)"
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:92
 msgid ""
@@ -1670,7 +1696,7 @@ msgstr ""
 
 #: data/com.canonical.Myna.Config.desktop:4
 msgid "Dictation Settings"
-msgstr ""
+msgstr "Налаштування Диктування"
 
 #: data/com.canonical.Myna.Config.desktop:5
 msgid "Configure Myna dictation and its speech models"
