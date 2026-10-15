@@ -8,7 +8,7 @@ msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-10-11 11:54+0100\n"
-"PO-Revision-Date: 2026-10-13 07:38+0000\n"
+"PO-Revision-Date: 2026-10-15 09:00+0000\n"
 "Last-Translator: taijuin Lee <taijuin@users.noreply.hosted.weblate.org>\n"
 "Language-Team: Chinese (Traditional Han script) <https://hosted.weblate.org/"
 "projects/ubuntu-desktop-translations/myna-config/zh_Hant/>\n"
@@ -627,7 +627,7 @@ msgstr "概覽"
 
 #: src/backend_ui.rs:2665
 msgid "Connection"
-msgstr ""
+msgstr "連線"
 
 #: src/backend_ui.rs:2668
 msgid "Active. Myna uses this model for dictation."
@@ -635,185 +635,185 @@ msgstr "已啟用。 Myna 使用此模型進行語音輸入。"
 
 #: src/backend_ui.rs:2671
 msgid "Several models are connected. Only one should be active."
-msgstr ""
+msgstr "有數個模型已連線。其中應僅有一個處於活躍狀態。"
 
 #: src/backend_ui.rs:2673
 msgid "Not connected to Myna."
-msgstr ""
+msgstr "未與 Myna 連線。"
 
 #: src/backend_ui.rs:2679
 msgid "Active model"
-msgstr ""
+msgstr "主動式模型"
 
 #: src/backend_ui.rs:2685
 msgid "Active engine"
-msgstr ""
+msgstr "主動式引擎"
 
 #: src/backend_ui.rs:2688
 msgid "None selected. Choose one below."
-msgstr ""
+msgstr "尚未選取。請從下方選擇一個。"
 
 #: src/backend_ui.rs:2705 src/diagnostics.rs:641
 msgid "Services"
-msgstr ""
+msgstr "服務"
 
 #: src/backend_ui.rs:2707
 msgid "No service health reported"
-msgstr ""
+msgstr "未回報服務狀態"
 
 #: src/backend_ui.rs:2721
 msgid "Loading"
-msgstr ""
+msgstr "載入中"
 
 #: src/backend_ui.rs:2722
 msgid "Reading this model's settings…"
-msgstr ""
+msgstr "正在讀取此模型的設定…"
 
 #: src/backend_ui.rs:2731
 msgid "No configuration reported"
-msgstr ""
+msgstr "未回報任何設定"
 
 #: src/backend_ui.rs:2733
 msgid "The model answered but reported no settings to change."
-msgstr ""
+msgstr "該模型雖有回應，但表示無需變更任何設定。"
 
 #: src/backend_ui.rs:2743
 msgid "Some data is unavailable"
-msgstr ""
+msgstr "部分資料無法取得"
 
 #: src/backend_ui.rs:2745
 msgid "Raw failure details are recorded on the Diagnostics page."
-msgstr ""
+msgstr "原始錯誤詳細資訊會記錄在「診斷」頁面上。"
 
 #: src/backend_ui.rs:2788 src/backend_ui.rs:3112 src/backend_ui.rs:3390
 msgid "Refreshing…"
-msgstr ""
+msgstr "重新整理中…"
 
 #: src/backend_ui.rs:2816
 msgid "Runtime"
-msgstr ""
+msgstr "執行時間"
 
 #: src/backend_ui.rs:2817
 msgid "Advanced"
-msgstr ""
+msgstr "進階"
 
 #: src/backend_ui.rs:2818
 msgid "Sensitive"
-msgstr ""
+msgstr "敏感"
 
 #: src/backend_ui.rs:2825
 msgid "Common settings for this model."
-msgstr ""
+msgstr "此模型的常用設定。"
 
 #: src/backend_ui.rs:2828
 msgid "Runtime and performance related settings."
-msgstr ""
+msgstr "與執行時間及效能相關的設定。"
 
 #: src/backend_ui.rs:2831
 msgid "Advanced settings."
-msgstr ""
+msgstr "進階設定。"
 
 #: src/backend_ui.rs:2834
 msgid "Internal and sensitive values are shown for diagnostics only."
-msgstr ""
+msgstr "內部及敏感值僅供診斷之用。"
 
 #: src/backend_ui.rs:2858
 msgid "Sensitive value (redacted)"
-msgstr ""
+msgstr "敏感值（已遮蔽）"
 
 #. TRANSLATORS: {name} is the model part or snap being downloaded, such as "model-small"; {done} and {total} are sizes such as "210.0 MB".
 #: src/backend_ui.rs:3006
 msgid "Downloading {name}: {done} of {total}"
-msgstr ""
+msgstr "正在下載 {name}：已完成 {done} / {total}"
 
 #: src/backend_ui.rs:3018
 msgid "Active"
-msgstr ""
+msgstr "活躍"
 
 #: src/backend_ui.rs:3019
 msgid "Inactive"
-msgstr ""
+msgstr "非活躍"
 
 #: src/backend_ui.rs:3020
 msgid "Failed"
-msgstr ""
+msgstr "失敗"
 
 #: src/backend_ui.rs:3022
 msgid "Unknown"
-msgstr ""
+msgstr "未知"
 
 #: src/backend_ui.rs:3087
 msgid "Installed snaps"
-msgstr ""
+msgstr "已安裝的 snaps"
 
 #: src/backend_ui.rs:3088
 msgid "Model connections"
-msgstr ""
+msgstr "模型連接"
 
 #: src/backend_ui.rs:3089
 msgid "Model control command"
-msgstr ""
+msgstr "模型控制指令"
 
 #: src/backend_ui.rs:3090
 msgid "Model settings"
-msgstr ""
+msgstr "模型設定"
 
 #: src/backend_ui.rs:3091
 msgid "Model status"
-msgstr ""
+msgstr "模型狀態"
 
 #: src/backend_ui.rs:3092
 msgid "Available models"
-msgstr ""
+msgstr "可用的模型"
 
 #: src/backend_ui.rs:3093
 msgid "Available engines"
-msgstr ""
+msgstr "可用的引擎"
 
 #: src/backend_ui.rs:3099
 msgid "Persisted values could not be read."
-msgstr ""
+msgstr "無法讀取已持久化的值。"
 
 #: src/backend_ui.rs:3110 src/backend_ui.rs:3398
 msgid "Applying changes…"
-msgstr ""
+msgstr "套用變更中…"
 
 #: src/backend_ui.rs:3133
 msgid "missing"
-msgstr ""
+msgstr "遺失"
 
 #. TRANSLATORS: {key} is a setting's key, such as "streaming"; {requested} and {actual} are its values.
 #: src/backend_ui.rs:3135
 msgid "{key}: asked for {requested}, read back {actual}"
-msgstr ""
+msgstr "{key}：請求 {requested}，回讀 {actual}"
 
 #: src/backend_ui.rs:3163
 msgid "Error:\n"
-msgstr ""
+msgstr "錯誤：\n"
 
 #: src/backend_ui.rs:3173
 msgid "The change ran, but the connections do not match it."
-msgstr ""
+msgstr "該變更已執行，但連接設定與之不符。"
 
 #: src/backend_ui.rs:3177
 msgid "The connections changed before the change could start. Try again."
-msgstr ""
+msgstr "在變更開始之前，連線狀態已發生變更。請重新嘗試。"
 
 #: src/backend_ui.rs:3181
 msgid "Discovery error:\n"
-msgstr ""
+msgstr "發現錯誤：\n"
 
 #: src/backend_ui.rs:3183
 msgid "The change ran, but the connections could not be read back."
-msgstr ""
+msgstr "變更已執行，但無法讀取連線。"
 
 #: src/backend_ui.rs:3200
 msgid "Final connections:"
-msgstr ""
+msgstr "最終連線："
 
 #: src/backend_ui.rs:3205
 msgid "Final connections could not be verified:"
-msgstr ""
+msgstr "無法驗證最後的連線："
 
 #: src/backend_ui.rs:3209
 msgid "Final connections could not be verified.\n"
