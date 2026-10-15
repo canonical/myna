@@ -8,8 +8,8 @@ msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-10-11 11:54+0100\n"
-"PO-Revision-Date: 2026-10-14 12:51+0000\n"
-"Last-Translator: Quentin PAGÈS <quenti@users.noreply.hosted.weblate.org>\n"
+"PO-Revision-Date: 2026-10-15 09:00+0000\n"
+"Last-Translator: \"David D.\" <dadu042@users.noreply.hosted.weblate.org>\n"
 "Language-Team: French <https://hosted.weblate.org/projects/ubuntu-desktop-"
 "translations/myna-config/fr/>\n"
 "Language: fr\n"
@@ -48,14 +48,15 @@ msgstr "Diagnostics"
 #: data/diagnostics-page.blp:40
 msgid "No audio, transcript, or filesystem path is ever included."
 msgstr ""
+"Aucune audio, transcription ni système de fichiers ne sont jamais incluses."
 
 #: data/diagnostics-page.blp:49 src/backend_ui.rs:3114 src/backend_ui.rs:3394
 msgid "Refresh"
-msgstr ""
+msgstr "Rafraîchir"
 
 #: data/diagnostics-page.blp:53 src/backend_ui.rs:2071 src/backend_ui.rs:2073
 msgid "Refresh diagnostics"
-msgstr ""
+msgstr "Rafraîchir diagnostics"
 
 #: data/diagnostics-page.blp:54
 msgid "Check this computer, Myna and every model again."
@@ -84,7 +85,7 @@ msgstr "Rapport de diagnostic"
 
 #: data/diagnostics-page.blp:95
 msgid "Read-only privacy-safe diagnostic text."
-msgstr ""
+msgstr "Texte de diagnostic en lecture seule sécurisé pour la confidentialité."
 
 #: data/install-control.blp:54 data/onboarding-components.blp:60
 #: src/app.rs:3931
@@ -117,19 +118,19 @@ msgstr "Modèle"
 
 #: data/main-window.blp:71
 msgid "_Set Up Dictation…"
-msgstr ""
+msgstr "_Configuration dictée …"
 
 #: data/main-window.blp:75
 msgid "_Report an Issue…"
-msgstr ""
+msgstr "_Rapporter un problème …"
 
 #: data/main-window.blp:76
 msgid "_About Myna Settings"
-msgstr ""
+msgstr "_À propos paramètres Myna"
 
 #: data/myna-page.blp:5 data/myna-page.blp:8 data/status-page.blp:5
 msgid "Myna"
-msgstr ""
+msgstr "Myna"
 
 #: data/myna-page.blp:12
 msgid "Keyboard shortcut"
@@ -236,9 +237,8 @@ msgid "Copy the full failure details to the clipboard"
 msgstr "Copiez les détails complets de l’échec dans le presse-papiers"
 
 #: data/status-page.blp:8 src/app.rs:1475 src/app.rs:5239
-#, fuzzy
 msgid "Loading Myna Settings"
-msgstr "Chargement des paramètres Myna"
+msgstr "Chargement paramètres Myna"
 
 #: data/status-page.blp:9 src/app.rs:1476 src/app.rs:5240
 msgid "Reading the installed settings schema…"
@@ -271,23 +271,23 @@ msgstr "La plupart des langues, avec une précision inégale"
 
 #: src/app.rs:3331 src/myna_settings.rs:105
 msgid "As you speak"
-msgstr ""
+msgstr "Lorsque vous parlez"
 
 #: src/app.rs:3332 src/myna_settings.rs:106
 msgid "When you stop"
-msgstr ""
+msgstr "Lorsque vous stoppez"
 
 #: src/app.rs:3472 src/app.rs:5729
 msgid "Preview"
-msgstr ""
+msgstr "Pré-écoute"
 
 #: src/app.rs:3486 src/sound_preview.rs:69
 msgid "Could not preview sounds"
-msgstr ""
+msgstr "Impossible de prévisualiser les sons"
 
 #: src/app.rs:3520 src/backend_ui.rs:721
 msgid "Changing to {model} failed"
-msgstr ""
+msgstr "Échec de changement vers {model}"
 
 #: src/app.rs:3521 src/app.rs:4056 src/app.rs:4065 src/app.rs:4454
 #: src/app.rs:5103 src/app.rs:5109 src/backend_ui.rs:1291
@@ -298,16 +298,16 @@ msgstr "Détails"
 #. TRANSLATORS: {setting} is a setting's name on the Model tab, such as "Unload when idle (seconds)".
 #: src/app.rs:3627 src/backend_ui.rs:1688
 msgid "Changing “{setting}” failed"
-msgstr ""
+msgstr "Changement de « {setting} » a échoué"
 
 #: src/app.rs:3629 src/presentation.rs:178
 msgid "Unload when idle (seconds)"
-msgstr ""
+msgstr "Décharger lorsque inactif (secondes)"
 
 #. TRANSLATORS: {size} is a download size, such as "4.2 GB".
 #: src/app.rs:3921 src/onboarding_ui.rs:855
 msgid "Up to {size}"
-msgstr ""
+msgstr "Jusqu'à {size}"
 
 #: src/app.rs:4057 src/onboarding_ui.rs:1011
 msgid "Could not let Myna run in the background"
@@ -315,7 +315,7 @@ msgstr "Impossible de laisser Myna fonctionner en arrière-plan"
 
 #: src/app.rs:4087 src/app.rs:4237 src/backend_ui.rs:2419
 msgid "Executable:"
-msgstr ""
+msgstr "Exécutable :"
 
 #: src/app.rs:4088 src/app.rs:4238 src/backend_ui.rs:2423
 msgid "Arguments:"
@@ -324,7 +324,7 @@ msgstr "Arguments :"
 #: src/app.rs:4089 src/app.rs:4239 src/backend_ui.rs:2432
 #: src/backend_ui.rs:2510 src/backend_ui.rs:3231
 msgid "Exit status:"
-msgstr ""
+msgstr "Statut de sortie :"
 
 #: src/app.rs:4090 src/app.rs:4240 src/app.rs:4466 src/backend_ui.rs:2477
 msgid "Message:"
@@ -336,7 +336,7 @@ msgstr ""
 
 #: src/app.rs:4179 src/onboarding_ui.rs:991
 msgid "Installing Dictation app"
-msgstr ""
+msgstr "Installation de l’app Dictée"
 
 #. TRANSLATORS: {step} is what is installing, such as "Installing speech-to-text model", and {percent} how much of its download has arrived.
 #: src/app.rs:4189 src/app.rs:4252 src/app.rs:4352 src/onboarding_ui.rs:999
@@ -345,80 +345,83 @@ msgstr ""
 
 #: src/app.rs:4203 src/onboarding_ui.rs:992
 msgid "Installing speech-to-text model"
-msgstr ""
+msgstr "Installation du modèle de parole-vers-texte"
 
 #: src/app.rs:4217 src/onboarding_ui.rs:1013
 msgid "Installing the speech-to-text model failed"
-msgstr ""
+msgstr "L’installation du modèle de parole-vers-texte a échouée"
 
 #: src/app.rs:4280 src/onboarding_ui.rs:994
 msgid "Enabling shell extension"
-msgstr ""
+msgstr "Activation l’extension Shell"
 
 #: src/app.rs:4452 src/onboarding_ui.rs:1015
 msgid "Enabling the shell extension failed"
-msgstr ""
+msgstr "Échec de l'activation de l’extension Shell"
 
 #: src/app.rs:4465 src/backend_ui.rs:2463
 msgid "D-Bus call:"
-msgstr ""
+msgstr "Appel D-Bus :"
 
 #: src/app.rs:4730 src/shortcut_ui.rs:669
 msgid "You can trigger Dictation anytime by using the keyboard shortcut:"
 msgstr ""
+"Vous pouvez déclencher Dictée à tout moment en utilisant le raccourci clavier"
+" :"
 
 #: src/app.rs:5102 src/onboarding_ui.rs:676 src/onboarding_ui.rs:683
 #: src/onboarding_ui.rs:925
 msgid "Could not set up Dictation"
-msgstr ""
+msgstr "Échec à configurer Dictée"
 
 #: src/app.rs:5140 src/onboarding_ui.rs:876
 msgid "Dictation is not set up yet. Select Next to try again."
 msgstr ""
+"Dictée n’est pas encore configurée. Sélectionnez Suivant pour réessayer."
 
 #: src/app.rs:5244
 msgid "No Myna Settings"
-msgstr ""
+msgstr "Aucun paramètre Myna"
 
 #: src/app.rs:5245
 msgid "The installed schema does not declare any settings."
-msgstr ""
+msgstr "Le schéma installé ne déclare aucun paramètre."
 
 #: src/app.rs:5265
 msgid "Myna Settings Unavailable"
-msgstr ""
+msgstr "Paramètres Myna non disponibles"
 
 #: src/app.rs:5266
 msgid "Myna Settings could not start."
-msgstr ""
+msgstr "Paramètres Myna n’a pas pu démarrer."
 
 #: src/app.rs:5697
 msgid "Could not save the setting"
-msgstr ""
+msgstr "Échec pour enregistrer le paramètre"
 
 #: src/app.rs:5734
 msgid "Preview sound style"
-msgstr ""
+msgstr "Pré-écoute style sonore"
 
 #: src/active_backend.rs:293
 msgid "The change was cancelled."
-msgstr ""
+msgstr "Le changement a été annulé."
 
 #: src/active_backend.rs:368
 msgid "No model is connected."
-msgstr ""
+msgstr "Aucun modèle n’est connecté."
 
 #: src/active_backend.rs:373
 msgid "The model is not available to switch to."
-msgstr ""
+msgstr "Le modèle vers lequel basculer n’est pas disponible."
 
 #: src/active_backend.rs:387
 msgid "The model changed while it was being switched on. Try again."
-msgstr ""
+msgstr "Le modèle a changé pendant qu’il était allumé. Réessayez."
 
 #: src/backend_ui.rs:121 src/model_family.rs:283
 msgid "Recommended"
-msgstr ""
+msgstr "Recommandé"
 
 #: src/backend_ui.rs:182 src/diagnostics.rs:474
 msgid "Languages"
@@ -444,13 +447,15 @@ msgstr "Ce modèle n’est plus installé."
 
 #: src/backend_ui.rs:723
 msgid "Changing to {model} could not be confirmed"
-msgstr ""
+msgstr "Le changement vers {model} n’a pas pu être confirmé"
 
 #: src/backend_ui.rs:786
 msgid ""
 "Final connections could not be verified. Switching is disabled until refresh "
 "succeeds."
 msgstr ""
+"Les connexions finales n’ont pas pu être vérifiées. Le basculement est "
+"désactivé jusqu’à ce que l’actualisation réussisse."
 
 #: src/backend_ui.rs:791 src/diagnostics.rs:658
 msgid "No model is connected. Choose one to use for dictation."
@@ -490,7 +495,7 @@ msgstr "Application et redémarrage du modèle …"
 #. TRANSLATORS: {setting} is a setting's name on the Model tab, such as "Unload when idle (seconds)".
 #: src/backend_ui.rs:1691
 msgid "Changing “{setting}” could not be confirmed"
-msgstr ""
+msgstr "La modification de « {setting} » n’a pas pu être confirmée"
 
 #: src/backend_ui.rs:1727
 msgid "Could not read the installed models."
@@ -526,11 +531,11 @@ msgstr ""
 
 #: src/backend_ui.rs:2095
 msgid "Diagnostics copied to clipboard"
-msgstr ""
+msgstr "Diagnostics copiés dans le presse-papiers"
 
 #: src/backend_ui.rs:2124 src/diagnostics.rs:419
 msgid "Dictation is not installed"
-msgstr ""
+msgstr "Dictée n’est pas installée"
 
 #: src/backend_ui.rs:2125 src/diagnostics.rs:420
 msgid "No model installed"
@@ -575,19 +580,19 @@ msgstr "Le changement a été interrompu après avoir commencé."
 
 #: src/backend_ui.rs:2440 src/backend_ui.rs:2519 src/backend_ui.rs:3240
 msgid "Standard error:"
-msgstr ""
+msgstr "Erreur standard :"
 
 #: src/backend_ui.rs:2450
 msgid "Request:"
-msgstr ""
+msgstr "Requête :"
 
 #: src/backend_ui.rs:2456
 msgid "HTTP status:"
-msgstr ""
+msgstr "Statut HTTP :"
 
 #: src/backend_ui.rs:2469
 msgid "Setting:"
-msgstr ""
+msgstr "Paramètre :"
 
 #: src/backend_ui.rs:2494
 msgid "Some operations completed before the apply failed.\n"
@@ -599,11 +604,11 @@ msgstr ""
 
 #: src/backend_ui.rs:2500
 msgid "Completed operations:\n"
-msgstr ""
+msgstr "Opérations accomplies :\n"
 
 #: src/backend_ui.rs:2526
 msgid "Failure:\n"
-msgstr ""
+msgstr "Échec :\n"
 
 #: src/backend_ui.rs:2530
 msgid "Reconciliation read-back:\n"
@@ -611,19 +616,19 @@ msgstr ""
 
 #: src/backend_ui.rs:2542
 msgid "Model:"
-msgstr ""
+msgstr "Modèle :"
 
 #: src/backend_ui.rs:2548
 msgid "Services: none"
-msgstr ""
+msgstr "Services : aucun"
 
 #: src/backend_ui.rs:2550
 msgid "Services:"
-msgstr ""
+msgstr "Services :"
 
 #: src/backend_ui.rs:2562
 msgid "Status: unavailable"
-msgstr ""
+msgstr "Statut : indisponible"
 
 #: src/backend_ui.rs:2569
 msgid "Post-failure surface errors:"
@@ -631,47 +636,47 @@ msgstr ""
 
 #: src/backend_ui.rs:2600
 msgid "Language"
-msgstr ""
+msgstr "Langue"
 
 #: src/backend_ui.rs:2602
 msgid "A code such as en, fr or zh. Leave it empty to detect the language."
-msgstr ""
+msgstr "Un code tel que en, fr ou zh. Laissez-le vide pour détecter la langue."
 
 #: src/backend_ui.rs:2655
 msgid "Overview"
-msgstr ""
+msgstr "Aperçu"
 
 #: src/backend_ui.rs:2665
 msgid "Connection"
-msgstr ""
+msgstr "Connexion"
 
 #: src/backend_ui.rs:2668
 msgid "Active. Myna uses this model for dictation."
-msgstr ""
+msgstr "Actif. Myna utilise ce modèle pour la dictée."
 
 #: src/backend_ui.rs:2671
 msgid "Several models are connected. Only one should be active."
-msgstr ""
+msgstr "Plusieurs modèles sont connectés. Un seul doit être actif."
 
 #: src/backend_ui.rs:2673
 msgid "Not connected to Myna."
-msgstr ""
+msgstr "Pas connecté à Myna."
 
 #: src/backend_ui.rs:2679
 msgid "Active model"
-msgstr ""
+msgstr "Modèle actif"
 
 #: src/backend_ui.rs:2685
 msgid "Active engine"
-msgstr ""
+msgstr "Moteur actif"
 
 #: src/backend_ui.rs:2688
 msgid "None selected. Choose one below."
-msgstr ""
+msgstr "Aucun sélectionné. Choisissez-en un ci-dessous."
 
 #: src/backend_ui.rs:2705 src/diagnostics.rs:641
 msgid "Services"
-msgstr ""
+msgstr "Services"
 
 #: src/backend_ui.rs:2707
 msgid "No service health reported"
@@ -679,11 +684,11 @@ msgstr ""
 
 #: src/backend_ui.rs:2721
 msgid "Loading"
-msgstr ""
+msgstr "Chargement"
 
 #: src/backend_ui.rs:2722
 msgid "Reading this model's settings…"
-msgstr ""
+msgstr "Lecture des paramètres de ce modèle …"
 
 #: src/backend_ui.rs:2731
 msgid "No configuration reported"
@@ -691,19 +696,19 @@ msgstr ""
 
 #: src/backend_ui.rs:2733
 msgid "The model answered but reported no settings to change."
-msgstr ""
+msgstr "Le modèle a répondu mais n’a signalé aucun paramètre à modifier."
 
 #: src/backend_ui.rs:2743
 msgid "Some data is unavailable"
-msgstr ""
+msgstr "Certaines données sont indisponibles"
 
 #: src/backend_ui.rs:2745
 msgid "Raw failure details are recorded on the Diagnostics page."
-msgstr ""
+msgstr "Les détails bruts de l’échec sont enregistrés dans la page Diagnostics."
 
 #: src/backend_ui.rs:2788 src/backend_ui.rs:3112 src/backend_ui.rs:3390
 msgid "Refreshing…"
-msgstr ""
+msgstr "Rafraîchissement …"
 
 #: src/backend_ui.rs:2816
 msgid "Runtime"
@@ -711,7 +716,7 @@ msgstr ""
 
 #: src/backend_ui.rs:2817
 msgid "Advanced"
-msgstr ""
+msgstr "Avancé"
 
 #: src/backend_ui.rs:2818
 msgid "Sensitive"
@@ -719,7 +724,7 @@ msgstr ""
 
 #: src/backend_ui.rs:2825
 msgid "Common settings for this model."
-msgstr ""
+msgstr "Paramètres courants pour ce modèle."
 
 #: src/backend_ui.rs:2828
 msgid "Runtime and performance related settings."
@@ -727,40 +732,42 @@ msgstr ""
 
 #: src/backend_ui.rs:2831
 msgid "Advanced settings."
-msgstr ""
+msgstr "Paramètres avancés."
 
 #: src/backend_ui.rs:2834
 msgid "Internal and sensitive values are shown for diagnostics only."
 msgstr ""
+"Les valeurs internes et sensibles sont affichées uniquement pour le "
+"diagnostic."
 
 #: src/backend_ui.rs:2858
 msgid "Sensitive value (redacted)"
-msgstr ""
+msgstr "Valeur sensible (expurgée)"
 
 #. TRANSLATORS: {name} is the model part or snap being downloaded, such as "model-small"; {done} and {total} are sizes such as "210.0 MB".
 #: src/backend_ui.rs:3006
 msgid "Downloading {name}: {done} of {total}"
-msgstr ""
+msgstr "Téléchargement de {name} : {done} de {total}"
 
 #: src/backend_ui.rs:3018
 msgid "Active"
-msgstr ""
+msgstr "Actif"
 
 #: src/backend_ui.rs:3019
 msgid "Inactive"
-msgstr ""
+msgstr "Inactif"
 
 #: src/backend_ui.rs:3020
 msgid "Failed"
-msgstr ""
+msgstr "Échoué"
 
 #: src/backend_ui.rs:3022
 msgid "Unknown"
-msgstr ""
+msgstr "Inconnu"
 
 #: src/backend_ui.rs:3087
 msgid "Installed snaps"
-msgstr ""
+msgstr "Snaps installés"
 
 #: src/backend_ui.rs:3088
 msgid "Model connections"
@@ -772,19 +779,19 @@ msgstr ""
 
 #: src/backend_ui.rs:3090
 msgid "Model settings"
-msgstr ""
+msgstr "Paramètres modèle"
 
 #: src/backend_ui.rs:3091
 msgid "Model status"
-msgstr ""
+msgstr "Statut modèle"
 
 #: src/backend_ui.rs:3092
 msgid "Available models"
-msgstr ""
+msgstr "Modèles disponibles"
 
 #: src/backend_ui.rs:3093
 msgid "Available engines"
-msgstr ""
+msgstr "Moteurs disponibles"
 
 #: src/backend_ui.rs:3099
 msgid "Persisted values could not be read."
@@ -792,7 +799,7 @@ msgstr ""
 
 #: src/backend_ui.rs:3110 src/backend_ui.rs:3398
 msgid "Applying changes…"
-msgstr ""
+msgstr "Application des modifications …"
 
 #: src/backend_ui.rs:3133
 msgid "missing"
@@ -805,7 +812,7 @@ msgstr ""
 
 #: src/backend_ui.rs:3163
 msgid "Error:\n"
-msgstr ""
+msgstr "Erreur :\n"
 
 #: src/backend_ui.rs:3173
 msgid "The change ran, but the connections do not match it."
@@ -1428,32 +1435,32 @@ msgstr ""
 #: src/model_family.rs:243
 msgid "{count} language"
 msgid_plural "{count} languages"
-msgstr[0] ""
-msgstr[1] ""
+msgstr[0] "{count} langue"
+msgstr[1] "{count} langues"
 
 #. TRANSLATORS: {language} is the user's language named in that language, such as "Deutsch" or "中文", inserted as-is in the nominative. If your grammar would inflect it, rephrase, e.g. "Najlepszy dla języka: {language}".
 #: src/model_family.rs:280
 msgid "Best for {language}"
-msgstr ""
+msgstr "Meilleur pour {language}"
 
 #. TRANSLATORS: Shown under "Install more models" when a model not installed would transcribe the user's language better. {language} is that language named in itself, such as "Deutsch" or "中文", inserted as-is in the nominative. If your grammar would inflect it, rephrase, e.g. "Dostępny jest lepszy model dla języka: {language}".
 #: src/model_family.rs:293
 msgid "A better model for {language} is available"
-msgstr ""
+msgstr "Un meilleur modèle pour {language} est disponible"
 
 #: src/model_family.rs:296
 msgid "A recommended model is available"
-msgstr ""
+msgstr "Un modèle recommandé est disponible"
 
 #. TRANSLATORS: Shown under "Install more models" while a model installs. {model} is a model family, such as "Whisper", and {percent} how much of its download has arrived, a number from 0 to 100.
 #: src/model_family.rs:306
 msgid "Installing {model} {percent}%"
-msgstr ""
+msgstr "Installation de {model} {percent} %"
 
 #. TRANSLATORS: Shown under "Install more models" while a model installs. {model} is a model family, such as "Whisper".
 #: src/model_family.rs:309
 msgid "Installing {model}…"
-msgstr ""
+msgstr "Installation de {model} …"
 
 #: src/presentation.rs:47
 msgid "value is invalid"
@@ -1494,11 +1501,11 @@ msgstr ""
 
 #: src/presentation.rs:158
 msgid "Which version of this model to run."
-msgstr ""
+msgstr "La version de ce modèle à exécuter."
 
 #: src/presentation.rs:165
 msgid "The inference engine this model runs on."
-msgstr ""
+msgstr "Le moteur d’inférence sur lequel ce modèle fonctionne."
 
 #: src/presentation.rs:171
 msgid "Streaming output"
@@ -1614,7 +1621,7 @@ msgstr ""
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:50
 msgid "Sound style"
-msgstr ""
+msgstr "Style sonore"
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:51
 msgid ""
@@ -1635,7 +1642,7 @@ msgstr ""
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:69
 msgid "Spoken language"
-msgstr ""
+msgstr "Langue parlée"
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:70
 msgid ""
