@@ -8,7 +8,7 @@ msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-10-11 11:54+0100\n"
-"PO-Revision-Date: 2026-10-15 17:20+0000\n"
+"PO-Revision-Date: 2026-10-16 08:26+0000\n"
 "Last-Translator: Ihor Hordiichuk <ihor_ck@users.noreply.hosted.weblate.org>\n"
 "Language-Team: Ukrainian <https://hosted.weblate.org/projects/ubuntu-desktop-"
 "translations/myna-config/uk/>\n"
@@ -194,7 +194,7 @@ msgid ""
 "extension)."
 msgstr ""
 "Вийдіть із системи та увійдіть знову, щоб увімкнути індикатор диктування "
-"(розширення GNOME Shell)."
+"(розширення Оболонки GNOME)."
 
 #: data/onboarding-shortcut.blp:78 src/shortcut_ui.rs:322
 msgid "Press the new shortcut…"
@@ -1054,511 +1054,530 @@ msgstr "Заверште диктування, щоб прослухати зв�
 
 #: src/diagnostics.rs:225
 msgid "Paste the diagnostics report from your clipboard here."
-msgstr ""
+msgstr "Вставте сюди діагностичний звіт з буфера обміну."
 
 #: src/diagnostics.rs:280
 msgid "The CPU clock is capped by system policy"
-msgstr ""
+msgstr "Тактова частота ЦП обмежується системною політикою"
 
 #: src/diagnostics.rs:282
 msgid "limited to"
-msgstr ""
+msgstr "обмежено до"
 
 #: src/diagnostics.rs:284 src/diagnostics.rs:362 src/diagnostics.rs:714
 msgid "of"
-msgstr ""
+msgstr "із"
 
 #: src/diagnostics.rs:288
 msgid "Dictation will be slow. A power tool has capped the CPU clock."
 msgstr ""
+"Диктування буде повільним. Інструмент живлення обмежив тактову частоту ЦП."
 
 #: src/diagnostics.rs:298
 msgid "The power profile is set to low-power"
-msgstr ""
+msgstr "Увімкнено режим живлення Заощадження"
 
 #: src/diagnostics.rs:302
 msgid ""
 "Dictation will be slow. Switch to Balanced or Performance in the system "
 "power settings."
 msgstr ""
+"Диктування буде повільним. У налаштуваннях живлення системи перемкніть на "
+"режим Баланс або Швидкодія."
 
 #: src/diagnostics.rs:312
 msgid "Firmware is holding the CPU at its lowest clock"
-msgstr ""
+msgstr "Прошивка підтримує тактову частоту ЦП на найнижчому рівні"
 
 #: src/diagnostics.rs:316
 msgid ""
 "Dictation will be slow. Unplug the charger, wait a few seconds, and plug it "
 "back in. If that does not help, power off fully and start again."
 msgstr ""
+"Диктування працюватиме повільно. Від’єднайте зарядний пристрій, зачекайте "
+"кілька секунд і під’єднайте його знову. Якщо це не допоможе, повністю "
+"вимкніть пристрій і запустіть його знову."
 
 #: src/diagnostics.rs:325
 msgid "The system is short of memory"
-msgstr ""
+msgstr "У системі бракує пам'яті"
 
 #: src/diagnostics.rs:329
 msgid ""
 "Dictation will stutter. Close applications until the machine stops swapping."
 msgstr ""
+"Диктування перериватиметься. Закрийте застосунки, доки комп’ютер не "
+"припинить використовувати підкачування пам’яті."
 
 #: src/diagnostics.rs:335
 msgid "Disk activity is stalling the system"
-msgstr ""
+msgstr "Активність диска сповільнює роботу системи"
 
 #: src/diagnostics.rs:339
 msgid "Dictation will stutter. Wait for the transfer or indexing to finish."
 msgstr ""
+"Диктування перериватиметься. Зачекайте, поки завершиться передавання або "
+"індексація."
 
 #: src/diagnostics.rs:345
 msgid "Other programs are saturating the CPU"
-msgstr ""
+msgstr "Інші програми перевантажують ЦП"
 
 #: src/diagnostics.rs:349
 msgid "Dictation will be slow. Pause the build or workload before dictating."
 msgstr ""
+"Диктування працюватиме повільно. Перед початком диктування призупиніть "
+"збірку або виконання завдання."
 
 #: src/diagnostics.rs:360 src/diagnostics.rs:712
 msgid "reached"
-msgstr ""
+msgstr "досягнено"
 
 #: src/diagnostics.rs:372
 msgid "of the last 10 s stalled"
-msgstr ""
+msgstr "простою з останніх 10 с"
 
 #: src/diagnostics.rs:421
 msgid "No model connected"
-msgstr ""
+msgstr "Модель не під'єднано"
 
 #: src/diagnostics.rs:423
 msgid "Ready"
-msgstr ""
+msgstr "Готово"
 
 #: src/diagnostics.rs:424
 msgid "Installation status unavailable"
-msgstr ""
+msgstr "Стан встановлення недоступний"
 
 #: src/diagnostics.rs:431
 msgid "Connected"
-msgstr ""
+msgstr "Під'єднано"
 
 #: src/diagnostics.rs:432
 msgid "Multiple connections"
-msgstr ""
+msgstr "Кілька під'єднань"
 
 #: src/diagnostics.rs:433
 msgid "Not connected"
-msgstr ""
+msgstr "Не під'єднано"
 
 #: src/diagnostics.rs:447
 msgid "Onboarding"
-msgstr ""
+msgstr "Початкове налаштування"
 
 #: src/diagnostics.rs:454
 msgid "System"
-msgstr ""
+msgstr "Система"
 
 #: src/diagnostics.rs:458
 msgid "OS"
-msgstr ""
+msgstr "ОС"
 
 #: src/diagnostics.rs:462
 msgid "kernel"
-msgstr ""
+msgstr "ядро"
 
 #: src/diagnostics.rs:470
 msgid "Desktop"
-msgstr ""
+msgstr "Стільниця"
 
 #: src/diagnostics.rs:481
 msgid "Machine"
-msgstr ""
+msgstr "Комп'ютер"
 
 #: src/diagnostics.rs:485 src/diagnostics.rs:500
 msgid "CPU"
-msgstr ""
+msgstr "ЦП"
 
 #: src/diagnostics.rs:486 src/diagnostics.rs:563 src/diagnostics.rs:648
 msgid "Memory"
-msgstr ""
+msgstr "Пам'ять"
 
 #: src/diagnostics.rs:490 src/diagnostics.rs:495
 msgid "GPU"
-msgstr ""
+msgstr "ГП"
 
 #: src/diagnostics.rs:491 src/diagnostics.rs:856
 msgid "none"
-msgstr ""
+msgstr "ні"
 
 #: src/diagnostics.rs:501
 msgid "(no model answered show-machine)"
-msgstr ""
+msgstr "(жодна модель не відповіла на команду show-machine)"
 
 #: src/diagnostics.rs:506
 msgid "Performance"
-msgstr ""
+msgstr "Швидкодія"
 
 #: src/diagnostics.rs:513 src/diagnostics.rs:520 src/diagnostics.rs:546
 msgid "Clock"
-msgstr ""
+msgstr "Тактова частота"
 
 #: src/diagnostics.rs:514
 msgid "(no cpufreq information)"
-msgstr ""
+msgstr "(немає відомостей cpufreq)"
 
 #: src/diagnostics.rs:525
 msgid "Profile"
-msgstr ""
+msgstr "Профіль"
 
 #: src/diagnostics.rs:528
 msgid "Power"
-msgstr ""
+msgstr "Живлення"
 
 #: src/diagnostics.rs:533
 msgid "Pressure"
-msgstr ""
+msgstr "Навантаження"
 
 #. TRANSLATORS: {cpu}, {memory} and {io} are shares such as "0.03%"; cpu, memory and io are kernel resource names, keep them.
 #: src/diagnostics.rs:536
 msgid "cpu {cpu}, memory {memory}, io {io} of the last 10 s stalled"
-msgstr ""
+msgstr "цп {cpu}, пам'ять {memory}, io {io} простою з останніх 10 с"
 
 #: src/diagnostics.rs:547
 msgid "(not measured yet)"
-msgstr ""
+msgstr "(ще не виміряно)"
 
 #: src/diagnostics.rs:552
 msgid "Daemon"
-msgstr ""
+msgstr "Фонова служба"
 
 #: src/diagnostics.rs:560 src/diagnostics.rs:581 src/diagnostics.rs:590
 msgid "Version"
-msgstr ""
+msgstr "Версія"
 
 #: src/diagnostics.rs:570
 msgid "Audio"
-msgstr ""
+msgstr "Аудіо"
 
 #: src/diagnostics.rs:576
 msgid "Last error"
-msgstr ""
+msgstr "Остання помилка"
 
 #: src/diagnostics.rs:584
 msgid "Process"
-msgstr ""
+msgstr "Процес"
 
 #: src/diagnostics.rs:585 src/diagnostics.rs:807
 msgid "not running"
-msgstr ""
+msgstr "не запущено"
 
 #: src/diagnostics.rs:591 src/diagnostics.rs:819 src/diagnostics.rs:828
 msgid "not installed"
-msgstr ""
+msgstr "не встановлено"
 
 #: src/diagnostics.rs:597
 msgid "Shell extension"
-msgstr ""
+msgstr "Розширення оболонки"
 
 #: src/diagnostics.rs:610
 msgid "Models"
-msgstr ""
+msgstr "Моделі"
 
 #: src/diagnostics.rs:614
 msgid "(none discovered)"
-msgstr ""
+msgstr "(не виявлено)"
 
 #: src/diagnostics.rs:629 src/presentation.rs:164
 msgid "Engine"
-msgstr ""
+msgstr "Рушій"
 
 #: src/diagnostics.rs:633
 msgid "none selected"
-msgstr ""
+msgstr "не вибрано"
 
 #: src/diagnostics.rs:655
 msgid "Problems"
-msgstr ""
+msgstr "Проблеми"
 
 #: src/diagnostics.rs:661
 msgid ""
 "IBus is not installed, so Myna cannot type. Install the “ibus” package, then "
 "log out and back in."
 msgstr ""
+"IBus не встановлено, тому Myna не може вводити текст. Встановіть пакет «ibus"
+"», а потім вийдіть із системи та увійдіть знову."
 
 #: src/diagnostics.rs:673 src/diagnostics.rs:687
 msgid "(none)"
-msgstr ""
+msgstr "(немає)"
 
 #: src/diagnostics.rs:683
 msgid "Warnings"
-msgstr ""
+msgstr "Попередження"
 
 #: src/diagnostics.rs:708
 msgid "not probed"
-msgstr ""
+msgstr "не перевірялося"
 
 #: src/diagnostics.rs:721
 msgid "policy allows"
-msgstr ""
+msgstr "політика дозволяє"
 
 #: src/diagnostics.rs:728
 msgid "cores in this class"
-msgstr ""
+msgstr "ядер цього класу"
 
 #: src/diagnostics.rs:735
 msgid "mains"
-msgstr ""
+msgstr "електромережа"
 
 #: src/diagnostics.rs:736 src/diagnostics.rs:741
 msgid "battery"
-msgstr ""
+msgstr "акумулятор"
 
 #: src/diagnostics.rs:790
 msgid "chunks dropped this session"
-msgstr ""
+msgstr "фрагментів пропущено у цьому сеансі"
 
 #: src/diagnostics.rs:796
 msgid "Input method"
-msgstr ""
+msgstr "Метод вводу"
 
 #: src/diagnostics.rs:797
 msgid "Indicator host"
-msgstr ""
+msgstr "Хост індикатора"
 
 #: src/diagnostics.rs:803
 msgid "active"
-msgstr ""
+msgstr "активний"
 
 #: src/diagnostics.rs:805
 msgid "set up, starts at the next login"
-msgstr ""
+msgstr "налаштовано, запуститься за наступного входу"
 
 #: src/diagnostics.rs:808
 msgid "not set up"
-msgstr ""
+msgstr "не налаштовано"
 
 #: src/diagnostics.rs:809
 msgid "turned off"
-msgstr ""
+msgstr "вимкнено"
 
 #: src/diagnostics.rs:811
 msgid "locked by the administrator"
-msgstr ""
+msgstr "Заблоковано адміністратором"
 
 #: src/diagnostics.rs:813
 msgid "hidden by another copy"
-msgstr ""
+msgstr "сховано іншою копією"
 
 #: src/diagnostics.rs:815
 msgid "another input method is in use"
-msgstr ""
+msgstr "використовується інший метод вводу"
 
 #: src/diagnostics.rs:816
 msgid "not supported on this desktop"
-msgstr ""
+msgstr "не підтримується на цій сільниці"
 
 #: src/diagnostics.rs:818
 msgid "failed"
-msgstr ""
+msgstr "збій"
 
 #: src/diagnostics.rs:827
 msgid "gnome-shell did not answer"
-msgstr ""
+msgstr "gnome-shell не відповідає"
 
 #: src/diagnostics.rs:831
 msgid "installed since login, starts at the next one"
-msgstr ""
+msgstr "установлено після входу, запуститься за наступного"
 
 #: src/diagnostics.rs:834
 msgid "installed since login, not enabled"
-msgstr ""
+msgstr "установлено після входу, не ввімкнено"
 
 #: src/diagnostics.rs:837
 msgid "myna-config package"
-msgstr ""
+msgstr "пакет myna-config"
 
 #: src/diagnostics.rs:838
 msgid "Ubuntu package"
-msgstr ""
+msgstr "паккет Ubuntu"
 
 #: src/diagnostics.rs:839
 msgid "development override"
-msgstr ""
+msgstr "перевизначення для розробки"
 
 #: src/diagnostics.rs:840
 msgid "user copy"
-msgstr ""
+msgstr "копія користувача"
 
 #: src/diagnostics.rs:841
 msgid "other system copy"
-msgstr ""
+msgstr "інша системна копія"
 
 #: src/myna_settings.rs:107
 msgid "Ribbon"
-msgstr ""
+msgstr "Стрічка"
 
 #: src/myna_settings.rs:108
 msgid "VU meter"
-msgstr ""
+msgstr "Індикатор рівня гучності"
 
 #: src/myna_settings.rs:109
 msgid "Default"
-msgstr ""
+msgstr "Типово"
 
 #: src/myna_settings.rs:110
 msgid "Bird"
-msgstr ""
+msgstr "Пташка"
 
 #: src/myna_settings.rs:111
 msgid "Chime"
-msgstr ""
+msgstr "Дзвіночок"
 
 #: src/myna_settings.rs:112
 msgid "Voice"
-msgstr ""
+msgstr "Голос"
 
 #: src/myna_settings.rs:113
 msgid "Marimba"
-msgstr ""
+msgstr "Маримба"
 
 #: src/myna_settings.rs:114
 msgid "Water"
-msgstr ""
+msgstr "Вода"
 
 #: src/myna_settings.rs:115
 msgid "Radio"
-msgstr ""
+msgstr "Радіо"
 
 #: src/myna_settings.rs:116
 msgid "Strings"
-msgstr ""
+msgstr "Струни"
 
 #. TRANSLATORS: separates language names in a list, as in "English, Deutsch".
 #: src/model_family.rs:224
 msgctxt "language list"
 msgid ", "
-msgstr ""
+msgstr ", "
 
 #. TRANSLATORS: {languages} is a short list of language names, {count} how many more there are.
 #: src/model_family.rs:234
 msgid "{languages} +{count}"
-msgstr ""
+msgstr "{languages} +{count}"
 
 #: src/model_family.rs:243
 msgid "{count} language"
 msgid_plural "{count} languages"
-msgstr[0] ""
-msgstr[1] ""
+msgstr[0] "{count} мова"
+msgstr[1] "{count} мови"
+msgstr[2] "{count} мов"
 
 #. TRANSLATORS: {language} is the user's language named in that language, such as "Deutsch" or "中文", inserted as-is in the nominative. If your grammar would inflect it, rephrase, e.g. "Najlepszy dla języka: {language}".
 #: src/model_family.rs:280
 msgid "Best for {language}"
-msgstr ""
+msgstr "Найкраще для {language}"
 
 #. TRANSLATORS: Shown under "Install more models" when a model not installed would transcribe the user's language better. {language} is that language named in itself, such as "Deutsch" or "中文", inserted as-is in the nominative. If your grammar would inflect it, rephrase, e.g. "Dostępny jest lepszy model dla języka: {language}".
 #: src/model_family.rs:293
 msgid "A better model for {language} is available"
-msgstr ""
+msgstr "Доступна краща модель для {language}"
 
 #: src/model_family.rs:296
 msgid "A recommended model is available"
-msgstr ""
+msgstr "Доступна рекомендована модель"
 
 #. TRANSLATORS: Shown under "Install more models" while a model installs. {model} is a model family, such as "Whisper", and {percent} how much of its download has arrived, a number from 0 to 100.
 #: src/model_family.rs:306
 msgid "Installing {model} {percent}%"
-msgstr ""
+msgstr "Встановлення {model} {percent}%"
 
 #. TRANSLATORS: Shown under "Install more models" while a model installs. {model} is a model family, such as "Whisper".
 #: src/model_family.rs:309
 msgid "Installing {model}…"
-msgstr ""
+msgstr "Встановлення {model}…"
 
 #: src/presentation.rs:47
 msgid "value is invalid"
-msgstr ""
+msgstr "недійсне значення"
 
 #: src/presentation.rs:48
 msgid "value must be true or false"
-msgstr ""
+msgstr "значення повинно бути true або false"
 
 #: src/presentation.rs:49
 msgid "value must be a number"
-msgstr ""
+msgstr "значення повинно бути числом"
 
 #: src/presentation.rs:50
 msgid "value must be text"
-msgstr ""
+msgstr "значення повинно бути текстом"
 
 #: src/presentation.rs:51
 msgid "value must be a positive number"
-msgstr ""
+msgstr "значення має бути додатним числом"
 
 #: src/presentation.rs:52
 msgid "value must be zero or a positive number"
-msgstr ""
+msgstr "значення має дорівнювати нулю або бути додатним числом"
 
 #: src/presentation.rs:53
 msgid "value must be a non-negative whole number"
-msgstr ""
+msgstr "значення має бути невід’ємним цілим числом"
 
 #. TRANSLATORS: {choices} lists the allowed values, such as "cpu, cuda".
 #: src/presentation.rs:56
 msgid "value must be one of {choices}"
-msgstr ""
+msgstr "значення має бути одним із {choices}"
 
 #: src/presentation.rs:59
 msgid "this value cannot be edited"
-msgstr ""
+msgstr "це значення не можна змінювати"
 
 #: src/presentation.rs:158
 msgid "Which version of this model to run."
-msgstr ""
+msgstr "Яку версію цієї моделі запустити."
 
 #: src/presentation.rs:165
 msgid "The inference engine this model runs on."
-msgstr ""
+msgstr "Рушій виконання, на якому працює ця модель."
 
 #: src/presentation.rs:171
 msgid "Streaming output"
-msgstr ""
+msgstr "Потоковий вивід"
 
 #: src/presentation.rs:172
 msgid "Emit partial transcription results while speech is being processed."
-msgstr ""
+msgstr "Виводити часткові результати розшифрування під час обробки мовлення."
 
 #: src/presentation.rs:179
 msgid ""
 "Unload the inference service after this many idle seconds; zero disables the "
 "delay."
 msgstr ""
+"Зупинити роботу служби інференції після зазначеної кількості секунд простою; "
+"значення 0 вимикає затримку."
 
 #: src/presentation.rs:185
 msgid "Verbose logging"
-msgstr ""
+msgstr "Докладне ведення журналу"
 
 #: src/presentation.rs:186
 msgid "Write additional diagnostics to the system log."
-msgstr ""
+msgstr "Записувати додаткові діагностичні дані в системний журнал."
 
 #: src/presentation.rs:192
 msgid "Socket path"
-msgstr ""
+msgstr "Шлях до сокета"
 
 #: src/presentation.rs:193
 msgid "Raw Unix socket path used by the transcription service."
 msgstr ""
+"Шлях до необробленого сокета Unix, який використовує служба розшифрування."
 
 #: src/presentation.rs:199
 msgid "Minimum speech before pause commit (seconds)"
-msgstr ""
+msgstr "Мінімальна тривалість мовлення перед паузою (секунд)"
 
 #: src/presentation.rs:200
 msgid "Speech required before a pause can commit a transcript chunk."
 msgstr ""
+"Перед паузою необхідне мовлення, щоб зафіксувати фрагмент розшифрування."
 
 #: src/presentation.rs:205
 msgid "Pause length for commit (seconds)"
-msgstr ""
+msgstr "Тривалість паузи перед фіксацією (секунд)"
 
 #: src/presentation.rs:206
 msgid "Silence duration that commits the current transcript chunk."
@@ -1632,7 +1651,7 @@ msgstr ""
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:50
 msgid "Sound style"
-msgstr ""
+msgstr "Стильь звуку"
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:51
 msgid ""
@@ -1706,3 +1725,4 @@ msgstr ""
 #: data/com.canonical.Myna.Config.desktop:12
 msgid "dictation;speech;transcription;voice;model;"
 msgstr ""
+"диктування;мова;розшифрування;голос;модель;dictation;speech;transcription;voice;model;"
