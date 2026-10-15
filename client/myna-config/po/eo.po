@@ -8,38 +8,42 @@ msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-10-11 11:54+0100\n"
-"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
-"Last-Translator: Automatically generated\n"
-"Language-Team: none\n"
+"PO-Revision-Date: 2026-10-15 09:00+0000\n"
+"Last-Translator: phlostically <phlostically@users.noreply.hosted.weblate.org>"
+"\n"
+"Language-Team: Esperanto <https://hosted.weblate.org/projects/ubuntu-desktop-"
+"translations/myna-config/eo/>\n"
 "Language: eo\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=n != 1;\n"
+"X-Generator: Weblate 2026.11.dev0\n"
 
 #: data/diagnostics-page.blp:5 data/diagnostics-page.blp:8 src/app.rs:1485
 msgid "About and Diagnostics"
-msgstr ""
+msgstr "Pri agordoj kaj diagnozoj"
 
 #: data/diagnostics-page.blp:15 data/onboarding-welcome.blp:25
 msgid "Set up Dictation"
-msgstr ""
+msgstr "Agordi diktadon"
 
 #: data/diagnostics-page.blp:20 data/myna-page.blp:33 src/shortcut_ui.rs:287
 msgid "Set up"
-msgstr ""
+msgstr "Agordi"
 
 #: data/diagnostics-page.blp:32
 msgid "Performance warnings"
-msgstr ""
+msgstr "Avertoj pri rendimento"
 
 #: data/diagnostics-page.blp:33
 msgid "This machine is not currently delivering the CPU that dictation needs."
 msgstr ""
+"Ĉi tiu maŝino aktuale ne havas tian ĉefprocesoron, kia necesas por diktado."
 
 #: data/diagnostics-page.blp:38 data/main-window.blp:46
 msgid "Diagnostics"
-msgstr ""
+msgstr "Diagnozoj"
 
 #: data/diagnostics-page.blp:40
 msgid "No audio, transcript, or filesystem path is ever included."
@@ -47,23 +51,23 @@ msgstr ""
 
 #: data/diagnostics-page.blp:49 src/backend_ui.rs:3114 src/backend_ui.rs:3394
 msgid "Refresh"
-msgstr ""
+msgstr "Reŝargi"
 
 #: data/diagnostics-page.blp:53 src/backend_ui.rs:2071 src/backend_ui.rs:2073
 msgid "Refresh diagnostics"
-msgstr ""
+msgstr "Reŝargi diagnozojn"
 
 #: data/diagnostics-page.blp:54
 msgid "Check this computer, Myna and every model again."
-msgstr ""
+msgstr "Rekontroli ĉi tiun komputilon, Myna, kaj ĉiujn modelojn."
 
 #: data/diagnostics-page.blp:60
 msgid "Copy"
-msgstr ""
+msgstr "Kopii"
 
 #: data/diagnostics-page.blp:64 src/backend_ui.rs:2086
 msgid "Copy diagnostics"
-msgstr ""
+msgstr "Kopii diagnozojn"
 
 #: data/diagnostics-page.blp:66
 msgid ""
@@ -73,82 +77,82 @@ msgstr ""
 
 #: data/diagnostics-page.blp:94 src/backend_ui.rs:2119
 msgid "Diagnostic report"
-msgstr ""
+msgstr "Diagnoza raporto"
 
 #: data/diagnostics-page.blp:95
 msgid "Read-only privacy-safe diagnostic text."
-msgstr ""
+msgstr "Nurlega privata diagnoza teksto."
 
 #: data/install-control.blp:54 data/onboarding-components.blp:60
 #: src/app.rs:3931
 msgid "Installed"
-msgstr ""
+msgstr "Instalita"
 
 #: data/install-models-dialog.blp:5 data/myna-page.blp:79 data/myna-page.blp:94
 msgid "Install more models"
-msgstr ""
+msgstr "Instali pli da modeloj"
 
 #: data/main-window.blp:9 src/app.rs:122 src/diagnostics.rs:443
 #: data/com.canonical.Myna.Config.metainfo.xml:8
 #: data/com.canonical.Myna.Config.desktop:3
 msgid "Myna Settings"
-msgstr ""
+msgstr "Agordoj pri Myna"
 
 #: data/main-window.blp:24
 msgid "Main Menu"
-msgstr ""
+msgstr "Ĉefmenuo"
 
 #: data/main-window.blp:32 src/backend_ui.rs:2815
 msgid "General"
-msgstr ""
+msgstr "Ĝenerala"
 
 #: data/main-window.blp:39 data/myna-page.blp:71 src/app.rs:1480
 #: src/app.rs:3154 src/app.rs:3578 src/backend_apply.rs:379
 #: src/diagnostics.rs:636 src/presentation.rs:157
 msgid "Model"
-msgstr ""
+msgstr "Modelo"
 
 #: data/main-window.blp:71
 msgid "_Set Up Dictation…"
-msgstr ""
+msgstr "A_gordi dikton…"
 
 #: data/main-window.blp:75
 msgid "_Report an Issue…"
-msgstr ""
+msgstr "_Raporti problemon…"
 
 #: data/main-window.blp:76
 msgid "_About Myna Settings"
-msgstr ""
+msgstr "Pri _agordoj de Myna"
 
 #: data/myna-page.blp:5 data/myna-page.blp:8 data/status-page.blp:5
 msgid "Myna"
-msgstr ""
+msgstr "Myna"
 
 #: data/myna-page.blp:12
 msgid "Keyboard shortcut"
-msgstr ""
+msgstr "Fulmoklavo"
 
 #: data/myna-page.blp:15
 msgid "Press to start and stop"
-msgstr ""
+msgstr "Premu por komenci kaj fini"
 
 #: data/myna-page.blp:47 src/shortcut_ui.rs:324
 msgid "Press a shortcut…"
-msgstr ""
+msgstr "Premu fulmoklavon…"
 
 #: data/myna-page.blp:57 data/onboarding-shortcut.blp:134
 #: src/shortcut_ui.rs:501
 msgid "Cancel"
-msgstr ""
+msgstr "Nuligi"
 
 #: data/myna-page.blp:67 data/onboarding-window.blp:7 src/app.rs:1816
 #: src/app.rs:4996 src/onboarding_ui.rs:1340 src/shortcut_ui.rs:591
 msgid "Dictation"
-msgstr ""
+msgstr "Dikto"
 
 #: data/onboarding-components.blp:18 src/app.rs:3883 src/onboarding_ui.rs:1341
 msgid "Install components"
-msgstr ""
+msgstr "Instali komponantojn"
 
 #: data/onboarding-components.blp:27 src/app.rs:3887
 msgid ""
@@ -159,20 +163,20 @@ msgstr ""
 #: data/onboarding-components.blp:44 src/app.rs:491 src/app.rs:3959
 #: src/app.rs:4024 src/app.rs:4434
 msgid "Install all components"
-msgstr ""
+msgstr "Instali ĉiujn komponantojn"
 
 #: data/onboarding-components.blp:52 src/app.rs:3948
 #: src/ui/install_control.rs:134
 msgid "Installing…"
-msgstr ""
+msgstr "Instalante…"
 
 #: data/onboarding-shortcut.blp:18 src/app.rs:4715 src/onboarding_ui.rs:1342
 msgid "How to dictate"
-msgstr ""
+msgstr "Kiel dikti"
 
 #: data/onboarding-shortcut.blp:51 src/shortcut_ui.rs:285
 msgid "Set up shortcut"
-msgstr ""
+msgstr "Agordi fulmoklavon"
 
 #: data/onboarding-shortcut.blp:58 src/onboarding_ui.rs:1065
 msgid ""
@@ -182,7 +186,7 @@ msgstr ""
 
 #: data/onboarding-shortcut.blp:78 src/shortcut_ui.rs:322
 msgid "Press the new shortcut…"
-msgstr ""
+msgstr "Premu la novan fulmoklavon…"
 
 #: data/onboarding-shortcut.blp:104
 msgid ""
@@ -192,35 +196,35 @@ msgstr ""
 
 #: data/onboarding-welcome.blp:34
 msgid "Dictation runs locally, with no data leaving your computer."
-msgstr ""
+msgstr "Diktado okazas loke; neniom da datenoj sendiĝas ekster vian komputilon."
 
 #: data/onboarding-window.blp:24 src/app.rs:414 src/onboarding_ui.rs:776
 msgid "Next"
-msgstr ""
+msgstr "Sekven"
 
 #: data/operation-error-dialog.blp:5
 msgid "Operation failed"
-msgstr ""
+msgstr "Operacio malsukcesis"
 
 #: data/operation-error-dialog.blp:6
 msgid "Full details are shown below. You can copy them to share with support."
-msgstr ""
+msgstr "Jen plenaj detaloj. Vi povas kopii kaj sendi ilin al teĥnika subtenejo."
 
 #: data/operation-error-dialog.blp:12
 msgid "Close"
-msgstr ""
+msgstr "Fermi"
 
 #: data/operation-error-dialog.blp:34 src/app.rs:4103
 msgid "Copy Details"
-msgstr ""
+msgstr "Kopii detalojn"
 
 #: data/operation-error-dialog.blp:35
 msgid "Copy the full failure details to the clipboard"
-msgstr ""
+msgstr "Kopii la plenajn detalojn pri malsukceso en tondujon"
 
 #: data/status-page.blp:8 src/app.rs:1475 src/app.rs:5239
 msgid "Loading Myna Settings"
-msgstr ""
+msgstr "Ŝargante Agordojn pri Myna"
 
 #: data/status-page.blp:9 src/app.rs:1476 src/app.rs:5240
 msgid "Reading the installed settings schema…"
@@ -228,23 +232,23 @@ msgstr ""
 
 #: src/app.rs:130
 msgid "translator-credits"
-msgstr ""
+msgstr "phlostically"
 
 #: src/app.rs:1185 src/onboarding_ui.rs:781
 msgid "Done"
-msgstr ""
+msgstr "Farite"
 
 #: src/app.rs:1481
 msgid "Model details appear once Myna finds your models."
-msgstr ""
+msgstr "Detaloj pri modelo aperos post kiam Myna trovos viajn modelojn."
 
 #: src/app.rs:1486
 msgid "Diagnostics appear once Myna finds your models."
-msgstr ""
+msgstr "Diagnozoj aperos post kiam Myna trovos viajn modelojn."
 
 #: src/app.rs:3192 src/backend_ui.rs:3762 src/model_family.rs:27
 msgid "Fastest and most accurate in its 25 languages"
-msgstr ""
+msgstr "Plej rapida kaj plej preciza en 25 lingvoj"
 
 #: src/app.rs:3196 src/backend_ui.rs:4291 src/model_family.rs:31
 msgid "Most languages, with uneven accuracy"
@@ -252,15 +256,15 @@ msgstr ""
 
 #: src/app.rs:3331 src/myna_settings.rs:105
 msgid "As you speak"
-msgstr ""
+msgstr "Dum parolado"
 
 #: src/app.rs:3332 src/myna_settings.rs:106
 msgid "When you stop"
-msgstr ""
+msgstr "Kiam vi ĉesas paroli"
 
 #: src/app.rs:3472 src/app.rs:5729
 msgid "Preview"
-msgstr ""
+msgstr "Antaŭrigardi"
 
 #: src/app.rs:3486 src/sound_preview.rs:69
 msgid "Could not preview sounds"
@@ -268,69 +272,69 @@ msgstr ""
 
 #: src/app.rs:3520 src/backend_ui.rs:721
 msgid "Changing to {model} failed"
-msgstr ""
+msgstr "Malsukcesis ŝanĝi al {model}"
 
 #: src/app.rs:3521 src/app.rs:4056 src/app.rs:4065 src/app.rs:4454
 #: src/app.rs:5103 src/app.rs:5109 src/backend_ui.rs:1291
 #: src/onboarding_ui.rs:556 src/ui/status_page.rs:70
 msgid "Details"
-msgstr ""
+msgstr "Detaloj"
 
 #. TRANSLATORS: {setting} is a setting's name on the Model tab, such as "Unload when idle (seconds)".
 #: src/app.rs:3627 src/backend_ui.rs:1688
 msgid "Changing “{setting}” failed"
-msgstr ""
+msgstr "Malsukcesis ŝanĝi «{setting}»"
 
 #: src/app.rs:3629 src/presentation.rs:178
 msgid "Unload when idle (seconds)"
-msgstr ""
+msgstr "Malŝargi post senokupo (sekundoj)"
 
 #. TRANSLATORS: {size} is a download size, such as "4.2 GB".
 #: src/app.rs:3921 src/onboarding_ui.rs:855
 msgid "Up to {size}"
-msgstr ""
+msgstr "Maksimume {size}"
 
 #: src/app.rs:4057 src/onboarding_ui.rs:1011
 msgid "Could not let Myna run in the background"
-msgstr ""
+msgstr "Ne povis ruli Myna fone"
 
 #: src/app.rs:4087 src/app.rs:4237 src/backend_ui.rs:2419
 msgid "Executable:"
-msgstr ""
+msgstr "Ruleblaĵo:"
 
 #: src/app.rs:4088 src/app.rs:4238 src/backend_ui.rs:2423
 msgid "Arguments:"
-msgstr ""
+msgstr "Argumentoj:"
 
 #: src/app.rs:4089 src/app.rs:4239 src/backend_ui.rs:2432
 #: src/backend_ui.rs:2510 src/backend_ui.rs:3231
 msgid "Exit status:"
-msgstr ""
+msgstr "Elirstato:"
 
 #: src/app.rs:4090 src/app.rs:4240 src/app.rs:4466 src/backend_ui.rs:2477
 msgid "Message:"
-msgstr ""
+msgstr "Mesaĝo:"
 
 #: src/app.rs:4156 src/onboarding_ui.rs:990
 msgid "Enabling user daemons support"
-msgstr ""
+msgstr "Starigante demonon de uzanto"
 
 #: src/app.rs:4179 src/onboarding_ui.rs:991
 msgid "Installing Dictation app"
-msgstr ""
+msgstr "Instalante diktilo-programon"
 
 #. TRANSLATORS: {step} is what is installing, such as "Installing speech-to-text model", and {percent} how much of its download has arrived.
 #: src/app.rs:4189 src/app.rs:4252 src/app.rs:4352 src/onboarding_ui.rs:999
 msgid "{step} ({percent}%)"
-msgstr ""
+msgstr "{step} ({percent}%)"
 
 #: src/app.rs:4203 src/onboarding_ui.rs:992
 msgid "Installing speech-to-text model"
-msgstr ""
+msgstr "Instalante parolo-tekstigan modelon"
 
 #: src/app.rs:4217 src/onboarding_ui.rs:1013
 msgid "Installing the speech-to-text model failed"
-msgstr ""
+msgstr "Malsukcesis instali parolo-tekstigan modelon"
 
 #: src/app.rs:4280 src/onboarding_ui.rs:994
 msgid "Enabling shell extension"
@@ -342,7 +346,7 @@ msgstr ""
 
 #: src/app.rs:4465 src/backend_ui.rs:2463
 msgid "D-Bus call:"
-msgstr ""
+msgstr "Alvoko de D-Bus:"
 
 #: src/app.rs:4730 src/shortcut_ui.rs:669
 msgid "You can trigger Dictation anytime by using the keyboard shortcut:"
@@ -351,7 +355,7 @@ msgstr ""
 #: src/app.rs:5102 src/onboarding_ui.rs:676 src/onboarding_ui.rs:683
 #: src/onboarding_ui.rs:925
 msgid "Could not set up Dictation"
-msgstr ""
+msgstr "Malsukcesis agordi diktadon"
 
 #: src/app.rs:5140 src/onboarding_ui.rs:876
 msgid "Dictation is not set up yet. Select Next to try again."
@@ -387,7 +391,7 @@ msgstr ""
 
 #: src/active_backend.rs:368
 msgid "No model is connected."
-msgstr ""
+msgstr "Neniu modelo estas konektita."
 
 #: src/active_backend.rs:373
 msgid "The model is not available to switch to."
@@ -399,25 +403,25 @@ msgstr ""
 
 #: src/backend_ui.rs:121 src/model_family.rs:283
 msgid "Recommended"
-msgstr ""
+msgstr "Rekomendata"
 
 #: src/backend_ui.rs:182 src/diagnostics.rs:474
 msgid "Languages"
-msgstr ""
+msgstr "Lingvoj"
 
 #: src/backend_ui.rs:217
 msgid "Your language"
-msgstr ""
+msgstr "Via lingvo"
 
 #. TRANSLATORS: an upper bound on a download size, such as "up to 1.4 GB": it is less on a machine whose GPU cannot be used.
 #: src/backend_ui.rs:365
 msgid "up to {size}"
-msgstr ""
+msgstr "maksimume {size}"
 
 #. TRANSLATORS: {description} says what a model is good at, such as "Most languages, with uneven accuracy", and {size} what installing it downloads, such as "198 MB" or "up to 1.4 GB". The spaces around the dot are no-break spaces, so the size never starts a line of its own.
 #: src/backend_ui.rs:371
 msgid "{description}\\u{a0}·\\u{a0}{size}"
-msgstr ""
+msgstr "{description}\\u{a0}·\\u{a0}{size}"
 
 #: src/backend_ui.rs:670
 msgid "This model is no longer installed."
@@ -435,28 +439,28 @@ msgstr ""
 
 #: src/backend_ui.rs:791 src/diagnostics.rs:658
 msgid "No model is connected. Choose one to use for dictation."
-msgstr ""
+msgstr "Neniu modelo estas konektita. Elektu unu por diktado."
 
 #: src/backend_ui.rs:794
 msgid "Several models are connected. Choose one to use for dictation."
-msgstr ""
+msgstr "Pluraj modeloj estas konektitaj. Elektu unu por diktado."
 
 #: src/backend_ui.rs:893
 msgid "Changing model"
-msgstr ""
+msgstr "Ŝanĝante modelon"
 
 #: src/backend_ui.rs:1108
 msgid "Install"
-msgstr ""
+msgstr "Instali"
 
 #. TRANSLATORS: the Install button's name to assistive technology; {model} is a model family, such as "Whisper".
 #: src/backend_ui.rs:1110
 msgid "Install {model}"
-msgstr ""
+msgstr "Instali {model}"
 
 #: src/backend_ui.rs:1275
 msgid "Installing {model} failed"
-msgstr ""
+msgstr "Malsukcesis instali {model}"
 
 #: src/backend_ui.rs:1388 src/backend_ui.rs:1527
 msgid "Wait for the current change to finish."
@@ -477,7 +481,7 @@ msgstr ""
 
 #: src/backend_ui.rs:1782
 msgid "No active model"
-msgstr ""
+msgstr "Neniu aktiva modelo"
 
 #: src/backend_ui.rs:1783
 msgid "Choose a model on the General tab."
@@ -485,7 +489,7 @@ msgstr ""
 
 #: src/backend_ui.rs:1786
 msgid "Several models are connected"
-msgstr ""
+msgstr "Pluraj modeloj estas konektitaj"
 
 #: src/backend_ui.rs:1787
 msgid "Choose one model on the General tab."
@@ -497,7 +501,7 @@ msgstr ""
 
 #: src/backend_ui.rs:2004
 msgid "Could not open the web browser"
-msgstr ""
+msgstr "Ne povis lanĉi TTT-legilon"
 
 #: src/backend_ui.rs:2084
 msgid "Copy privacy-safe diagnostics"
@@ -505,19 +509,19 @@ msgstr ""
 
 #: src/backend_ui.rs:2095
 msgid "Diagnostics copied to clipboard"
-msgstr ""
+msgstr "Diagnozo kopiita en tondujon"
 
 #: src/backend_ui.rs:2124 src/diagnostics.rs:419
 msgid "Dictation is not installed"
-msgstr ""
+msgstr "Diktilo ne estas instalita"
 
 #: src/backend_ui.rs:2125 src/diagnostics.rs:420
 msgid "No model installed"
-msgstr ""
+msgstr "Neniu modelo instalita"
 
 #: src/backend_ui.rs:2126 src/diagnostics.rs:422
 msgid "No input method installed"
-msgstr ""
+msgstr "Neniu enigmetodo instalita"
 
 #: src/backend_ui.rs:2314
 msgid "The model kept a different value than the one you chose."
@@ -537,15 +541,15 @@ msgstr ""
 
 #: src/backend_ui.rs:2353 src/backend_ui.rs:2380
 msgid "The system did not allow the change."
-msgstr ""
+msgstr "La sistemo malpermesis la ŝanĝon."
 
 #: src/backend_ui.rs:2360 src/backend_ui.rs:2383
 msgid "The model rejected the value."
-msgstr ""
+msgstr "La modelo malakceptis la valoron."
 
 #: src/backend_ui.rs:2367 src/backend_ui.rs:2386 src/backend_ui.rs:3165
 msgid "The change could not be made."
-msgstr ""
+msgstr "Ne povis fari la ŝanĝon."
 
 #: src/backend_ui.rs:2377
 msgid "The change was interrupted after it started."
@@ -553,19 +557,19 @@ msgstr ""
 
 #: src/backend_ui.rs:2440 src/backend_ui.rs:2519 src/backend_ui.rs:3240
 msgid "Standard error:"
-msgstr ""
+msgstr "Norma eraro:"
 
 #: src/backend_ui.rs:2450
 msgid "Request:"
-msgstr ""
+msgstr "Peto:"
 
 #: src/backend_ui.rs:2456
 msgid "HTTP status:"
-msgstr ""
+msgstr "HTTP-stato:"
 
 #: src/backend_ui.rs:2469
 msgid "Setting:"
-msgstr ""
+msgstr "Agordo:"
 
 #: src/backend_ui.rs:2494
 msgid "Some operations completed before the apply failed.\n"
@@ -577,11 +581,11 @@ msgstr ""
 
 #: src/backend_ui.rs:2500
 msgid "Completed operations:\n"
-msgstr ""
+msgstr "Kompletigitaj operacioj:\n"
 
 #: src/backend_ui.rs:2526
 msgid "Failure:\n"
-msgstr ""
+msgstr "Malsukceso:\n"
 
 #: src/backend_ui.rs:2530
 msgid "Reconciliation read-back:\n"
@@ -589,15 +593,15 @@ msgstr ""
 
 #: src/backend_ui.rs:2542
 msgid "Model:"
-msgstr ""
+msgstr "Modelo:"
 
 #: src/backend_ui.rs:2548
 msgid "Services: none"
-msgstr ""
+msgstr "Servoj: nenio"
 
 #: src/backend_ui.rs:2550
 msgid "Services:"
-msgstr ""
+msgstr "Servoj:"
 
 #: src/backend_ui.rs:2562
 msgid "Status: unavailable"
@@ -609,39 +613,41 @@ msgstr ""
 
 #: src/backend_ui.rs:2600
 msgid "Language"
-msgstr ""
+msgstr "Lingvo"
 
 #: src/backend_ui.rs:2602
 msgid "A code such as en, fr or zh. Leave it empty to detect the language."
 msgstr ""
+"Lingvokodo, ekzemple «en», «fr», aŭ «zh». Lasu ĝin malplena por aŭtomate "
+"trovi la lingvon."
 
 #: src/backend_ui.rs:2655
 msgid "Overview"
-msgstr ""
+msgstr "Superrigardo"
 
 #: src/backend_ui.rs:2665
 msgid "Connection"
-msgstr ""
+msgstr "Konekto"
 
 #: src/backend_ui.rs:2668
 msgid "Active. Myna uses this model for dictation."
-msgstr ""
+msgstr "Aktiva. Myna uzas ĉi tiun modelon por diktado."
 
 #: src/backend_ui.rs:2671
 msgid "Several models are connected. Only one should be active."
-msgstr ""
+msgstr "Pluraj modeloj estas konektitaj. Nur unu estu aktiva."
 
 #: src/backend_ui.rs:2673
 msgid "Not connected to Myna."
-msgstr ""
+msgstr "Ne konektita al Myna."
 
 #: src/backend_ui.rs:2679
 msgid "Active model"
-msgstr ""
+msgstr "Aktiva modelo"
 
 #: src/backend_ui.rs:2685
 msgid "Active engine"
-msgstr ""
+msgstr "Aktiva modulo"
 
 #: src/backend_ui.rs:2688
 msgid "None selected. Choose one below."
@@ -649,7 +655,7 @@ msgstr ""
 
 #: src/backend_ui.rs:2705 src/diagnostics.rs:641
 msgid "Services"
-msgstr ""
+msgstr "Servoj"
 
 #: src/backend_ui.rs:2707
 msgid "No service health reported"
@@ -657,11 +663,11 @@ msgstr ""
 
 #: src/backend_ui.rs:2721
 msgid "Loading"
-msgstr ""
+msgstr "Ŝargante"
 
 #: src/backend_ui.rs:2722
 msgid "Reading this model's settings…"
-msgstr ""
+msgstr "Legante la agordojn de ĉi tiu modelo…"
 
 #: src/backend_ui.rs:2731
 msgid "No configuration reported"
@@ -673,7 +679,7 @@ msgstr ""
 
 #: src/backend_ui.rs:2743
 msgid "Some data is unavailable"
-msgstr ""
+msgstr "Kelkaj datenoj ne estas haveblaj"
 
 #: src/backend_ui.rs:2745
 msgid "Raw failure details are recorded on the Diagnostics page."
@@ -681,15 +687,15 @@ msgstr ""
 
 #: src/backend_ui.rs:2788 src/backend_ui.rs:3112 src/backend_ui.rs:3390
 msgid "Refreshing…"
-msgstr ""
+msgstr "Reŝargante…"
 
 #: src/backend_ui.rs:2816
 msgid "Runtime"
-msgstr ""
+msgstr "Rultempa medio"
 
 #: src/backend_ui.rs:2817
 msgid "Advanced"
-msgstr ""
+msgstr "Altnivelaĵoj"
 
 #: src/backend_ui.rs:2818
 msgid "Sensitive"
@@ -697,15 +703,15 @@ msgstr ""
 
 #: src/backend_ui.rs:2825
 msgid "Common settings for this model."
-msgstr ""
+msgstr "Oftaj agordoj pri ĉi tiu modelo."
 
 #: src/backend_ui.rs:2828
 msgid "Runtime and performance related settings."
-msgstr ""
+msgstr "Agordoj pri rultempa medio kaj rendimento."
 
 #: src/backend_ui.rs:2831
 msgid "Advanced settings."
-msgstr ""
+msgstr "Maloftaj agordoj."
 
 #: src/backend_ui.rs:2834
 msgid "Internal and sensitive values are shown for diagnostics only."
@@ -718,51 +724,51 @@ msgstr ""
 #. TRANSLATORS: {name} is the model part or snap being downloaded, such as "model-small"; {done} and {total} are sizes such as "210.0 MB".
 #: src/backend_ui.rs:3006
 msgid "Downloading {name}: {done} of {total}"
-msgstr ""
+msgstr "Elŝutante {name}: {done} el {total}"
 
 #: src/backend_ui.rs:3018
 msgid "Active"
-msgstr ""
+msgstr "Aktiva"
 
 #: src/backend_ui.rs:3019
 msgid "Inactive"
-msgstr ""
+msgstr "Neaktiva"
 
 #: src/backend_ui.rs:3020
 msgid "Failed"
-msgstr ""
+msgstr "Malsukcesa"
 
 #: src/backend_ui.rs:3022
 msgid "Unknown"
-msgstr ""
+msgstr "Nekonata"
 
 #: src/backend_ui.rs:3087
 msgid "Installed snaps"
-msgstr ""
+msgstr "Instalitaj snap-pakoj"
 
 #: src/backend_ui.rs:3088
 msgid "Model connections"
-msgstr ""
+msgstr "Konektoj al modeloj"
 
 #: src/backend_ui.rs:3089
 msgid "Model control command"
-msgstr ""
+msgstr "Komando por regi modelon"
 
 #: src/backend_ui.rs:3090
 msgid "Model settings"
-msgstr ""
+msgstr "Agordoj pri modelo"
 
 #: src/backend_ui.rs:3091
 msgid "Model status"
-msgstr ""
+msgstr "Stato de modelo"
 
 #: src/backend_ui.rs:3092
 msgid "Available models"
-msgstr ""
+msgstr "Haveblaj modeloj"
 
 #: src/backend_ui.rs:3093
 msgid "Available engines"
-msgstr ""
+msgstr "Haveblaj moduloj"
 
 #: src/backend_ui.rs:3099
 msgid "Persisted values could not be read."
@@ -770,11 +776,11 @@ msgstr ""
 
 #: src/backend_ui.rs:3110 src/backend_ui.rs:3398
 msgid "Applying changes…"
-msgstr ""
+msgstr "Efektivigante ŝanĝojn…"
 
 #: src/backend_ui.rs:3133
 msgid "missing"
-msgstr ""
+msgstr "mankanta"
 
 #. TRANSLATORS: {key} is a setting's key, such as "streaming"; {requested} and {actual} are its values.
 #: src/backend_ui.rs:3135
@@ -783,7 +789,7 @@ msgstr ""
 
 #: src/backend_ui.rs:3163
 msgid "Error:\n"
-msgstr ""
+msgstr "Eraro:\n"
 
 #: src/backend_ui.rs:3173
 msgid "The change ran, but the connections do not match it."
@@ -827,15 +833,15 @@ msgstr ""
 
 #: src/backend_ui.rs:3254
 msgid "connected"
-msgstr ""
+msgstr "konektita"
 
 #: src/backend_ui.rs:3264
 msgid "several models"
-msgstr ""
+msgstr "pluraj modeloj"
 
 #: src/backend_ui.rs:4295 src/model_family.rs:35
 msgid "Best for Chinese, Japanese and Korean"
-msgstr ""
+msgstr "Plej bona por la ĉina, la japana, kaj la korea"
 
 #: src/backend_apply.rs:81
 msgid "selector value must be text"
@@ -864,22 +870,22 @@ msgstr ""
 #: src/backend_apply.rs:551
 msgctxt "service state"
 msgid "active"
-msgstr ""
+msgstr "aktiva"
 
 #: src/backend_apply.rs:552
 msgctxt "service state"
 msgid "inactive"
-msgstr ""
+msgstr "neaktiva"
 
 #: src/backend_apply.rs:553
 msgctxt "service state"
 msgid "failed"
-msgstr ""
+msgstr "malsukcesa"
 
 #: src/backend_apply.rs:554
 msgctxt "service state"
 msgid "unknown"
-msgstr ""
+msgstr "nekonata"
 
 #: src/onboarding_ui.rs:678
 msgid "The system is busy installing software. Try again in a moment."
@@ -922,7 +928,7 @@ msgstr ""
 #. TRANSLATORS: a download size in megabytes, such as "776 MB"; the space is a no-break space.
 #: src/onboarding_ui.rs:1286
 msgid "{megabytes} MB"
-msgstr ""
+msgstr "{megabytes} MB"
 
 #: src/onboarding_ui.rs:1294
 msgid "Checking the installation"
@@ -938,7 +944,7 @@ msgstr ""
 
 #: src/onboarding_ui.rs:1302
 msgid "Starting dictation"
-msgstr ""
+msgstr "Komencante dikton"
 
 #: src/shortcut_ui.rs:284
 msgid "Change shortcut"
@@ -946,7 +952,7 @@ msgstr ""
 
 #: src/shortcut_ui.rs:286
 msgid "Change"
-msgstr ""
+msgstr "Ŝanĝi"
 
 #: src/shortcut_ui.rs:291
 msgid "Press a keyboard shortcut for dictation."
@@ -976,7 +982,7 @@ msgstr ""
 
 #: src/shortcut_ui.rs:502
 msgid "Replace"
-msgstr ""
+msgstr "Anstataŭigi"
 
 #: src/shortcut_ui.rs:562
 msgid "Could not set up the shortcut"
@@ -1002,7 +1008,7 @@ msgstr ""
 
 #: src/shortcut_ui.rs:691 src/sound_preview.rs:66
 msgid "Myna is not running"
-msgstr ""
+msgstr "Myna ne ruliĝas"
 
 #: src/sound_preview.rs:67
 msgid "Update Myna to preview sounds"
@@ -1026,7 +1032,7 @@ msgstr ""
 
 #: src/diagnostics.rs:284 src/diagnostics.rs:362 src/diagnostics.rs:714
 msgid "of"
-msgstr ""
+msgstr "de"
 
 #: src/diagnostics.rs:288
 msgid "Dictation will be slow. A power tool has capped the CPU clock."
@@ -1091,7 +1097,7 @@ msgstr ""
 
 #: src/diagnostics.rs:423
 msgid "Ready"
-msgstr ""
+msgstr "Preta"
 
 #: src/diagnostics.rs:424
 msgid "Installation status unavailable"
@@ -1099,7 +1105,7 @@ msgstr ""
 
 #: src/diagnostics.rs:431
 msgid "Connected"
-msgstr ""
+msgstr "Konektita"
 
 #: src/diagnostics.rs:432
 msgid "Multiple connections"
@@ -1107,7 +1113,7 @@ msgstr ""
 
 #: src/diagnostics.rs:433
 msgid "Not connected"
-msgstr ""
+msgstr "Ne konektita"
 
 #: src/diagnostics.rs:447
 msgid "Onboarding"
@@ -1115,39 +1121,39 @@ msgstr ""
 
 #: src/diagnostics.rs:454
 msgid "System"
-msgstr ""
+msgstr "Sistemo"
 
 #: src/diagnostics.rs:458
 msgid "OS"
-msgstr ""
+msgstr "Mastruma sistemo"
 
 #: src/diagnostics.rs:462
 msgid "kernel"
-msgstr ""
+msgstr "kerno"
 
 #: src/diagnostics.rs:470
 msgid "Desktop"
-msgstr ""
+msgstr "Labortablo"
 
 #: src/diagnostics.rs:481
 msgid "Machine"
-msgstr ""
+msgstr "Maŝino"
 
 #: src/diagnostics.rs:485 src/diagnostics.rs:500
 msgid "CPU"
-msgstr ""
+msgstr "Ĉefprocesoro"
 
 #: src/diagnostics.rs:486 src/diagnostics.rs:563 src/diagnostics.rs:648
 msgid "Memory"
-msgstr ""
+msgstr "Memoro"
 
 #: src/diagnostics.rs:490 src/diagnostics.rs:495
 msgid "GPU"
-msgstr ""
+msgstr "Grafika procesoro"
 
 #: src/diagnostics.rs:491 src/diagnostics.rs:856
 msgid "none"
-msgstr ""
+msgstr "nenio"
 
 #: src/diagnostics.rs:501
 msgid "(no model answered show-machine)"
@@ -1155,11 +1161,11 @@ msgstr ""
 
 #: src/diagnostics.rs:506
 msgid "Performance"
-msgstr ""
+msgstr "Rendimento"
 
 #: src/diagnostics.rs:513 src/diagnostics.rs:520 src/diagnostics.rs:546
 msgid "Clock"
-msgstr ""
+msgstr "Horloĝo"
 
 #: src/diagnostics.rs:514
 msgid "(no cpufreq information)"
@@ -1167,15 +1173,15 @@ msgstr ""
 
 #: src/diagnostics.rs:525
 msgid "Profile"
-msgstr ""
+msgstr "Profilo"
 
 #: src/diagnostics.rs:528
 msgid "Power"
-msgstr ""
+msgstr "Energio"
 
 #: src/diagnostics.rs:533
 msgid "Pressure"
-msgstr ""
+msgstr "Premo"
 
 #. TRANSLATORS: {cpu}, {memory} and {io} are shares such as "0.03%"; cpu, memory and io are kernel resource names, keep them.
 #: src/diagnostics.rs:536
@@ -1184,27 +1190,27 @@ msgstr ""
 
 #: src/diagnostics.rs:547
 msgid "(not measured yet)"
-msgstr ""
+msgstr "(ankoraŭ ne mezurita)"
 
 #: src/diagnostics.rs:552
 msgid "Daemon"
-msgstr ""
+msgstr "Demono"
 
 #: src/diagnostics.rs:560 src/diagnostics.rs:581 src/diagnostics.rs:590
 msgid "Version"
-msgstr ""
+msgstr "Versio"
 
 #: src/diagnostics.rs:570
 msgid "Audio"
-msgstr ""
+msgstr "Sono"
 
 #: src/diagnostics.rs:576
 msgid "Last error"
-msgstr ""
+msgstr "Lasta eraro"
 
 #: src/diagnostics.rs:584
 msgid "Process"
-msgstr ""
+msgstr "Procezo"
 
 #: src/diagnostics.rs:585 src/diagnostics.rs:807
 msgid "not running"
@@ -1212,7 +1218,7 @@ msgstr ""
 
 #: src/diagnostics.rs:591 src/diagnostics.rs:819 src/diagnostics.rs:828
 msgid "not installed"
-msgstr ""
+msgstr "ne instalita"
 
 #: src/diagnostics.rs:597
 msgid "Shell extension"
@@ -1220,37 +1226,39 @@ msgstr ""
 
 #: src/diagnostics.rs:610
 msgid "Models"
-msgstr ""
+msgstr "Modeloj"
 
 #: src/diagnostics.rs:614
 msgid "(none discovered)"
-msgstr ""
+msgstr "(nenio trovita)"
 
 #: src/diagnostics.rs:629 src/presentation.rs:164
 msgid "Engine"
-msgstr ""
+msgstr "Modulo"
 
 #: src/diagnostics.rs:633
 msgid "none selected"
-msgstr ""
+msgstr "nenio elektita"
 
 #: src/diagnostics.rs:655
 msgid "Problems"
-msgstr ""
+msgstr "Problemoj"
 
 #: src/diagnostics.rs:661
 msgid ""
 "IBus is not installed, so Myna cannot type. Install the “ibus” package, then "
 "log out and back in."
 msgstr ""
+"IBus ne estas instalita; tial Myna ne povas tajpi. Instalu la pakon «ibus», "
+"adiaŭu, kaj resalutu."
 
 #: src/diagnostics.rs:673 src/diagnostics.rs:687
 msgid "(none)"
-msgstr ""
+msgstr "(nenio)"
 
 #: src/diagnostics.rs:683
 msgid "Warnings"
-msgstr ""
+msgstr "Avertoj"
 
 #: src/diagnostics.rs:708
 msgid "not probed"
@@ -1266,11 +1274,11 @@ msgstr ""
 
 #: src/diagnostics.rs:735
 msgid "mains"
-msgstr ""
+msgstr "ekstera elektra fonto"
 
 #: src/diagnostics.rs:736 src/diagnostics.rs:741
 msgid "battery"
-msgstr ""
+msgstr "baterio"
 
 #: src/diagnostics.rs:790
 msgid "chunks dropped this session"
@@ -1278,7 +1286,7 @@ msgstr ""
 
 #: src/diagnostics.rs:796
 msgid "Input method"
-msgstr ""
+msgstr "enigmetodo"
 
 #: src/diagnostics.rs:797
 msgid "Indicator host"
@@ -1286,7 +1294,7 @@ msgstr ""
 
 #: src/diagnostics.rs:803
 msgid "active"
-msgstr ""
+msgstr "aktiva"
 
 #: src/diagnostics.rs:805
 msgid "set up, starts at the next login"
@@ -1318,11 +1326,11 @@ msgstr ""
 
 #: src/diagnostics.rs:818
 msgid "failed"
-msgstr ""
+msgstr "malsukcesa"
 
 #: src/diagnostics.rs:827
 msgid "gnome-shell did not answer"
-msgstr ""
+msgstr "gnome-shell ne respondis"
 
 #: src/diagnostics.rs:831
 msgid "installed since login, starts at the next one"
@@ -1334,11 +1342,11 @@ msgstr ""
 
 #: src/diagnostics.rs:837
 msgid "myna-config package"
-msgstr ""
+msgstr "pako myna-config"
 
 #: src/diagnostics.rs:838
 msgid "Ubuntu package"
-msgstr ""
+msgstr "Ubuntu-pako"
 
 #: src/diagnostics.rs:839
 msgid "development override"
@@ -1346,15 +1354,15 @@ msgstr ""
 
 #: src/diagnostics.rs:840
 msgid "user copy"
-msgstr ""
+msgstr "kopio de uzanto"
 
 #: src/diagnostics.rs:841
 msgid "other system copy"
-msgstr ""
+msgstr "alia sistema kopio"
 
 #: src/myna_settings.rs:107
 msgid "Ribbon"
-msgstr ""
+msgstr "Rubando"
 
 #: src/myna_settings.rs:108
 msgid "VU meter"
@@ -1362,57 +1370,57 @@ msgstr ""
 
 #: src/myna_settings.rs:109
 msgid "Default"
-msgstr ""
+msgstr "Apriora"
 
 #: src/myna_settings.rs:110
 msgid "Bird"
-msgstr ""
+msgstr "Birdo"
 
 #: src/myna_settings.rs:111
 msgid "Chime"
-msgstr ""
+msgstr "Sonoreto"
 
 #: src/myna_settings.rs:112
 msgid "Voice"
-msgstr ""
+msgstr "Voĉo"
 
 #: src/myna_settings.rs:113
 msgid "Marimba"
-msgstr ""
+msgstr "Marimbo"
 
 #: src/myna_settings.rs:114
 msgid "Water"
-msgstr ""
+msgstr "Akvo"
 
 #: src/myna_settings.rs:115
 msgid "Radio"
-msgstr ""
+msgstr "Radioaparato"
 
 #: src/myna_settings.rs:116
 msgid "Strings"
-msgstr ""
+msgstr "Kordoj"
 
 #. TRANSLATORS: separates language names in a list, as in "English, Deutsch".
 #: src/model_family.rs:224
 msgctxt "language list"
 msgid ", "
-msgstr ""
+msgstr ", "
 
 #. TRANSLATORS: {languages} is a short list of language names, {count} how many more there are.
 #: src/model_family.rs:234
 msgid "{languages} +{count}"
-msgstr ""
+msgstr "{languages} +{count}"
 
 #: src/model_family.rs:243
 msgid "{count} language"
 msgid_plural "{count} languages"
-msgstr[0] ""
-msgstr[1] ""
+msgstr[0] "{count} lingvo"
+msgstr[1] "{count} lingvoj"
 
 #. TRANSLATORS: {language} is the user's language named in that language, such as "Deutsch" or "中文", inserted as-is in the nominative. If your grammar would inflect it, rephrase, e.g. "Najlepszy dla języka: {language}".
 #: src/model_family.rs:280
 msgid "Best for {language}"
-msgstr ""
+msgstr "Plej bona por {language}"
 
 #. TRANSLATORS: Shown under "Install more models" when a model not installed would transcribe the user's language better. {language} is that language named in itself, such as "Deutsch" or "中文", inserted as-is in the nominative. If your grammar would inflect it, rephrase, e.g. "Dostępny jest lepszy model dla języka: {language}".
 #: src/model_family.rs:293
@@ -1426,40 +1434,40 @@ msgstr ""
 #. TRANSLATORS: Shown under "Install more models" while a model installs. {model} is a model family, such as "Whisper", and {percent} how much of its download has arrived, a number from 0 to 100.
 #: src/model_family.rs:306
 msgid "Installing {model} {percent}%"
-msgstr ""
+msgstr "Instalante {model} {percent}%"
 
 #. TRANSLATORS: Shown under "Install more models" while a model installs. {model} is a model family, such as "Whisper".
 #: src/model_family.rs:309
 msgid "Installing {model}…"
-msgstr ""
+msgstr "Instalante {model}…"
 
 #: src/presentation.rs:47
 msgid "value is invalid"
-msgstr ""
+msgstr "valoro ne validas"
 
 #: src/presentation.rs:48
 msgid "value must be true or false"
-msgstr ""
+msgstr "valoro devas esti «true» aŭ «false»"
 
 #: src/presentation.rs:49
 msgid "value must be a number"
-msgstr ""
+msgstr "valoro devas esti nombro"
 
 #: src/presentation.rs:50
 msgid "value must be text"
-msgstr ""
+msgstr "valoro devas esti teksto"
 
 #: src/presentation.rs:51
 msgid "value must be a positive number"
-msgstr ""
+msgstr "valoro devas esti pozitiva nombro"
 
 #: src/presentation.rs:52
 msgid "value must be zero or a positive number"
-msgstr ""
+msgstr "valoro devas esti nenegativa nombro"
 
 #: src/presentation.rs:53
 msgid "value must be a non-negative whole number"
-msgstr ""
+msgstr "valoro devas esti nenegativa entjero"
 
 #. TRANSLATORS: {choices} lists the allowed values, such as "cpu, cuda".
 #: src/presentation.rs:56
@@ -1578,7 +1586,7 @@ msgstr ""
 #. TRANSLATORS: {percent} is how much of the download has arrived, a number from 0 to 100.
 #: src/ui/install_control.rs:131
 msgid "Installing {percent}%"
-msgstr ""
+msgstr "Instalante {percent}%"
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:41
 msgid "Sounds on start, stop and error"
@@ -1613,7 +1621,7 @@ msgstr ""
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:69
 msgid "Spoken language"
-msgstr ""
+msgstr "Parolata lingvo"
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:70
 msgid ""
@@ -1656,7 +1664,7 @@ msgstr ""
 
 #: data/com.canonical.Myna.Config.desktop:4
 msgid "Dictation Settings"
-msgstr ""
+msgstr "Agordoj pri diktado"
 
 #: data/com.canonical.Myna.Config.desktop:5
 msgid "Configure Myna dictation and its speech models"
@@ -1665,4 +1673,4 @@ msgstr ""
 #. TRANSLATORS: Search terms for this application. Keep every semicolon, including the last.
 #: data/com.canonical.Myna.Config.desktop:12
 msgid "dictation;speech;transcription;voice;model;"
-msgstr ""
+msgstr "dikto;parolo;transskribo;voĉo;modelo;"
