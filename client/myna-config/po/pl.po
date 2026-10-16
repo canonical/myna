@@ -8,1592 +8,1673 @@ msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-10-11 11:54+0100\n"
-"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
-"Last-Translator: Automatically generated\n"
-"Language-Team: none\n"
+"PO-Revision-Date: 2026-10-17 10:38+0000\n"
+"Last-Translator: Matthaiks <kityn@users.noreply.hosted.weblate.org>\n"
+"Language-Team: Polish <https://hosted.weblate.org/projects/ubuntu-desktop-"
+"translations/myna-config/pl/>\n"
 "Language: pl\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"Plural-Forms: nplurals=3; plural=n==1 ? 0 : n%10>=2 && n%10<=4 && (n%100<10 "
-"|| n%100>=20) ? 1 : 2;\n"
+"Plural-Forms: nplurals=3; plural=(n==1 ? 0 : n%10>=2 && n%10<=4 && (n%100<10 "
+"|| n%100>=20) ? 1 : 2);\n"
+"X-Generator: Weblate 2026.11.dev0\n"
 
 #: data/diagnostics-page.blp:5 data/diagnostics-page.blp:8 src/app.rs:1485
 msgid "About and Diagnostics"
-msgstr ""
+msgstr "Informacje i diagnostyka"
 
 #: data/diagnostics-page.blp:15 data/onboarding-welcome.blp:25
 msgid "Set up Dictation"
-msgstr ""
+msgstr "Skonfiguruj dyktowanie"
 
 #: data/diagnostics-page.blp:20 data/myna-page.blp:33 src/shortcut_ui.rs:287
 msgid "Set up"
-msgstr ""
+msgstr "Skonfiguruj"
 
 #: data/diagnostics-page.blp:32
 msgid "Performance warnings"
-msgstr ""
+msgstr "Ostrzeżenia dotyczące wydajności"
 
 #: data/diagnostics-page.blp:33
 msgid "This machine is not currently delivering the CPU that dictation needs."
 msgstr ""
+"To urządzenie nie zapewnia obecnie mocy obliczeniowej procesora wymaganej do "
+"dyktowania."
 
 #: data/diagnostics-page.blp:38 data/main-window.blp:46
 msgid "Diagnostics"
-msgstr ""
+msgstr "Diagnostyka"
 
 #: data/diagnostics-page.blp:40
 msgid "No audio, transcript, or filesystem path is ever included."
 msgstr ""
+"Żadne nagrania dźwiękowe, transkrypcje ani ścieżki do plików w systemie "
+"plików nie są nigdy uwzględniane."
 
 #: data/diagnostics-page.blp:49 src/backend_ui.rs:3114 src/backend_ui.rs:3394
 msgid "Refresh"
-msgstr ""
+msgstr "Odśwież"
 
 #: data/diagnostics-page.blp:53 src/backend_ui.rs:2071 src/backend_ui.rs:2073
 msgid "Refresh diagnostics"
-msgstr ""
+msgstr "Odśwież diagnostykę"
 
 #: data/diagnostics-page.blp:54
 msgid "Check this computer, Myna and every model again."
-msgstr ""
+msgstr "Sprawdź ponownie ten komputer, program Myna oraz każdy model."
 
 #: data/diagnostics-page.blp:60
 msgid "Copy"
-msgstr ""
+msgstr "Skopiuj"
 
 #: data/diagnostics-page.blp:64 src/backend_ui.rs:2086
 msgid "Copy diagnostics"
-msgstr ""
+msgstr "Skopiuj diagnostykę"
 
 #: data/diagnostics-page.blp:66
 msgid ""
 "Copies a privacy-safe diagnostic report to the clipboard. Does not include "
 "audio, transcripts, or filesystem paths."
 msgstr ""
+"Kopiuje do schowka raport diagnostyczny, w którym zadbano o ochronę "
+"prywatności. Raport nie zawiera nagrań dźwiękowych, transkrypcji ani ścieżek "
+"do plików w systemie plików."
 
 #: data/diagnostics-page.blp:94 src/backend_ui.rs:2119
 msgid "Diagnostic report"
-msgstr ""
+msgstr "Raport diagnostyczny"
 
 #: data/diagnostics-page.blp:95
 msgid "Read-only privacy-safe diagnostic text."
-msgstr ""
+msgstr "Diagnostyczny tekst tylko do odczytu, bezpieczny pod kątem prywatności."
 
 #: data/install-control.blp:54 data/onboarding-components.blp:60
 #: src/app.rs:3931
 msgid "Installed"
-msgstr ""
+msgstr "Zainstalowano"
 
 #: data/install-models-dialog.blp:5 data/myna-page.blp:79 data/myna-page.blp:94
 msgid "Install more models"
-msgstr ""
+msgstr "Zainstaluj więcej modeli"
 
 #: data/main-window.blp:9 src/app.rs:122 src/diagnostics.rs:443
 #: data/com.canonical.Myna.Config.metainfo.xml:8
 #: data/com.canonical.Myna.Config.desktop:3
 msgid "Myna Settings"
-msgstr ""
+msgstr "Ustawienia programu Myna"
 
 #: data/main-window.blp:24
 msgid "Main Menu"
-msgstr ""
+msgstr "Menu główne"
 
 #: data/main-window.blp:32 src/backend_ui.rs:2815
 msgid "General"
-msgstr ""
+msgstr "Ogólne"
 
 #: data/main-window.blp:39 data/myna-page.blp:71 src/app.rs:1480
 #: src/app.rs:3154 src/app.rs:3578 src/backend_apply.rs:379
 #: src/diagnostics.rs:636 src/presentation.rs:157
 msgid "Model"
-msgstr ""
+msgstr "Model"
 
 #: data/main-window.blp:71
 msgid "_Set Up Dictation…"
-msgstr ""
+msgstr "_Skonfiguruj dyktowanie…"
 
 #: data/main-window.blp:75
 msgid "_Report an Issue…"
-msgstr ""
+msgstr "_Zgłoś problem…"
 
 #: data/main-window.blp:76
 msgid "_About Myna Settings"
-msgstr ""
+msgstr "Informacje o ustawieniach programu Myna"
 
 #: data/myna-page.blp:5 data/myna-page.blp:8 data/status-page.blp:5
 msgid "Myna"
-msgstr ""
+msgstr "Myna"
 
 #: data/myna-page.blp:12
 msgid "Keyboard shortcut"
-msgstr ""
+msgstr "Skrót klawiszowy"
 
 #: data/myna-page.blp:15
 msgid "Press to start and stop"
-msgstr ""
+msgstr "Naciśnij, aby uruchomić i zatrzymać"
 
 #: data/myna-page.blp:47 src/shortcut_ui.rs:324
 msgid "Press a shortcut…"
-msgstr ""
+msgstr "Naciśnij skrót…"
 
 #: data/myna-page.blp:57 data/onboarding-shortcut.blp:134
 #: src/shortcut_ui.rs:501
 msgid "Cancel"
-msgstr ""
+msgstr "Anuluj"
 
 #: data/myna-page.blp:67 data/onboarding-window.blp:7 src/app.rs:1816
 #: src/app.rs:4996 src/onboarding_ui.rs:1340 src/shortcut_ui.rs:591
 msgid "Dictation"
-msgstr ""
+msgstr "Dyktowanie"
 
 #: data/onboarding-components.blp:18 src/app.rs:3883 src/onboarding_ui.rs:1341
 msgid "Install components"
-msgstr ""
+msgstr "Zainstaluj komponenty"
 
 #: data/onboarding-components.blp:27 src/app.rs:3887
 msgid ""
 "Dictation requires some additional components, including the optimal speech-"
 "to-text model for your computer. Installation might take a few minutes."
 msgstr ""
+"Dyktowanie wymaga dodatkowych elementów, w tym optymalnego modelu zamiany "
+"mowy na tekst dla tego komputera. Instalacja może potrwać kilka minut."
 
 #: data/onboarding-components.blp:44 src/app.rs:491 src/app.rs:3959
 #: src/app.rs:4024 src/app.rs:4434
 msgid "Install all components"
-msgstr ""
+msgstr "Zainstaluj wszystkie komponenty"
 
 #: data/onboarding-components.blp:52 src/app.rs:3948
 #: src/ui/install_control.rs:134
 msgid "Installing…"
-msgstr ""
+msgstr "Instalowanie…"
 
 #: data/onboarding-shortcut.blp:18 src/app.rs:4715 src/onboarding_ui.rs:1342
 msgid "How to dictate"
-msgstr ""
+msgstr "Jak dyktować"
 
 #: data/onboarding-shortcut.blp:51 src/shortcut_ui.rs:285
 msgid "Set up shortcut"
-msgstr ""
+msgstr "Skonfiguruj skrót"
 
 #: data/onboarding-shortcut.blp:58 src/onboarding_ui.rs:1065
 msgid ""
 "Log out and back in to turn on the dictation indicator (GNOME Shell "
 "extension)."
 msgstr ""
+"Wyloguj się i zaloguj ponownie, aby włączyć wskaźnik dyktowania "
+"(rozszerzenie GNOME Shell)."
 
 #: data/onboarding-shortcut.blp:78 src/shortcut_ui.rs:322
 msgid "Press the new shortcut…"
-msgstr ""
+msgstr "Naciśnij nowy skrót…"
 
 #: data/onboarding-shortcut.blp:104
 msgid ""
 "Use Ctrl, Alt or Super with another key, or a function key. Press Escape to "
 "cancel."
 msgstr ""
+"Użyj klawisza Ctrl, Alt lub Super w połączeniu z innym klawiszem albo "
+"klawiszem funkcyjnym. Naciśnij Escape, aby anulować."
 
 #: data/onboarding-welcome.blp:34
 msgid "Dictation runs locally, with no data leaving your computer."
-msgstr ""
+msgstr "Dyktowanie działa lokalnie; żadne dane nie opuszczają tego komputera."
 
 #: data/onboarding-window.blp:24 src/app.rs:414 src/onboarding_ui.rs:776
 msgid "Next"
-msgstr ""
+msgstr "Dalej"
 
 #: data/operation-error-dialog.blp:5
 msgid "Operation failed"
-msgstr ""
+msgstr "Operacja nie powiodła się"
 
 #: data/operation-error-dialog.blp:6
 msgid "Full details are shown below. You can copy them to share with support."
 msgstr ""
+"Pełne szczegóły przedstawiono poniżej. Możesz je skopiować, aby udostępnić "
+"zespołowi pomocy technicznej."
 
 #: data/operation-error-dialog.blp:12
 msgid "Close"
-msgstr ""
+msgstr "Zamknij"
 
 #: data/operation-error-dialog.blp:34 src/app.rs:4103
 msgid "Copy Details"
-msgstr ""
+msgstr "Skopiuj szczegóły"
 
 #: data/operation-error-dialog.blp:35
 msgid "Copy the full failure details to the clipboard"
-msgstr ""
+msgstr "Skopiuj pełne szczegóły błędu do schowka"
 
 #: data/status-page.blp:8 src/app.rs:1475 src/app.rs:5239
 msgid "Loading Myna Settings"
-msgstr ""
+msgstr "Wczytywanie ustawień programu Myna"
 
 #: data/status-page.blp:9 src/app.rs:1476 src/app.rs:5240
 msgid "Reading the installed settings schema…"
-msgstr ""
+msgstr "Wczytywanie zainstalowanego schematu ustawień…"
 
 #: src/app.rs:130
 msgid "translator-credits"
-msgstr ""
+msgstr "Matthaiks, 2026"
 
 #: src/app.rs:1185 src/onboarding_ui.rs:781
 msgid "Done"
-msgstr ""
+msgstr "Gotowe"
 
 #: src/app.rs:1481
 msgid "Model details appear once Myna finds your models."
-msgstr ""
+msgstr "Szczegóły modelu pojawią się, gdy program Myna znajdzie Twoje modele."
 
 #: src/app.rs:1486
 msgid "Diagnostics appear once Myna finds your models."
-msgstr ""
+msgstr "Diagnostyka pojawia się, gdy program Myna znajdzie Twoje modele."
 
 #: src/app.rs:3192 src/backend_ui.rs:3762 src/model_family.rs:27
 msgid "Fastest and most accurate in its 25 languages"
-msgstr ""
+msgstr "Najszybszy i najdokładniejszy w swoich 25 językach"
 
 #: src/app.rs:3196 src/backend_ui.rs:4291 src/model_family.rs:31
 msgid "Most languages, with uneven accuracy"
-msgstr ""
+msgstr "Większość języków z różnym stopniem dokładności"
 
 #: src/app.rs:3331 src/myna_settings.rs:105
 msgid "As you speak"
-msgstr ""
+msgstr "Gdy mówisz"
 
 #: src/app.rs:3332 src/myna_settings.rs:106
 msgid "When you stop"
-msgstr ""
+msgstr "Gdy przestaniesz"
 
 #: src/app.rs:3472 src/app.rs:5729
 msgid "Preview"
-msgstr ""
+msgstr "Podgląd"
 
 #: src/app.rs:3486 src/sound_preview.rs:69
 msgid "Could not preview sounds"
-msgstr ""
+msgstr "Nie udało się wyświetlić podglądu dźwięków"
 
 #: src/app.rs:3520 src/backend_ui.rs:721
 msgid "Changing to {model} failed"
-msgstr ""
+msgstr "Zmiana na model {model} nie powiodła się"
 
 #: src/app.rs:3521 src/app.rs:4056 src/app.rs:4065 src/app.rs:4454
 #: src/app.rs:5103 src/app.rs:5109 src/backend_ui.rs:1291
 #: src/onboarding_ui.rs:556 src/ui/status_page.rs:70
 msgid "Details"
-msgstr ""
+msgstr "Szczegóły"
 
 #. TRANSLATORS: {setting} is a setting's name on the Model tab, such as "Unload when idle (seconds)".
 #: src/app.rs:3627 src/backend_ui.rs:1688
 msgid "Changing “{setting}” failed"
-msgstr ""
+msgstr "Zmiana ustawienia „{setting}” nie powiodła się"
 
 #: src/app.rs:3629 src/presentation.rs:178
 msgid "Unload when idle (seconds)"
-msgstr ""
+msgstr "Zwolnij, gdy bezczynny przez (seconds)"
 
 #. TRANSLATORS: {size} is a download size, such as "4.2 GB".
 #: src/app.rs:3921 src/onboarding_ui.rs:855
 msgid "Up to {size}"
-msgstr ""
+msgstr "Do {size}"
 
 #: src/app.rs:4057 src/onboarding_ui.rs:1011
 msgid "Could not let Myna run in the background"
-msgstr ""
+msgstr "Nie udało się uruchomić programu Myna w tle"
 
 #: src/app.rs:4087 src/app.rs:4237 src/backend_ui.rs:2419
 msgid "Executable:"
-msgstr ""
+msgstr "Plik wykonywalny:"
 
 #: src/app.rs:4088 src/app.rs:4238 src/backend_ui.rs:2423
 msgid "Arguments:"
-msgstr ""
+msgstr "Argumenty:"
 
 #: src/app.rs:4089 src/app.rs:4239 src/backend_ui.rs:2432
 #: src/backend_ui.rs:2510 src/backend_ui.rs:3231
 msgid "Exit status:"
-msgstr ""
+msgstr "Status zakończenia:"
 
 #: src/app.rs:4090 src/app.rs:4240 src/app.rs:4466 src/backend_ui.rs:2477
 msgid "Message:"
-msgstr ""
+msgstr "Komunikat:"
 
 #: src/app.rs:4156 src/onboarding_ui.rs:990
 msgid "Enabling user daemons support"
-msgstr ""
+msgstr "Włączanie obsługi demonów użytkownika"
 
 #: src/app.rs:4179 src/onboarding_ui.rs:991
 msgid "Installing Dictation app"
-msgstr ""
+msgstr "Instalowanie programui do dyktowania"
 
 #. TRANSLATORS: {step} is what is installing, such as "Installing speech-to-text model", and {percent} how much of its download has arrived.
 #: src/app.rs:4189 src/app.rs:4252 src/app.rs:4352 src/onboarding_ui.rs:999
 msgid "{step} ({percent}%)"
-msgstr ""
+msgstr "{step} ({percent}%)"
 
 #: src/app.rs:4203 src/onboarding_ui.rs:992
 msgid "Installing speech-to-text model"
-msgstr ""
+msgstr "Instalowanie modelu zamiany mowy na tekst"
 
 #: src/app.rs:4217 src/onboarding_ui.rs:1013
 msgid "Installing the speech-to-text model failed"
-msgstr ""
+msgstr "Instalacja modelu zamiany mowy na tekst nie powiodła się"
 
 #: src/app.rs:4280 src/onboarding_ui.rs:994
 msgid "Enabling shell extension"
-msgstr ""
+msgstr "Włączanie rozszerzenia powłoki"
 
 #: src/app.rs:4452 src/onboarding_ui.rs:1015
 msgid "Enabling the shell extension failed"
-msgstr ""
+msgstr "Włączenie rozszerzenia powłoki nie powiodło się"
 
 #: src/app.rs:4465 src/backend_ui.rs:2463
 msgid "D-Bus call:"
-msgstr ""
+msgstr "Wywołanie D-Bus:"
 
 #: src/app.rs:4730 src/shortcut_ui.rs:669
 msgid "You can trigger Dictation anytime by using the keyboard shortcut:"
 msgstr ""
+"W każdej chwili możesz uruchomić program do dyktowania za pomocą skrótu "
+"klawiszowego:"
 
 #: src/app.rs:5102 src/onboarding_ui.rs:676 src/onboarding_ui.rs:683
 #: src/onboarding_ui.rs:925
 msgid "Could not set up Dictation"
-msgstr ""
+msgstr "Nie udało się skonfigurować programu do dyktowania"
 
 #: src/app.rs:5140 src/onboarding_ui.rs:876
 msgid "Dictation is not set up yet. Select Next to try again."
 msgstr ""
+"Program do dyktowanie nie został jeszcze skonfigurowany. Wybierz opcję „Dalej"
+"”, aby spróbować ponownie."
 
 #: src/app.rs:5244
 msgid "No Myna Settings"
-msgstr ""
+msgstr "Brak ustawień programu Myna"
 
 #: src/app.rs:5245
 msgid "The installed schema does not declare any settings."
-msgstr ""
+msgstr "Zainstalowany schemat nie deklaruje żadnych ustawień."
 
 #: src/app.rs:5265
 msgid "Myna Settings Unavailable"
-msgstr ""
+msgstr "Ustawienia programu Myna są niedostępne"
 
 #: src/app.rs:5266
 msgid "Myna Settings could not start."
-msgstr ""
+msgstr "Nie udało się uruchomić ustawień programu Myna."
 
 #: src/app.rs:5697
 msgid "Could not save the setting"
-msgstr ""
+msgstr "Nie udało się zapisać ustawienia"
 
 #: src/app.rs:5734
 msgid "Preview sound style"
-msgstr ""
+msgstr "Podgląd stylu dźwięku"
 
 #: src/active_backend.rs:293
 msgid "The change was cancelled."
-msgstr ""
+msgstr "Zmiana została anulowana."
 
 #: src/active_backend.rs:368
 msgid "No model is connected."
-msgstr ""
+msgstr "Żaden model nie jest podłączony."
 
 #: src/active_backend.rs:373
 msgid "The model is not available to switch to."
-msgstr ""
+msgstr "Nie można przełączyć się na ten model."
 
 #: src/active_backend.rs:387
 msgid "The model changed while it was being switched on. Try again."
-msgstr ""
+msgstr "Model uległ zmianie w trakcie włączania. Spróbuj ponownie."
 
 #: src/backend_ui.rs:121 src/model_family.rs:283
 msgid "Recommended"
-msgstr ""
+msgstr "Polecane"
 
 #: src/backend_ui.rs:182 src/diagnostics.rs:474
 msgid "Languages"
-msgstr ""
+msgstr "Języki"
 
 #: src/backend_ui.rs:217
 msgid "Your language"
-msgstr ""
+msgstr "Twój język"
 
 #. TRANSLATORS: an upper bound on a download size, such as "up to 1.4 GB": it is less on a machine whose GPU cannot be used.
 #: src/backend_ui.rs:365
 msgid "up to {size}"
-msgstr ""
+msgstr "do {size}"
 
 #. TRANSLATORS: {description} says what a model is good at, such as "Most languages, with uneven accuracy", and {size} what installing it downloads, such as "198 MB" or "up to 1.4 GB". The spaces around the dot are no-break spaces, so the size never starts a line of its own.
 #: src/backend_ui.rs:371
 msgid "{description}\\u{a0}·\\u{a0}{size}"
-msgstr ""
+msgstr "{description}\\u{a0}·\\u{a0}{size}"
 
 #: src/backend_ui.rs:670
 msgid "This model is no longer installed."
-msgstr ""
+msgstr "Ten model nie jest już instalowany."
 
 #: src/backend_ui.rs:723
 msgid "Changing to {model} could not be confirmed"
-msgstr ""
+msgstr "Nie udało się potwierdzić zmiany na model {model}"
 
 #: src/backend_ui.rs:786
 msgid ""
 "Final connections could not be verified. Switching is disabled until refresh "
 "succeeds."
 msgstr ""
+"Nie udało się zweryfikować połączeń końcowych. Przełączanie jest wyłączone "
+"do momentu pomyślnego odświeżenia."
 
 #: src/backend_ui.rs:791 src/diagnostics.rs:658
 msgid "No model is connected. Choose one to use for dictation."
 msgstr ""
+"Żaden model nie jest podłączony. Wybierz model, który ma być używany do "
+"dyktowania."
 
 #: src/backend_ui.rs:794
 msgid "Several models are connected. Choose one to use for dictation."
 msgstr ""
+"Podłączono kilka modeli. Wybierz jeden, którego chcesz używać do dyktowania."
 
 #: src/backend_ui.rs:893
 msgid "Changing model"
-msgstr ""
+msgstr "Zmiana modelu"
 
 #: src/backend_ui.rs:1108
 msgid "Install"
-msgstr ""
+msgstr "Zainstaluj"
 
 #. TRANSLATORS: the Install button's name to assistive technology; {model} is a model family, such as "Whisper".
 #: src/backend_ui.rs:1110
 msgid "Install {model}"
-msgstr ""
+msgstr "Zainstaluj model {model}"
 
 #: src/backend_ui.rs:1275
 msgid "Installing {model} failed"
-msgstr ""
+msgstr "Instalacja modelu {model} nie powiodła się"
 
 #: src/backend_ui.rs:1388 src/backend_ui.rs:1527
 msgid "Wait for the current change to finish."
-msgstr ""
+msgstr "Poczekaj, aż bieżąca zmiana dobiegnie końca."
 
 #: src/backend_ui.rs:1542
 msgid "Applying and restarting the model…"
-msgstr ""
+msgstr "Stosowanie i ponowne uruchamianie modelu…"
 
 #. TRANSLATORS: {setting} is a setting's name on the Model tab, such as "Unload when idle (seconds)".
 #: src/backend_ui.rs:1691
 msgid "Changing “{setting}” could not be confirmed"
-msgstr ""
+msgstr "Nie udało się potwierdzić zmiany ustawienia „{setting}”"
 
 #: src/backend_ui.rs:1727
 msgid "Could not read the installed models."
-msgstr ""
+msgstr "Nie udało się odczytać zainstalowanych modeli."
 
 #: src/backend_ui.rs:1782
 msgid "No active model"
-msgstr ""
+msgstr "Brak aktywnego modelu"
 
 #: src/backend_ui.rs:1783
 msgid "Choose a model on the General tab."
-msgstr ""
+msgstr "Wybierz model na karcie „Ogólne”."
 
 #: src/backend_ui.rs:1786
 msgid "Several models are connected"
-msgstr ""
+msgstr "Podłączono kilka modeli"
 
 #: src/backend_ui.rs:1787
 msgid "Choose one model on the General tab."
-msgstr ""
+msgstr "Wybierz jeden model na karcie „Ogólne”."
 
 #: src/backend_ui.rs:1993
 msgid "Diagnostics copied. Paste them into the issue."
-msgstr ""
+msgstr "Dane diagnostyczne zostały skopiowane. Wklej je do zgłoszenia."
 
 #: src/backend_ui.rs:2004
 msgid "Could not open the web browser"
-msgstr ""
+msgstr "Nie udało się otworzyć przeglądarki internetowej"
 
 #: src/backend_ui.rs:2084
 msgid "Copy privacy-safe diagnostics"
-msgstr ""
+msgstr "Skopiuj diagnostykę szanującą prywatność"
 
 #: src/backend_ui.rs:2095
 msgid "Diagnostics copied to clipboard"
-msgstr ""
+msgstr "Dane diagnostyczne skopiowano do schowka"
 
 #: src/backend_ui.rs:2124 src/diagnostics.rs:419
 msgid "Dictation is not installed"
-msgstr ""
+msgstr "Program do dyktowania nie jest zainstalowany"
 
 #: src/backend_ui.rs:2125 src/diagnostics.rs:420
 msgid "No model installed"
-msgstr ""
+msgstr "Brak zainstalowanego modelu"
 
 #: src/backend_ui.rs:2126 src/diagnostics.rs:422
 msgid "No input method installed"
-msgstr ""
+msgstr "Nie zainstalowano żadnej metody wprowadzania danych"
 
 #: src/backend_ui.rs:2314
 msgid "The model kept a different value than the one you chose."
-msgstr ""
+msgstr "Model zachował inną wartość niż ta, którą wybrano."
 
 #: src/backend_ui.rs:2321
 msgid "The setting was saved, but the model did not start again."
-msgstr ""
+msgstr "Ustawienie zostało zapisane, ale model nie uruchomił się ponownie."
 
 #: src/backend_ui.rs:2328
 msgid "The setting was changed, but it could not be read back."
-msgstr ""
+msgstr "Ustawienie zostało zmienione, ale nie dało się go odczytać."
 
 #: src/backend_ui.rs:2335
 msgid "The setting was changed, but reading it back was interrupted."
-msgstr ""
+msgstr "Ustawienie zostało zmienione, ale odczytanie go zostało przerwane."
 
 #: src/backend_ui.rs:2353 src/backend_ui.rs:2380
 msgid "The system did not allow the change."
-msgstr ""
+msgstr "System nie zezwolił na zmianę."
 
 #: src/backend_ui.rs:2360 src/backend_ui.rs:2383
 msgid "The model rejected the value."
-msgstr ""
+msgstr "Model odrzucił wartość."
 
 #: src/backend_ui.rs:2367 src/backend_ui.rs:2386 src/backend_ui.rs:3165
 msgid "The change could not be made."
-msgstr ""
+msgstr "Zmiany nie udało się wprowadzić."
 
 #: src/backend_ui.rs:2377
 msgid "The change was interrupted after it started."
-msgstr ""
+msgstr "Zmiana została przerwana po tym, jak się rozpoczęła."
 
 #: src/backend_ui.rs:2440 src/backend_ui.rs:2519 src/backend_ui.rs:3240
 msgid "Standard error:"
-msgstr ""
+msgstr "Błąd standardowy:"
 
 #: src/backend_ui.rs:2450
 msgid "Request:"
-msgstr ""
+msgstr "Żądanie:"
 
 #: src/backend_ui.rs:2456
 msgid "HTTP status:"
-msgstr ""
+msgstr "Status HTTP:"
 
 #: src/backend_ui.rs:2469
 msgid "Setting:"
-msgstr ""
+msgstr "Ustawienie:"
 
 #: src/backend_ui.rs:2494
 msgid "Some operations completed before the apply failed.\n"
 msgstr ""
+"Niektóre operacje zakończone przed fazą stosowania zmian nie powiodły się.\n"
 
 #: src/backend_ui.rs:2498
 msgid "No privileged operations completed.\n"
-msgstr ""
+msgstr "Nie wykonano żadnych operacji wymagających uprawnień.\n"
 
 #: src/backend_ui.rs:2500
 msgid "Completed operations:\n"
-msgstr ""
+msgstr "Zakończone operacje:\n"
 
 #: src/backend_ui.rs:2526
 msgid "Failure:\n"
-msgstr ""
+msgstr "Niepowodzenie:\n"
 
 #: src/backend_ui.rs:2530
 msgid "Reconciliation read-back:\n"
-msgstr ""
+msgstr "Odczyt weryfikacyjny:\n"
 
 #: src/backend_ui.rs:2542
 msgid "Model:"
-msgstr ""
+msgstr "Model:"
 
 #: src/backend_ui.rs:2548
 msgid "Services: none"
-msgstr ""
+msgstr "Usługi: brak"
 
 #: src/backend_ui.rs:2550
 msgid "Services:"
-msgstr ""
+msgstr "Usługi:"
 
 #: src/backend_ui.rs:2562
 msgid "Status: unavailable"
-msgstr ""
+msgstr "Status: niedostępny"
 
 #: src/backend_ui.rs:2569
 msgid "Post-failure surface errors:"
-msgstr ""
+msgstr "Błędy powierzchniowe powstałe po awarii:"
 
 #: src/backend_ui.rs:2600
 msgid "Language"
-msgstr ""
+msgstr "Język"
 
 #: src/backend_ui.rs:2602
 msgid "A code such as en, fr or zh. Leave it empty to detect the language."
-msgstr ""
+msgstr "Kod taki jak en, fr lub zh. Pozostaw puste, aby wykryć język."
 
 #: src/backend_ui.rs:2655
 msgid "Overview"
-msgstr ""
+msgstr "Przegląd"
 
 #: src/backend_ui.rs:2665
 msgid "Connection"
-msgstr ""
+msgstr "Połączenie"
 
 #: src/backend_ui.rs:2668
 msgid "Active. Myna uses this model for dictation."
-msgstr ""
+msgstr "Aktywny. Myna korzysta z tego modelu do dyktowania."
 
 #: src/backend_ui.rs:2671
 msgid "Several models are connected. Only one should be active."
-msgstr ""
+msgstr "Podłączono kilka modeli. Tylko jeden powinien być aktywny."
 
 #: src/backend_ui.rs:2673
 msgid "Not connected to Myna."
-msgstr ""
+msgstr "Brak połączenia z programem Myna."
 
 #: src/backend_ui.rs:2679
 msgid "Active model"
-msgstr ""
+msgstr "Aktywny model"
 
 #: src/backend_ui.rs:2685
 msgid "Active engine"
-msgstr ""
+msgstr "Aktywny silnik"
 
 #: src/backend_ui.rs:2688
 msgid "None selected. Choose one below."
-msgstr ""
+msgstr "Nic nie wybrano. Wybierz jedną z poniższych opcji."
 
 #: src/backend_ui.rs:2705 src/diagnostics.rs:641
 msgid "Services"
-msgstr ""
+msgstr "Usługi"
 
 #: src/backend_ui.rs:2707
 msgid "No service health reported"
-msgstr ""
+msgstr "Brak informacji o stanie usługi"
 
 #: src/backend_ui.rs:2721
 msgid "Loading"
-msgstr ""
+msgstr "Wczytywanie"
 
 #: src/backend_ui.rs:2722
 msgid "Reading this model's settings…"
-msgstr ""
+msgstr "Odczytywanie ustawień tego modelu…"
 
 #: src/backend_ui.rs:2731
 msgid "No configuration reported"
-msgstr ""
+msgstr "Nie zgłoszono żadnej konfiguracji"
 
 #: src/backend_ui.rs:2733
 msgid "The model answered but reported no settings to change."
 msgstr ""
+"Model udzielił odpowiedzi, ale nie wskazał żadnych ustawień, które "
+"należałoby zmienić."
 
 #: src/backend_ui.rs:2743
 msgid "Some data is unavailable"
-msgstr ""
+msgstr "Niektóre dane są niedostępne"
 
 #: src/backend_ui.rs:2745
 msgid "Raw failure details are recorded on the Diagnostics page."
 msgstr ""
+"Szczegółowe informacje o błędach są rejestrowane na stronie „Diagnostyka”."
 
 #: src/backend_ui.rs:2788 src/backend_ui.rs:3112 src/backend_ui.rs:3390
 msgid "Refreshing…"
-msgstr ""
+msgstr "Odświeżanie…"
 
 #: src/backend_ui.rs:2816
 msgid "Runtime"
-msgstr ""
+msgstr "Środowisko uruchomieniowe"
 
 #: src/backend_ui.rs:2817
 msgid "Advanced"
-msgstr ""
+msgstr "Zaawansowane"
 
 #: src/backend_ui.rs:2818
 msgid "Sensitive"
-msgstr ""
+msgstr "Wrażliwe"
 
 #: src/backend_ui.rs:2825
 msgid "Common settings for this model."
-msgstr ""
+msgstr "Typowe ustawienia dla tego modelu."
 
 #: src/backend_ui.rs:2828
 msgid "Runtime and performance related settings."
-msgstr ""
+msgstr "Ustawienia dotyczące środowiska uruchomieniowego i wydajności."
 
 #: src/backend_ui.rs:2831
 msgid "Advanced settings."
-msgstr ""
+msgstr "Ustawienia zaawansowane."
 
 #: src/backend_ui.rs:2834
 msgid "Internal and sensitive values are shown for diagnostics only."
 msgstr ""
+"Wartości wewnętrzne oraz wrażliwe są wyświetlane wyłącznie w celach "
+"diagnostycznych."
 
 #: src/backend_ui.rs:2858
 msgid "Sensitive value (redacted)"
-msgstr ""
+msgstr "Wartość wrażliwa (utajniona)"
 
 #. TRANSLATORS: {name} is the model part or snap being downloaded, such as "model-small"; {done} and {total} are sizes such as "210.0 MB".
 #: src/backend_ui.rs:3006
 msgid "Downloading {name}: {done} of {total}"
-msgstr ""
+msgstr "Pobieranie {name}: {done} z {total}"
 
 #: src/backend_ui.rs:3018
 msgid "Active"
-msgstr ""
+msgstr "Aktywny"
 
 #: src/backend_ui.rs:3019
 msgid "Inactive"
-msgstr ""
+msgstr "Nieaktywny"
 
 #: src/backend_ui.rs:3020
 msgid "Failed"
-msgstr ""
+msgstr "Nieudany"
 
 #: src/backend_ui.rs:3022
 msgid "Unknown"
-msgstr ""
+msgstr "Nieznany"
 
 #: src/backend_ui.rs:3087
 msgid "Installed snaps"
-msgstr ""
+msgstr "Zainstalowane pakiety snap"
 
 #: src/backend_ui.rs:3088
 msgid "Model connections"
-msgstr ""
+msgstr "Podłączenia modelu"
 
 #: src/backend_ui.rs:3089
 msgid "Model control command"
-msgstr ""
+msgstr "Polecenie sterowania modelem"
 
 #: src/backend_ui.rs:3090
 msgid "Model settings"
-msgstr ""
+msgstr "Ustawienia modelu"
 
 #: src/backend_ui.rs:3091
 msgid "Model status"
-msgstr ""
+msgstr "Status modelu"
 
 #: src/backend_ui.rs:3092
 msgid "Available models"
-msgstr ""
+msgstr "Dostępne modele"
 
 #: src/backend_ui.rs:3093
 msgid "Available engines"
-msgstr ""
+msgstr "Dostępne silniki"
 
 #: src/backend_ui.rs:3099
 msgid "Persisted values could not be read."
-msgstr ""
+msgstr "Nie udało się odczytać utrwalonych wartości."
 
 #: src/backend_ui.rs:3110 src/backend_ui.rs:3398
 msgid "Applying changes…"
-msgstr ""
+msgstr "Stosowanie zmian…"
 
 #: src/backend_ui.rs:3133
 msgid "missing"
-msgstr ""
+msgstr "brak"
 
 #. TRANSLATORS: {key} is a setting's key, such as "streaming"; {requested} and {actual} are its values.
 #: src/backend_ui.rs:3135
 msgid "{key}: asked for {requested}, read back {actual}"
-msgstr ""
+msgstr "{key}: żądano {requested}, odczytano {actual}"
 
 #: src/backend_ui.rs:3163
 msgid "Error:\n"
-msgstr ""
+msgstr "Błąd:\n"
 
 #: src/backend_ui.rs:3173
 msgid "The change ran, but the connections do not match it."
-msgstr ""
+msgstr "Zmiana została wprowadzona, lecz połączenia do niej nie pasują."
 
 #: src/backend_ui.rs:3177
 msgid "The connections changed before the change could start. Try again."
 msgstr ""
+"Połączenia uległy zmianie, zanim proces zmiany mógł się rozpocząć. Spróbuj "
+"ponownie."
 
 #: src/backend_ui.rs:3181
 msgid "Discovery error:\n"
-msgstr ""
+msgstr "Błąd wykrywania:\n"
 
 #: src/backend_ui.rs:3183
 msgid "The change ran, but the connections could not be read back."
-msgstr ""
+msgstr "Zmiana została wprowadzona, ale nie udało się odczytać połączeń."
 
 #: src/backend_ui.rs:3200
 msgid "Final connections:"
-msgstr ""
+msgstr "Ostateczne połączenia:"
 
 #: src/backend_ui.rs:3205
 msgid "Final connections could not be verified:"
-msgstr ""
+msgstr "Nie udało się zweryfikować połączeń końcowych:"
 
 #: src/backend_ui.rs:3209
 msgid "Final connections could not be verified.\n"
-msgstr ""
+msgstr "Nie udało się zweryfikować połączeń końcowych.\n"
 
 #: src/backend_ui.rs:3217
 msgid "No snapd operations completed.\n"
-msgstr ""
+msgstr "Żadne operacje snapd nie zostały ukończone.\n"
 
 #: src/backend_ui.rs:3221
 msgid "Completed snapd operations:\n"
-msgstr ""
+msgstr "Zakończone operacje snapd:\n"
 
 #: src/backend_ui.rs:3250
 msgid "no model connected"
-msgstr ""
+msgstr "brak podłączonego modelu"
 
 #: src/backend_ui.rs:3254
 msgid "connected"
-msgstr ""
+msgstr "podłączono"
 
 #: src/backend_ui.rs:3264
 msgid "several models"
-msgstr ""
+msgstr "kilka modeli"
 
 #: src/backend_ui.rs:4295 src/model_family.rs:35
 msgid "Best for Chinese, Japanese and Korean"
-msgstr ""
+msgstr "Najlepsze do języka chińskiego, japońskiego i koreańskiego"
 
 #: src/backend_apply.rs:81
 msgid "selector value must be text"
-msgstr ""
+msgstr "wartość selektora musi być tekstem"
 
 #: src/backend_apply.rs:95
 msgid "the model's settings command could not be found"
-msgstr ""
+msgstr "nie udało się odnaleźć polecenia ustawień modelu"
 
 #: src/backend_apply.rs:380
 msgid "the model's restart command could not be built"
-msgstr ""
+msgstr "nie udało się utworzyć polecenia restartu modelu"
 
 #: src/backend_apply.rs:479
 msgid "value must be a finite number"
-msgstr ""
+msgstr "wartość musi być liczbą skończoną"
 
 #: src/backend_apply.rs:504
 msgid "The model's restart could not be confirmed."
-msgstr ""
+msgstr "Nie udało się potwierdzić ponownego uruchomienia modelu."
 
 #: src/backend_apply.rs:529
 msgid "The model did not restart."
-msgstr ""
+msgstr "Model nie uruchomił się ponownie."
 
 #: src/backend_apply.rs:551
 msgctxt "service state"
 msgid "active"
-msgstr ""
+msgstr "aktywna"
 
 #: src/backend_apply.rs:552
 msgctxt "service state"
 msgid "inactive"
-msgstr ""
+msgstr "nieaktywna"
 
 #: src/backend_apply.rs:553
 msgctxt "service state"
 msgid "failed"
-msgstr ""
+msgstr "nieudana"
 
 #: src/backend_apply.rs:554
 msgctxt "service state"
 msgid "unknown"
-msgstr ""
+msgstr "nieznana"
 
 #: src/onboarding_ui.rs:678
 msgid "The system is busy installing software. Try again in a moment."
 msgstr ""
+"System jest zajęty instalowaniem oprogramowania. Spróbuj ponownie za chwilę."
 
 #: src/onboarding_ui.rs:778
 msgid "Continue to the next onboarding step."
-msgstr ""
+msgstr "Przejdź do kolejnego etapu wdrażania."
 
 #: src/onboarding_ui.rs:783
 msgid "Close Myna Settings."
-msgstr ""
+msgstr "Zamknij ustawienia programu Myna."
 
 #: src/onboarding_ui.rs:873
 msgid ""
 "The input method IBus is not installed. Install the “ibus” package, then log "
 "out and back in."
 msgstr ""
+"Metoda wprowadzania znaków IBus nie jest zainstalowana. Zainstaluj pakiet „"
+"ibus”, a następnie wyloguj się i zaloguj ponownie."
 
 #: src/onboarding_ui.rs:878
 msgid "Setup status unavailable. The log has the details."
-msgstr ""
+msgstr "Status instalacji jest niedostępny. Szczegóły znajdują się w dzienniku."
 
 #: src/onboarding_ui.rs:993
 msgid "Setting up the input method"
-msgstr ""
+msgstr "Konfigurowanie metody wprowadzania danych"
 
 #: src/onboarding_ui.rs:1012
 msgid "Installing the Dictation app failed"
-msgstr ""
+msgstr "Instalacja programu do dyktowania nie powiodła się"
 
 #: src/onboarding_ui.rs:1014
 msgid "Setting up the input method failed"
-msgstr ""
+msgstr "Konfiguracja metody wprowadzania danych nie powiodła się"
 
 #: src/onboarding_ui.rs:1062
 msgid "Log out and back in to finish setting up the input method."
 msgstr ""
+"Wyloguj się i zaloguj ponownie, aby dokończyć konfigurację metody "
+"wprowadzania danych."
 
 #. TRANSLATORS: a download size in megabytes, such as "776 MB"; the space is a no-break space.
 #: src/onboarding_ui.rs:1286
 msgid "{megabytes} MB"
-msgstr ""
+msgstr "{megabytes} MB"
 
 #: src/onboarding_ui.rs:1294
 msgid "Checking the installation"
-msgstr ""
+msgstr "Sprawdzanie instalacji"
 
 #: src/onboarding_ui.rs:1299
 msgid "Waiting for other software changes to finish"
-msgstr ""
+msgstr "Oczekiwanie na zakończenie innych zmian w oprogramowaniu"
 
 #: src/onboarding_ui.rs:1301
 msgid "Setting up speech-to-text model"
-msgstr ""
+msgstr "Konfigurowanie modelu zamiany mowy na tekst"
 
 #: src/onboarding_ui.rs:1302
 msgid "Starting dictation"
-msgstr ""
+msgstr "Rozpoczynanie dyktowania"
 
 #: src/shortcut_ui.rs:284
 msgid "Change shortcut"
-msgstr ""
+msgstr "Zmień skrót"
 
 #: src/shortcut_ui.rs:286
 msgid "Change"
-msgstr ""
+msgstr "Zmień"
 
 #: src/shortcut_ui.rs:291
 msgid "Press a keyboard shortcut for dictation."
-msgstr ""
+msgstr "Naciśnij skrót klawiszowy, aby uruchomić dyktowanie."
 
 #. TRANSLATORS: {shortcut} is a key combination, such as "Super + J".
 #: src/shortcut_ui.rs:294
 msgid "Current shortcut: {shortcut}."
-msgstr ""
+msgstr "Bieżący skrót: {shortcut}."
 
 #: src/shortcut_ui.rs:347
 msgid "Keep the shortcut as it was."
-msgstr ""
+msgstr "Pozostaw skrót w dotychczasowej postaci."
 
 #: src/shortcut_ui.rs:477
 msgid "{keys} is reserved for “{action}”. Press a different shortcut."
-msgstr ""
+msgstr "Klawisze {keys} są zarezerwowane dla „{action}”. Wybierz inny skrót."
 
 #: src/shortcut_ui.rs:495
 msgid ""
 "{keys} is already used for “{action}”. Replacing it removes it from there."
 msgstr ""
+"Klawisze {keys} są już przypisane do „{action}”. Zastąpienie ich spowoduje "
+"usunięcie tego przypisania."
 
 #: src/shortcut_ui.rs:500
 msgid "Replace Shortcut?"
-msgstr ""
+msgstr "Zastąpić skrót?"
 
 #: src/shortcut_ui.rs:502
 msgid "Replace"
-msgstr ""
+msgstr "Zastąp"
 
 #: src/shortcut_ui.rs:562
 msgid "Could not set up the shortcut"
-msgstr ""
+msgstr "Nie udało się utworzyć skrótu"
 
 #: src/shortcut_ui.rs:666
 msgid "Set up a keyboard shortcut to trigger Dictation."
-msgstr ""
+msgstr "Skonfiguruj skrót klawiszowy do uruchamiania programu do dyktowania."
 
 #: src/shortcut_ui.rs:672
 msgid "Myna is not running yet. The shortcut can be set up once it starts."
 msgstr ""
+"Program Myna jeszcze nie jest uruchomiony. Skrót będzie można skonfigurować, "
+"gdy tylko program zostanie uruchomiony."
 
 #: src/shortcut_ui.rs:680
 msgid ""
 "This desktop cannot set up the shortcut. Bind this command to a key in its "
 "settings: {command}"
 msgstr ""
+"Ten pulpit nie może utworzyć skrótu. Przypisz to polecenie do klawisza w "
+"jego ustawieniach: {command}"
 
 #: src/shortcut_ui.rs:690
 msgid "Not set up"
-msgstr ""
+msgstr "Nie skonfigurowano"
 
 #: src/shortcut_ui.rs:691 src/sound_preview.rs:66
 msgid "Myna is not running"
-msgstr ""
+msgstr "Program Myna nie jest uruchomiony"
 
 #: src/sound_preview.rs:67
 msgid "Update Myna to preview sounds"
-msgstr ""
+msgstr "Zaktualizuj program Myna, aby móc odsłuchiwać dźwięki"
 
 #: src/sound_preview.rs:68
 msgid "Finish dictating to preview sounds"
-msgstr ""
+msgstr "Zakończ dyktowanie, aby odsłuchać dźwięki"
 
 #: src/diagnostics.rs:225
 msgid "Paste the diagnostics report from your clipboard here."
-msgstr ""
+msgstr "Wklej tutaj raport diagnostyczny ze schowka."
 
 #: src/diagnostics.rs:280
 msgid "The CPU clock is capped by system policy"
-msgstr ""
+msgstr "Taktowanie procesora jest ograniczone przez zasady systemowe"
 
 #: src/diagnostics.rs:282
 msgid "limited to"
-msgstr ""
+msgstr "ograniczone do"
 
 #: src/diagnostics.rs:284 src/diagnostics.rs:362 src/diagnostics.rs:714
 msgid "of"
-msgstr ""
+msgstr "z"
 
 #: src/diagnostics.rs:288
 msgid "Dictation will be slow. A power tool has capped the CPU clock."
 msgstr ""
+"Dyktowanie będzie przebiegać powoli. Narzędzie systemowe ograniczyło "
+"taktowanie procesora."
 
 #: src/diagnostics.rs:298
 msgid "The power profile is set to low-power"
-msgstr ""
+msgstr "Profil zasilania jest ustawiony na tryb niskiego poboru energii"
 
 #: src/diagnostics.rs:302
 msgid ""
 "Dictation will be slow. Switch to Balanced or Performance in the system "
 "power settings."
 msgstr ""
+"Dyktowanie będzie działać wolno. Zmień ustawienia zasilania w systemie na „"
+"Zrównoważony” lub „Wydajność”."
 
 #: src/diagnostics.rs:312
 msgid "Firmware is holding the CPU at its lowest clock"
-msgstr ""
+msgstr "Oprogramowanie sprzętowe utrzymuje procesor na najniższym taktowaniu"
 
 #: src/diagnostics.rs:316
 msgid ""
 "Dictation will be slow. Unplug the charger, wait a few seconds, and plug it "
 "back in. If that does not help, power off fully and start again."
 msgstr ""
+"Dyktowanie będzie przebiegać powoli. Odłącz ładowarkę, odczekaj kilka sekund "
+"i podłącz ją ponownie. Jeśli to nie pomoże, całkowicie wyłącz urządzenie i "
+"uruchom je ponownie."
 
 #: src/diagnostics.rs:325
 msgid "The system is short of memory"
-msgstr ""
+msgstr "W systemie brakuje pamięci"
 
 #: src/diagnostics.rs:329
 msgid ""
 "Dictation will stutter. Close applications until the machine stops swapping."
 msgstr ""
+"Dyktowanie będzie się zacinać. Zamknij program, aż komputer przestanie "
+"używać pamięci wymiany."
 
 #: src/diagnostics.rs:335
 msgid "Disk activity is stalling the system"
-msgstr ""
+msgstr "Aktywność dysku powoduje przestoje w działaniu systemu"
 
 #: src/diagnostics.rs:339
 msgid "Dictation will stutter. Wait for the transfer or indexing to finish."
 msgstr ""
+"Dyktowanie może przerywać. Poczekaj, aż przesyłanie lub indeksowanie "
+"dobiegnie końca."
 
 #: src/diagnostics.rs:345
 msgid "Other programs are saturating the CPU"
-msgstr ""
+msgstr "Inne programy nadmiernie obciążają procesor"
 
 #: src/diagnostics.rs:349
 msgid "Dictation will be slow. Pause the build or workload before dictating."
 msgstr ""
+"Dyktowanie będzie przebiegać powoli. Przed rozpoczęciem dyktowania wstrzymaj "
+"proces kompilowania lub wykonywane zadanie."
 
 #: src/diagnostics.rs:360 src/diagnostics.rs:712
 msgid "reached"
-msgstr ""
+msgstr "osiągnięto"
 
 #: src/diagnostics.rs:372
 msgid "of the last 10 s stalled"
-msgstr ""
+msgstr "w ciągu ostatnich 10 sekund nastąpiło zablokowanie"
 
 #: src/diagnostics.rs:421
 msgid "No model connected"
-msgstr ""
+msgstr "Brak podłączonego modelu"
 
 #: src/diagnostics.rs:423
 msgid "Ready"
-msgstr ""
+msgstr "Gotowe"
 
 #: src/diagnostics.rs:424
 msgid "Installation status unavailable"
-msgstr ""
+msgstr "Status instalacji niedostępny"
 
 #: src/diagnostics.rs:431
 msgid "Connected"
-msgstr ""
+msgstr "Podłączono"
 
 #: src/diagnostics.rs:432
 msgid "Multiple connections"
-msgstr ""
+msgstr "Wiele połączeń"
 
 #: src/diagnostics.rs:433
 msgid "Not connected"
-msgstr ""
+msgstr "Niepołączono"
 
 #: src/diagnostics.rs:447
 msgid "Onboarding"
-msgstr ""
+msgstr "Wdrażanie"
 
 #: src/diagnostics.rs:454
 msgid "System"
-msgstr ""
+msgstr "System"
 
 #: src/diagnostics.rs:458
 msgid "OS"
-msgstr ""
+msgstr "System operacyjny"
 
 #: src/diagnostics.rs:462
 msgid "kernel"
-msgstr ""
+msgstr "jądro"
 
 #: src/diagnostics.rs:470
 msgid "Desktop"
-msgstr ""
+msgstr "Pulpit"
 
 #: src/diagnostics.rs:481
 msgid "Machine"
-msgstr ""
+msgstr "Maszyna"
 
 #: src/diagnostics.rs:485 src/diagnostics.rs:500
 msgid "CPU"
-msgstr ""
+msgstr "Procesor"
 
 #: src/diagnostics.rs:486 src/diagnostics.rs:563 src/diagnostics.rs:648
 msgid "Memory"
-msgstr ""
+msgstr "Pamięć"
 
 #: src/diagnostics.rs:490 src/diagnostics.rs:495
 msgid "GPU"
-msgstr ""
+msgstr "Procesor graficzny"
 
 #: src/diagnostics.rs:491 src/diagnostics.rs:856
 msgid "none"
-msgstr ""
+msgstr "żaden"
 
 #: src/diagnostics.rs:501
 msgid "(no model answered show-machine)"
-msgstr ""
+msgstr "(żaden model nie odpowiedział na polecenie „show-machine”)"
 
 #: src/diagnostics.rs:506
 msgid "Performance"
-msgstr ""
+msgstr "Wydajność"
 
 #: src/diagnostics.rs:513 src/diagnostics.rs:520 src/diagnostics.rs:546
 msgid "Clock"
-msgstr ""
+msgstr "Zegar"
 
 #: src/diagnostics.rs:514
 msgid "(no cpufreq information)"
-msgstr ""
+msgstr "(brak informacji cpufreq)"
 
 #: src/diagnostics.rs:525
 msgid "Profile"
-msgstr ""
+msgstr "Profil"
 
 #: src/diagnostics.rs:528
 msgid "Power"
-msgstr ""
+msgstr "Zasilanie"
 
 #: src/diagnostics.rs:533
 msgid "Pressure"
-msgstr ""
+msgstr "Nacisk"
 
 #. TRANSLATORS: {cpu}, {memory} and {io} are shares such as "0.03%"; cpu, memory and io are kernel resource names, keep them.
 #: src/diagnostics.rs:536
 msgid "cpu {cpu}, memory {memory}, io {io} of the last 10 s stalled"
 msgstr ""
+"procesor {cpu}, pamięć {memory}, we/wy {io} – zablokowane przez ostatnie 10 s"
 
 #: src/diagnostics.rs:547
 msgid "(not measured yet)"
-msgstr ""
+msgstr "(jeszcze niezmierzone)"
 
 #: src/diagnostics.rs:552
 msgid "Daemon"
-msgstr ""
+msgstr "Demon"
 
 #: src/diagnostics.rs:560 src/diagnostics.rs:581 src/diagnostics.rs:590
 msgid "Version"
-msgstr ""
+msgstr "Wersja"
 
 #: src/diagnostics.rs:570
 msgid "Audio"
-msgstr ""
+msgstr "Dźwięk"
 
 #: src/diagnostics.rs:576
 msgid "Last error"
-msgstr ""
+msgstr "Ostatni błąd"
 
 #: src/diagnostics.rs:584
 msgid "Process"
-msgstr ""
+msgstr "Proces"
 
 #: src/diagnostics.rs:585 src/diagnostics.rs:807
 msgid "not running"
-msgstr ""
+msgstr "nie uruchomiono"
 
 #: src/diagnostics.rs:591 src/diagnostics.rs:819 src/diagnostics.rs:828
 msgid "not installed"
-msgstr ""
+msgstr "nie zainstalowano"
 
 #: src/diagnostics.rs:597
 msgid "Shell extension"
-msgstr ""
+msgstr "Rozszerzenie powłoki"
 
 #: src/diagnostics.rs:610
 msgid "Models"
-msgstr ""
+msgstr "Modele"
 
 #: src/diagnostics.rs:614
 msgid "(none discovered)"
-msgstr ""
+msgstr "(nic nie odkryto)"
 
 #: src/diagnostics.rs:629 src/presentation.rs:164
 msgid "Engine"
-msgstr ""
+msgstr "Silnik"
 
 #: src/diagnostics.rs:633
 msgid "none selected"
-msgstr ""
+msgstr "nic nie wybrano"
 
 #: src/diagnostics.rs:655
 msgid "Problems"
-msgstr ""
+msgstr "Problemy"
 
 #: src/diagnostics.rs:661
 msgid ""
 "IBus is not installed, so Myna cannot type. Install the “ibus” package, then "
 "log out and back in."
 msgstr ""
+"IBus nie jest zainstalowany, dlatego program Myna nie może wprowadzać "
+"tekstu. Zainstaluj pakiet „ibus”, a następnie wyloguj się i zaloguj ponownie."
 
 #: src/diagnostics.rs:673 src/diagnostics.rs:687
 msgid "(none)"
-msgstr ""
+msgstr "(brak)"
 
 #: src/diagnostics.rs:683
 msgid "Warnings"
-msgstr ""
+msgstr "Ostrzeżenia"
 
 #: src/diagnostics.rs:708
 msgid "not probed"
-msgstr ""
+msgstr "niebadane"
 
 #: src/diagnostics.rs:721
 msgid "policy allows"
-msgstr ""
+msgstr "zasady zezwalają"
 
 #: src/diagnostics.rs:728
 msgid "cores in this class"
-msgstr ""
+msgstr "rdzenie w tej klasie"
 
 #: src/diagnostics.rs:735
 msgid "mains"
-msgstr ""
+msgstr "zasilanie sieciowe"
 
 #: src/diagnostics.rs:736 src/diagnostics.rs:741
 msgid "battery"
-msgstr ""
+msgstr "zasilanie akumulatorowe"
 
 #: src/diagnostics.rs:790
 msgid "chunks dropped this session"
-msgstr ""
+msgstr "fragmenty utracone w tej sesji"
 
 #: src/diagnostics.rs:796
 msgid "Input method"
-msgstr ""
+msgstr "Metoda wprowadzania danych"
 
 #: src/diagnostics.rs:797
 msgid "Indicator host"
-msgstr ""
+msgstr "Host wskaźnika"
 
 #: src/diagnostics.rs:803
 msgid "active"
-msgstr ""
+msgstr "aktywne"
 
 #: src/diagnostics.rs:805
 msgid "set up, starts at the next login"
-msgstr ""
+msgstr "konfiguracja, rozpoczyna się przy następnym logowaniu"
 
 #: src/diagnostics.rs:808
 msgid "not set up"
-msgstr ""
+msgstr "nieskonfigurowane"
 
 #: src/diagnostics.rs:809
 msgid "turned off"
-msgstr ""
+msgstr "wyłączone"
 
 #: src/diagnostics.rs:811
 msgid "locked by the administrator"
-msgstr ""
+msgstr "zablokowane przez administratora"
 
 #: src/diagnostics.rs:813
 msgid "hidden by another copy"
-msgstr ""
+msgstr "ukryte przez inną kopię"
 
 #: src/diagnostics.rs:815
 msgid "another input method is in use"
-msgstr ""
+msgstr "używana jest inna metoda wprowadzania danych"
 
 #: src/diagnostics.rs:816
 msgid "not supported on this desktop"
-msgstr ""
+msgstr "nieobsługiwane na tym komputerze"
 
 #: src/diagnostics.rs:818
 msgid "failed"
-msgstr ""
+msgstr "nieudane"
 
 #: src/diagnostics.rs:827
 msgid "gnome-shell did not answer"
-msgstr ""
+msgstr "gnome-shell nie odpowiedział"
 
 #: src/diagnostics.rs:831
 msgid "installed since login, starts at the next one"
-msgstr ""
+msgstr "zainstalowano po zalogowaniu; uruchomi się przy kolejnym logowaniu"
 
 #: src/diagnostics.rs:834
 msgid "installed since login, not enabled"
-msgstr ""
+msgstr "zainstalowano od momentu zalogowania, nie włączono"
 
 #: src/diagnostics.rs:837
 msgid "myna-config package"
-msgstr ""
+msgstr "Pakiet myna-config"
 
 #: src/diagnostics.rs:838
 msgid "Ubuntu package"
-msgstr ""
+msgstr "Pakiet Ubuntu"
 
 #: src/diagnostics.rs:839
 msgid "development override"
-msgstr ""
+msgstr "nadpisanie zmian"
 
 #: src/diagnostics.rs:840
 msgid "user copy"
-msgstr ""
+msgstr "kopia użytkownika"
 
 #: src/diagnostics.rs:841
 msgid "other system copy"
-msgstr ""
+msgstr "kopia z innego systemu"
 
 #: src/myna_settings.rs:107
 msgid "Ribbon"
-msgstr ""
+msgstr "Wstążka"
 
 #: src/myna_settings.rs:108
 msgid "VU meter"
-msgstr ""
+msgstr "Miernik VU"
 
 #: src/myna_settings.rs:109
 msgid "Default"
-msgstr ""
+msgstr "Domyślny"
 
 #: src/myna_settings.rs:110
 msgid "Bird"
-msgstr ""
+msgstr "Ptak"
 
 #: src/myna_settings.rs:111
 msgid "Chime"
-msgstr ""
+msgstr "Kurant"
 
 #: src/myna_settings.rs:112
 msgid "Voice"
-msgstr ""
+msgstr "Głos"
 
 #: src/myna_settings.rs:113
 msgid "Marimba"
-msgstr ""
+msgstr "Marimba"
 
 #: src/myna_settings.rs:114
 msgid "Water"
-msgstr ""
+msgstr "Woda"
 
 #: src/myna_settings.rs:115
 msgid "Radio"
-msgstr ""
+msgstr "Radio"
 
 #: src/myna_settings.rs:116
 msgid "Strings"
-msgstr ""
+msgstr "Struny"
 
 #. TRANSLATORS: separates language names in a list, as in "English, Deutsch".
 #: src/model_family.rs:224
 msgctxt "language list"
 msgid ", "
-msgstr ""
+msgstr ", "
 
 #. TRANSLATORS: {languages} is a short list of language names, {count} how many more there are.
 #: src/model_family.rs:234
 msgid "{languages} +{count}"
-msgstr ""
+msgstr "{languages} +{count}"
 
 #: src/model_family.rs:243
 msgid "{count} language"
 msgid_plural "{count} languages"
-msgstr[0] ""
-msgstr[1] ""
+msgstr[0] "{count} język"
+msgstr[1] "{count} języki"
+msgstr[2] "{count} języków"
 
 #. TRANSLATORS: {language} is the user's language named in that language, such as "Deutsch" or "中文", inserted as-is in the nominative. If your grammar would inflect it, rephrase, e.g. "Najlepszy dla języka: {language}".
 #: src/model_family.rs:280
 msgid "Best for {language}"
-msgstr ""
+msgstr "Najlepszy dla języka: {language}"
 
 #. TRANSLATORS: Shown under "Install more models" when a model not installed would transcribe the user's language better. {language} is that language named in itself, such as "Deutsch" or "中文", inserted as-is in the nominative. If your grammar would inflect it, rephrase, e.g. "Dostępny jest lepszy model dla języka: {language}".
 #: src/model_family.rs:293
 msgid "A better model for {language} is available"
-msgstr ""
+msgstr "Dostępny jest lepszy model dla języka: {language}"
 
 #: src/model_family.rs:296
 msgid "A recommended model is available"
-msgstr ""
+msgstr "Dostępny jest zalecany model"
 
 #. TRANSLATORS: Shown under "Install more models" while a model installs. {model} is a model family, such as "Whisper", and {percent} how much of its download has arrived, a number from 0 to 100.
 #: src/model_family.rs:306
 msgid "Installing {model} {percent}%"
-msgstr ""
+msgstr "Instalowanie modelu {model} {percent}%"
 
 #. TRANSLATORS: Shown under "Install more models" while a model installs. {model} is a model family, such as "Whisper".
 #: src/model_family.rs:309
 msgid "Installing {model}…"
-msgstr ""
+msgstr "Instalowanie modelu {model}…"
 
 #: src/presentation.rs:47
 msgid "value is invalid"
-msgstr ""
+msgstr "wartość jest nieprawidłowa"
 
 #: src/presentation.rs:48
 msgid "value must be true or false"
-msgstr ""
+msgstr "wartość musi wynosić „true” lub „false”"
 
 #: src/presentation.rs:49
 msgid "value must be a number"
-msgstr ""
+msgstr "wartość musi być liczbą"
 
 #: src/presentation.rs:50
 msgid "value must be text"
-msgstr ""
+msgstr "wartość musi być tekstem"
 
 #: src/presentation.rs:51
 msgid "value must be a positive number"
-msgstr ""
+msgstr "wartość musi być liczbą dodatnią"
 
 #: src/presentation.rs:52
 msgid "value must be zero or a positive number"
-msgstr ""
+msgstr "wartość musi wynosić zero lub być liczbą dodatnią"
 
 #: src/presentation.rs:53
 msgid "value must be a non-negative whole number"
-msgstr ""
+msgstr "wartość musi być nieujemną liczbą całkowitą"
 
 #. TRANSLATORS: {choices} lists the allowed values, such as "cpu, cuda".
 #: src/presentation.rs:56
 msgid "value must be one of {choices}"
-msgstr ""
+msgstr "wartość musi być jedną z {choices}"
 
 #: src/presentation.rs:59
 msgid "this value cannot be edited"
-msgstr ""
+msgstr "tej wartości nie można edytować"
 
 #: src/presentation.rs:158
 msgid "Which version of this model to run."
-msgstr ""
+msgstr "Którą wersję tego modelu uruchomić."
 
 #: src/presentation.rs:165
 msgid "The inference engine this model runs on."
-msgstr ""
+msgstr "Silnik wnioskowania, na którym działa ten model."
 
 #: src/presentation.rs:171
 msgid "Streaming output"
-msgstr ""
+msgstr "Wyjście strumieniowe"
 
 #: src/presentation.rs:172
 msgid "Emit partial transcription results while speech is being processed."
-msgstr ""
+msgstr "Generuj częściowe wyniki transkrypcji w trakcie przetwarzania mowy."
 
 #: src/presentation.rs:179
 msgid ""
 "Unload the inference service after this many idle seconds; zero disables the "
 "delay."
 msgstr ""
+"Zwolnij usługę wnioskowania po upływie określonej liczby sekund "
+"bezczynności; wartość zero wyłącza to opóźnienie."
 
 #: src/presentation.rs:185
 msgid "Verbose logging"
-msgstr ""
+msgstr "Szczegółowe rejestrowanie"
 
 #: src/presentation.rs:186
 msgid "Write additional diagnostics to the system log."
-msgstr ""
+msgstr "Zapisz dodatkowe informacje diagnostyczne w dzienniku systemowym."
 
 #: src/presentation.rs:192
 msgid "Socket path"
-msgstr ""
+msgstr "Ścieżka do gniazda"
 
 #: src/presentation.rs:193
 msgid "Raw Unix socket path used by the transcription service."
 msgstr ""
+"Ścieżka do surowego gniazda uniksowego używanego przez usługę transkrypcji."
 
 #: src/presentation.rs:199
 msgid "Minimum speech before pause commit (seconds)"
-msgstr ""
+msgstr "Minimalny czas mowy przed zatwierdzeniem wstrzymania (sekundy)"
 
 #: src/presentation.rs:200
 msgid "Speech required before a pause can commit a transcript chunk."
 msgstr ""
+"Wymagana jest wypowiedź, zanim wstrzymanie pozwoli na zatwierdzenie "
+"fragmentu transkrypcji."
 
 #: src/presentation.rs:205
 msgid "Pause length for commit (seconds)"
-msgstr ""
+msgstr "Czas wstrzymania przed zatwierdzeniem (sekundy)"
 
 #: src/presentation.rs:206
 msgid "Silence duration that commits the current transcript chunk."
 msgstr ""
+"Czas trwania ciszy, który powoduje zatwierdzenie bieżącego fragmentu "
+"transkrypcji."
 
 #: src/presentation.rs:211
 msgid "Maximum uncommitted audio (seconds)"
-msgstr ""
+msgstr "Maksymalny czas nieprzypisanego dźwięku (sekundy)"
 
 #: src/presentation.rs:212
 msgid ""
 "Maximum speech window retained before a transcript chunk is forced to commit."
 msgstr ""
+"Maksymalny zakres czasowy wypowiedzi zachowywany przed wymuszonym "
+"zatwierdzeniem fragmentu transkrypcji."
 
 #: src/presentation.rs:217
 msgid "Partial result interval (seconds)"
-msgstr ""
+msgstr "Interwał wyników częściowych (sekundy)"
 
 #: src/presentation.rs:218
 msgid ""
 "Interval between unstable partial results; zero disables partial results."
 msgstr ""
+"Odstęp między niestabilnymi wynikami częściowymi; wartość zero wyłącza "
+"wyniki częściowe."
 
 #: src/presentation.rs:223
 msgid "Partial result audio window (seconds)"
-msgstr ""
+msgstr "Okno dźwiękowe dla wyników częściowych (sekundy)"
 
 #: src/presentation.rs:224
 msgid ""
 "Recent uncommitted audio used for partial results; zero uses the whole "
 "window."
 msgstr ""
+"Ostatnio niezatwierdzony plik audio został użyty do częściowych wyników; "
+"zero używa całego okna."
 
 #: src/presentation.rs:229
 msgid "Compute type"
-msgstr ""
+msgstr "Typ obliczeniowy"
 
 #: src/presentation.rs:230
 msgid ""
 "Runtime numeric format override. Leave the model's own value unchanged "
 "unless required."
 msgstr ""
+"Nadpisanie formatu liczbowego w czasie wykonywania. Pozostaw wartość własną "
+"modelu bez zmian, chyba że zaistnieje konieczność jej zmiany."
 
 #: src/presentation.rs:236
 msgid "Attention context size"
-msgstr ""
+msgstr "Rozmiar kontekstu mechanizmu uwagi"
 
 #: src/presentation.rs:237
 msgid ""
 "Model-specific latency and accuracy context. Empty uses the engine default."
 msgstr ""
+"Kontekst opóźnienia i dokładności specyficzny dla modelu. Puste używa "
+"domyślnej wartości silnika."
 
 #: src/presentation.rs:296
 msgid "This model provides no description for this setting."
-msgstr ""
+msgstr "Dla tego ustawienia model nie udostępnia żadnego opisu."
 
 #. TRANSLATORS: {percent} is how much of the download has arrived, a number from 0 to 100.
 #: src/ui/install_control.rs:131
 msgid "Installing {percent}%"
-msgstr ""
+msgstr "Instalowanie {percent}%"
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:41
 msgid "Sounds on start, stop and error"
-msgstr ""
+msgstr "Dźwięki przy uruchamianiu, zatrzymywaniu i wystąpieniu błędu"
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:42
 msgid ""
 "Play a short sound when dictation starts listening, when it stops, and when "
 "it fails."
 msgstr ""
+"Odtwarzaj krótki dźwięk w momencie rozpoczęcia nasłuchiwania podczas "
+"dyktowania, w chwili jego zakończenia oraz w przypadku wystąpienia błędu."
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:50
 msgid "Sound style"
-msgstr ""
+msgstr "Styl brzmienia"
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:51
 msgid ""
@@ -1601,20 +1682,27 @@ msgid ""
 "hums people make while listening, Marimba a rising fifth, Water falling "
 "drops, Radio a walkie-talkie and Strings a plucked koto."
 msgstr ""
+"Jakie dźwięki są odtwarzane: „Kurant” to uderzany takt; „Ptak” to ćwierkanie "
+"ptaków; „Głos” to nucenie, które ludzie wydają podczas słuchania; „Marimba” "
+"to wznosząca się kwinta; „Woda” to spadające krople wody; „Radio” to "
+"krótkofalówka; „Struny” to szarpane koto."
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:60
 msgid "When to transcribe"
-msgstr ""
+msgstr "Kiedy sporządzać transkrypcję"
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:61
 msgid ""
 "As you speak shows partial text in the field while you talk; When you stop "
 "injects the whole transcript once the utterance ends."
 msgstr ""
+"Funkcja „Gdy mówisz” wyświetla w polu tekstowym fragmenty wypowiedzi w "
+"trakcie mówienia, a po zakończeniu wypowiedzi wstawia do niego pełny zapis "
+"tekstu."
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:69
 msgid "Spoken language"
-msgstr ""
+msgstr "Język mówiony"
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:70
 msgid ""
@@ -1622,20 +1710,28 @@ msgid ""
 "skips language detection and decodes in this language; a code that does not "
 "match what is spoken degrades the transcript. Empty lets the model decide."
 msgstr ""
+"Kod w formacie zbliżonym do BCP-47 (np. en, fr, zh) określający język, w "
+"którym dyktujesz. Model pomija automatyczne wykrywanie języka i dokonuje "
+"dekodowania w języku wskazanym przez ten kod; użycie kodu niezgodnego z "
+"językiem wypowiedzi pogarsza jakość transkrypcji. Pozostawienie pola pustego "
+"pozwala modelowi na samodzielny wybór języka."
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:80
 msgid "Indicator style"
-msgstr ""
+msgstr "Styl wskaźnika"
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:81
 msgid ""
 "All three render the same calibrated audio envelope: Default is a level bar "
 "in the accent colour, Ribbon a flowing GPU wave, VU meter a segmented meter."
 msgstr ""
+"Wszystkie trzy prezentują ten sam skalibrowany sygnał audio: „Domyślny” to "
+"pasek poziomu w kolorze akcentującym, „Wstążka” to płynna fala generowana "
+"przez układ graficzny, a „Miernik VU” to wskaźnik podzielony na segmenty."
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:91
 msgid "Stop after silence (seconds)"
-msgstr ""
+msgstr "Zatrzymaj po ciszy (sekundy)"
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:92
 msgid ""
@@ -1643,10 +1739,15 @@ msgid ""
 "this many seconds without speech. 0 keeps it running until the next tap. "
 "Hold-to-talk always ends with the key."
 msgstr ""
+"W trybie aktywacji przez stuknięcie sesja dyktowania zakończy się "
+"automatycznie po upływie określonej liczby sekund, jeśli w tym czasie nie "
+"zostanie wykryta mowa. Ustawienie wartości 0 sprawia, że sesja trwa do "
+"momentu kolejnego stuknięcia. W trybie „Przytrzymaj, aby mówić” sesja zawsze "
+"kończy się w chwili zwolnienia przycisku."
 
 #: data/com.canonical.Myna.Config.metainfo.xml:9
 msgid "Set up and configure local dictation"
-msgstr ""
+msgstr "Skonfiguruj dyktowanie lokalne"
 
 #: data/com.canonical.Myna.Config.metainfo.xml:14
 msgid ""
@@ -1654,16 +1755,21 @@ msgid ""
 "it. Myna Settings guides you through installing it and a speech model, then "
 "configures dictation and its speech models."
 msgstr ""
+"Myna zamienia mowę na tekst bezpośrednio na Twoim komputerze, bez "
+"przesyłania jakichkolwiek danych dźwiękowych lub tekstowych na zewnątrz. "
+"Moduł ustawień programu Myna przeprowadzi Cię przez proces instalacji "
+"programu oraz modelu rozpoznawania mowy, a następnie skonfiguruje funkcję "
+"dyktowania."
 
 #: data/com.canonical.Myna.Config.desktop:4
 msgid "Dictation Settings"
-msgstr ""
+msgstr "Ustawienia dyktowania"
 
 #: data/com.canonical.Myna.Config.desktop:5
 msgid "Configure Myna dictation and its speech models"
-msgstr ""
+msgstr "Skonfiguruj dyktowanie programu Myna oraz jego modele mowy"
 
 #. TRANSLATORS: Search terms for this application. Keep every semicolon, including the last.
 #: data/com.canonical.Myna.Config.desktop:12
 msgid "dictation;speech;transcription;voice;model;"
-msgstr ""
+msgstr "dyktowanie;mowa;transkrypcja;głos;model;"
