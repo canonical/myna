@@ -8,7 +8,7 @@ msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-10-11 11:54+0100\n"
-"PO-Revision-Date: 2026-10-14 12:51+0000\n"
+"PO-Revision-Date: 2026-10-17 10:38+0000\n"
 "Last-Translator: Peter Vančo <peva@users.noreply.hosted.weblate.org>\n"
 "Language-Team: Slovak <https://hosted.weblate.org/projects/ubuntu-desktop-"
 "translations/myna-config/sk/>\n"
@@ -1058,11 +1058,12 @@ msgstr "z"
 #: src/diagnostics.rs:288
 msgid "Dictation will be slow. A power tool has capped the CPU clock."
 msgstr ""
-"Diktovanie bude pomalé. Energetický nástroj obmedzil frekvenciu procesora."
+"Diktovanie bude pomalé. Nástroj na správu napájania obmedzil frekvenciu "
+"procesora."
 
 #: src/diagnostics.rs:298
 msgid "The power profile is set to low-power"
-msgstr "Energetický profil je nastavený na šetriaci režim"
+msgstr "Profil napájania je nastavený na úsporný režim"
 
 #: src/diagnostics.rs:302
 msgid ""
@@ -1478,7 +1479,7 @@ msgstr "hodnota je neplatná"
 
 #: src/presentation.rs:48
 msgid "value must be true or false"
-msgstr "hodnota musí byť pravda alebo nepravda"
+msgstr "hodnota musí byť true alebo false"
 
 #: src/presentation.rs:49
 msgid "value must be a number"
