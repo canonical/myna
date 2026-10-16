@@ -8,7 +8,7 @@ msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-10-11 11:54+0100\n"
-"PO-Revision-Date: 2026-10-16 08:26+0000\n"
+"PO-Revision-Date: 2026-10-17 10:38+0000\n"
 "Last-Translator: phlostically <phlostically@users.noreply.hosted.weblate.org>"
 "\n"
 "Language-Team: Esperanto <https://hosted.weblate.org/projects/ubuntu-desktop-"
@@ -188,6 +188,8 @@ msgid ""
 "Log out and back in to turn on the dictation indicator (GNOME Shell "
 "extension)."
 msgstr ""
+"Adiaŭu kaj resalutu por aktivigi la dikto-indikilon, kiu estas etendaĵo de "
+"GNOME Shell."
 
 #: data/onboarding-shortcut.blp:78 src/shortcut_ui.rs:322
 msgid "Press the new shortcut…"
@@ -616,7 +618,7 @@ msgstr "Stato: neatingebla"
 
 #: src/backend_ui.rs:2569
 msgid "Post-failure surface errors:"
-msgstr ""
+msgstr "Surfacaj eraroj post malsukceso:"
 
 #: src/backend_ui.rs:2600
 msgid "Language"
@@ -1326,11 +1328,11 @@ msgstr "ŝlosita de la administranto"
 
 #: src/diagnostics.rs:813
 msgid "hidden by another copy"
-msgstr ""
+msgstr "kaŝita de alia kopio"
 
 #: src/diagnostics.rs:815
 msgid "another input method is in use"
-msgstr ""
+msgstr "alia enigmetodo estas uzata"
 
 #: src/diagnostics.rs:816
 msgid "not supported on this desktop"
@@ -1522,11 +1524,11 @@ msgstr ""
 
 #: src/presentation.rs:192
 msgid "Socket path"
-msgstr ""
+msgstr "Vojo al konektinterfaco"
 
 #: src/presentation.rs:193
 msgid "Raw Unix socket path used by the transcription service."
-msgstr ""
+msgstr "Vojo al kruda Uniksa konektinterfaco por la transskriba servo."
 
 #: src/presentation.rs:199
 msgid "Minimum speech before pause commit (seconds)"
@@ -1648,7 +1650,7 @@ msgstr ""
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:80
 msgid "Indicator style"
-msgstr ""
+msgstr "Stilo de indikilo"
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:81
 msgid ""
@@ -1677,6 +1679,9 @@ msgid ""
 "it. Myna Settings guides you through installing it and a speech model, then "
 "configures dictation and its speech models."
 msgstr ""
+"Myna tekstigas parolon interne de via komputilo; neniom da sono aŭ teksto "
+"sendiĝas eksteren. Agordoj de Myna helpas vin instali ĝin kaj parolo-"
+"tekstigan modelon kaj agordas diktadon kaj la modelon."
 
 #: data/com.canonical.Myna.Config.desktop:4
 msgid "Dictation Settings"
