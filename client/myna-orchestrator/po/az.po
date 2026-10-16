@@ -8,95 +8,97 @@ msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-10-12 18:37+0100\n"
-"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
-"Last-Translator: Automatically generated\n"
-"Language-Team: none\n"
+"PO-Revision-Date: 2026-10-16 09:39+0000\n"
+"Last-Translator: Nicat <nijat@users.noreply.hosted.weblate.org>\n"
+"Language-Team: Azerbaijani <https://hosted.weblate.org/projects/ubuntu-"
+"desktop-translations/myna-orchestrator/az/>\n"
 "Language: az\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=n != 1;\n"
+"X-Generator: Weblate 2026.11.dev0\n"
 
 #: src/backend/mod.rs:79
 msgid "Model not reachable"
-msgstr ""
+msgstr "Model əlçatan deyil"
 
 #: src/backend/mod.rs:82 src/backend/share.rs:91
 msgid "Model not compatible"
-msgstr ""
+msgstr "Model uyğun deyil"
 
 #: src/backend/mod.rs:84
 msgid "Model error"
-msgstr ""
+msgstr "Model xətası"
 
 #: src/backend/mod.rs:85
 msgid "Model stopped"
-msgstr ""
+msgstr "Model dayandırıldı"
 
 #: src/backend/share.rs:83
 msgid "Model not connected"
-msgstr ""
+msgstr "Model qoşulmayıb"
 
 #: src/backend/share.rs:86
 msgid "Model connected. Retry shortly"
-msgstr ""
+msgstr "Model qoşuldu. Bir azdan yenidən cəhd edin"
 
 #: src/backend/share.rs:89
 msgid "Model not running"
-msgstr ""
+msgstr "Model çalışmır"
 
 #: src/backend/share.rs:92
 msgid "Several models connected"
-msgstr ""
+msgstr "Bir neçə model qoşuldu"
 
 #: src/failure.rs:37
 msgid "Some audio lost"
-msgstr ""
+msgstr "Bəzi səslər itdi"
 
 #: src/failure.rs:46
 msgid "Microphone unavailable"
-msgstr ""
+msgstr "Mikrofon əlçatan deyil"
 
 #: src/failure.rs:47
 msgid "Audio system not responding"
-msgstr ""
+msgstr "Səs sistemi cavab vermir"
 
 #: src/failure.rs:48
 msgid "No microphone found"
-msgstr ""
+msgstr "Mikrofon tapılmadı"
 
 #: src/failure.rs:49
 msgid "Microphone silent"
-msgstr ""
+msgstr "Mikrofon səssizdir"
 
 #: src/failure.rs:50
 msgid "Microphone format unsupported"
-msgstr ""
+msgstr "Mikrofon formatı dəstəklənmir"
 
 #: src/failure.rs:51
 msgid "Audio system error"
-msgstr ""
+msgstr "Səs sistemi xətası"
 
 #: src/failure.rs:52
 msgid "System overloaded"
-msgstr ""
+msgstr "Sistem həddən artıq yükləndi"
 
 #: src/failure.rs:58
 msgid "Transcription failed"
-msgstr ""
+msgstr "Transkripsiya uğursuz oldu"
 
 #: src/failure.rs:63
 msgid "Model not responding"
-msgstr ""
+msgstr "Model cavab vermir"
 
 #: src/failure.rs:68
 msgid "Model connection lost"
-msgstr ""
+msgstr "Model bağlantısı kəsildi"
 
 #: src/failure.rs:75
 msgid "Using the CPU: GPU unavailable"
-msgstr ""
+msgstr "Prosessor istifadə edilir: video kart əlçatan deyil"
 
 #: src/failure.rs:76
 msgid "Dictation is slow: low memory"
-msgstr ""
+msgstr "Diktə yavaşdır: yaddaş azdır"
