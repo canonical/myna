@@ -8,7 +8,7 @@ msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-10-11 11:54+0100\n"
-"PO-Revision-Date: 2026-10-16 08:26+0000\n"
+"PO-Revision-Date: 2026-10-17 10:38+0000\n"
 "Last-Translator: Ihor Hordiichuk <ihor_ck@users.noreply.hosted.weblate.org>\n"
 "Language-Team: Ukrainian <https://hosted.weblate.org/projects/ubuntu-desktop-"
 "translations/myna-config/uk/>\n"
@@ -851,7 +851,7 @@ msgstr "Завершені операції snapd:\n"
 
 #: src/backend_ui.rs:3250
 msgid "no model connected"
-msgstr "модель не під'єднана"
+msgstr "модель не під'єднано"
 
 #: src/backend_ui.rs:3254
 msgid "connected"
@@ -1568,86 +1568,97 @@ msgstr ""
 
 #: src/presentation.rs:199
 msgid "Minimum speech before pause commit (seconds)"
-msgstr "Мінімальна тривалість мовлення перед паузою (секунд)"
+msgstr "Мінімальна тривалість мовлення до фіксації паузи (в секундах)"
 
 #: src/presentation.rs:200
 msgid "Speech required before a pause can commit a transcript chunk."
-msgstr ""
-"Перед паузою необхідне мовлення, щоб зафіксувати фрагмент розшифрування."
+msgstr "Перед паузою необхідне мовлення, щоб зафіксувати фрагмент тексту."
 
 #: src/presentation.rs:205
 msgid "Pause length for commit (seconds)"
-msgstr "Тривалість паузи перед фіксацією (секунд)"
+msgstr "Тривалість паузи перед фіксацією (в секундах)"
 
 #: src/presentation.rs:206
 msgid "Silence duration that commits the current transcript chunk."
-msgstr ""
+msgstr "Тривалість мовчання, після якої фіксується поточний фрагмент тексту."
 
 #: src/presentation.rs:211
 msgid "Maximum uncommitted audio (seconds)"
-msgstr ""
+msgstr "Максимальна тривалість незафіксованого аудіо (в секундах)"
 
 #: src/presentation.rs:212
 msgid ""
 "Maximum speech window retained before a transcript chunk is forced to commit."
 msgstr ""
+"Максимальна тривалість мовлення, після якої фрагмент тексту буде примусово "
+"зафіксовано."
 
 #: src/presentation.rs:217
 msgid "Partial result interval (seconds)"
-msgstr ""
+msgstr "Інтервал проміжного результату (в секундах)"
 
 #: src/presentation.rs:218
 msgid ""
 "Interval between unstable partial results; zero disables partial results."
 msgstr ""
+"Інтервал між неточними проміжними результатами; значення 0 вимикає показ "
+"проміжних результатів."
 
 #: src/presentation.rs:223
 msgid "Partial result audio window (seconds)"
-msgstr ""
+msgstr "Аудіовікно проміжних результатів (у секундах)"
 
 #: src/presentation.rs:224
 msgid ""
 "Recent uncommitted audio used for partial results; zero uses the whole "
 "window."
 msgstr ""
+"Для проміжних результатів використовується останній незафіксований "
+"аудіофрагмент; значення 0 означає використання всього вікна."
 
 #: src/presentation.rs:229
 msgid "Compute type"
-msgstr ""
+msgstr "Тип обчислень"
 
 #: src/presentation.rs:230
 msgid ""
 "Runtime numeric format override. Leave the model's own value unchanged "
 "unless required."
 msgstr ""
+"Перевизначення числового формату під час виконання. Не змінюйте власне "
+"значення моделі без необхідності."
 
 #: src/presentation.rs:236
 msgid "Attention context size"
-msgstr ""
+msgstr "Розмір контексту уваги"
 
 #: src/presentation.rs:237
 msgid ""
 "Model-specific latency and accuracy context. Empty uses the engine default."
 msgstr ""
+"Контекст затримки та точності для конкретної моделі. Якщо значення порожнє, "
+"використовується типове налаштування рушія."
 
 #: src/presentation.rs:296
 msgid "This model provides no description for this setting."
-msgstr ""
+msgstr "У цій моделі відсутній опис цього налаштування."
 
 #. TRANSLATORS: {percent} is how much of the download has arrived, a number from 0 to 100.
 #: src/ui/install_control.rs:131
 msgid "Installing {percent}%"
-msgstr ""
+msgstr "Встановлення {percent}%"
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:41
 msgid "Sounds on start, stop and error"
-msgstr ""
+msgstr "Звуки запуску, зупинки та помилки"
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:42
 msgid ""
 "Play a short sound when dictation starts listening, when it stops, and when "
 "it fails."
 msgstr ""
+"Відтворювати короткий звуковий сигнал на початку запису, коли він "
+"зупиняється та коли виникає збій."
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:50
 msgid "Sound style"
@@ -1659,6 +1670,10 @@ msgid ""
 "hums people make while listening, Marimba a rising fifth, Water falling "
 "drops, Radio a walkie-talkie and Strings a plucked koto."
 msgstr ""
+"Які звуки відтворюються: «Дзвін» — удари по залізу, «Птах» — щебетання, «"
+"Голос» — наспівування, яке люди видають під час прослуховування, «Маримба» — "
+"висхідна квінтима, «Вода» — краплі, що падають, «Радіо» — рація, а «Струни» "
+"— звуки, що видає кото при щипанні струн."
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:60
 msgid "When to transcribe"
@@ -1669,10 +1684,12 @@ msgid ""
 "As you speak shows partial text in the field while you talk; When you stop "
 "injects the whole transcript once the utterance ends."
 msgstr ""
+"Варіант «Коли ви говорите» показує частину тексту в полі під час мовлення; "
+"коли ви закінчуєте говорити, в поле вставляється повний текст."
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:69
 msgid "Spoken language"
-msgstr ""
+msgstr "Мова вимови"
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:70
 msgid ""
@@ -1680,6 +1697,10 @@ msgid ""
 "skips language detection and decodes in this language; a code that does not "
 "match what is spoken degrades the transcript. Empty lets the model decide."
 msgstr ""
+"Код, який відповідає стандарту BCP-47 (en, fr, zh), для мови диктування. "
+"Модель пропускає етап визначення мови та здійснює розшифрування саме цією "
+"мовою; невідповідний код погіршує якість розшифрування. Якщо поле порожнє, "
+"модель сама визначить мову."
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:80
 msgid "Indicator style"
@@ -1690,6 +1711,9 @@ msgid ""
 "All three render the same calibrated audio envelope: Default is a level bar "
 "in the accent colour, Ribbon a flowing GPU wave, VU meter a segmented meter."
 msgstr ""
+"Усі три відтворюють однакову відкалібровану криву звуку: «Типово» — це смуга "
+"рівня у виділеному кольорі, «Стрічка» — хвиля, що рухається засобами "
+"графічного процесора, «Індикатор рівня гучності» — сегментований індикатор."
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:91
 msgid "Stop after silence (seconds)"
@@ -1701,10 +1725,14 @@ msgid ""
 "this many seconds without speech. 0 keeps it running until the next tap. "
 "Hold-to-talk always ends with the key."
 msgstr ""
+"У разі активації методом «натисни, щоб почати» сеанс диктування завершиться "
+"автоматично через цю кількість секунд без мовлення. Значення 0 означає, що "
+"сеанс триватиме до наступного натискання. У режимі «утримуй, щоб говорити» "
+"сеанс завжди завершується після відпуску клавіші."
 
 #: data/com.canonical.Myna.Config.metainfo.xml:9
 msgid "Set up and configure local dictation"
-msgstr ""
+msgstr "Налаштування та конфігурація локального диктування"
 
 #: data/com.canonical.Myna.Config.metainfo.xml:14
 msgid ""
@@ -1712,6 +1740,10 @@ msgid ""
 "it. Myna Settings guides you through installing it and a speech model, then "
 "configures dictation and its speech models."
 msgstr ""
+"Myna перетворює мовлення на текст на вашому комп’ютері, при цьому аудіо- чи "
+"текстові дані не залишають його меж. У розділі «Налаштування Myna» ви "
+"знайдете покрокові інструкції щодо встановлення застосунку та мовної моделі, "
+"а також налаштування диктування та відповідних мовних моделей."
 
 #: data/com.canonical.Myna.Config.desktop:4
 msgid "Dictation Settings"
@@ -1719,7 +1751,7 @@ msgstr "Налаштування Диктування"
 
 #: data/com.canonical.Myna.Config.desktop:5
 msgid "Configure Myna dictation and its speech models"
-msgstr ""
+msgstr "Налаштування функції диктування Myna та відповідних мовних моделей"
 
 #. TRANSLATORS: Search terms for this application. Keep every semicolon, including the last.
 #: data/com.canonical.Myna.Config.desktop:12
