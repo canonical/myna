@@ -8,7 +8,7 @@ msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-10-11 11:54+0100\n"
-"PO-Revision-Date: 2026-10-17 10:38+0000\n"
+"PO-Revision-Date: 2026-10-17 21:19+0000\n"
 "Last-Translator: Peter Vančo <peva@users.noreply.hosted.weblate.org>\n"
 "Language-Team: Slovak <https://hosted.weblate.org/projects/ubuntu-desktop-"
 "translations/myna-config/sk/>\n"
@@ -626,7 +626,7 @@ msgstr "Stav: nedostupné"
 
 #: src/backend_ui.rs:2569
 msgid "Post-failure surface errors:"
-msgstr "Chyby povrchu po zlyhaní:"
+msgstr "Zjavné chyby po zlyhaní:"
 
 #: src/backend_ui.rs:2600
 msgid "Language"
