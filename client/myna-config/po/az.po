@@ -8,7 +8,7 @@ msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-10-11 11:54+0100\n"
-"PO-Revision-Date: 2026-10-17 10:38+0000\n"
+"PO-Revision-Date: 2026-10-17 21:19+0000\n"
 "Last-Translator: Nicat <nijat@users.noreply.hosted.weblate.org>\n"
 "Language-Team: Azerbaijani <https://hosted.weblate.org/projects/ubuntu-"
 "desktop-translations/myna-config/az/>\n"
@@ -21,19 +21,19 @@ msgstr ""
 
 #: data/diagnostics-page.blp:5 data/diagnostics-page.blp:8 src/app.rs:1485
 msgid "About and Diagnostics"
-msgstr ""
+msgstr "Haqqında və diaqnostika"
 
 #: data/diagnostics-page.blp:15 data/onboarding-welcome.blp:25
 msgid "Set up Dictation"
-msgstr ""
+msgstr "Diktə qur"
 
 #: data/diagnostics-page.blp:20 data/myna-page.blp:33 src/shortcut_ui.rs:287
 msgid "Set up"
-msgstr ""
+msgstr "Qur"
 
 #: data/diagnostics-page.blp:32
 msgid "Performance warnings"
-msgstr ""
+msgstr "Performans xəbərdarlıqları"
 
 #: data/diagnostics-page.blp:33
 msgid "This machine is not currently delivering the CPU that dictation needs."
@@ -41,7 +41,7 @@ msgstr ""
 
 #: data/diagnostics-page.blp:38 data/main-window.blp:46
 msgid "Diagnostics"
-msgstr ""
+msgstr "Diaqnostika"
 
 #: data/diagnostics-page.blp:40
 msgid "No audio, transcript, or filesystem path is ever included."
@@ -75,7 +75,7 @@ msgstr ""
 
 #: data/diagnostics-page.blp:94 src/backend_ui.rs:2119
 msgid "Diagnostic report"
-msgstr ""
+msgstr "Diaqnostika hesabatı"
 
 #: data/diagnostics-page.blp:95
 msgid "Read-only privacy-safe diagnostic text."
@@ -84,21 +84,21 @@ msgstr ""
 #: data/install-control.blp:54 data/onboarding-components.blp:60
 #: src/app.rs:3931
 msgid "Installed"
-msgstr ""
+msgstr "Quraşdırılıb"
 
 #: data/install-models-dialog.blp:5 data/myna-page.blp:79 data/myna-page.blp:94
 msgid "Install more models"
-msgstr ""
+msgstr "Daha çox model quraşdır"
 
 #: data/main-window.blp:9 src/app.rs:122 src/diagnostics.rs:443
 #: data/com.canonical.Myna.Config.metainfo.xml:8
 #: data/com.canonical.Myna.Config.desktop:3
 msgid "Myna Settings"
-msgstr ""
+msgstr "Myna ayarları"
 
 #: data/main-window.blp:24
 msgid "Main Menu"
-msgstr ""
+msgstr "Əsas menyu"
 
 #: data/main-window.blp:32 src/backend_ui.rs:2815
 msgid "General"
@@ -116,11 +116,11 @@ msgstr ""
 
 #: data/main-window.blp:75
 msgid "_Report an Issue…"
-msgstr ""
+msgstr "Çətinliyi _bildir…"
 
 #: data/main-window.blp:76
 msgid "_About Myna Settings"
-msgstr ""
+msgstr "Myna ayarları _haqqında"
 
 #: data/myna-page.blp:5 data/myna-page.blp:8 data/status-page.blp:5
 msgid "Myna"
@@ -150,18 +150,20 @@ msgstr "Diktə"
 
 #: data/onboarding-components.blp:18 src/app.rs:3883 src/onboarding_ui.rs:1341
 msgid "Install components"
-msgstr ""
+msgstr "Komponent quraşdır"
 
 #: data/onboarding-components.blp:27 src/app.rs:3887
 msgid ""
 "Dictation requires some additional components, including the optimal speech-"
 "to-text model for your computer. Installation might take a few minutes."
 msgstr ""
+"Diktə kompüteriniz üçün optimal nitq-mətn modeli də daxil olmaqla bəzi əlavə "
+"komponentlər tələb edir. Quraşdırma bir neçə dəqiqə çəkə bilər."
 
 #: data/onboarding-components.blp:44 src/app.rs:491 src/app.rs:3959
 #: src/app.rs:4024 src/app.rs:4434
 msgid "Install all components"
-msgstr ""
+msgstr "Bütün komponentləri quraşdır"
 
 #: data/onboarding-components.blp:52 src/app.rs:3948
 #: src/ui/install_control.rs:134
@@ -194,27 +196,29 @@ msgstr ""
 
 #: data/onboarding-welcome.blp:34
 msgid "Dictation runs locally, with no data leaving your computer."
-msgstr ""
+msgstr "Diktə kompüterinizdən heç bir data çıxmadan lokal olaraq işləyir."
 
 #: data/onboarding-window.blp:24 src/app.rs:414 src/onboarding_ui.rs:776
 msgid "Next"
-msgstr ""
+msgstr "Növbəti"
 
 #: data/operation-error-dialog.blp:5
 msgid "Operation failed"
-msgstr ""
+msgstr "Əməliyyat uğursuz oldu"
 
 #: data/operation-error-dialog.blp:6
 msgid "Full details are shown below. You can copy them to share with support."
 msgstr ""
+"Ətraflı məlumat aşağıda göstərilib. Dəstəklə paylaşmaq üçün onları köçürə "
+"bilərsiniz."
 
 #: data/operation-error-dialog.blp:12
 msgid "Close"
-msgstr ""
+msgstr "Bağla"
 
 #: data/operation-error-dialog.blp:34 src/app.rs:4103
 msgid "Copy Details"
-msgstr ""
+msgstr "Təfərrüatları köçür"
 
 #: data/operation-error-dialog.blp:35
 msgid "Copy the full failure details to the clipboard"
@@ -222,7 +226,7 @@ msgstr ""
 
 #: data/status-page.blp:8 src/app.rs:1475 src/app.rs:5239
 msgid "Loading Myna Settings"
-msgstr ""
+msgstr "Myna ayarları yüklənir"
 
 #: data/status-page.blp:9 src/app.rs:1476 src/app.rs:5240
 msgid "Reading the installed settings schema…"
@@ -230,39 +234,39 @@ msgstr ""
 
 #: src/app.rs:130
 msgid "translator-credits"
-msgstr ""
+msgstr "Nicat Məmmədov <nicat.m@pm.me>"
 
 #: src/app.rs:1185 src/onboarding_ui.rs:781
 msgid "Done"
-msgstr ""
+msgstr "Hazırdır"
 
 #: src/app.rs:1481
 msgid "Model details appear once Myna finds your models."
-msgstr ""
+msgstr "Model təfərrüatları Myna modellərinizi tapdıqdan sonra görünür."
 
 #: src/app.rs:1486
 msgid "Diagnostics appear once Myna finds your models."
-msgstr ""
+msgstr "Myna modellərinizi tapdıqda diaqnostika görünür."
 
 #: src/app.rs:3192 src/backend_ui.rs:3762 src/model_family.rs:27
 msgid "Fastest and most accurate in its 25 languages"
-msgstr ""
+msgstr "25 dildə ən sürətli və dəqiq"
 
 #: src/app.rs:3196 src/backend_ui.rs:4291 src/model_family.rs:31
 msgid "Most languages, with uneven accuracy"
-msgstr ""
+msgstr "Əksər dillər, qeyri-bərabər dəqiqliklə"
 
 #: src/app.rs:3331 src/myna_settings.rs:105
 msgid "As you speak"
-msgstr ""
+msgstr "Siz danışdıqca"
 
 #: src/app.rs:3332 src/myna_settings.rs:106
 msgid "When you stop"
-msgstr ""
+msgstr "Siz dayandıqda"
 
 #: src/app.rs:3472 src/app.rs:5729
 msgid "Preview"
-msgstr ""
+msgstr "Ön baxış"
 
 #: src/app.rs:3486 src/sound_preview.rs:69
 msgid "Could not preview sounds"
@@ -270,18 +274,18 @@ msgstr ""
 
 #: src/app.rs:3520 src/backend_ui.rs:721
 msgid "Changing to {model} failed"
-msgstr ""
+msgstr "{model} modelinə dəyişmək uğursuz oldu"
 
 #: src/app.rs:3521 src/app.rs:4056 src/app.rs:4065 src/app.rs:4454
 #: src/app.rs:5103 src/app.rs:5109 src/backend_ui.rs:1291
 #: src/onboarding_ui.rs:556 src/ui/status_page.rs:70
 msgid "Details"
-msgstr ""
+msgstr "Təfərrüatlar"
 
 #. TRANSLATORS: {setting} is a setting's name on the Model tab, such as "Unload when idle (seconds)".
 #: src/app.rs:3627 src/backend_ui.rs:1688
 msgid "Changing “{setting}” failed"
-msgstr ""
+msgstr "\"{setting}\" ayarını dəyişmək uğursuz oldu"
 
 #: src/app.rs:3629 src/presentation.rs:178
 msgid "Unload when idle (seconds)"
@@ -324,15 +328,15 @@ msgstr ""
 #. TRANSLATORS: {step} is what is installing, such as "Installing speech-to-text model", and {percent} how much of its download has arrived.
 #: src/app.rs:4189 src/app.rs:4252 src/app.rs:4352 src/onboarding_ui.rs:999
 msgid "{step} ({percent}%)"
-msgstr ""
+msgstr "{step} ({percent}%)"
 
 #: src/app.rs:4203 src/onboarding_ui.rs:992
 msgid "Installing speech-to-text model"
-msgstr ""
+msgstr "Səsdən mətnə modeli quraşdırılır"
 
 #: src/app.rs:4217 src/onboarding_ui.rs:1013
 msgid "Installing the speech-to-text model failed"
-msgstr ""
+msgstr "Səsdən mətnə modelinin quraşdırılması uğursuz oldu"
 
 #: src/app.rs:4280 src/onboarding_ui.rs:994
 msgid "Enabling shell extension"
@@ -389,7 +393,7 @@ msgstr ""
 
 #: src/active_backend.rs:368
 msgid "No model is connected."
-msgstr ""
+msgstr "Heç bir model qoşulmayıb."
 
 #: src/active_backend.rs:373
 msgid "The model is not available to switch to."
