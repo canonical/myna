@@ -1,0 +1,105 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR THE PACKAGE'S COPYRIGHT HOLDER
+# This file is distributed under the same license as the PACKAGE package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: PACKAGE VERSION\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-10-12 18:37+0100\n"
+"PO-Revision-Date: 2026-10-17 10:38+0000\n"
+"Last-Translator: Ihor Hordiichuk <ihor_ck@users.noreply.hosted.weblate.org>\n"
+"Language-Team: Ukrainian <https://hosted.weblate.org/projects/ubuntu-desktop-"
+"translations/myna-orchestrator/uk/>\n"
+"Language: uk\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && "
+"n%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2);\n"
+"X-Generator: Weblate 2026.11.dev0\n"
+
+#: src/backend/mod.rs:79
+msgid "Model not reachable"
+msgstr "Модель недоступна"
+
+#: src/backend/mod.rs:82 src/backend/share.rs:91
+msgid "Model not compatible"
+msgstr "Модель несумісна"
+
+#: src/backend/mod.rs:84
+msgid "Model error"
+msgstr "Помилка моделі"
+
+#: src/backend/mod.rs:85
+msgid "Model stopped"
+msgstr "Модель зупинино"
+
+#: src/backend/share.rs:83
+msgid "Model not connected"
+msgstr "Модель не під'єднано"
+
+#: src/backend/share.rs:86
+msgid "Model connected. Retry shortly"
+msgstr "Модель під'єднано. Повторіть спробу незабаром"
+
+#: src/backend/share.rs:89
+msgid "Model not running"
+msgstr "Модель не запущено"
+
+#: src/backend/share.rs:92
+msgid "Several models connected"
+msgstr "Під'єднано кілька моделей"
+
+#: src/failure.rs:37
+msgid "Some audio lost"
+msgstr "Частину аудіо втрачено"
+
+#: src/failure.rs:46
+msgid "Microphone unavailable"
+msgstr "Мікрофон недоступний"
+
+#: src/failure.rs:47
+msgid "Audio system not responding"
+msgstr "Аудіосистема не відповідає"
+
+#: src/failure.rs:48
+msgid "No microphone found"
+msgstr "Мікрофона не знайдено"
+
+#: src/failure.rs:49
+msgid "Microphone silent"
+msgstr "Мікрофон вимкнено"
+
+#: src/failure.rs:50
+msgid "Microphone format unsupported"
+msgstr "Непідтримуваний формат мікрофона"
+
+#: src/failure.rs:51
+msgid "Audio system error"
+msgstr "Помилка аудіосистеми"
+
+#: src/failure.rs:52
+msgid "System overloaded"
+msgstr "Система перевантажена"
+
+#: src/failure.rs:58
+msgid "Transcription failed"
+msgstr "Не вдалося розшифрувати"
+
+#: src/failure.rs:63
+msgid "Model not responding"
+msgstr "Модель не відповідає"
+
+#: src/failure.rs:68
+msgid "Model connection lost"
+msgstr "З'єднання з моделлю втрачено"
+
+#: src/failure.rs:75
+msgid "Using the CPU: GPU unavailable"
+msgstr "Використовується ЦП: графічний процесор недоступний"
+
+#: src/failure.rs:76
+msgid "Dictation is slow: low memory"
+msgstr "Диктування сповільнено: бракує пам’яті"
