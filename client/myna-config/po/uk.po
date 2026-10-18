@@ -1,0 +1,1760 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR THE PACKAGE'S COPYRIGHT HOLDER
+# This file is distributed under the same license as the PACKAGE package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: PACKAGE VERSION\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-10-11 11:54+0100\n"
+"PO-Revision-Date: 2026-10-17 10:38+0000\n"
+"Last-Translator: Ihor Hordiichuk <ihor_ck@users.noreply.hosted.weblate.org>\n"
+"Language-Team: Ukrainian <https://hosted.weblate.org/projects/ubuntu-desktop-"
+"translations/myna-config/uk/>\n"
+"Language: uk\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && "
+"n%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2);\n"
+"X-Generator: Weblate 2026.11.dev0\n"
+
+#: data/diagnostics-page.blp:5 data/diagnostics-page.blp:8 src/app.rs:1485
+msgid "About and Diagnostics"
+msgstr "Про діагностику"
+
+#: data/diagnostics-page.blp:15 data/onboarding-welcome.blp:25
+msgid "Set up Dictation"
+msgstr "Налаштувати Диктування"
+
+#: data/diagnostics-page.blp:20 data/myna-page.blp:33 src/shortcut_ui.rs:287
+msgid "Set up"
+msgstr "Налаштувати"
+
+#: data/diagnostics-page.blp:32
+msgid "Performance warnings"
+msgstr "Попередження про швидкодію"
+
+#: data/diagnostics-page.blp:33
+msgid "This machine is not currently delivering the CPU that dictation needs."
+msgstr ""
+"Наразі цей комп’ютер не забезпечує необхідної потужності процесора для "
+"роботи функції диктування."
+
+#: data/diagnostics-page.blp:38 data/main-window.blp:46
+msgid "Diagnostics"
+msgstr "Діагностика"
+
+#: data/diagnostics-page.blp:40
+msgid "No audio, transcript, or filesystem path is ever included."
+msgstr ""
+"Аудіозаписи, історія розшифрування чи шляхи до файлів ніколи не додаються до "
+"звіту."
+
+#: data/diagnostics-page.blp:49 src/backend_ui.rs:3114 src/backend_ui.rs:3394
+msgid "Refresh"
+msgstr "Оновити"
+
+#: data/diagnostics-page.blp:53 src/backend_ui.rs:2071 src/backend_ui.rs:2073
+msgid "Refresh diagnostics"
+msgstr "Оновити діагностику"
+
+#: data/diagnostics-page.blp:54
+msgid "Check this computer, Myna and every model again."
+msgstr "Перевірте цей комп’ютер, Myna та всі інші моделі ще раз."
+
+#: data/diagnostics-page.blp:60
+msgid "Copy"
+msgstr "Копіювати"
+
+#: data/diagnostics-page.blp:64 src/backend_ui.rs:2086
+msgid "Copy diagnostics"
+msgstr "Копіювати діагностику"
+
+#: data/diagnostics-page.blp:66
+msgid ""
+"Copies a privacy-safe diagnostic report to the clipboard. Does not include "
+"audio, transcripts, or filesystem paths."
+msgstr ""
+"Копіює звіт про діагностику, що відповідає вимогам приватності, у буфер "
+"обміну. Не містить аудіозаписів, протоколів роботи та шляхів до файлів у "
+"файловій системі."
+
+#: data/diagnostics-page.blp:94 src/backend_ui.rs:2119
+msgid "Diagnostic report"
+msgstr "Діагностичнтй звіт"
+
+#: data/diagnostics-page.blp:95
+msgid "Read-only privacy-safe diagnostic text."
+msgstr ""
+"Діагностичний текст, призначений лише для читання та із захистом приватності."
+
+#: data/install-control.blp:54 data/onboarding-components.blp:60
+#: src/app.rs:3931
+msgid "Installed"
+msgstr "Установлено"
+
+#: data/install-models-dialog.blp:5 data/myna-page.blp:79 data/myna-page.blp:94
+msgid "Install more models"
+msgstr "Установити інші моделі"
+
+#: data/main-window.blp:9 src/app.rs:122 src/diagnostics.rs:443
+#: data/com.canonical.Myna.Config.metainfo.xml:8
+#: data/com.canonical.Myna.Config.desktop:3
+msgid "Myna Settings"
+msgstr "Налаштування Myna"
+
+#: data/main-window.blp:24
+msgid "Main Menu"
+msgstr "Головне меню"
+
+#: data/main-window.blp:32 src/backend_ui.rs:2815
+msgid "General"
+msgstr "Загальне"
+
+#: data/main-window.blp:39 data/myna-page.blp:71 src/app.rs:1480
+#: src/app.rs:3154 src/app.rs:3578 src/backend_apply.rs:379
+#: src/diagnostics.rs:636 src/presentation.rs:157
+msgid "Model"
+msgstr "Модель"
+
+#: data/main-window.blp:71
+msgid "_Set Up Dictation…"
+msgstr "_Налаштувати диктування…"
+
+#: data/main-window.blp:75
+msgid "_Report an Issue…"
+msgstr "П_овідомити про ваду…"
+
+#: data/main-window.blp:76
+msgid "_About Myna Settings"
+msgstr "_Про налаштування Myna"
+
+#: data/myna-page.blp:5 data/myna-page.blp:8 data/status-page.blp:5
+msgid "Myna"
+msgstr "Myna"
+
+#: data/myna-page.blp:12
+msgid "Keyboard shortcut"
+msgstr "Комбінація клавіш"
+
+#: data/myna-page.blp:15
+msgid "Press to start and stop"
+msgstr "Натисніть, щоб розпочати чи зупинити"
+
+#: data/myna-page.blp:47 src/shortcut_ui.rs:324
+msgid "Press a shortcut…"
+msgstr "Натисніть комбінацію клавіш…"
+
+#: data/myna-page.blp:57 data/onboarding-shortcut.blp:134
+#: src/shortcut_ui.rs:501
+msgid "Cancel"
+msgstr "Скасувати"
+
+#: data/myna-page.blp:67 data/onboarding-window.blp:7 src/app.rs:1816
+#: src/app.rs:4996 src/onboarding_ui.rs:1340 src/shortcut_ui.rs:591
+msgid "Dictation"
+msgstr "Диктування"
+
+#: data/onboarding-components.blp:18 src/app.rs:3883 src/onboarding_ui.rs:1341
+msgid "Install components"
+msgstr "Встановлення компонентів"
+
+#: data/onboarding-components.blp:27 src/app.rs:3887
+msgid ""
+"Dictation requires some additional components, including the optimal speech-"
+"to-text model for your computer. Installation might take a few minutes."
+msgstr ""
+"Для роботи Диктування потрібні деякі додаткові компоненти, зокрема "
+"оптимальна модель розпізнавання мовлення для вашого комп’ютера. Встановлення "
+"може тривати кілька хвилин."
+
+#: data/onboarding-components.blp:44 src/app.rs:491 src/app.rs:3959
+#: src/app.rs:4024 src/app.rs:4434
+msgid "Install all components"
+msgstr "Установити всі компоненти"
+
+#: data/onboarding-components.blp:52 src/app.rs:3948
+#: src/ui/install_control.rs:134
+msgid "Installing…"
+msgstr "Встановлення…"
+
+#: data/onboarding-shortcut.blp:18 src/app.rs:4715 src/onboarding_ui.rs:1342
+msgid "How to dictate"
+msgstr "Як диктувати"
+
+#: data/onboarding-shortcut.blp:51 src/shortcut_ui.rs:285
+msgid "Set up shortcut"
+msgstr "Налаштувати комбінацію клавіш"
+
+#: data/onboarding-shortcut.blp:58 src/onboarding_ui.rs:1065
+msgid ""
+"Log out and back in to turn on the dictation indicator (GNOME Shell "
+"extension)."
+msgstr ""
+"Вийдіть із системи та увійдіть знову, щоб увімкнути індикатор диктування "
+"(розширення Оболонки GNOME)."
+
+#: data/onboarding-shortcut.blp:78 src/shortcut_ui.rs:322
+msgid "Press the new shortcut…"
+msgstr "Натисніть нову комбінацію клавіш…"
+
+#: data/onboarding-shortcut.blp:104
+msgid ""
+"Use Ctrl, Alt or Super with another key, or a function key. Press Escape to "
+"cancel."
+msgstr ""
+"Використовуйте клавіші Ctrl, Alt або Super у поєднанні з іншою клавішею або "
+"функціональною клавішею. Натисніть Escape, щоб скасувати."
+
+#: data/onboarding-welcome.blp:34
+msgid "Dictation runs locally, with no data leaving your computer."
+msgstr "Диктування працює локально: дані не залишають ваш комп’ютер."
+
+#: data/onboarding-window.blp:24 src/app.rs:414 src/onboarding_ui.rs:776
+msgid "Next"
+msgstr "Далі"
+
+#: data/operation-error-dialog.blp:5
+msgid "Operation failed"
+msgstr "Збій операції"
+
+#: data/operation-error-dialog.blp:6
+msgid "Full details are shown below. You can copy them to share with support."
+msgstr ""
+"Усі подробиці наведені нижче. Ви можете скопіювати їх, щоб надіслати до "
+"служби підтримки."
+
+#: data/operation-error-dialog.blp:12
+msgid "Close"
+msgstr "Закрити"
+
+#: data/operation-error-dialog.blp:34 src/app.rs:4103
+msgid "Copy Details"
+msgstr "Скопіювати подробиці"
+
+#: data/operation-error-dialog.blp:35
+msgid "Copy the full failure details to the clipboard"
+msgstr "Скопіювати повну інформацію про помилку в буфер обміну"
+
+#: data/status-page.blp:8 src/app.rs:1475 src/app.rs:5239
+msgid "Loading Myna Settings"
+msgstr "Завантаження налаштувань Myna"
+
+#: data/status-page.blp:9 src/app.rs:1476 src/app.rs:5240
+msgid "Reading the installed settings schema…"
+msgstr "Зчитування схеми встановлених налаштувань…"
+
+#: src/app.rs:130
+msgid "translator-credits"
+msgstr "Ігор Гордійчук"
+
+#: src/app.rs:1185 src/onboarding_ui.rs:781
+msgid "Done"
+msgstr "Готово"
+
+#: src/app.rs:1481
+msgid "Model details appear once Myna finds your models."
+msgstr "Деталі моделей з’являються, щойно Myna знайде ваші моделі."
+
+#: src/app.rs:1486
+msgid "Diagnostics appear once Myna finds your models."
+msgstr "Діагностика з’являється, щойно Myna знайде ваші моделі."
+
+#: src/app.rs:3192 src/backend_ui.rs:3762 src/model_family.rs:27
+msgid "Fastest and most accurate in its 25 languages"
+msgstr "Найшвидша і найточніша для 25 мов"
+
+#: src/app.rs:3196 src/backend_ui.rs:4291 src/model_family.rs:31
+msgid "Most languages, with uneven accuracy"
+msgstr "Більшість мов, з різною точністю"
+
+#: src/app.rs:3331 src/myna_settings.rs:105
+msgid "As you speak"
+msgstr "Коли ви говорите"
+
+#: src/app.rs:3332 src/myna_settings.rs:106
+msgid "When you stop"
+msgstr "Коли ви закінчуєте говорити"
+
+#: src/app.rs:3472 src/app.rs:5729
+msgid "Preview"
+msgstr "Прослухати"
+
+#: src/app.rs:3486 src/sound_preview.rs:69
+msgid "Could not preview sounds"
+msgstr "Не вдалося відтворити звуки"
+
+#: src/app.rs:3520 src/backend_ui.rs:721
+msgid "Changing to {model} failed"
+msgstr "Не вдалося змінити на {model}"
+
+#: src/app.rs:3521 src/app.rs:4056 src/app.rs:4065 src/app.rs:4454
+#: src/app.rs:5103 src/app.rs:5109 src/backend_ui.rs:1291
+#: src/onboarding_ui.rs:556 src/ui/status_page.rs:70
+msgid "Details"
+msgstr "Подробиці"
+
+#. TRANSLATORS: {setting} is a setting's name on the Model tab, such as "Unload when idle (seconds)".
+#: src/app.rs:3627 src/backend_ui.rs:1688
+msgid "Changing “{setting}” failed"
+msgstr "Не вдалося змінити налаштування «{setting}»"
+
+#: src/app.rs:3629 src/presentation.rs:178
+msgid "Unload when idle (seconds)"
+msgstr "Вимкнення за бездіяльності (в секундах)"
+
+#. TRANSLATORS: {size} is a download size, such as "4.2 GB".
+#: src/app.rs:3921 src/onboarding_ui.rs:855
+msgid "Up to {size}"
+msgstr "До {size}"
+
+#: src/app.rs:4057 src/onboarding_ui.rs:1011
+msgid "Could not let Myna run in the background"
+msgstr "Не вдалося запустити Myna у фоновому режимі"
+
+#: src/app.rs:4087 src/app.rs:4237 src/backend_ui.rs:2419
+msgid "Executable:"
+msgstr "Виконуваний:"
+
+#: src/app.rs:4088 src/app.rs:4238 src/backend_ui.rs:2423
+msgid "Arguments:"
+msgstr "Аргументи:"
+
+#: src/app.rs:4089 src/app.rs:4239 src/backend_ui.rs:2432
+#: src/backend_ui.rs:2510 src/backend_ui.rs:3231
+msgid "Exit status:"
+msgstr "Статус завершення:"
+
+#: src/app.rs:4090 src/app.rs:4240 src/app.rs:4466 src/backend_ui.rs:2477
+msgid "Message:"
+msgstr "Повідомлення:"
+
+#: src/app.rs:4156 src/onboarding_ui.rs:990
+msgid "Enabling user daemons support"
+msgstr "Увімкнення підтримки користувацьких фонових процесів"
+
+#: src/app.rs:4179 src/onboarding_ui.rs:991
+msgid "Installing Dictation app"
+msgstr "Встановити застосунок Диктування"
+
+#. TRANSLATORS: {step} is what is installing, such as "Installing speech-to-text model", and {percent} how much of its download has arrived.
+#: src/app.rs:4189 src/app.rs:4252 src/app.rs:4352 src/onboarding_ui.rs:999
+msgid "{step} ({percent}%)"
+msgstr "{step} ({percent}%)"
+
+#: src/app.rs:4203 src/onboarding_ui.rs:992
+msgid "Installing speech-to-text model"
+msgstr "Встановлення моделі розпізнавання мовлення"
+
+#: src/app.rs:4217 src/onboarding_ui.rs:1013
+msgid "Installing the speech-to-text model failed"
+msgstr "Не вдалося встановити модель розпізнавання мовлення"
+
+#: src/app.rs:4280 src/onboarding_ui.rs:994
+msgid "Enabling shell extension"
+msgstr "Увімкнення розширення оболонки"
+
+#: src/app.rs:4452 src/onboarding_ui.rs:1015
+msgid "Enabling the shell extension failed"
+msgstr "Не вдалося ввімкнути розширення оболонки"
+
+#: src/app.rs:4465 src/backend_ui.rs:2463
+msgid "D-Bus call:"
+msgstr "Виклик D-Bus:"
+
+#: src/app.rs:4730 src/shortcut_ui.rs:669
+msgid "You can trigger Dictation anytime by using the keyboard shortcut:"
+msgstr ""
+"Ви можете запустити Диктування в будь-який момент за допомогою комбінації "
+"клавіш:"
+
+#: src/app.rs:5102 src/onboarding_ui.rs:676 src/onboarding_ui.rs:683
+#: src/onboarding_ui.rs:925
+msgid "Could not set up Dictation"
+msgstr "Не вдалося налаштувати Диктування"
+
+#: src/app.rs:5140 src/onboarding_ui.rs:876
+msgid "Dictation is not set up yet. Select Next to try again."
+msgstr "Диктування ще не налаштовано. Натисніть Далі, щоб повторити спробу."
+
+#: src/app.rs:5244
+msgid "No Myna Settings"
+msgstr "Налаштування Myna відсутні"
+
+#: src/app.rs:5245
+msgid "The installed schema does not declare any settings."
+msgstr "Установлена схема не містить налаштувань."
+
+#: src/app.rs:5265
+msgid "Myna Settings Unavailable"
+msgstr "Налаштування Myna недоступні"
+
+#: src/app.rs:5266
+msgid "Myna Settings could not start."
+msgstr "Не вдалося запустити налаштування Myna."
+
+#: src/app.rs:5697
+msgid "Could not save the setting"
+msgstr "Не вдалося зберегти налаштування"
+
+#: src/app.rs:5734
+msgid "Preview sound style"
+msgstr "Прослухати стилі звуків"
+
+#: src/active_backend.rs:293
+msgid "The change was cancelled."
+msgstr "Зміну скасовано."
+
+#: src/active_backend.rs:368
+msgid "No model is connected."
+msgstr "Жодної моделі не під'єднано."
+
+#: src/active_backend.rs:373
+msgid "The model is not available to switch to."
+msgstr "Модель недоступна для перемикання на неї."
+
+#: src/active_backend.rs:387
+msgid "The model changed while it was being switched on. Try again."
+msgstr "Модель змінилася під час увімкнення. Спробуйте ще раз."
+
+#: src/backend_ui.rs:121 src/model_family.rs:283
+msgid "Recommended"
+msgstr "Рекомендовано"
+
+#: src/backend_ui.rs:182 src/diagnostics.rs:474
+msgid "Languages"
+msgstr "Мови"
+
+#: src/backend_ui.rs:217
+msgid "Your language"
+msgstr "Ваша мова"
+
+#. TRANSLATORS: an upper bound on a download size, such as "up to 1.4 GB": it is less on a machine whose GPU cannot be used.
+#: src/backend_ui.rs:365
+msgid "up to {size}"
+msgstr "до {size}"
+
+#. TRANSLATORS: {description} says what a model is good at, such as "Most languages, with uneven accuracy", and {size} what installing it downloads, such as "198 MB" or "up to 1.4 GB". The spaces around the dot are no-break spaces, so the size never starts a line of its own.
+#: src/backend_ui.rs:371
+msgid "{description}\\u{a0}·\\u{a0}{size}"
+msgstr "{description}\\u{a0}·\\u{a0}{size}"
+
+#: src/backend_ui.rs:670
+msgid "This model is no longer installed."
+msgstr "Цю модель більше не встановлено."
+
+#: src/backend_ui.rs:723
+msgid "Changing to {model} could not be confirmed"
+msgstr "Не вдалося підтвердити зміну на {model}"
+
+#: src/backend_ui.rs:786
+msgid ""
+"Final connections could not be verified. Switching is disabled until refresh "
+"succeeds."
+msgstr ""
+"Не вдалося перевірити кінцеві з'єднання. Перемикання вимкнено до успішного "
+"оновлення."
+
+#: src/backend_ui.rs:791 src/diagnostics.rs:658
+msgid "No model is connected. Choose one to use for dictation."
+msgstr "Жодна модель не під'єднана. Оберіть модель для диктування."
+
+#: src/backend_ui.rs:794
+msgid "Several models are connected. Choose one to use for dictation."
+msgstr "Під'єднано декілька моделей. Оберіть одну для диктування."
+
+#: src/backend_ui.rs:893
+msgid "Changing model"
+msgstr "Зміна моделі"
+
+#: src/backend_ui.rs:1108
+msgid "Install"
+msgstr "Установити"
+
+#. TRANSLATORS: the Install button's name to assistive technology; {model} is a model family, such as "Whisper".
+#: src/backend_ui.rs:1110
+msgid "Install {model}"
+msgstr "Установити {model}"
+
+#: src/backend_ui.rs:1275
+msgid "Installing {model} failed"
+msgstr "Не вдалося встановити {model}"
+
+#: src/backend_ui.rs:1388 src/backend_ui.rs:1527
+msgid "Wait for the current change to finish."
+msgstr "Дочекайтеся завершення поточної зміни."
+
+#: src/backend_ui.rs:1542
+msgid "Applying and restarting the model…"
+msgstr "Застосування і перезапуск моделі…"
+
+#. TRANSLATORS: {setting} is a setting's name on the Model tab, such as "Unload when idle (seconds)".
+#: src/backend_ui.rs:1691
+msgid "Changing “{setting}” could not be confirmed"
+msgstr "Не вдалося підтвердити зміну налаштування «{setting}»"
+
+#: src/backend_ui.rs:1727
+msgid "Could not read the installed models."
+msgstr "Не вдалося прочитати встановлені моделі."
+
+#: src/backend_ui.rs:1782
+msgid "No active model"
+msgstr "Немає активної моделі"
+
+#: src/backend_ui.rs:1783
+msgid "Choose a model on the General tab."
+msgstr "Оберіть модель на вкладці Загальне."
+
+#: src/backend_ui.rs:1786
+msgid "Several models are connected"
+msgstr "Під'єднано кілька моделей"
+
+#: src/backend_ui.rs:1787
+msgid "Choose one model on the General tab."
+msgstr "Оберіть одну модель на вкладці Загальне."
+
+#: src/backend_ui.rs:1993
+msgid "Diagnostics copied. Paste them into the issue."
+msgstr "Діагностику скопійовано. Вставте її до опису вади."
+
+#: src/backend_ui.rs:2004
+msgid "Could not open the web browser"
+msgstr "Не вдалося відкрити браузер"
+
+#: src/backend_ui.rs:2084
+msgid "Copy privacy-safe diagnostics"
+msgstr "Скопіювати діагностику з дотриманням приватності"
+
+#: src/backend_ui.rs:2095
+msgid "Diagnostics copied to clipboard"
+msgstr "Діагностику скопійовано до буфера обміну"
+
+#: src/backend_ui.rs:2124 src/diagnostics.rs:419
+msgid "Dictation is not installed"
+msgstr "Диктування не встановлено"
+
+#: src/backend_ui.rs:2125 src/diagnostics.rs:420
+msgid "No model installed"
+msgstr "Модель не встановлено"
+
+#: src/backend_ui.rs:2126 src/diagnostics.rs:422
+msgid "No input method installed"
+msgstr "Метод введення не встановлено"
+
+#: src/backend_ui.rs:2314
+msgid "The model kept a different value than the one you chose."
+msgstr "Модель зберегла значення, яке відрізняється від обраного."
+
+#: src/backend_ui.rs:2321
+msgid "The setting was saved, but the model did not start again."
+msgstr "Налаштування збережено, але модель не перезапустилася."
+
+#: src/backend_ui.rs:2328
+msgid "The setting was changed, but it could not be read back."
+msgstr "Налаштування змінено, але не вдалося прочитати його."
+
+#: src/backend_ui.rs:2335
+msgid "The setting was changed, but reading it back was interrupted."
+msgstr "Налаштування змінено, але його зчитування перервано."
+
+#: src/backend_ui.rs:2353 src/backend_ui.rs:2380
+msgid "The system did not allow the change."
+msgstr "Система не дозволяє зміну."
+
+#: src/backend_ui.rs:2360 src/backend_ui.rs:2383
+msgid "The model rejected the value."
+msgstr "Модель відхилила значення."
+
+#: src/backend_ui.rs:2367 src/backend_ui.rs:2386 src/backend_ui.rs:3165
+msgid "The change could not be made."
+msgstr "Неможливо виконати зміну."
+
+#: src/backend_ui.rs:2377
+msgid "The change was interrupted after it started."
+msgstr "Зміну перервано після запуску."
+
+#: src/backend_ui.rs:2440 src/backend_ui.rs:2519 src/backend_ui.rs:3240
+msgid "Standard error:"
+msgstr "Стандартна помилка:"
+
+#: src/backend_ui.rs:2450
+msgid "Request:"
+msgstr "Запит:"
+
+#: src/backend_ui.rs:2456
+msgid "HTTP status:"
+msgstr "Статус HTTP:"
+
+#: src/backend_ui.rs:2469
+msgid "Setting:"
+msgstr "Налаштування:"
+
+#: src/backend_ui.rs:2494
+msgid "Some operations completed before the apply failed.\n"
+msgstr "Деякі операції завершено до збою застосування.\n"
+
+#: src/backend_ui.rs:2498
+msgid "No privileged operations completed.\n"
+msgstr "Привілейовані операції не виконано.\n"
+
+#: src/backend_ui.rs:2500
+msgid "Completed operations:\n"
+msgstr "Виконані операції:\n"
+
+#: src/backend_ui.rs:2526
+msgid "Failure:\n"
+msgstr "Збій:\n"
+
+#: src/backend_ui.rs:2530
+msgid "Reconciliation read-back:\n"
+msgstr "Звірення прочитаних значень:\n"
+
+#: src/backend_ui.rs:2542
+msgid "Model:"
+msgstr "Модель:"
+
+#: src/backend_ui.rs:2548
+msgid "Services: none"
+msgstr "Служби: немає"
+
+#: src/backend_ui.rs:2550
+msgid "Services:"
+msgstr "Служби:"
+
+#: src/backend_ui.rs:2562
+msgid "Status: unavailable"
+msgstr "Стан: недоступний"
+
+#: src/backend_ui.rs:2569
+msgid "Post-failure surface errors:"
+msgstr "Помилки верхнього рівня після збою:"
+
+#: src/backend_ui.rs:2600
+msgid "Language"
+msgstr "Мова"
+
+#: src/backend_ui.rs:2602
+msgid "A code such as en, fr or zh. Leave it empty to detect the language."
+msgstr ""
+"Код, наприклад, en, fr or zh. Залиште порожнім, щоб визначити мову "
+"автоматично."
+
+#: src/backend_ui.rs:2655
+msgid "Overview"
+msgstr "Огляд"
+
+#: src/backend_ui.rs:2665
+msgid "Connection"
+msgstr "З'єднання"
+
+#: src/backend_ui.rs:2668
+msgid "Active. Myna uses this model for dictation."
+msgstr "Активна. Myna використовує цю модель для диктування."
+
+#: src/backend_ui.rs:2671
+msgid "Several models are connected. Only one should be active."
+msgstr "Під'єднано кілька моделей. Активною повинна бути лише одна."
+
+#: src/backend_ui.rs:2673
+msgid "Not connected to Myna."
+msgstr "Не під'єднано до Myna."
+
+#: src/backend_ui.rs:2679
+msgid "Active model"
+msgstr "Активно модель"
+
+#: src/backend_ui.rs:2685
+msgid "Active engine"
+msgstr "Активний рушій"
+
+#: src/backend_ui.rs:2688
+msgid "None selected. Choose one below."
+msgstr "Не вибрано. Оберіть одну нижче."
+
+#: src/backend_ui.rs:2705 src/diagnostics.rs:641
+msgid "Services"
+msgstr "Служби"
+
+#: src/backend_ui.rs:2707
+msgid "No service health reported"
+msgstr "Немає даних про стан служби"
+
+#: src/backend_ui.rs:2721
+msgid "Loading"
+msgstr "Завантаження"
+
+#: src/backend_ui.rs:2722
+msgid "Reading this model's settings…"
+msgstr "Читання налаштувань цієї моделі…"
+
+#: src/backend_ui.rs:2731
+msgid "No configuration reported"
+msgstr "Конфігурацію не виявлено"
+
+#: src/backend_ui.rs:2733
+msgid "The model answered but reported no settings to change."
+msgstr ""
+"Модель відповіла, але повідомила, що налаштувань, які потрібно змінити, "
+"немає."
+
+#: src/backend_ui.rs:2743
+msgid "Some data is unavailable"
+msgstr "Деякі дані недоступні"
+
+#: src/backend_ui.rs:2745
+msgid "Raw failure details are recorded on the Diagnostics page."
+msgstr "Необроблені дані про збій записуються на сторінці Діагностика."
+
+#: src/backend_ui.rs:2788 src/backend_ui.rs:3112 src/backend_ui.rs:3390
+msgid "Refreshing…"
+msgstr "Оновлення…"
+
+#: src/backend_ui.rs:2816
+msgid "Runtime"
+msgstr "Середовище виконання"
+
+#: src/backend_ui.rs:2817
+msgid "Advanced"
+msgstr "Розширені"
+
+#: src/backend_ui.rs:2818
+msgid "Sensitive"
+msgstr "Конфіденційні"
+
+#: src/backend_ui.rs:2825
+msgid "Common settings for this model."
+msgstr "Загальні налаштування для цієї моделі."
+
+#: src/backend_ui.rs:2828
+msgid "Runtime and performance related settings."
+msgstr "Налаштування середовища виконання та швидкодії."
+
+#: src/backend_ui.rs:2831
+msgid "Advanced settings."
+msgstr "Розширені налаштування."
+
+#: src/backend_ui.rs:2834
+msgid "Internal and sensitive values are shown for diagnostics only."
+msgstr "Внутрішні та конфіденційні значення показані лише для діагностики."
+
+#: src/backend_ui.rs:2858
+msgid "Sensitive value (redacted)"
+msgstr "Конфіденційне значення (сховано)"
+
+#. TRANSLATORS: {name} is the model part or snap being downloaded, such as "model-small"; {done} and {total} are sizes such as "210.0 MB".
+#: src/backend_ui.rs:3006
+msgid "Downloading {name}: {done} of {total}"
+msgstr "Завантаження {name}: {done} із {total}"
+
+#: src/backend_ui.rs:3018
+msgid "Active"
+msgstr "Активно"
+
+#: src/backend_ui.rs:3019
+msgid "Inactive"
+msgstr "Неактивно"
+
+#: src/backend_ui.rs:3020
+msgid "Failed"
+msgstr "Збій"
+
+#: src/backend_ui.rs:3022
+msgid "Unknown"
+msgstr "Невідомо"
+
+#: src/backend_ui.rs:3087
+msgid "Installed snaps"
+msgstr "Установлені пакети snap"
+
+#: src/backend_ui.rs:3088
+msgid "Model connections"
+msgstr "З'єднання моделі"
+
+#: src/backend_ui.rs:3089
+msgid "Model control command"
+msgstr "Команда керування моделлю"
+
+#: src/backend_ui.rs:3090
+msgid "Model settings"
+msgstr "Налаштування моделі"
+
+#: src/backend_ui.rs:3091
+msgid "Model status"
+msgstr "Стан моделі"
+
+#: src/backend_ui.rs:3092
+msgid "Available models"
+msgstr "Доступні моделі"
+
+#: src/backend_ui.rs:3093
+msgid "Available engines"
+msgstr "Доступні рушії"
+
+#: src/backend_ui.rs:3099
+msgid "Persisted values could not be read."
+msgstr "Не вдалося прочитати збережені значення."
+
+#: src/backend_ui.rs:3110 src/backend_ui.rs:3398
+msgid "Applying changes…"
+msgstr "Застосування змін…"
+
+#: src/backend_ui.rs:3133
+msgid "missing"
+msgstr "немає"
+
+#. TRANSLATORS: {key} is a setting's key, such as "streaming"; {requested} and {actual} are its values.
+#: src/backend_ui.rs:3135
+msgid "{key}: asked for {requested}, read back {actual}"
+msgstr "{key}: запитує {requested}, прочитано {actual}"
+
+#: src/backend_ui.rs:3163
+msgid "Error:\n"
+msgstr "Помилка:\n"
+
+#: src/backend_ui.rs:3173
+msgid "The change ran, but the connections do not match it."
+msgstr "Зміна виконана, але з'єднання не відповідають їй."
+
+#: src/backend_ui.rs:3177
+msgid "The connections changed before the change could start. Try again."
+msgstr "З'єднання змінилися до того, як почалася зміна. Спробуйте ще раз."
+
+#: src/backend_ui.rs:3181
+msgid "Discovery error:\n"
+msgstr "Помилка виявлення:\n"
+
+#: src/backend_ui.rs:3183
+msgid "The change ran, but the connections could not be read back."
+msgstr "Зміна виконана, але з’єднання не вдалося прочитати."
+
+#: src/backend_ui.rs:3200
+msgid "Final connections:"
+msgstr "Кінцеві з'єднання:"
+
+#: src/backend_ui.rs:3205
+msgid "Final connections could not be verified:"
+msgstr "Не вдалося перевірити кінцеві з'єднання:"
+
+#: src/backend_ui.rs:3209
+msgid "Final connections could not be verified.\n"
+msgstr "Не вдалося перевірити кінцеві з'єднання.\n"
+
+#: src/backend_ui.rs:3217
+msgid "No snapd operations completed.\n"
+msgstr "Жодна операція snapd не завершена.\n"
+
+#: src/backend_ui.rs:3221
+msgid "Completed snapd operations:\n"
+msgstr "Завершені операції snapd:\n"
+
+#: src/backend_ui.rs:3250
+msgid "no model connected"
+msgstr "модель не під'єднано"
+
+#: src/backend_ui.rs:3254
+msgid "connected"
+msgstr "під'єднано"
+
+#: src/backend_ui.rs:3264
+msgid "several models"
+msgstr "кілька моделей"
+
+#: src/backend_ui.rs:4295 src/model_family.rs:35
+msgid "Best for Chinese, Japanese and Korean"
+msgstr "Найкраще підходить для китайської, японської та корейської мов"
+
+#: src/backend_apply.rs:81
+msgid "selector value must be text"
+msgstr "значення селектора має бути текстом"
+
+#: src/backend_apply.rs:95
+msgid "the model's settings command could not be found"
+msgstr "не вдалося знайти команду налаштувань моделі"
+
+#: src/backend_apply.rs:380
+msgid "the model's restart command could not be built"
+msgstr "не вдалося скомпілювати команду перезапуску моделі"
+
+#: src/backend_apply.rs:479
+msgid "value must be a finite number"
+msgstr "значення має бути скінченним числом"
+
+#: src/backend_apply.rs:504
+msgid "The model's restart could not be confirmed."
+msgstr "Не вдалося підтвердити перезапуск моделі."
+
+#: src/backend_apply.rs:529
+msgid "The model did not restart."
+msgstr "Модель не перезапустилася."
+
+#: src/backend_apply.rs:551
+msgctxt "service state"
+msgid "active"
+msgstr "активна"
+
+#: src/backend_apply.rs:552
+msgctxt "service state"
+msgid "inactive"
+msgstr "неактивна"
+
+#: src/backend_apply.rs:553
+msgctxt "service state"
+msgid "failed"
+msgstr "збій"
+
+#: src/backend_apply.rs:554
+msgctxt "service state"
+msgid "unknown"
+msgstr "невідомо"
+
+#: src/onboarding_ui.rs:678
+msgid "The system is busy installing software. Try again in a moment."
+msgstr ""
+"Система зараз встановлює програмне забезпечення. Спробуйте ще раз через "
+"деякий час."
+
+#: src/onboarding_ui.rs:778
+msgid "Continue to the next onboarding step."
+msgstr "Перейти до наступного етапу налаштування."
+
+#: src/onboarding_ui.rs:783
+msgid "Close Myna Settings."
+msgstr "Закрити налаштування Myna."
+
+#: src/onboarding_ui.rs:873
+msgid ""
+"The input method IBus is not installed. Install the “ibus” package, then log "
+"out and back in."
+msgstr ""
+"Метод введення IBus не встановлено. Встановіть пакет «ibus», а потім вийдіть "
+"із системи та увійдіть знову."
+
+#: src/onboarding_ui.rs:878
+msgid "Setup status unavailable. The log has the details."
+msgstr "Стан налаштування невідомий. Подробиці міститься в журналі."
+
+#: src/onboarding_ui.rs:993
+msgid "Setting up the input method"
+msgstr "Налаштування методу вводу"
+
+#: src/onboarding_ui.rs:1012
+msgid "Installing the Dictation app failed"
+msgstr "Не вдалося встановити застосунок Диктування"
+
+#: src/onboarding_ui.rs:1014
+msgid "Setting up the input method failed"
+msgstr "Не вдалося налаштувати метод вводу"
+
+#: src/onboarding_ui.rs:1062
+msgid "Log out and back in to finish setting up the input method."
+msgstr ""
+"Вийдіть із системи та ввійдіть знову, щоб завершити налаштування методу "
+"вводу."
+
+#. TRANSLATORS: a download size in megabytes, such as "776 MB"; the space is a no-break space.
+#: src/onboarding_ui.rs:1286
+msgid "{megabytes} MB"
+msgstr "{megabytes} МБ"
+
+#: src/onboarding_ui.rs:1294
+msgid "Checking the installation"
+msgstr "Перевірка встановлення"
+
+#: src/onboarding_ui.rs:1299
+msgid "Waiting for other software changes to finish"
+msgstr "Очікування завершення інших змін програмного забезпечення"
+
+#: src/onboarding_ui.rs:1301
+msgid "Setting up speech-to-text model"
+msgstr "Налаштування моделі розпізнавання мовлення"
+
+#: src/onboarding_ui.rs:1302
+msgid "Starting dictation"
+msgstr "Запуск Диктування"
+
+#: src/shortcut_ui.rs:284
+msgid "Change shortcut"
+msgstr "Змінити комбінацію клавіш"
+
+#: src/shortcut_ui.rs:286
+msgid "Change"
+msgstr "Змінити"
+
+#: src/shortcut_ui.rs:291
+msgid "Press a keyboard shortcut for dictation."
+msgstr "Натисніть комбінацію клавіш для диктування."
+
+#. TRANSLATORS: {shortcut} is a key combination, such as "Super + J".
+#: src/shortcut_ui.rs:294
+msgid "Current shortcut: {shortcut}."
+msgstr "Поточна комбінація клавіш: {shortcut}."
+
+#: src/shortcut_ui.rs:347
+msgid "Keep the shortcut as it was."
+msgstr "Залишити комбінацію клавіш, яка була."
+
+#: src/shortcut_ui.rs:477
+msgid "{keys} is reserved for “{action}”. Press a different shortcut."
+msgstr "{keys} зарезервовано для «{action}». Натисніть іншу комбінацію клавіш."
+
+#: src/shortcut_ui.rs:495
+msgid ""
+"{keys} is already used for “{action}”. Replacing it removes it from there."
+msgstr ""
+"{keys} уже використовується для «{action}». Якщо її замінити, вона звідти "
+"видалиться."
+
+#: src/shortcut_ui.rs:500
+msgid "Replace Shortcut?"
+msgstr "Замінити комбінацію клавіш?"
+
+#: src/shortcut_ui.rs:502
+msgid "Replace"
+msgstr "Замінити"
+
+#: src/shortcut_ui.rs:562
+msgid "Could not set up the shortcut"
+msgstr "Не вдалося налаштувати комбінацію клавіш"
+
+#: src/shortcut_ui.rs:666
+msgid "Set up a keyboard shortcut to trigger Dictation."
+msgstr "Налаштуйте комбінацію клавіш для запуску Диктування."
+
+#: src/shortcut_ui.rs:672
+msgid "Myna is not running yet. The shortcut can be set up once it starts."
+msgstr ""
+"Myna ще не запущено. Комбінацію клавіш можна налаштувати після запуску "
+"застосунку."
+
+#: src/shortcut_ui.rs:680
+msgid ""
+"This desktop cannot set up the shortcut. Bind this command to a key in its "
+"settings: {command}"
+msgstr ""
+"На цій стільниці неможливо створити комбінацію клавіш. Прив’яжіть цю команду "
+"до клавіші в налаштуваннях: {command}"
+
+#: src/shortcut_ui.rs:690
+msgid "Not set up"
+msgstr "Не налаштовано"
+
+#: src/shortcut_ui.rs:691 src/sound_preview.rs:66
+msgid "Myna is not running"
+msgstr "Myna не запущено"
+
+#: src/sound_preview.rs:67
+msgid "Update Myna to preview sounds"
+msgstr "Оновіть Myna, щоб прослуховувати звуки"
+
+#: src/sound_preview.rs:68
+msgid "Finish dictating to preview sounds"
+msgstr "Заверште диктування, щоб прослухати звуки"
+
+#: src/diagnostics.rs:225
+msgid "Paste the diagnostics report from your clipboard here."
+msgstr "Вставте сюди діагностичний звіт з буфера обміну."
+
+#: src/diagnostics.rs:280
+msgid "The CPU clock is capped by system policy"
+msgstr "Тактова частота ЦП обмежується системною політикою"
+
+#: src/diagnostics.rs:282
+msgid "limited to"
+msgstr "обмежено до"
+
+#: src/diagnostics.rs:284 src/diagnostics.rs:362 src/diagnostics.rs:714
+msgid "of"
+msgstr "із"
+
+#: src/diagnostics.rs:288
+msgid "Dictation will be slow. A power tool has capped the CPU clock."
+msgstr ""
+"Диктування буде повільним. Інструмент живлення обмежив тактову частоту ЦП."
+
+#: src/diagnostics.rs:298
+msgid "The power profile is set to low-power"
+msgstr "Увімкнено режим живлення Заощадження"
+
+#: src/diagnostics.rs:302
+msgid ""
+"Dictation will be slow. Switch to Balanced or Performance in the system "
+"power settings."
+msgstr ""
+"Диктування буде повільним. У налаштуваннях живлення системи перемкніть на "
+"режим Баланс або Швидкодія."
+
+#: src/diagnostics.rs:312
+msgid "Firmware is holding the CPU at its lowest clock"
+msgstr "Прошивка підтримує тактову частоту ЦП на найнижчому рівні"
+
+#: src/diagnostics.rs:316
+msgid ""
+"Dictation will be slow. Unplug the charger, wait a few seconds, and plug it "
+"back in. If that does not help, power off fully and start again."
+msgstr ""
+"Диктування працюватиме повільно. Від’єднайте зарядний пристрій, зачекайте "
+"кілька секунд і під’єднайте його знову. Якщо це не допоможе, повністю "
+"вимкніть пристрій і запустіть його знову."
+
+#: src/diagnostics.rs:325
+msgid "The system is short of memory"
+msgstr "У системі бракує пам'яті"
+
+#: src/diagnostics.rs:329
+msgid ""
+"Dictation will stutter. Close applications until the machine stops swapping."
+msgstr ""
+"Диктування перериватиметься. Закрийте застосунки, доки комп’ютер не "
+"припинить використовувати підкачування пам’яті."
+
+#: src/diagnostics.rs:335
+msgid "Disk activity is stalling the system"
+msgstr "Активність диска сповільнює роботу системи"
+
+#: src/diagnostics.rs:339
+msgid "Dictation will stutter. Wait for the transfer or indexing to finish."
+msgstr ""
+"Диктування перериватиметься. Зачекайте, поки завершиться передавання або "
+"індексація."
+
+#: src/diagnostics.rs:345
+msgid "Other programs are saturating the CPU"
+msgstr "Інші програми перевантажують ЦП"
+
+#: src/diagnostics.rs:349
+msgid "Dictation will be slow. Pause the build or workload before dictating."
+msgstr ""
+"Диктування працюватиме повільно. Перед початком диктування призупиніть "
+"збірку або виконання завдання."
+
+#: src/diagnostics.rs:360 src/diagnostics.rs:712
+msgid "reached"
+msgstr "досягнено"
+
+#: src/diagnostics.rs:372
+msgid "of the last 10 s stalled"
+msgstr "простою з останніх 10 с"
+
+#: src/diagnostics.rs:421
+msgid "No model connected"
+msgstr "Модель не під'єднано"
+
+#: src/diagnostics.rs:423
+msgid "Ready"
+msgstr "Готово"
+
+#: src/diagnostics.rs:424
+msgid "Installation status unavailable"
+msgstr "Стан встановлення недоступний"
+
+#: src/diagnostics.rs:431
+msgid "Connected"
+msgstr "Під'єднано"
+
+#: src/diagnostics.rs:432
+msgid "Multiple connections"
+msgstr "Кілька під'єднань"
+
+#: src/diagnostics.rs:433
+msgid "Not connected"
+msgstr "Не під'єднано"
+
+#: src/diagnostics.rs:447
+msgid "Onboarding"
+msgstr "Початкове налаштування"
+
+#: src/diagnostics.rs:454
+msgid "System"
+msgstr "Система"
+
+#: src/diagnostics.rs:458
+msgid "OS"
+msgstr "ОС"
+
+#: src/diagnostics.rs:462
+msgid "kernel"
+msgstr "ядро"
+
+#: src/diagnostics.rs:470
+msgid "Desktop"
+msgstr "Стільниця"
+
+#: src/diagnostics.rs:481
+msgid "Machine"
+msgstr "Комп'ютер"
+
+#: src/diagnostics.rs:485 src/diagnostics.rs:500
+msgid "CPU"
+msgstr "ЦП"
+
+#: src/diagnostics.rs:486 src/diagnostics.rs:563 src/diagnostics.rs:648
+msgid "Memory"
+msgstr "Пам'ять"
+
+#: src/diagnostics.rs:490 src/diagnostics.rs:495
+msgid "GPU"
+msgstr "ГП"
+
+#: src/diagnostics.rs:491 src/diagnostics.rs:856
+msgid "none"
+msgstr "ні"
+
+#: src/diagnostics.rs:501
+msgid "(no model answered show-machine)"
+msgstr "(жодна модель не відповіла на команду show-machine)"
+
+#: src/diagnostics.rs:506
+msgid "Performance"
+msgstr "Швидкодія"
+
+#: src/diagnostics.rs:513 src/diagnostics.rs:520 src/diagnostics.rs:546
+msgid "Clock"
+msgstr "Тактова частота"
+
+#: src/diagnostics.rs:514
+msgid "(no cpufreq information)"
+msgstr "(немає відомостей cpufreq)"
+
+#: src/diagnostics.rs:525
+msgid "Profile"
+msgstr "Профіль"
+
+#: src/diagnostics.rs:528
+msgid "Power"
+msgstr "Живлення"
+
+#: src/diagnostics.rs:533
+msgid "Pressure"
+msgstr "Навантаження"
+
+#. TRANSLATORS: {cpu}, {memory} and {io} are shares such as "0.03%"; cpu, memory and io are kernel resource names, keep them.
+#: src/diagnostics.rs:536
+msgid "cpu {cpu}, memory {memory}, io {io} of the last 10 s stalled"
+msgstr "цп {cpu}, пам'ять {memory}, io {io} простою з останніх 10 с"
+
+#: src/diagnostics.rs:547
+msgid "(not measured yet)"
+msgstr "(ще не виміряно)"
+
+#: src/diagnostics.rs:552
+msgid "Daemon"
+msgstr "Фонова служба"
+
+#: src/diagnostics.rs:560 src/diagnostics.rs:581 src/diagnostics.rs:590
+msgid "Version"
+msgstr "Версія"
+
+#: src/diagnostics.rs:570
+msgid "Audio"
+msgstr "Аудіо"
+
+#: src/diagnostics.rs:576
+msgid "Last error"
+msgstr "Остання помилка"
+
+#: src/diagnostics.rs:584
+msgid "Process"
+msgstr "Процес"
+
+#: src/diagnostics.rs:585 src/diagnostics.rs:807
+msgid "not running"
+msgstr "не запущено"
+
+#: src/diagnostics.rs:591 src/diagnostics.rs:819 src/diagnostics.rs:828
+msgid "not installed"
+msgstr "не встановлено"
+
+#: src/diagnostics.rs:597
+msgid "Shell extension"
+msgstr "Розширення оболонки"
+
+#: src/diagnostics.rs:610
+msgid "Models"
+msgstr "Моделі"
+
+#: src/diagnostics.rs:614
+msgid "(none discovered)"
+msgstr "(не виявлено)"
+
+#: src/diagnostics.rs:629 src/presentation.rs:164
+msgid "Engine"
+msgstr "Рушій"
+
+#: src/diagnostics.rs:633
+msgid "none selected"
+msgstr "не вибрано"
+
+#: src/diagnostics.rs:655
+msgid "Problems"
+msgstr "Проблеми"
+
+#: src/diagnostics.rs:661
+msgid ""
+"IBus is not installed, so Myna cannot type. Install the “ibus” package, then "
+"log out and back in."
+msgstr ""
+"IBus не встановлено, тому Myna не може вводити текст. Встановіть пакет «ibus"
+"», а потім вийдіть із системи та увійдіть знову."
+
+#: src/diagnostics.rs:673 src/diagnostics.rs:687
+msgid "(none)"
+msgstr "(немає)"
+
+#: src/diagnostics.rs:683
+msgid "Warnings"
+msgstr "Попередження"
+
+#: src/diagnostics.rs:708
+msgid "not probed"
+msgstr "не перевірялося"
+
+#: src/diagnostics.rs:721
+msgid "policy allows"
+msgstr "політика дозволяє"
+
+#: src/diagnostics.rs:728
+msgid "cores in this class"
+msgstr "ядер цього класу"
+
+#: src/diagnostics.rs:735
+msgid "mains"
+msgstr "електромережа"
+
+#: src/diagnostics.rs:736 src/diagnostics.rs:741
+msgid "battery"
+msgstr "акумулятор"
+
+#: src/diagnostics.rs:790
+msgid "chunks dropped this session"
+msgstr "фрагментів пропущено у цьому сеансі"
+
+#: src/diagnostics.rs:796
+msgid "Input method"
+msgstr "Метод вводу"
+
+#: src/diagnostics.rs:797
+msgid "Indicator host"
+msgstr "Хост індикатора"
+
+#: src/diagnostics.rs:803
+msgid "active"
+msgstr "активний"
+
+#: src/diagnostics.rs:805
+msgid "set up, starts at the next login"
+msgstr "налаштовано, запуститься за наступного входу"
+
+#: src/diagnostics.rs:808
+msgid "not set up"
+msgstr "не налаштовано"
+
+#: src/diagnostics.rs:809
+msgid "turned off"
+msgstr "вимкнено"
+
+#: src/diagnostics.rs:811
+msgid "locked by the administrator"
+msgstr "Заблоковано адміністратором"
+
+#: src/diagnostics.rs:813
+msgid "hidden by another copy"
+msgstr "сховано іншою копією"
+
+#: src/diagnostics.rs:815
+msgid "another input method is in use"
+msgstr "використовується інший метод вводу"
+
+#: src/diagnostics.rs:816
+msgid "not supported on this desktop"
+msgstr "не підтримується на цій сільниці"
+
+#: src/diagnostics.rs:818
+msgid "failed"
+msgstr "збій"
+
+#: src/diagnostics.rs:827
+msgid "gnome-shell did not answer"
+msgstr "gnome-shell не відповідає"
+
+#: src/diagnostics.rs:831
+msgid "installed since login, starts at the next one"
+msgstr "установлено після входу, запуститься за наступного"
+
+#: src/diagnostics.rs:834
+msgid "installed since login, not enabled"
+msgstr "установлено після входу, не ввімкнено"
+
+#: src/diagnostics.rs:837
+msgid "myna-config package"
+msgstr "пакет myna-config"
+
+#: src/diagnostics.rs:838
+msgid "Ubuntu package"
+msgstr "паккет Ubuntu"
+
+#: src/diagnostics.rs:839
+msgid "development override"
+msgstr "перевизначення для розробки"
+
+#: src/diagnostics.rs:840
+msgid "user copy"
+msgstr "копія користувача"
+
+#: src/diagnostics.rs:841
+msgid "other system copy"
+msgstr "інша системна копія"
+
+#: src/myna_settings.rs:107
+msgid "Ribbon"
+msgstr "Стрічка"
+
+#: src/myna_settings.rs:108
+msgid "VU meter"
+msgstr "Індикатор рівня гучності"
+
+#: src/myna_settings.rs:109
+msgid "Default"
+msgstr "Типово"
+
+#: src/myna_settings.rs:110
+msgid "Bird"
+msgstr "Пташка"
+
+#: src/myna_settings.rs:111
+msgid "Chime"
+msgstr "Дзвіночок"
+
+#: src/myna_settings.rs:112
+msgid "Voice"
+msgstr "Голос"
+
+#: src/myna_settings.rs:113
+msgid "Marimba"
+msgstr "Маримба"
+
+#: src/myna_settings.rs:114
+msgid "Water"
+msgstr "Вода"
+
+#: src/myna_settings.rs:115
+msgid "Radio"
+msgstr "Радіо"
+
+#: src/myna_settings.rs:116
+msgid "Strings"
+msgstr "Струни"
+
+#. TRANSLATORS: separates language names in a list, as in "English, Deutsch".
+#: src/model_family.rs:224
+msgctxt "language list"
+msgid ", "
+msgstr ", "
+
+#. TRANSLATORS: {languages} is a short list of language names, {count} how many more there are.
+#: src/model_family.rs:234
+msgid "{languages} +{count}"
+msgstr "{languages} +{count}"
+
+#: src/model_family.rs:243
+msgid "{count} language"
+msgid_plural "{count} languages"
+msgstr[0] "{count} мова"
+msgstr[1] "{count} мови"
+msgstr[2] "{count} мов"
+
+#. TRANSLATORS: {language} is the user's language named in that language, such as "Deutsch" or "中文", inserted as-is in the nominative. If your grammar would inflect it, rephrase, e.g. "Najlepszy dla języka: {language}".
+#: src/model_family.rs:280
+msgid "Best for {language}"
+msgstr "Найкраще для {language}"
+
+#. TRANSLATORS: Shown under "Install more models" when a model not installed would transcribe the user's language better. {language} is that language named in itself, such as "Deutsch" or "中文", inserted as-is in the nominative. If your grammar would inflect it, rephrase, e.g. "Dostępny jest lepszy model dla języka: {language}".
+#: src/model_family.rs:293
+msgid "A better model for {language} is available"
+msgstr "Доступна краща модель для {language}"
+
+#: src/model_family.rs:296
+msgid "A recommended model is available"
+msgstr "Доступна рекомендована модель"
+
+#. TRANSLATORS: Shown under "Install more models" while a model installs. {model} is a model family, such as "Whisper", and {percent} how much of its download has arrived, a number from 0 to 100.
+#: src/model_family.rs:306
+msgid "Installing {model} {percent}%"
+msgstr "Встановлення {model} {percent}%"
+
+#. TRANSLATORS: Shown under "Install more models" while a model installs. {model} is a model family, such as "Whisper".
+#: src/model_family.rs:309
+msgid "Installing {model}…"
+msgstr "Встановлення {model}…"
+
+#: src/presentation.rs:47
+msgid "value is invalid"
+msgstr "недійсне значення"
+
+#: src/presentation.rs:48
+msgid "value must be true or false"
+msgstr "значення повинно бути true або false"
+
+#: src/presentation.rs:49
+msgid "value must be a number"
+msgstr "значення повинно бути числом"
+
+#: src/presentation.rs:50
+msgid "value must be text"
+msgstr "значення повинно бути текстом"
+
+#: src/presentation.rs:51
+msgid "value must be a positive number"
+msgstr "значення має бути додатним числом"
+
+#: src/presentation.rs:52
+msgid "value must be zero or a positive number"
+msgstr "значення має дорівнювати нулю або бути додатним числом"
+
+#: src/presentation.rs:53
+msgid "value must be a non-negative whole number"
+msgstr "значення має бути невід’ємним цілим числом"
+
+#. TRANSLATORS: {choices} lists the allowed values, such as "cpu, cuda".
+#: src/presentation.rs:56
+msgid "value must be one of {choices}"
+msgstr "значення має бути одним із {choices}"
+
+#: src/presentation.rs:59
+msgid "this value cannot be edited"
+msgstr "це значення не можна змінювати"
+
+#: src/presentation.rs:158
+msgid "Which version of this model to run."
+msgstr "Яку версію цієї моделі запустити."
+
+#: src/presentation.rs:165
+msgid "The inference engine this model runs on."
+msgstr "Рушій виконання, на якому працює ця модель."
+
+#: src/presentation.rs:171
+msgid "Streaming output"
+msgstr "Потоковий вивід"
+
+#: src/presentation.rs:172
+msgid "Emit partial transcription results while speech is being processed."
+msgstr "Виводити часткові результати розшифрування під час обробки мовлення."
+
+#: src/presentation.rs:179
+msgid ""
+"Unload the inference service after this many idle seconds; zero disables the "
+"delay."
+msgstr ""
+"Зупинити роботу служби інференції після зазначеної кількості секунд простою; "
+"значення 0 вимикає затримку."
+
+#: src/presentation.rs:185
+msgid "Verbose logging"
+msgstr "Докладне ведення журналу"
+
+#: src/presentation.rs:186
+msgid "Write additional diagnostics to the system log."
+msgstr "Записувати додаткові діагностичні дані в системний журнал."
+
+#: src/presentation.rs:192
+msgid "Socket path"
+msgstr "Шлях до сокета"
+
+#: src/presentation.rs:193
+msgid "Raw Unix socket path used by the transcription service."
+msgstr ""
+"Шлях до необробленого сокета Unix, який використовує служба розшифрування."
+
+#: src/presentation.rs:199
+msgid "Minimum speech before pause commit (seconds)"
+msgstr "Мінімальна тривалість мовлення до фіксації паузи (в секундах)"
+
+#: src/presentation.rs:200
+msgid "Speech required before a pause can commit a transcript chunk."
+msgstr "Перед паузою необхідне мовлення, щоб зафіксувати фрагмент тексту."
+
+#: src/presentation.rs:205
+msgid "Pause length for commit (seconds)"
+msgstr "Тривалість паузи перед фіксацією (в секундах)"
+
+#: src/presentation.rs:206
+msgid "Silence duration that commits the current transcript chunk."
+msgstr "Тривалість мовчання, після якої фіксується поточний фрагмент тексту."
+
+#: src/presentation.rs:211
+msgid "Maximum uncommitted audio (seconds)"
+msgstr "Максимальна тривалість незафіксованого аудіо (в секундах)"
+
+#: src/presentation.rs:212
+msgid ""
+"Maximum speech window retained before a transcript chunk is forced to commit."
+msgstr ""
+"Максимальна тривалість мовлення, після якої фрагмент тексту буде примусово "
+"зафіксовано."
+
+#: src/presentation.rs:217
+msgid "Partial result interval (seconds)"
+msgstr "Інтервал проміжного результату (в секундах)"
+
+#: src/presentation.rs:218
+msgid ""
+"Interval between unstable partial results; zero disables partial results."
+msgstr ""
+"Інтервал між неточними проміжними результатами; значення 0 вимикає показ "
+"проміжних результатів."
+
+#: src/presentation.rs:223
+msgid "Partial result audio window (seconds)"
+msgstr "Аудіовікно проміжних результатів (у секундах)"
+
+#: src/presentation.rs:224
+msgid ""
+"Recent uncommitted audio used for partial results; zero uses the whole "
+"window."
+msgstr ""
+"Для проміжних результатів використовується останній незафіксований "
+"аудіофрагмент; значення 0 означає використання всього вікна."
+
+#: src/presentation.rs:229
+msgid "Compute type"
+msgstr "Тип обчислень"
+
+#: src/presentation.rs:230
+msgid ""
+"Runtime numeric format override. Leave the model's own value unchanged "
+"unless required."
+msgstr ""
+"Перевизначення числового формату під час виконання. Не змінюйте власне "
+"значення моделі без необхідності."
+
+#: src/presentation.rs:236
+msgid "Attention context size"
+msgstr "Розмір контексту уваги"
+
+#: src/presentation.rs:237
+msgid ""
+"Model-specific latency and accuracy context. Empty uses the engine default."
+msgstr ""
+"Контекст затримки та точності для конкретної моделі. Якщо значення порожнє, "
+"використовується типове налаштування рушія."
+
+#: src/presentation.rs:296
+msgid "This model provides no description for this setting."
+msgstr "У цій моделі відсутній опис цього налаштування."
+
+#. TRANSLATORS: {percent} is how much of the download has arrived, a number from 0 to 100.
+#: src/ui/install_control.rs:131
+msgid "Installing {percent}%"
+msgstr "Встановлення {percent}%"
+
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:41
+msgid "Sounds on start, stop and error"
+msgstr "Звуки запуску, зупинки та помилки"
+
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:42
+msgid ""
+"Play a short sound when dictation starts listening, when it stops, and when "
+"it fails."
+msgstr ""
+"Відтворювати короткий звуковий сигнал на початку запису, коли він "
+"зупиняється та коли виникає збій."
+
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:50
+msgid "Sound style"
+msgstr "Стильь звуку"
+
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:51
+msgid ""
+"Which sounds play: Chime is a struck bar, Bird whistled chirps, Voice the "
+"hums people make while listening, Marimba a rising fifth, Water falling "
+"drops, Radio a walkie-talkie and Strings a plucked koto."
+msgstr ""
+"Які звуки відтворюються: «Дзвін» — удари по залізу, «Птах» — щебетання, «"
+"Голос» — наспівування, яке люди видають під час прослуховування, «Маримба» — "
+"висхідна квінтима, «Вода» — краплі, що падають, «Радіо» — рація, а «Струни» "
+"— звуки, що видає кото при щипанні струн."
+
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:60
+msgid "When to transcribe"
+msgstr "Коли розшифровувати"
+
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:61
+msgid ""
+"As you speak shows partial text in the field while you talk; When you stop "
+"injects the whole transcript once the utterance ends."
+msgstr ""
+"Варіант «Коли ви говорите» показує частину тексту в полі під час мовлення; "
+"коли ви закінчуєте говорити, в поле вставляється повний текст."
+
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:69
+msgid "Spoken language"
+msgstr "Мова вимови"
+
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:70
+msgid ""
+"A BCP-47-ish code (en, fr, zh) for the language you dictate in. The model "
+"skips language detection and decodes in this language; a code that does not "
+"match what is spoken degrades the transcript. Empty lets the model decide."
+msgstr ""
+"Код, який відповідає стандарту BCP-47 (en, fr, zh), для мови диктування. "
+"Модель пропускає етап визначення мови та здійснює розшифрування саме цією "
+"мовою; невідповідний код погіршує якість розшифрування. Якщо поле порожнє, "
+"модель сама визначить мову."
+
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:80
+msgid "Indicator style"
+msgstr "Стиль індикатора"
+
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:81
+msgid ""
+"All three render the same calibrated audio envelope: Default is a level bar "
+"in the accent colour, Ribbon a flowing GPU wave, VU meter a segmented meter."
+msgstr ""
+"Усі три відтворюють однакову відкалібровану криву звуку: «Типово» — це смуга "
+"рівня у виділеному кольорі, «Стрічка» — хвиля, що рухається засобами "
+"графічного процесора, «Індикатор рівня гучності» — сегментований індикатор."
+
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:91
+msgid "Stop after silence (seconds)"
+msgstr "Зупиняти після тиші (в секундах)"
+
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:92
+msgid ""
+"With tap-to-start activation, end the dictation session on its own after "
+"this many seconds without speech. 0 keeps it running until the next tap. "
+"Hold-to-talk always ends with the key."
+msgstr ""
+"У разі активації методом «натисни, щоб почати» сеанс диктування завершиться "
+"автоматично через цю кількість секунд без мовлення. Значення 0 означає, що "
+"сеанс триватиме до наступного натискання. У режимі «утримуй, щоб говорити» "
+"сеанс завжди завершується після відпуску клавіші."
+
+#: data/com.canonical.Myna.Config.metainfo.xml:9
+msgid "Set up and configure local dictation"
+msgstr "Налаштування та конфігурація локального диктування"
+
+#: data/com.canonical.Myna.Config.metainfo.xml:14
+msgid ""
+"Myna turns speech into text on your computer, with no audio or text leaving "
+"it. Myna Settings guides you through installing it and a speech model, then "
+"configures dictation and its speech models."
+msgstr ""
+"Myna перетворює мовлення на текст на вашому комп’ютері, при цьому аудіо- чи "
+"текстові дані не залишають його меж. У розділі «Налаштування Myna» ви "
+"знайдете покрокові інструкції щодо встановлення застосунку та мовної моделі, "
+"а також налаштування диктування та відповідних мовних моделей."
+
+#: data/com.canonical.Myna.Config.desktop:4
+msgid "Dictation Settings"
+msgstr "Налаштування Диктування"
+
+#: data/com.canonical.Myna.Config.desktop:5
+msgid "Configure Myna dictation and its speech models"
+msgstr "Налаштування функції диктування Myna та відповідних мовних моделей"
+
+#. TRANSLATORS: Search terms for this application. Keep every semicolon, including the last.
+#: data/com.canonical.Myna.Config.desktop:12
+msgid "dictation;speech;transcription;voice;model;"
+msgstr ""
+"диктування;мова;розшифрування;голос;модель;dictation;speech;transcription;voice;model;"
