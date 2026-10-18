@@ -8,7 +8,7 @@ msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-10-11 11:54+0100\n"
-"PO-Revision-Date: 2026-10-17 21:19+0000\n"
+"PO-Revision-Date: 2026-10-18 09:09+0000\n"
 "Last-Translator: Peter Vančo <peva@users.noreply.hosted.weblate.org>\n"
 "Language-Team: Slovak <https://hosted.weblate.org/projects/ubuntu-desktop-"
 "translations/myna-config/sk/>\n"
@@ -21,11 +21,11 @@ msgstr ""
 
 #: data/diagnostics-page.blp:5 data/diagnostics-page.blp:8 src/app.rs:1485
 msgid "About and Diagnostics"
-msgstr "O aplikácii a diagnostika"
+msgstr "O aplikácii a diagnostike"
 
 #: data/diagnostics-page.blp:15 data/onboarding-welcome.blp:25
 msgid "Set up Dictation"
-msgstr "Nastavenie diktovania"
+msgstr "Nastaviť diktovanie"
 
 #: data/diagnostics-page.blp:20 data/myna-page.blp:33 src/shortcut_ui.rs:287
 msgid "Set up"
@@ -74,7 +74,7 @@ msgid ""
 "Copies a privacy-safe diagnostic report to the clipboard. Does not include "
 "audio, transcripts, or filesystem paths."
 msgstr ""
-"Skopíruje do schránky diagnostickú správu chrániacu súkromie. Neobsahuje "
+"Skopíruje do schránky diagnostickú správu s ochranou súkromia. Neobsahuje "
 "zvuk, prepisy ani cesty k súborovému systému."
 
 #: data/diagnostics-page.blp:94 src/backend_ui.rs:2119
@@ -83,7 +83,7 @@ msgstr "Diagnostická správa"
 
 #: data/diagnostics-page.blp:95
 msgid "Read-only privacy-safe diagnostic text."
-msgstr "Len na čítanie – diagnostický text chrániaci súkromie."
+msgstr "Len na čítanie – diagnostický text s ochranou súkromia."
 
 #: data/install-control.blp:54 data/onboarding-components.blp:60
 #: src/app.rs:3931
@@ -154,7 +154,7 @@ msgstr "Diktovanie"
 
 #: data/onboarding-components.blp:18 src/app.rs:3883 src/onboarding_ui.rs:1341
 msgid "Install components"
-msgstr "Inštalácia komponentov"
+msgstr "Inštalovať komponenty"
 
 #: data/onboarding-components.blp:27 src/app.rs:3887
 msgid ""
@@ -188,8 +188,8 @@ msgid ""
 "Log out and back in to turn on the dictation indicator (GNOME Shell "
 "extension)."
 msgstr ""
-"Odhláste sa a znova prihláste, aby ste zapli indikátor diktovania "
-"(rozšírenie GNOME Shell)."
+"Odhláste sa a znovu prihláste, aby sa zapol indikátor diktovania (rozšírenie "
+"prostredia GNOME Shell)."
 
 #: data/onboarding-shortcut.blp:78 src/shortcut_ui.rs:322
 msgid "Press the new shortcut…"
@@ -200,8 +200,8 @@ msgid ""
 "Use Ctrl, Alt or Super with another key, or a function key. Press Escape to "
 "cancel."
 msgstr ""
-"Použite Ctrl, Alt alebo Super s iným klávesom, alebo funkčný kláves. "
-"Stlačením Escape akciu zrušíte."
+"Použite Ctrl, Alt alebo Super s iným klávesom alebo funkčný kláves. "
+"Stlačením klávesu Escape akciu zrušíte."
 
 #: data/onboarding-welcome.blp:34
 msgid "Dictation runs locally, with no data leaving your computer."
@@ -231,7 +231,7 @@ msgstr "Kopírovať podrobnosti"
 
 #: data/operation-error-dialog.blp:35
 msgid "Copy the full failure details to the clipboard"
-msgstr "Skopírovať celé podrobnosti o zlyhaní do schránky"
+msgstr "Skopírovať úplné podrobnosti o zlyhaní do schránky"
 
 #: data/status-page.blp:8 src/app.rs:1475 src/app.rs:5239
 msgid "Loading Myna Settings"
@@ -279,7 +279,7 @@ msgstr "Náhľad"
 
 #: src/app.rs:3486 src/sound_preview.rs:69
 msgid "Could not preview sounds"
-msgstr "Nepodarilo sa zobraziť náhľad zvukov"
+msgstr "Nepodarilo sa prehrať náhľad zvukov"
 
 #: src/app.rs:3520 src/backend_ui.rs:721
 msgid "Changing to {model} failed"
@@ -514,7 +514,7 @@ msgstr "Vyberte jeden model na karte Všeobecné."
 
 #: src/backend_ui.rs:1993
 msgid "Diagnostics copied. Paste them into the issue."
-msgstr "Diagnostika skopírovaná. Vložte ju do hlásenia o probléme."
+msgstr "Diagnostika bola skopírovaná. Vložte ju do hlásenia o probléme."
 
 #: src/backend_ui.rs:2004
 msgid "Could not open the web browser"
@@ -522,11 +522,11 @@ msgstr "Nepodarilo sa otvoriť webový prehliadač"
 
 #: src/backend_ui.rs:2084
 msgid "Copy privacy-safe diagnostics"
-msgstr "Kopírovať diagnostiku chrániacu súkromie"
+msgstr "Kopírovať diagnostiku s ochranou súkromia"
 
 #: src/backend_ui.rs:2095
 msgid "Diagnostics copied to clipboard"
-msgstr "Diagnostika skopírovaná do schránky"
+msgstr "Diagnostika bola skopírovaná do schránky"
 
 #: src/backend_ui.rs:2124 src/diagnostics.rs:419
 msgid "Dictation is not installed"
@@ -590,7 +590,7 @@ msgstr "Nastavenie:"
 
 #: src/backend_ui.rs:2494
 msgid "Some operations completed before the apply failed.\n"
-msgstr "Niektoré operácie sa dokončili pred zlyhaním použitia.\n"
+msgstr "Niektoré operácie sa dokončili pred zlyhaním aplikovania zmien.\n"
 
 #: src/backend_ui.rs:2498
 msgid "No privileged operations completed.\n"
@@ -634,7 +634,9 @@ msgstr "Jazyk"
 
 #: src/backend_ui.rs:2602
 msgid "A code such as en, fr or zh. Leave it empty to detect the language."
-msgstr "Kód, napr. en, fr alebo zh. Nechajte prázdne na detekciu jazyka."
+msgstr ""
+"Kód, napr. en, fr alebo zh. Pre automatickú detekciu jazyka ho nechajte "
+"prázdny."
 
 #: src/backend_ui.rs:2655
 msgid "Overview"
@@ -666,7 +668,7 @@ msgstr "Aktívny engine"
 
 #: src/backend_ui.rs:2688
 msgid "None selected. Choose one below."
-msgstr "Nič nie je vybrané. Vyberte jeden nižšie."
+msgstr "Nie je vybraná žiadna možnosť. Vyberte jednu nižšie."
 
 #: src/backend_ui.rs:2705 src/diagnostics.rs:641
 msgid "Services"
@@ -734,7 +736,7 @@ msgstr "Interné a citlivé hodnoty sú zobrazené len pre diagnostické účely
 
 #: src/backend_ui.rs:2858
 msgid "Sensitive value (redacted)"
-msgstr "Citlivá hodnota (zablokovaná)"
+msgstr "Citlivá hodnota (skrytá)"
 
 #. TRANSLATORS: {name} is the model part or snap being downloaded, such as "model-small"; {done} and {total} are sizes such as "210.0 MB".
 #: src/backend_ui.rs:3006
@@ -1033,11 +1035,11 @@ msgstr "Myna nebeží"
 
 #: src/sound_preview.rs:67
 msgid "Update Myna to preview sounds"
-msgstr "Aktualizujte Mynu, aby ste si mohli prezrieť náhľad zvukov"
+msgstr "Aktualizujte Mynu, aby ste si mohli zobraziť náhľad zvukov"
 
 #: src/sound_preview.rs:68
 msgid "Finish dictating to preview sounds"
-msgstr "Dokončite diktovanie, aby ste si mohli prezrieť náhľad zvukov"
+msgstr "Dokončite diktovanie, aby ste si mohli zobraziť náhľad zvukov"
 
 #: src/diagnostics.rs:225
 msgid "Paste the diagnostics report from your clipboard here."
@@ -1524,7 +1526,7 @@ msgstr "Streamovaný výstup"
 
 #: src/presentation.rs:172
 msgid "Emit partial transcription results while speech is being processed."
-msgstr "Emitovať čiastočné výsledky prepisu počas spracovania reči."
+msgstr "Zobrazovať čiastočné výsledky prepisu počas spracovania reči."
 
 #: src/presentation.rs:179
 msgid ""
@@ -1556,7 +1558,9 @@ msgstr "Minimálne trvanie reči pred potvrdením pauzy (sekundy)"
 
 #: src/presentation.rs:200
 msgid "Speech required before a pause can commit a transcript chunk."
-msgstr "Reč potrebná pred tým, ako pauza môže potvrdiť časť prepisu."
+msgstr ""
+"Minimálne trvanie reči potrebné pred tým, než pauza môže potvrdiť časť "
+"prepisu."
 
 #: src/presentation.rs:205
 msgid "Pause length for commit (seconds)"
@@ -1568,7 +1572,7 @@ msgstr "Trvanie ticha, ktoré potvrdí aktuálnu časť prepisu."
 
 #: src/presentation.rs:211
 msgid "Maximum uncommitted audio (seconds)"
-msgstr "Maximálne nepotvrdené zvuky (sekundy)"
+msgstr "Maximálne nepotvrdené audio (sekundy)"
 
 #: src/presentation.rs:212
 msgid ""
@@ -1597,7 +1601,7 @@ msgid ""
 "Recent uncommitted audio used for partial results; zero uses the whole "
 "window."
 msgstr ""
-"Nedávne nepotvrdené zvuky použité na čiastočné výsledky; nula použije celé "
+"Nedávne nepotvrdené audio použité na čiastočné výsledky; nula použije celé "
 "okno."
 
 #: src/presentation.rs:229
@@ -1654,9 +1658,10 @@ msgid ""
 "hums people make while listening, Marimba a rising fifth, Water falling "
 "drops, Radio a walkie-talkie and Strings a plucked koto."
 msgstr ""
-"Aké zvuky sa hrajú: Zvonček je úder do tyče, Vták pískavé cvrlikanie, Hlas "
-"bručanie ľudí pri počúvaní, Marimba stúpajúca kvinta, Voda padajúce kvapky, "
-"Rádio vysielačka a Struny brnkanie na koto."
+"Aké zvuky sa prehrávajú: Zvonček je úder do tyče, Vták je pískavé "
+"cvrlikanie, Hlas je zvuk, ktorý ľudia vydávajú pri počúvaní, Marimba je "
+"stúpajúca kvinta, Voda sú padajúce kvapky, Rádio je vysielačka a Struny sú "
+"brnkanie na koto."
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:60
 msgid "When to transcribe"
@@ -1667,8 +1672,8 @@ msgid ""
 "As you speak shows partial text in the field while you talk; When you stop "
 "injects the whole transcript once the utterance ends."
 msgstr ""
-"Počas hovorenia zobrazuje čiastočný text v poli počas hovoru; Po ukončení "
-"hovorenia vloží celý prepis po skončení výreku."
+"Možnosť „Počas hovorenia“ zobrazuje čiastočný text v poli počas hovoru; "
+"možnosť „Keď prestanete“ vloží celý prepis po skončení výreku."
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:69
 msgid "Spoken language"
@@ -1694,9 +1699,9 @@ msgid ""
 "All three render the same calibrated audio envelope: Default is a level bar "
 "in the accent colour, Ribbon a flowing GPU wave, VU meter a segmented meter."
 msgstr ""
-"Všetky tri vykresľujú rovnaký kalibrovaný zvukový obálkový tvar: Predvolené "
-"je úrovňový pruh v akcentnej farbe, Stuha je plynúca GPU vlna, VU meter je "
-"segmentovaný merač."
+"Všetky tri možnosti vykresľujú rovnakú kalibrovanú zvukovú obálku: "
+"Predvolené je úrovňový pruh v akcentnej farbe, Stuha je plynúca GPU vlna, VU "
+"meter je segmentovaný merač."
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:91
 msgid "Stop after silence (seconds)"
@@ -1708,13 +1713,13 @@ msgid ""
 "this many seconds without speech. 0 keeps it running until the next tap. "
 "Hold-to-talk always ends with the key."
 msgstr ""
-"Pri aktivácii klepnutím na spustenie ukončí reláciu dikovania samostatne po "
-"tomto počte sekúnd bez reči. 0 necháva bežať do ďalšieho klepnutia. Držanie "
-"pre hovorenie vždy končí s pustením klávesu."
+"Pri aktivácii klepnutím na spustenie sa relácia diktovania ukončí samostatne "
+"po tomto počte sekúnd bez reči. Hodnota 0 ju necháva bežať do ďalšieho "
+"klepnutia. Režim „držať pre hovorenie“ sa vždy ukončí uvoľnením klávesu."
 
 #: data/com.canonical.Myna.Config.metainfo.xml:9
 msgid "Set up and configure local dictation"
-msgstr "Nastavenie a konfigurácia lokálneho diktovania"
+msgstr "Nastaviť a nakonfigurovať lokálne diktovanie"
 
 #: data/com.canonical.Myna.Config.metainfo.xml:14
 msgid ""
@@ -1732,7 +1737,7 @@ msgstr "Nastavenia diktovania"
 
 #: data/com.canonical.Myna.Config.desktop:5
 msgid "Configure Myna dictation and its speech models"
-msgstr "Konfigurácia diktovania Myna a jeho hlasových modelov"
+msgstr "Konfigurujte diktovanie Myna a jeho hlasové modely"
 
 #. TRANSLATORS: Search terms for this application. Keep every semicolon, including the last.
 #: data/com.canonical.Myna.Config.desktop:12
