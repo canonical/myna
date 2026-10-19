@@ -8,8 +8,8 @@ msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-10-11 11:54+0100\n"
-"PO-Revision-Date: 2026-10-15 09:00+0000\n"
-"Last-Translator: \"David D.\" <dadu042@users.noreply.hosted.weblate.org>\n"
+"PO-Revision-Date: 2026-10-19 12:19+0000\n"
+"Last-Translator: \"B. A.\" <benjensky@users.noreply.hosted.weblate.org>\n"
 "Language-Team: French <https://hosted.weblate.org/projects/ubuntu-desktop-"
 "translations/myna-config/fr/>\n"
 "Language: fr\n"
@@ -249,8 +249,9 @@ msgid "translator-credits"
 msgstr ""
 
 #: src/app.rs:1185 src/onboarding_ui.rs:781
+#, fuzzy
 msgid "Done"
-msgstr ""
+msgstr "Terminé"
 
 #: src/app.rs:1481
 msgid "Model details appear once Myna finds your models."
@@ -331,8 +332,9 @@ msgid "Message:"
 msgstr "Message :"
 
 #: src/app.rs:4156 src/onboarding_ui.rs:990
+#, fuzzy
 msgid "Enabling user daemons support"
-msgstr ""
+msgstr "Permission de l'activation des routines utilisateur"
 
 #: src/app.rs:4179 src/onboarding_ui.rs:991
 msgid "Installing Dictation app"
@@ -340,8 +342,9 @@ msgstr "Installation de l’app Dictée"
 
 #. TRANSLATORS: {step} is what is installing, such as "Installing speech-to-text model", and {percent} how much of its download has arrived.
 #: src/app.rs:4189 src/app.rs:4252 src/app.rs:4352 src/onboarding_ui.rs:999
+#, fuzzy
 msgid "{step} ({percent}%)"
-msgstr ""
+msgstr "{step} ({percent}%)"
 
 #: src/app.rs:4203 src/onboarding_ui.rs:992
 msgid "Installing speech-to-text model"
@@ -438,8 +441,9 @@ msgstr "jusqu'à {size}"
 
 #. TRANSLATORS: {description} says what a model is good at, such as "Most languages, with uneven accuracy", and {size} what installing it downloads, such as "198 MB" or "up to 1.4 GB". The spaces around the dot are no-break spaces, so the size never starts a line of its own.
 #: src/backend_ui.rs:371
+#, fuzzy
 msgid "{description}\\u{a0}·\\u{a0}{size}"
-msgstr ""
+msgstr "{description}\\u{a0}·\\u{a0}{size}"
 
 #: src/backend_ui.rs:670
 msgid "This model is no longer installed."
@@ -526,8 +530,9 @@ msgid "Could not open the web browser"
 msgstr "Impossible d’ouvrir le navigateur web"
 
 #: src/backend_ui.rs:2084
+#, fuzzy
 msgid "Copy privacy-safe diagnostics"
-msgstr ""
+msgstr "Copier les diagnostics de confidentialité-sécurité"
 
 #: src/backend_ui.rs:2095
 msgid "Diagnostics copied to clipboard"
@@ -595,12 +600,19 @@ msgid "Setting:"
 msgstr "Paramètre :"
 
 #: src/backend_ui.rs:2494
+#, fuzzy
 msgid "Some operations completed before the apply failed.\n"
 msgstr ""
+"Certaines des opérations ont été effectuées avant que l'application n'ait "
+"échoué.\n"
+".\n"
 
 #: src/backend_ui.rs:2498
+#, fuzzy
 msgid "No privileged operations completed.\n"
 msgstr ""
+"Aucune des opérations fondamentales n'est terminée.\n"
+".\n"
 
 #: src/backend_ui.rs:2500
 msgid "Completed operations:\n"
@@ -611,8 +623,9 @@ msgid "Failure:\n"
 msgstr "Échec :\n"
 
 #: src/backend_ui.rs:2530
+#, fuzzy
 msgid "Reconciliation read-back:\n"
-msgstr ""
+msgstr "Relecture audio pour vérification :\n"
 
 #: src/backend_ui.rs:2542
 msgid "Model:"
@@ -631,8 +644,9 @@ msgid "Status: unavailable"
 msgstr "Statut : indisponible"
 
 #: src/backend_ui.rs:2569
+#, fuzzy
 msgid "Post-failure surface errors:"
-msgstr ""
+msgstr "Erreurs d'enveloppe après échec :"
 
 #: src/backend_ui.rs:2600
 msgid "Language"
@@ -691,8 +705,9 @@ msgid "Reading this model's settings…"
 msgstr "Lecture des paramètres de ce modèle …"
 
 #: src/backend_ui.rs:2731
+#, fuzzy
 msgid "No configuration reported"
-msgstr ""
+msgstr "Aucun signalement de configuration"
 
 #: src/backend_ui.rs:2733
 msgid "The model answered but reported no settings to change."
@@ -711,8 +726,9 @@ msgid "Refreshing…"
 msgstr "Rafraîchissement …"
 
 #: src/backend_ui.rs:2816
+#, fuzzy
 msgid "Runtime"
-msgstr ""
+msgstr "Environnement d'exécution"
 
 #: src/backend_ui.rs:2817
 msgid "Advanced"
@@ -727,8 +743,9 @@ msgid "Common settings for this model."
 msgstr "Paramètres courants pour ce modèle."
 
 #: src/backend_ui.rs:2828
+#, fuzzy
 msgid "Runtime and performance related settings."
-msgstr ""
+msgstr "Paramètres liés à l'environnement d'exécution et aux performances."
 
 #: src/backend_ui.rs:2831
 msgid "Advanced settings."
@@ -774,8 +791,9 @@ msgid "Model connections"
 msgstr ""
 
 #: src/backend_ui.rs:3089
+#, fuzzy
 msgid "Model control command"
-msgstr ""
+msgstr "Commande pour contrôle du modèle"
 
 #: src/backend_ui.rs:3090
 msgid "Model settings"
@@ -794,230 +812,290 @@ msgid "Available engines"
 msgstr "Moteurs disponibles"
 
 #: src/backend_ui.rs:3099
+#, fuzzy
 msgid "Persisted values could not be read."
-msgstr ""
+msgstr "Les valeurs persistantes n'ont pas pu être lues."
 
 #: src/backend_ui.rs:3110 src/backend_ui.rs:3398
 msgid "Applying changes…"
 msgstr "Application des modifications …"
 
 #: src/backend_ui.rs:3133
+#, fuzzy
 msgid "missing"
-msgstr ""
+msgstr "manquant(e)"
 
 #. TRANSLATORS: {key} is a setting's key, such as "streaming"; {requested} and {actual} are its values.
 #: src/backend_ui.rs:3135
+#, fuzzy
 msgid "{key}: asked for {requested}, read back {actual}"
-msgstr ""
+msgstr "{key} : nécessaire pour {requested}, en remplacement de {actual}"
 
 #: src/backend_ui.rs:3163
 msgid "Error:\n"
 msgstr "Erreur :\n"
 
 #: src/backend_ui.rs:3173
+#, fuzzy
 msgid "The change ran, but the connections do not match it."
 msgstr ""
+"Le changement a abouti, mais les connexions ne s'hamonisent pas avec lui."
 
 #: src/backend_ui.rs:3177
+#, fuzzy
 msgid "The connections changed before the change could start. Try again."
 msgstr ""
+"Les connexions ont changé avant que la modification n'ait pu aboutir. "
+"Essayez à nouveau."
 
 #: src/backend_ui.rs:3181
 msgid "Discovery error:\n"
 msgstr ""
 
 #: src/backend_ui.rs:3183
+#, fuzzy
 msgid "The change ran, but the connections could not be read back."
-msgstr ""
+msgstr "Le changement a abouti, mais les connexions n'ont pas pu être lues."
 
 #: src/backend_ui.rs:3200
+#, fuzzy
 msgid "Final connections:"
-msgstr ""
+msgstr "Connexions finales :"
 
 #: src/backend_ui.rs:3205
 msgid "Final connections could not be verified:"
-msgstr ""
+msgstr "Les connexions finales n'ont pas pu être vérifiées :"
 
 #: src/backend_ui.rs:3209
 msgid "Final connections could not be verified.\n"
-msgstr ""
+msgstr "Les connexions finales n'ont pas pu être vérifiées.\n"
 
 #: src/backend_ui.rs:3217
+#, fuzzy
 msgid "No snapd operations completed.\n"
-msgstr ""
+msgstr "Aucune opération snapd n'a pu aboutir.\n"
 
 #: src/backend_ui.rs:3221
+#, fuzzy
 msgid "Completed snapd operations:\n"
-msgstr ""
+msgstr "Opérations snapd ayant abouti :\n"
 
 #: src/backend_ui.rs:3250
+#, fuzzy
 msgid "no model connected"
-msgstr ""
+msgstr "aucun modèle connecté"
 
 #: src/backend_ui.rs:3254
+#, fuzzy
 msgid "connected"
-msgstr ""
+msgstr "connecté"
 
 #: src/backend_ui.rs:3264
+#, fuzzy
 msgid "several models"
-msgstr ""
+msgstr "plusieurs modèles"
 
 #: src/backend_ui.rs:4295 src/model_family.rs:35
+#, fuzzy
 msgid "Best for Chinese, Japanese and Korean"
-msgstr ""
+msgstr "Meilleur pour le chinois, le japonais et le coréen"
 
 #: src/backend_apply.rs:81
+#, fuzzy
 msgid "selector value must be text"
-msgstr ""
+msgstr "la valeur du sélecteur doit être du texte"
 
 #: src/backend_apply.rs:95
+#, fuzzy
 msgid "the model's settings command could not be found"
-msgstr ""
+msgstr "la commande des paramètres du modèle n'a pas pu être trouvée"
 
 #: src/backend_apply.rs:380
+#, fuzzy
 msgid "the model's restart command could not be built"
-msgstr ""
+msgstr "la commande de redémarrage du modèle n'a pu pas être compilée"
 
 #: src/backend_apply.rs:479
+#, fuzzy
 msgid "value must be a finite number"
-msgstr ""
+msgstr "la valeur doit être un nombre fini"
 
 #: src/backend_apply.rs:504
+#, fuzzy
 msgid "The model's restart could not be confirmed."
-msgstr ""
+msgstr "Le redémarrage du modèle n'a pas pu être confirmé."
 
 #: src/backend_apply.rs:529
+#, fuzzy
 msgid "The model did not restart."
-msgstr ""
+msgstr "Le modèle n'a pas redémarré."
 
 #: src/backend_apply.rs:551
+#, fuzzy
 msgctxt "service state"
 msgid "active"
-msgstr ""
+msgstr "actif/active"
 
 #: src/backend_apply.rs:552
+#, fuzzy
 msgctxt "service state"
 msgid "inactive"
-msgstr ""
+msgstr "inactif/inactive"
 
 #: src/backend_apply.rs:553
+#, fuzzy
 msgctxt "service state"
 msgid "failed"
-msgstr ""
+msgstr "échec"
 
 #: src/backend_apply.rs:554
+#, fuzzy
 msgctxt "service state"
 msgid "unknown"
-msgstr ""
+msgstr "inconnu(e)"
 
 #: src/onboarding_ui.rs:678
+#, fuzzy
 msgid "The system is busy installing software. Try again in a moment."
 msgstr ""
+"Le système est occupé à installer le logiciel. Essayez à nouveau plus tard."
 
 #: src/onboarding_ui.rs:778
 msgid "Continue to the next onboarding step."
 msgstr ""
 
 #: src/onboarding_ui.rs:783
+#, fuzzy
 msgid "Close Myna Settings."
-msgstr ""
+msgstr "Fermer les paramètres de Myna."
 
 #: src/onboarding_ui.rs:873
+#, fuzzy
 msgid ""
 "The input method IBus is not installed. Install the “ibus” package, then log "
 "out and back in."
 msgstr ""
+"La méthode d'entrée IBus n'est pas installée. Installez le paquet « ibus », "
+"puis déconnectez-vous et reconnectez-vous."
 
 #: src/onboarding_ui.rs:878
+#, fuzzy
 msgid "Setup status unavailable. The log has the details."
-msgstr ""
+msgstr "État de configuration indisponible. Le journal contient les détails."
 
 #: src/onboarding_ui.rs:993
+#, fuzzy
 msgid "Setting up the input method"
-msgstr ""
+msgstr "Configuration de la méthode d'entrée"
 
 #: src/onboarding_ui.rs:1012
+#, fuzzy
 msgid "Installing the Dictation app failed"
-msgstr ""
+msgstr "Échec de l'installation de l'application de Dictée"
 
 #: src/onboarding_ui.rs:1014
+#, fuzzy
 msgid "Setting up the input method failed"
-msgstr ""
+msgstr "Échec de la configuration de la méthode d'entrée"
 
 #: src/onboarding_ui.rs:1062
+#, fuzzy
 msgid "Log out and back in to finish setting up the input method."
 msgstr ""
+"Déconnectez-vous et reconnectez-vous pour terminer le réglage de la méthode "
+"d'entrée."
 
 #. TRANSLATORS: a download size in megabytes, such as "776 MB"; the space is a no-break space.
 #: src/onboarding_ui.rs:1286
+#, fuzzy
 msgid "{megabytes} MB"
-msgstr ""
+msgstr "{megabytes} Mo"
 
 #: src/onboarding_ui.rs:1294
 msgid "Checking the installation"
-msgstr ""
+msgstr "Vérification de l'installation"
 
 #: src/onboarding_ui.rs:1299
+#, fuzzy
 msgid "Waiting for other software changes to finish"
-msgstr ""
+msgstr "D'autres changements logiciels sont nécessaires avant de terminer"
 
 #: src/onboarding_ui.rs:1301
+#, fuzzy
 msgid "Setting up speech-to-text model"
-msgstr ""
+msgstr "Mise en place du modèle voix-vers-texte"
 
 #: src/onboarding_ui.rs:1302
+#, fuzzy
 msgid "Starting dictation"
-msgstr ""
+msgstr "Début de dictée"
 
 #: src/shortcut_ui.rs:284
+#, fuzzy
 msgid "Change shortcut"
-msgstr ""
+msgstr "Modifier le raccourci"
 
 #: src/shortcut_ui.rs:286
 msgid "Change"
 msgstr ""
 
 #: src/shortcut_ui.rs:291
+#, fuzzy
 msgid "Press a keyboard shortcut for dictation."
-msgstr ""
+msgstr "Appuyez sur un raccourci clavier pour la dictée."
 
 #. TRANSLATORS: {shortcut} is a key combination, such as "Super + J".
 #: src/shortcut_ui.rs:294
+#, fuzzy
 msgid "Current shortcut: {shortcut}."
-msgstr ""
+msgstr "Raccourci actuel : {shortcut}."
 
 #: src/shortcut_ui.rs:347
+#, fuzzy
 msgid "Keep the shortcut as it was."
-msgstr ""
+msgstr "Conserver le raccourci précédent."
 
 #: src/shortcut_ui.rs:477
+#, fuzzy
 msgid "{keys} is reserved for “{action}”. Press a different shortcut."
 msgstr ""
+"{keys} est déjà affecté à “{action}”. Veuillez choisir un raccourci "
+"différent."
 
 #: src/shortcut_ui.rs:495
+#, fuzzy
 msgid ""
 "{keys} is already used for “{action}”. Replacing it removes it from there."
 msgstr ""
+"{keys} est déjà affecté à “{action}”. Le remplacer supprime cette "
+"affectation."
 
 #: src/shortcut_ui.rs:500
+#, fuzzy
 msgid "Replace Shortcut?"
-msgstr ""
+msgstr "Remplacer le raccourci ?"
 
 #: src/shortcut_ui.rs:502
+#, fuzzy
 msgid "Replace"
-msgstr ""
+msgstr "Remplacer"
 
 #: src/shortcut_ui.rs:562
+#, fuzzy
 msgid "Could not set up the shortcut"
-msgstr ""
+msgstr "Mise en place du raccourci impossible"
 
 #: src/shortcut_ui.rs:666
+#, fuzzy
 msgid "Set up a keyboard shortcut to trigger Dictation."
-msgstr ""
+msgstr "Définir un raccourci clavier pour déclencher la Dictée."
 
 #: src/shortcut_ui.rs:672
+#, fuzzy
 msgid "Myna is not running yet. The shortcut can be set up once it starts."
 msgstr ""
+"Myna ne s'exécute pas encore. Le raccourci ne peut être installé qu'une fois "
+"qu'elle aura démarré."
 
 #: src/shortcut_ui.rs:680
 msgid ""
@@ -1026,44 +1104,54 @@ msgid ""
 msgstr ""
 
 #: src/shortcut_ui.rs:690
+#, fuzzy
 msgid "Not set up"
-msgstr ""
+msgstr "Pas encore défini"
 
 #: src/shortcut_ui.rs:691 src/sound_preview.rs:66
+#, fuzzy
 msgid "Myna is not running"
-msgstr ""
+msgstr "Myne ne s'exécute pas"
 
 #: src/sound_preview.rs:67
+#, fuzzy
 msgid "Update Myna to preview sounds"
-msgstr ""
+msgstr "Mettre Myna à jour pour pré-entendre les sons"
 
 #: src/sound_preview.rs:68
+#, fuzzy
 msgid "Finish dictating to preview sounds"
-msgstr ""
+msgstr "Terminer la dictée pour pré-entendre les sons"
 
 #: src/diagnostics.rs:225
+#, fuzzy
 msgid "Paste the diagnostics report from your clipboard here."
-msgstr ""
+msgstr "Collez ici le rapport de diagnostic à partir de votre presse-papiers."
 
 #: src/diagnostics.rs:280
+#, fuzzy
 msgid "The CPU clock is capped by system policy"
-msgstr ""
+msgstr "L'horloge CPU est plafonnée par la stratégie du système"
 
 #: src/diagnostics.rs:282
+#, fuzzy
 msgid "limited to"
-msgstr ""
+msgstr "limité(e) à"
 
 #: src/diagnostics.rs:284 src/diagnostics.rs:362 src/diagnostics.rs:714
 msgid "of"
 msgstr ""
 
 #: src/diagnostics.rs:288
+#, fuzzy
 msgid "Dictation will be slow. A power tool has capped the CPU clock."
 msgstr ""
+"La dictée sera lente. Un processus d'alimentation a plafonné l'horloge CPU."
 
 #: src/diagnostics.rs:298
+#, fuzzy
 msgid "The power profile is set to low-power"
-msgstr ""
+msgstr "Le profil d'énergie est fixé à faible alimentation"
 
 #: src/diagnostics.rs:302
 msgid ""
