@@ -8,7 +8,7 @@ msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-10-11 11:54+0100\n"
-"PO-Revision-Date: 2026-10-18 09:09+0000\n"
+"PO-Revision-Date: 2026-10-19 12:19+0000\n"
 "Last-Translator: Peter Vančo <peva@users.noreply.hosted.weblate.org>\n"
 "Language-Team: Slovak <https://hosted.weblate.org/projects/ubuntu-desktop-"
 "translations/myna-config/sk/>\n"
@@ -188,8 +188,8 @@ msgid ""
 "Log out and back in to turn on the dictation indicator (GNOME Shell "
 "extension)."
 msgstr ""
-"Odhláste sa a znovu prihláste, aby sa zapol indikátor diktovania (rozšírenie "
-"prostredia GNOME Shell)."
+"Odhláste sa a znova sa prihláste, aby sa zapol indikátor diktovania "
+"(rozšírenie prostredia GNOME Shell)."
 
 #: data/onboarding-shortcut.blp:78 src/shortcut_ui.rs:322
 msgid "Press the new shortcut…"
@@ -923,7 +923,7 @@ msgid ""
 "out and back in."
 msgstr ""
 "Vstupná metóda IBus nie je nainštalovaná. Nainštalujte balík „ibus“, potom "
-"sa odhláste a znova prihláste."
+"sa odhláste a znova sa prihláste."
 
 #: src/onboarding_ui.rs:878
 msgid "Setup status unavailable. The log has the details."
@@ -944,7 +944,8 @@ msgstr "Nastavenie vstupnej metódy zlyhalo"
 #: src/onboarding_ui.rs:1062
 msgid "Log out and back in to finish setting up the input method."
 msgstr ""
-"Odhláste sa a znova prihláste, aby ste dokončili nastavenie vstupnej metódy."
+"Odhláste sa a znova sa prihláste, aby ste dokončili nastavenie vstupnej "
+"metódy."
 
 #. TRANSLATORS: a download size in megabytes, such as "776 MB"; the space is a no-break space.
 #: src/onboarding_ui.rs:1286
@@ -1095,8 +1096,8 @@ msgstr "Systém nemá dostatok pamäte"
 msgid ""
 "Dictation will stutter. Close applications until the machine stops swapping."
 msgstr ""
-"Diktovanie bude sekať. Zatvorte aplikácie, kým zariadenie prestane používať "
-"swap."
+"Diktovanie bude trhať. Zatvorte aplikácie, dokiaľ zariadenie neprestane "
+"používať swap."
 
 #: src/diagnostics.rs:335
 msgid "Disk activity is stalling the system"
@@ -1105,7 +1106,7 @@ msgstr "Aktivita disku spomaľuje systém"
 #: src/diagnostics.rs:339
 msgid "Dictation will stutter. Wait for the transfer or indexing to finish."
 msgstr ""
-"Diktovanie bude sekať. Počkajte na dokončenie prenosu alebo indexovania."
+"Diktovanie bude trhať. Počkajte na dokončenie prenosu alebo indexovania."
 
 #: src/diagnostics.rs:345
 msgid "Other programs are saturating the CPU"
@@ -1283,7 +1284,7 @@ msgid ""
 "log out and back in."
 msgstr ""
 "IBus nie je nainštalovaný, takže Myna nemôže písať. Nainštalujte balík „ibus"
-"“, potom sa odhláste a znova prihláste."
+"“, potom sa odhláste a znova sa prihláste."
 
 #: src/diagnostics.rs:673 src/diagnostics.rs:687
 msgid "(none)"
