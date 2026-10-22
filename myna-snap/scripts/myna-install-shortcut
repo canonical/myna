@@ -16,26 +16,27 @@ ACCEL="${1:?usage: myna-install-shortcut <accel> (e.g. '<Super>t')}"
 COMMAND="/snap/bin/${SNAP_INSTANCE_NAME}.toggle"
 
 # Bind only on GNOME, as `myna-desktop --install-shortcut` does. The profile
-# follows client/myna-platform/src/session.rs: MYNA_PLATFORM (gnome, xfce or
-# generic, any case) overrides; otherwise the first of XDG_CURRENT_DESKTOP's
-# ':'-separated entries that is gnome or xfce decides, and anything else is
-# generic.
+# follows client/myna-platform/src/session.rs: MYNA_PLATFORM (gnome, xfce, kde
+# or generic, any case) overrides; otherwise the first of XDG_CURRENT_DESKTOP's
+# ':'-separated entries that is gnome, xfce or kde decides, and anything else
+# is generic.
 profile="$(printf '%s' "${MYNA_PLATFORM:-}" | tr -d ' \t' | tr '[:upper:]' '[:lower:]')"
 if [ -z "$profile" ]; then
     profile="$(printf '%s' "${XDG_CURRENT_DESKTOP:-}" | tr -d ' \t' | tr '[:upper:]' '[:lower:]' |
-        tr ':' '\n' | grep -m1 -E '^(gnome|xfce)$' || true)"
+        tr ':' '\n' | grep -m1 -E '^(gnome|xfce|kde)$' || true)"
     [ -n "$profile" ] || profile=generic
 fi
 case "$profile" in
-    gnome | xfce | generic) ;;
+    gnome | xfce | kde | generic) ;;
     *)
-        echo "MYNA_PLATFORM=\"${MYNA_PLATFORM:-}\" names no profile (gnome, xfce, generic)" >&2
+        echo "MYNA_PLATFORM=\"${MYNA_PLATFORM:-}\" names no profile (gnome, xfce, kde, generic)" >&2
         profile=generic
         ;;
 esac
 case "$profile" in
     gnome) ;;
     xfce) session="an Xfce session" ;;
+    kde) session="a KDE Plasma session" ;;
     *) session="a session not recognised as GNOME (set MYNA_PLATFORM=gnome to force it)" ;;
 esac
 if [ "$profile" != gnome ]; then
