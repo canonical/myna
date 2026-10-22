@@ -1,11 +1,12 @@
-//! The Xfce components against a scratch home, `/proc`, `PATH` and config
-//! directories, and a scripted `im-config`.
+//! The Xfce and KDE components against a scratch home, `/proc`, `PATH` and
+//! config directories, and a scripted `im-config` and `ibus`.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use myna_config::command::{CommandError, CommandOutput, FakeCommandRunner};
+use myna_config::platform::kde::components::KdeComponents;
 use myna_config::platform::xfce::components::{Host, XfceComponents, HUD_HOST_AUTOSTART, IBUS};
 use myna_platform::components::{
     Blocker, ComponentError, ComponentStatus, Components, Purpose, StepKind,
@@ -93,6 +94,15 @@ impl Session {
 
     fn components(&self, runner: &FakeCommandRunner) -> XfceComponents {
         XfceComponents::with_host(self.host(), Arc::new(runner.clone()))
+    }
+
+    fn kde(&self, runner: &FakeCommandRunner) -> KdeComponents {
+        KdeComponents::with_host(self.host(), Arc::new(runner.clone()))
+    }
+
+    /// A kwinrc in `dir`, `user` or `system`.
+    fn kwinrc(&self, dir: &str, body: &str) {
+        std::fs::write(self.scratch.path(dir).join("kwinrc"), body).unwrap();
     }
 }
 
@@ -349,4 +359,128 @@ fn the_shipped_entry_is_the_one_the_status_looks_for() {
     assert_eq!(get("NoDisplay"), "true");
     assert_eq!(get("Exec"), "/usr/libexec/myna-config/myna-hud-host");
     assert!(entry.boolean("Desktop Entry", "Hidden").is_err());
+}
+
+/// What `ibus start --type kde-wayland` writes.
+const KWIN_RUNS_IBUS: &str = "[Wayland]\nInputMethod[$e]=/usr/share/applications/org.freedesktop.IBus.Panel.Wayland.Gtk3.desktop\n";
+
+fn kde_status(session: &Session) -> ComponentStatus {
+    block_on(session.kde(&FakeCommandRunner::default()).status(IBUS))
+}
+
+#[test]
+fn plasma_needs_ibus_and_nothing_hosts_the_indicator_yet() {
+    let session = Session::ibus("kde-required");
+    let required = session.kde(&FakeCommandRunner::default()).required();
+    assert_eq!(required.len(), 1);
+    assert_eq!(
+        (required[0].id.as_str(), required[0].purpose),
+        (IBUS, Purpose::TextInput)
+    );
+}
+
+#[test]
+fn ibus_run_by_kwin_is_active() {
+    let session = Session::ibus("kde-active").without_session_env();
+    session.kwinrc("user", &format!("[Plugins]\nfoo=true\n\n{KWIN_RUNS_IBUS}"));
+    assert_eq!(kde_status(&session), ComponentStatus::Active);
+    let runner = FakeCommandRunner::default();
+    block_on(session.kde(&runner).enable(IBUS)).unwrap();
+    assert!(
+        runner.calls().is_empty(),
+        "ibus start hangs when nothing changes"
+    );
+
+    std::fs::remove_dir_all(session.scratch.path("proc").join("ibus-daemon")).unwrap();
+    assert_eq!(kde_status(&session), ComponentStatus::Failed);
+    assert!(block_on(session.kde(&runner).enable(IBUS)).is_err());
+    assert!(runner.calls().is_empty());
+}
+
+#[test]
+fn a_fresh_plasma_starts_ibus_through_kwin_at_once() {
+    let session = Session::ibus("kde-fresh").without_session_env();
+    session.kwinrc(
+        "user",
+        "[Wayland]\nVirtualKeyboardEnabled=false\n[Xwayland]\nInputMethod=x\n",
+    );
+    assert_eq!(kde_status(&session), ComponentStatus::Inactive);
+    let runner = FakeCommandRunner::scripted([ok()]);
+    block_on(session.kde(&runner).enable(IBUS)).unwrap();
+    assert_eq!(args(&runner), [["ibus", "start", "--type", "kde-wayland"]]);
+    assert!(runner.calls()[0].timeout().is_some());
+}
+
+#[test]
+fn an_ibus_start_that_fails_is_reported_as_the_command() {
+    let session = Session::ibus("kde-fails").without_session_env();
+    let runner = FakeCommandRunner::scripted([refused("not KDE")]);
+    match block_on(session.kde(&runner).enable(IBUS)).unwrap_err() {
+        ComponentError::Failed {
+            kind: StepKind::Command,
+            step,
+            message,
+        } => {
+            assert_eq!(step, "ibus start --type kde-wayland");
+            assert!(message.contains("not KDE"), "{message}");
+        }
+        other => panic!("{other:?}"),
+    }
+    let runner = FakeCommandRunner::scripted([Err(CommandError::Cancelled)]);
+    assert_eq!(
+        block_on(session.kde(&runner).enable(IBUS)),
+        Err(ComponentError::Cancelled)
+    );
+}
+
+#[test]
+fn the_users_kwinrc_overrides_the_systems() {
+    let session = Session::ibus("kde-cascade").without_session_env();
+    session.kwinrc("system", KWIN_RUNS_IBUS);
+    assert_eq!(kde_status(&session), ComponentStatus::Active);
+    session.kwinrc("user", "[Wayland]\nInputMethod=\n");
+    assert_eq!(kde_status(&session), ComponentStatus::Inactive);
+}
+
+#[test]
+fn fcitx5_on_plasma_is_left_alone() {
+    let session = Session::ibus("kde-fcitx").without_session_env();
+    session.kwinrc(
+        "user",
+        "[Wayland]\nInputMethod[$e]=/usr/share/applications/org.fcitx.Fcitx5.desktop\n",
+    );
+    assert_eq!(
+        kde_status(&session),
+        ComponentStatus::Blocked(Blocker::Incompatible)
+    );
+    let runner = FakeCommandRunner::default();
+    assert!(block_on(session.kde(&runner).enable(IBUS)).is_err());
+    assert!(runner.calls().is_empty());
+
+    // Running, though not KWin's choice.
+    let session = Session::ibus("kde-fcitx-running").without_session_env();
+    session.run("fcitx5");
+    assert_eq!(
+        kde_status(&session),
+        ComponentStatus::Blocked(Blocker::Incompatible)
+    );
+}
+
+#[test]
+fn plasma_without_ibus_is_unavailable_and_nothing_is_run() {
+    let session = Session::ibus("kde-absent");
+    std::fs::remove_file(session.scratch.path("bin").join("ibus-daemon")).unwrap();
+    assert_eq!(kde_status(&session), ComponentStatus::Unavailable);
+    let runner = FakeCommandRunner::default();
+    assert!(block_on(session.kde(&runner).enable(IBUS)).is_err());
+    assert!(runner.calls().is_empty());
+    let components = session.kde(&runner);
+    assert_eq!(
+        block_on(components.status(HUD_HOST_AUTOSTART)),
+        ComponentStatus::Unavailable
+    );
+    assert_eq!(
+        block_on(components.enable(HUD_HOST_AUTOSTART)),
+        Err(ComponentError::Unknown(HUD_HOST_AUTOSTART.into()))
+    );
 }

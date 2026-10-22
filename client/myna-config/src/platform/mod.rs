@@ -24,6 +24,7 @@ use crate::ports::{FailedStep, SystemConfiguratorError};
 pub mod appearance;
 pub mod gnome;
 pub mod host;
+pub mod kde;
 pub mod xfce;
 
 /// The backends of one desktop, as Settings uses them.
@@ -55,7 +56,13 @@ impl Platform {
                         crate::command::GioCommandRunner,
                     ))),
                 ),
-                Profile::Kde | Profile::Generic => (None, Rc::new(NoComponents)),
+                Profile::Kde => (
+                    None,
+                    Rc::new(kde::components::KdeComponents::new(Arc::new(
+                        crate::command::GioCommandRunner,
+                    ))),
+                ),
+                Profile::Generic => (None, Rc::new(NoComponents)),
             };
         let appearance: Rc<dyn Appearance> = match profile {
             Profile::Gnome => Rc::new(gnome::appearance::GnomeAppearance),
@@ -286,13 +293,28 @@ mod tests {
 
     #[test]
     fn a_desktop_myna_does_not_know_needs_nothing_from_it() {
-        for profile in [Profile::Generic, Profile::Kde] {
-            let platform = Platform::for_profile(profile);
-            assert_eq!(platform.profile(), profile);
-            assert!(platform.activation().is_none());
-            assert!(platform.components().required().is_empty());
-            assert_eq!(platform.diagnostics(), DesktopDiagnostics::default());
-        }
+        let platform = Platform::for_profile(Profile::Generic);
+        assert_eq!(platform.profile(), Profile::Generic);
+        assert!(platform.activation().is_none());
+        assert!(platform.components().required().is_empty());
+        assert_eq!(platform.diagnostics(), DesktopDiagnostics::default());
+    }
+
+    #[test]
+    fn plasma_needs_ibus_as_kwins_input_method() {
+        let platform = Platform::for_profile(Profile::Kde);
+        let required = platform.components().required();
+        assert_eq!(
+            required
+                .iter()
+                .map(|c| (c.id.as_str(), c.purpose))
+                .collect::<Vec<_>>(),
+            [(host::IBUS, Purpose::TextInput)]
+        );
+        let diagnostics = platform.diagnostics();
+        assert_eq!(diagnostics.shell, None);
+        assert_eq!(diagnostics.components.len(), 1);
+        assert_eq!(diagnostics.components[0].purpose, Purpose::TextInput);
     }
 
     #[test]
