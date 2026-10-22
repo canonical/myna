@@ -22,9 +22,12 @@ X11 (lightdm autologin). KDE is Kubuntu's Plasma 6 on Wayland (sddm autologin
 into the `plasma` session, `kubuntu-desktop` without its application
 Recommends); `on_vm` gives it `WAYLAND_DISPLAY=wayland-0`, and no suite runs
 on it yet. `spectacle -b -n -f -o FILE` through `on_vm` photographs the real
-session (KWin's ScreenShot2 is restricted to Spectacle's desktop entry); a
-window launched from `lxc exec` is not activated, and a KWin script
-(`org.kde.kwin.Scripting.loadScript`, `workspace.activeWindow = w`) does it.
+session (KWin's ScreenShot2 is restricted to Spectacle's desktop entry). A
+window launched through `on_vm` is usually activated on map, but not always:
+wait for the app to say it is active, and fall back to a KWin script
+(`org.kde.kwin.Scripting.loadScript`, `workspace.activeWindow = w`). Kate
+needs a document named on its command line: session restore reopens it on
+its Welcome page, which has no text field.
 
 ## Screenshots
 
