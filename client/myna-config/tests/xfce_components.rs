@@ -1,4 +1,4 @@
-//! The Xfce components against a scratch home, `/proc`, `PATH` and autostart
+//! The Xfce components against a scratch home, `/proc`, `PATH` and config
 //! directories, and a scripted `im-config`.
 
 use std::collections::HashMap;
@@ -74,7 +74,7 @@ impl Session {
     }
 
     fn autostart(&self, name: &str, body: &str) -> PathBuf {
-        let dir = self.scratch.path(name);
+        let dir = self.scratch.path(&format!("{name}/autostart"));
         let file = dir.join(HUD_HOST_AUTOSTART);
         std::fs::write(&file, body).unwrap();
         file
@@ -86,8 +86,8 @@ impl Session {
             path: vec![self.scratch.path("bin")],
             proc_dir: self.scratch.path("proc"),
             home: self.scratch.path("home"),
-            system_autostart: vec![self.scratch.path("system")],
-            user_autostart: self.scratch.path("user"),
+            config_home: self.scratch.path("user"),
+            config_dirs: vec![self.scratch.path("system")],
         }
     }
 
@@ -281,7 +281,13 @@ fn the_indicator_host_is_the_autostart_entry_the_package_ships() {
         status(&session, HUD_HOST_AUTOSTART),
         ComponentStatus::Blocked(Blocker::TurnedOff)
     );
-    std::fs::remove_file(session.scratch.path("user").join(HUD_HOST_AUTOSTART)).unwrap();
+    std::fs::remove_file(
+        session
+            .scratch
+            .path("user/autostart")
+            .join(HUD_HOST_AUTOSTART),
+    )
+    .unwrap();
     assert_eq!(
         status(&session, HUD_HOST_AUTOSTART),
         ComponentStatus::Active

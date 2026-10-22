@@ -23,6 +23,7 @@ use crate::ports::{FailedStep, SystemConfiguratorError};
 
 pub mod appearance;
 pub mod gnome;
+pub mod host;
 pub mod xfce;
 
 /// The backends of one desktop, as Settings uses them.

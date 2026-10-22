@@ -6,8 +6,7 @@
 //! so it never installs a package: a missing IBus is reported as such. What it
 //! may do is `im-config`, for the user, which takes effect at the next login.
 
-use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -17,52 +16,14 @@ use myna_platform::components::{
 };
 
 use crate::command::{CancellationToken, CommandError, CommandRequest, CommandRunner};
+use crate::platform::host::command_failed as failed;
+pub use crate::platform::host::{Host, IBUS};
 
-/// IBus as the active input method.
-pub const IBUS: &str = "ibus";
 /// The XDG autostart entry that starts the HUD host with the session. The
 /// myna-config deb ships it in `/etc/xdg/autostart` (`data/` here).
 pub const HUD_HOST_AUTOSTART: &str = "com.canonical.Myna.HudHost.desktop";
 /// The supervisor the entry starts (`hud_host`).
 const HUD_HOST_PROCESS: &str = "myna-hud-host";
-
-/// The machine as the statuses read it.
-#[derive(Clone, Debug)]
-pub struct Host {
-    /// The session's environment: `GTK_IM_MODULE`, `XMODIFIERS`.
-    pub env: HashMap<String, String>,
-    /// Where programs are looked up.
-    pub path: Vec<PathBuf>,
-    /// `/proc`.
-    pub proc_dir: PathBuf,
-    pub home: PathBuf,
-    /// The system's autostart directories, most preferred first.
-    pub system_autostart: Vec<PathBuf>,
-    pub user_autostart: PathBuf,
-}
-
-impl Host {
-    /// This process's session.
-    pub fn current() -> Self {
-        let env = ["GTK_IM_MODULE", "XMODIFIERS"]
-            .into_iter()
-            .filter_map(|name| Some((name.to_owned(), std::env::var(name).ok()?)))
-            .collect();
-        Self {
-            env,
-            path: std::env::var_os("PATH")
-                .map(|path| std::env::split_paths(&path).collect())
-                .unwrap_or_default(),
-            proc_dir: PathBuf::from("/proc"),
-            home: glib::home_dir(),
-            system_autostart: glib::system_config_dirs()
-                .into_iter()
-                .map(|dir| dir.join("autostart"))
-                .collect(),
-            user_autostart: glib::user_config_dir().join("autostart"),
-        }
-    }
-}
 
 pub struct XfceComponents {
     host: Host,
@@ -79,13 +40,13 @@ impl XfceComponents {
     }
 
     fn ibus_status(&self) -> ComponentStatus {
-        if !self.ibus_installed() {
+        if !self.host.ibus_installed() {
             return ComponentStatus::Unavailable;
         }
         let env = |name: &str| self.host.env.get(name).map(String::as_str).unwrap_or("");
         let session_uses_ibus = env("GTK_IM_MODULE") == "ibus" && env("XMODIFIERS") == "@im=ibus";
         if session_uses_ibus {
-            return if self.process_running("ibus-daemon") {
+            return if self.host.running("ibus-daemon") {
                 ComponentStatus::Active
             } else {
                 // The session was set up for IBus and its daemon is gone.
@@ -101,27 +62,6 @@ impl XfceComponents {
         }
     }
 
-    fn ibus_installed(&self) -> bool {
-        self.host
-            .path
-            .iter()
-            .any(|dir| dir.join("ibus-daemon").is_file())
-    }
-
-    /// A process of this user whose `comm` is `name`.
-    fn process_running(&self, name: &str) -> bool {
-        use std::os::unix::fs::MetadataExt;
-        let Ok(entries) = std::fs::read_dir(&self.host.proc_dir) else {
-            return false;
-        };
-        // SAFETY: getuid has no preconditions and cannot fail.
-        let uid = unsafe { libc::getuid() };
-        entries.flatten().any(|entry| {
-            std::fs::read_to_string(entry.path().join("comm")).is_ok_and(|comm| comm.trim() == name)
-                && entry.metadata().is_ok_and(|meta| meta.uid() == uid)
-        })
-    }
-
     /// The framework `~/.xinputrc` runs, as `im-config` writes it.
     fn chosen_framework(&self) -> Option<String> {
         let rc = std::fs::read_to_string(self.host.home.join(".xinputrc")).ok()?;
@@ -135,16 +75,20 @@ impl XfceComponents {
     fn hud_host_status(&self) -> ComponentStatus {
         let installed = self
             .host
-            .system_autostart
+            .config_dirs
             .iter()
-            .map(|dir| dir.join(HUD_HOST_AUTOSTART))
+            .map(|dir| dir.join("autostart").join(HUD_HOST_AUTOSTART))
             .find(|path| path.is_file());
         let Some(entry) = installed else {
             return ComponentStatus::Unavailable;
         };
         // Xfce's session settings write a user copy with Hidden=true to turn
         // an entry off; so does a user override of any autostart entry.
-        let user = self.host.user_autostart.join(HUD_HOST_AUTOSTART);
+        let user = self
+            .host
+            .config_home
+            .join("autostart")
+            .join(HUD_HOST_AUTOSTART);
         if user.is_file() && key_file_says(&user, "Hidden", true) {
             return ComponentStatus::Blocked(Blocker::TurnedOff);
         }
@@ -153,7 +97,7 @@ impl XfceComponents {
         }
         // The entry starts the supervisor with the session, so one installed
         // mid-session has not run yet.
-        if self.process_running(HUD_HOST_PROCESS) {
+        if self.host.running(HUD_HOST_PROCESS) {
             ComponentStatus::Active
         } else {
             ComponentStatus::NeedsRelogin
@@ -183,14 +127,6 @@ impl XfceComponents {
             &format!("im-config {flag} {IBUS}"),
             &error.to_string(),
         ))
-    }
-}
-
-fn failed(step: &str, message: &str) -> ComponentError {
-    ComponentError::Failed {
-        kind: StepKind::Command,
-        step: step.to_owned(),
-        message: message.to_owned(),
     }
 }
 
