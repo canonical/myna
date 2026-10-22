@@ -10,6 +10,12 @@ users:
     homedir: /home/ubuntu
     shell: /bin/bash
 
+# The archive answers 504 now and then; one failed fetch fails the whole
+# package step.
+apt:
+  conf: |
+    Acquire::Retries "5";
+
 package_update: true
 package_upgrade: true
 packages:
