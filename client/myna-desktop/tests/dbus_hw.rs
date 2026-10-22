@@ -282,3 +282,70 @@ async fn the_published_last_error_is_readable_on_the_bus() {
     );
     assert!(time(get("LastErrorTime").await) > 0);
 }
+
+/// What the toast fallback said to the notification server, one line a call.
+struct NotificationServer(std::sync::Arc<std::sync::Mutex<Vec<String>>>);
+
+#[zbus::interface(name = "org.freedesktop.Notifications")]
+impl NotificationServer {
+    #[allow(clippy::too_many_arguments)]
+    fn notify(
+        &self,
+        app_name: &str,
+        replaces_id: u32,
+        _app_icon: &str,
+        summary: &str,
+        _body: &str,
+        _actions: Vec<String>,
+        hints: std::collections::HashMap<String, zbus::zvariant::OwnedValue>,
+        expire_timeout: i32,
+    ) -> u32 {
+        let urgency = u8::try_from(&hints["urgency"]).unwrap();
+        let transient = bool::try_from(&hints["transient"]).unwrap();
+        self.0.lock().unwrap().push(format!(
+            "{app_name} {replaces_id} {summary} urgency={urgency} transient={transient} \
+             expire={expire_timeout}"
+        ));
+        7
+    }
+
+    fn close_notification(&self, id: u32) {
+        self.0.lock().unwrap().push(format!("close {id}"));
+    }
+}
+
+/// The fallback toast on the wire: one notification replaced in place,
+/// critical for an error, closed by its id.
+#[tokio::test]
+async fn the_toast_is_replaced_in_place_and_closed_by_id() {
+    use myna_desktop::indicator::{notify::NotifyIndicator, Indicator, IndicatorState};
+
+    skip_unless_dbus!();
+    let calls = std::sync::Arc::default();
+    let _server = zbus::connection::Builder::session()
+        .unwrap()
+        .name("org.freedesktop.Notifications")
+        .unwrap()
+        .serve_at(
+            "/org/freedesktop/Notifications",
+            NotificationServer(std::sync::Arc::clone(&calls)),
+        )
+        .unwrap()
+        .build()
+        .await
+        .expect("serve org.freedesktop.Notifications");
+
+    let mut toast = NotifyIndicator::new();
+    toast.set_state(IndicatorState::Recording).await;
+    toast.set_state(IndicatorState::critical("mic gone")).await;
+    toast.set_state(IndicatorState::Hidden).await;
+
+    assert_eq!(
+        *calls.lock().unwrap(),
+        [
+            "Myna 0 🎤 Dictation: listening urgency=1 transient=true expire=0",
+            "Myna 7 ⚠️ Dictation error urgency=2 transient=true expire=0",
+            "close 7",
+        ]
+    );
+}

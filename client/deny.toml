@@ -10,9 +10,9 @@
 all-features = false
 # Myna ships as a Linux snap (PipeWire + zbus); nothing here is ever
 # built for Windows or macOS. Scoping the graph to the targets we actually
-# ship keeps the audit honest - without it, cargo-deny walks the
-# windows-*/mac-notification-sys subtrees of `notify-rust` and reports
-# duplicate versions in code that never reaches a build. Note the ban list
+# ship keeps the audit honest - without it, cargo-deny walks the windows-*
+# subtrees of tokio and friends and reports duplicate versions in code that
+# never reaches a build. Note the ban list
 # below is therefore enforced for these targets only, which is the shipped
 # surface.
 targets = ["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"]

@@ -29,8 +29,6 @@ futures-util = { workspace = true }
 serde = { workspace = true }
 # D-Bus: the IBus engine object and the served dictation interface.
 zbus = "5"
-# Desktop notifications for error states / secure-field refusals.
-notify-rust = "4"
 # Publisher-owned D-Bus status labels use the shared `myna` gettext domain.
 gettext-rs = { version = "0.7", features = ["gettext-system"] }
 
