@@ -8,7 +8,7 @@
 E2E_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 export RUN_DIR=$E2E_ROOT/.run
 RELEASES="noble resolute stonking"
-DESKTOPS="gnome xubuntu"
+DESKTOPS="gnome xubuntu kde"
 # The guest's RAM. CI's runners take the 6GiB the desktops were sized for; a
 # laptop that is also somebody's desktop sets E2E_VM_MEMORY=4GiB (it applies
 # to every copy a suite runs in, whatever the VM was provisioned with).
@@ -54,16 +54,20 @@ image() {
 
 # Run a command as the autologin user, inside its graphical session's
 # environment. An X11 desktop's display server is reachable with DISPLAY and
-# the session's cookie; GNOME's Wayland session needs neither.
+# the session's cookie; KWin's Wayland socket is wayland-0 in the runtime dir.
+# GNOME's suites draw on their own Xvfb, so they need neither.
 on_vm() {
     local vm=$1; shift
-    local x11=()
-    [ "$E2E_DESKTOP" != xubuntu ] || x11=(--env DISPLAY=:0 --env XAUTHORITY=/home/ubuntu/.Xauthority)
+    local display=()
+    case $E2E_DESKTOP in
+        xubuntu) display=(--env DISPLAY=:0 --env XAUTHORITY=/home/ubuntu/.Xauthority) ;;
+        kde) display=(--env WAYLAND_DISPLAY=wayland-0 --env XDG_SESSION_TYPE=wayland --env XDG_CURRENT_DESKTOP=KDE) ;;
+    esac
     lxc exec "$vm" --user 1000 --group 1000 --cwd /home/ubuntu \
         --env HOME=/home/ubuntu --env USER=ubuntu \
         --env XDG_RUNTIME_DIR=/run/user/1000 \
         --env DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus \
-        "${x11[@]}" -- bash -c "$*"
+        "${display[@]}" -- bash -c "$*"
 }
 
 # Wait for cloud-init to finish. Short polls, not one `status --wait`: the
@@ -93,6 +97,8 @@ session_up() {
         # The session manager, the settings daemon (live keyboard shortcuts
         # need it) and a usable X display.
         xubuntu) echo 'pgrep -u 1000 -x xfce4-session && pgrep -u 1000 -x xfsettingsd && xdpyinfo' ;;
+        # The compositor's socket and the shell answering on the bus.
+        kde) echo 'pgrep -u 1000 -x kwin_wayland && test -S /run/user/1000/wayland-0 && gdbus call --session -d org.kde.plasmashell -o / -m org.freedesktop.DBus.Peer.Ping' ;;
     esac
 }
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Provision a desktop LXD VM (GNOME, or Xubuntu with --desktop xubuntu) for
+# Provision a desktop LXD VM (GNOME, or --desktop xubuntu|kde) for
 # the Myna Settings e2e suites, from the release's Ubuntu cloud image. Ends
 # with the VM stopped and snapshots that mirror the states the suites
 # declare:
@@ -22,7 +22,7 @@
 # run-suite.sh copies one per suite and leaves the VM itself untouched;
 # reprovision on a new edge revision or a stale image with --force.
 #
-# Usage: provision.sh --release noble|resolute|stonking [--desktop gnome|xubuntu] [--force]
+# Usage: provision.sh --release noble|resolute|stonking [--desktop gnome|xubuntu|kde] [--force]
 set -euo pipefail
 
 HERE=$(cd "$(dirname "$0")" && pwd)

@@ -3,7 +3,7 @@
 # of the snapshot it declares (a `# snapshot: NAME` header), push the binary
 # and tools, run it, pull artifacts. Local runs and CI share this entry point.
 #
-# Usage: run-suite.sh --release noble|resolute|stonking [--desktop gnome|xubuntu] [--binary PATH] [SUITE ...]
+# Usage: run-suite.sh --release noble|resolute|stonking [--desktop gnome|xubuntu|kde] [--binary PATH] [SUITE ...]
 #   --desktop D    the desktop VM to use (default $E2E_DESKTOP, else gnome)
 #   --binary PATH  test this myna-config instead of building one in the
 #                  myna-noble workshop

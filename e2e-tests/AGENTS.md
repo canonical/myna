@@ -14,11 +14,17 @@ inside the VM. CI runs the same `make e2e` per series and desktop
 the desktops legitimately differ (`assert_shortcut_bound`,
 `assert_input_method_up`, the `shot` display) are helpers in `suites/lib.sh`.
 
-The desktop is an axis, `E2E_DESKTOP=gnome|xubuntu` (`--desktop` on the
-scripts). Its cloud-init is `vm/user-data.common` merged with
+The desktop is an axis, `E2E_DESKTOP=gnome|xubuntu|kde` (`--desktop` on
+the scripts). Its cloud-init is `vm/user-data.common` merged with
 `vm/user-data.<desktop>` by `lib.sh`; session readiness (`session_up`) and
-the X11 environment `on_vm` hands out are per desktop. Xubuntu is Xfce on
-X11 (lightdm autologin).
+the display environment `on_vm` hands out are per desktop. Xubuntu is Xfce on
+X11 (lightdm autologin). KDE is Kubuntu's Plasma 6 on Wayland (sddm autologin
+into the `plasma` session, `kubuntu-desktop` without its application
+Recommends); `on_vm` gives it `WAYLAND_DISPLAY=wayland-0`, and no suite runs
+on it yet. `spectacle -b -n -f -o FILE` through `on_vm` photographs the real
+session (KWin's ScreenShot2 is restricted to Spectacle's desktop entry); a
+window launched from `lxc exec` is not activated, and a KWin script
+(`org.kde.kwin.Scripting.loadScript`, `workspace.activeWindow = w`) does it.
 
 ## Screenshots
 
@@ -74,8 +80,8 @@ manual-test VM; it only ever copies the `installed` snapshot of an e2e VM.
 
 - The GNOME VM keeps the name `myna-e2e-<release>`; other desktops are
   `myna-e2e-<desktop>-<release>`, so they coexist. A new desktop adds a
-  `user-data.<desktop>`, a `session_up` arm and, if X11, an `on_vm` arm in
-  `lib.sh`; shared packages go in `user-data.common`.
+  `user-data.<desktop>`, a `session_up` arm and, unless its suites draw on
+  their own Xvfb, an `on_vm` arm in `lib.sh`; shared packages go in `user-data.common`.
 - Every job blocks pull requests: GNOME on noble, resolute and stonking and
   Xubuntu on noble, gathered into `e2e-result`, the one check to require
   (a repo setting). It passes when they all pass, or when the pull request

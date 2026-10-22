@@ -1,0 +1,68 @@
+#cloud-config
+# Kubuntu (Plasma 6 on Wayland) part of the e2e VM's cloud-init user-data,
+# merged after user-data.common by lib.sh.
+#
+# Kubuntu has no minimal metapackage: kubuntu-desktop's Depends are the Plasma
+# session (sddm, kwin-wayland, plasma-workspace, kubuntu-settings-desktop,
+# which makes sddm and the `plasma` session Wayland), and its Recommends are
+# the application suite (Firefox, LibreOffice, games). So runcmd installs it
+# without Recommends and the list below adds the Recommends Myna meets on a
+# real install: the input method pieces the ISO ships (ibus-gtk3/gtk4 and
+# plasma-keyboard, but not the IBus daemon, which the myna-config deb
+# Recommends), kde-gtk-config, Kate and Spectacle.
+packages:
+  - fonts-ubuntu
+  - at-spi2-core
+  - ibus
+  - ibus-gtk3
+  - ibus-gtk4
+  - im-config
+  - plasma-keyboard
+  - kde-config-gtk-style
+  - breeze-gtk-theme
+  - kate
+  - konsole
+  - kde-spectacle
+  - layer-shell-qt
+  - wayland-utils
+  - policykit-desktop-privileges
+  # What the myna-config deb Depends on, which the suites' bare binary needs.
+  - libadwaita-1-0
+  - libglib2.0-bin
+  - pkexec
+
+write_files:
+  # SDDM autologin into the Plasma Wayland session. Myna tests nothing at the
+  # greeter. Sorts after kubuntu-settings-desktop's 20-kubuntu.conf, whose
+  # empty User= it overrides.
+  - path: /etc/sddm.conf.d/50-e2e-autologin.conf
+    content: |
+      [Autologin]
+      User=ubuntu
+      Session=plasma
+      Relogin=false
+
+  # No lock, no blanking, no suspend: a test must never find the session
+  # asleep. System-wide KConfig defaults, read when the user has no value.
+  - path: /etc/xdg/kscreenlockerrc
+    content: |
+      [Daemon]
+      Autolock=false
+      LockOnResume=false
+      Timeout=0
+
+  - path: /etc/xdg/powerdevilrc
+    content: |
+      [AC][Display]
+      DimDisplayWhenIdle=false
+      TurnOffDisplayWhenIdle=false
+
+      [AC][SuspendAndShutdown]
+      AutoSuspendAction=0
+      # 8 = shut down. The default asks, so LXD's ACPI power-button stop
+      # would sit on the logout dialog until it timed out.
+      PowerButtonAction=8
+
+runcmd:
+  - DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends kubuntu-desktop
+  - systemctl set-default graphical.target
