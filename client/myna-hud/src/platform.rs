@@ -55,7 +55,7 @@ mod tests {
     fn a_bad_override_is_generic_not_a_fallback_to_the_desktop() {
         let platform = Platform::select(&env(&[
             ("XDG_CURRENT_DESKTOP", "GNOME"),
-            ("MYNA_PLATFORM", "kde"),
+            ("MYNA_PLATFORM", "cinnamon"),
         ]));
         assert_eq!(platform.profile, Profile::Generic);
     }

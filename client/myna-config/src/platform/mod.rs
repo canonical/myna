@@ -54,7 +54,7 @@ impl Platform {
                         crate::command::GioCommandRunner,
                     ))),
                 ),
-                Profile::Generic => (None, Rc::new(NoComponents)),
+                Profile::Kde | Profile::Generic => (None, Rc::new(NoComponents)),
             };
         let appearance: Rc<dyn Appearance> = match profile {
             Profile::Gnome => Rc::new(gnome::appearance::GnomeAppearance),
@@ -62,7 +62,7 @@ impl Platform {
                 Ok(xfconf) => appearance::GtkAppearance::with_xfconf(xfconf),
                 Err(_) => appearance::GtkAppearance::default(),
             }),
-            Profile::Generic => Rc::new(appearance::GtkAppearance::default()),
+            Profile::Kde | Profile::Generic => Rc::new(appearance::GtkAppearance::default()),
         };
         Self {
             profile,
@@ -111,10 +111,12 @@ impl Platform {
     pub fn color_scheme(&self) -> adw::ColorScheme {
         match self.profile {
             Profile::Gnome => adw::ColorScheme::Default,
-            Profile::Xfce | Profile::Generic if self.appearance.read().prefers_dark => {
+            Profile::Xfce | Profile::Kde | Profile::Generic
+                if self.appearance.read().prefers_dark =>
+            {
                 adw::ColorScheme::ForceDark
             }
-            Profile::Xfce | Profile::Generic => adw::ColorScheme::Default,
+            Profile::Xfce | Profile::Kde | Profile::Generic => adw::ColorScheme::Default,
         }
     }
 
@@ -283,11 +285,13 @@ mod tests {
 
     #[test]
     fn a_desktop_myna_does_not_know_needs_nothing_from_it() {
-        let platform = Platform::for_profile(Profile::Generic);
-        assert_eq!(platform.profile(), Profile::Generic);
-        assert!(platform.activation().is_none());
-        assert!(platform.components().required().is_empty());
-        assert_eq!(platform.diagnostics(), DesktopDiagnostics::default());
+        for profile in [Profile::Generic, Profile::Kde] {
+            let platform = Platform::for_profile(profile);
+            assert_eq!(platform.profile(), profile);
+            assert!(platform.activation().is_none());
+            assert!(platform.components().required().is_empty());
+            assert_eq!(platform.diagnostics(), DesktopDiagnostics::default());
+        }
     }
 
     #[test]
@@ -300,6 +304,7 @@ mod tests {
             let scheme = |profile| Platform::for_profile(profile).color_scheme();
             settings.set_gtk_theme_name(Some("Greybird-dark"));
             assert_eq!(scheme(Profile::Generic), adw::ColorScheme::ForceDark);
+            assert_eq!(scheme(Profile::Kde), adw::ColorScheme::ForceDark);
             assert_eq!(scheme(Profile::Gnome), adw::ColorScheme::Default);
             settings.set_gtk_theme_name(Some("Greybird"));
             assert_eq!(scheme(Profile::Generic), adw::ColorScheme::Default);
@@ -308,10 +313,12 @@ mod tests {
 
     #[test]
     fn a_profile_named_by_nothing_known_is_the_generic_one() {
-        let env = SessionEnv::from_vars(|name| (name == "MYNA_PLATFORM").then(|| "kde".to_owned()));
-        assert_eq!(Platform::select(&env).profile(), Profile::Generic);
         let env =
-            SessionEnv::from_vars(|name| (name == "XDG_CURRENT_DESKTOP").then(|| "KDE".to_owned()));
+            SessionEnv::from_vars(|name| (name == "MYNA_PLATFORM").then(|| "cinnamon".to_owned()));
+        assert_eq!(Platform::select(&env).profile(), Profile::Generic);
+        let env = SessionEnv::from_vars(|name| {
+            (name == "XDG_CURRENT_DESKTOP").then(|| "X-Cinnamon".to_owned())
+        });
         assert_eq!(Platform::select(&env).profile(), Profile::Generic);
     }
 }

@@ -47,6 +47,7 @@ impl Platform {
         let session = match self.profile {
             Profile::Gnome => return None,
             Profile::Xfce => "an Xfce session",
+            Profile::Kde => "a KDE Plasma session",
             Profile::Generic => {
                 "a session not recognised as GNOME (set MYNA_PLATFORM=gnome to force it)"
             }
@@ -81,6 +82,7 @@ mod tests {
     fn other_desktops_point_to_settings_with_the_command() {
         for vars in [
             &[("XDG_CURRENT_DESKTOP", "XFCE"), ("DISPLAY", ":0")][..],
+            &[("XDG_CURRENT_DESKTOP", "KDE"), ("WAYLAND_DISPLAY", "w")][..],
             &[("XDG_CURRENT_DESKTOP", "KDE")][..],
             &[][..],
         ] {
@@ -94,7 +96,10 @@ mod tests {
 
     #[test]
     fn a_bad_override_is_generic() {
-        let bad = platform(&[("XDG_CURRENT_DESKTOP", "GNOME"), ("MYNA_PLATFORM", "kde")]);
+        let bad = platform(&[
+            ("XDG_CURRENT_DESKTOP", "GNOME"),
+            ("MYNA_PLATFORM", "cinnamon"),
+        ]);
         assert_eq!(bad.profile(), Profile::Generic);
     }
 }

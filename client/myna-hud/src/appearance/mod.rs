@@ -21,6 +21,8 @@ pub mod probe;
 pub fn for_profile(profile: Profile, accent_widget: &impl IsA<gtk::Widget>) -> Rc<dyn Appearance> {
     match profile {
         Profile::Gnome => Rc::new(gnome::GnomeAppearance::new(accent_widget)),
-        Profile::Xfce | Profile::Generic => Rc::new(generic::GtkAppearance::new(accent_widget)),
+        Profile::Xfce | Profile::Kde | Profile::Generic => {
+            Rc::new(generic::GtkAppearance::new(accent_widget))
+        }
     }
 }

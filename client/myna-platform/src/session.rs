@@ -23,6 +23,7 @@ pub enum SessionKind {
 pub enum Desktop {
     Gnome,
     Xfce,
+    Kde,
     /// Anything else, as the variable spelled it; empty when it is unset.
     Other(String),
 }
@@ -136,6 +137,8 @@ impl Desktop {
                     Some(Self::Gnome)
                 } else if entry.eq_ignore_ascii_case("xfce") {
                     Some(Self::Xfce)
+                } else if entry.eq_ignore_ascii_case("kde") {
+                    Some(Self::Kde)
                 } else {
                     None
                 }
@@ -151,13 +154,20 @@ pub enum Profile {
     Gnome,
     /// Xfce on X11; its status surface host is an X11 client.
     Xfce,
+    /// Plasma on Wayland. Plasma on X11 is `Generic`, best effort.
+    Kde,
     /// Whatever needs no particular desktop. Every unknown session gets this,
     /// never a desktop-specific profile.
     Generic,
 }
 
 impl Profile {
-    pub const ALL: [Profile; 3] = [Profile::Gnome, Profile::Xfce, Profile::Generic];
+    pub const ALL: [Profile; 4] = [
+        Profile::Gnome,
+        Profile::Xfce,
+        Profile::Kde,
+        Profile::Generic,
+    ];
 
     /// The profile `session` gets with no override.
     pub fn for_session(session: &Session) -> Self {
@@ -165,6 +175,8 @@ impl Profile {
             (Desktop::Gnome, _) => Self::Gnome,
             (Desktop::Xfce, SessionKind::Wayland) => Self::Generic,
             (Desktop::Xfce, _) => Self::Xfce,
+            (Desktop::Kde, SessionKind::Wayland) => Self::Kde,
+            (Desktop::Kde, _) => Self::Generic,
             (Desktop::Other(_), _) => Self::Generic,
         }
     }
@@ -182,6 +194,7 @@ impl Profile {
         match self {
             Self::Gnome => "gnome",
             Self::Xfce => "xfce",
+            Self::Kde => "kde",
             Self::Generic => "generic",
         }
     }
@@ -194,7 +207,7 @@ impl fmt::Display for Profile {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
-#[error("MYNA_PLATFORM={0:?} names no profile (gnome, xfce, generic)")]
+#[error("MYNA_PLATFORM={0:?} names no profile ({names})", names = Profile::ALL.map(Profile::name).join(", "))]
 pub struct UnknownProfile(pub String);
 
 impl FromStr for Profile {
@@ -264,7 +277,9 @@ mod tests {
             ("xfce", Desktop::Xfce),
             ("XFCE:GNOME", Desktop::Xfce),
             (" ubuntu : xfce ", Desktop::Xfce),
-            ("KDE", Desktop::Other("KDE".into())),
+            ("KDE", Desktop::Kde),
+            ("kde", Desktop::Kde),
+            ("KDE:GNOME", Desktop::Kde),
             ("X-Cinnamon", Desktop::Other("X-Cinnamon".into())),
             ("GNOME-Flashback", Desktop::Other("GNOME-Flashback".into())),
             ("", Desktop::Other(String::new())),
@@ -281,7 +296,7 @@ mod tests {
     #[test]
     fn unknown_desktops_get_the_generic_profile_never_gnome() {
         use Profile::*;
-        let cases: [(&[(&str, &str)], Profile); 9] = [
+        let cases: [(&[(&str, &str)], Profile); 12] = [
             (
                 &[
                     ("XDG_CURRENT_DESKTOP", "ubuntu:GNOME"),
@@ -302,8 +317,20 @@ mod tests {
             ),
             (
                 &[("XDG_CURRENT_DESKTOP", "KDE"), ("WAYLAND_DISPLAY", "w")],
+                Kde,
+            ),
+            (
+                &[("XDG_CURRENT_DESKTOP", "KDE"), ("DISPLAY", ":0")],
                 Generic,
             ),
+            (
+                &[
+                    ("XDG_CURRENT_DESKTOP", "KDE"),
+                    ("XDG_SESSION_TYPE", "wayland"),
+                ],
+                Kde,
+            ),
+            (&[("XDG_CURRENT_DESKTOP", "KDE")], Generic),
             (
                 &[
                     ("XDG_CURRENT_DESKTOP", "GNOME-Flashback"),
@@ -325,14 +352,17 @@ mod tests {
             ("xfce", Profile::Xfce),
             ("Generic", Profile::Generic),
             (" GNOME ", Profile::Gnome),
+            ("KDE", Profile::Kde),
         ] {
             let vars = [gnome[0], gnome[1], ("MYNA_PLATFORM", name)];
             assert_eq!(Profile::select(&env(&vars)), Ok(profile), "{name}");
         }
-        let bogus = [gnome[0], ("MYNA_PLATFORM", "kde")];
-        assert_eq!(
-            Profile::select(&env(&bogus)),
-            Err(UnknownProfile("kde".into()))
+        let bogus = [gnome[0], ("MYNA_PLATFORM", "cinnamon")];
+        let error = Profile::select(&env(&bogus)).unwrap_err();
+        assert_eq!(error, UnknownProfile("cinnamon".into()));
+        assert!(
+            error.to_string().ends_with("(gnome, xfce, kde, generic)"),
+            "{error}"
         );
         let empty = [gnome[0], ("MYNA_PLATFORM", "")];
         assert_eq!(Profile::select(&env(&empty)), Ok(Profile::Gnome));
