@@ -104,9 +104,9 @@ impl Toasts for SessionToasts {
 /// One updating toast per dictation session.
 pub struct NotifyIndicator {
     toasts: Arc<dyn Toasts>,
-    /// The live notification's id, so state changes *replace* it rather than
-    /// stack a new toast each transition. Cleared on `Hidden`.
-    id: Option<u32>,
+    /// The live toast: its id, so state changes *replace* it rather than
+    /// stack a new toast each transition, and its text. Cleared on `Hidden`.
+    live: Option<(u32, Text)>,
     /// Pending auto-hide task for a notice.
     pending_hide: Option<tokio::task::JoinHandle<()>>,
     hold_ms_for: fn(&str) -> u64,
@@ -162,7 +162,7 @@ impl NotifyIndicator {
     fn with(toasts: Arc<dyn Toasts>, hold_ms_for: fn(&str) -> u64) -> Self {
         Self {
             toasts,
-            id: None,
+            live: None,
             pending_hide: None,
             hold_ms_for,
         }
@@ -172,7 +172,7 @@ impl NotifyIndicator {
     async fn show(&self, text: &Text, critical: bool) -> Option<u32> {
         match self
             .toasts
-            .notify(self.id.unwrap_or(0), text, critical)
+            .notify(self.live.as_ref().map_or(0, |(id, _)| *id), text, critical)
             .await
         {
             Ok(id) => Some(id),
@@ -189,10 +189,9 @@ impl NotifyIndicator {
         }
     }
 
-    fn schedule_auto_hide(&mut self, body: &str) {
+    fn schedule_auto_hide(&mut self, ms: u64) {
         self.abort_pending();
-        let Some(id) = self.id else { return };
-        let ms = (self.hold_ms_for)(body);
+        let Some((id, _)) = self.live else { return };
         let toasts = self.toasts.clone();
         self.pending_hide = Some(tokio::spawn(async move {
             tokio::time::sleep(std::time::Duration::from_millis(ms)).await;
@@ -217,10 +216,19 @@ impl Indicator for NotifyIndicator {
         let is_error = matches!(&state, IndicatorState::Error { .. });
         match toast_text(&state) {
             Some(text) => {
+                // Plasma refuses an identical Notify in quick succession. An
+                // error is sent again: the user may have closed the toast.
+                if !is_error && self.live.as_ref().is_some_and(|(_, t)| *t == text) {
+                    return;
+                }
                 self.abort_pending();
-                self.id = self.show(&text, is_error).await;
+                let hold = (self.hold_ms_for)(&text.1);
+                // A refused replacement leaves the old toast up: keep its id.
+                if let Some(id) = self.show(&text, is_error).await {
+                    self.live = Some((id, text));
+                }
                 if is_notice {
-                    self.schedule_auto_hide(&text.1);
+                    self.schedule_auto_hide(hold);
                 }
             }
             None => {
@@ -229,7 +237,7 @@ impl Indicator for NotifyIndicator {
                 if self.pending_hide.is_some() {
                     return;
                 }
-                if let Some(id) = self.id.take() {
+                if let Some((id, _)) = self.live.take() {
                     self.toasts.close(id).await;
                 }
             }
@@ -243,7 +251,7 @@ mod tests {
     use std::sync::Mutex;
 
     /// A notification server that, like Plasma's, refuses a `Notify`
-    /// identical to the one before it.
+    /// identical to the one just before it.
     #[derive(Default)]
     struct Server {
         next_id: u32,
@@ -313,6 +321,54 @@ mod tests {
             ]
         );
         assert!(open(&server).is_empty());
+    }
+
+    /// #70: the controller publishes `Recording` again on `Loading` and
+    /// `Ready`; Plasma refused the copies and the first toast was orphaned.
+    #[tokio::test]
+    async fn a_repeated_state_sends_no_second_toast() {
+        let (mut indicator, server) = rig();
+        for _ in 0..3 {
+            indicator.set_state(IndicatorState::Recording).await;
+        }
+        indicator.set_state(IndicatorState::Finalizing).await;
+        indicator.set_state(IndicatorState::Hidden).await;
+        assert_eq!(
+            calls(&server),
+            [
+                "🎤 Dictation: listening",
+                "⏳ Dictation: finishing",
+                "close 1"
+            ]
+        );
+        assert!(open(&server).is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_refused_replacement_leaves_the_toast_closable() {
+        let (mut indicator, server) = rig();
+        indicator.set_state(IndicatorState::Recording).await;
+        server.0.lock().unwrap().refuse_next = true;
+        indicator.set_state(IndicatorState::Finalizing).await;
+        indicator.set_state(IndicatorState::Hidden).await;
+        assert!(open(&server).is_empty());
+    }
+
+    /// The user may have closed it since: a press that fails the same way
+    /// again must say so again.
+    #[tokio::test]
+    async fn a_repeated_error_is_sent_again() {
+        let (mut indicator, server) = rig();
+        indicator
+            .set_state(IndicatorState::critical("No text field focused"))
+            .await;
+        server.0.lock().unwrap().open.clear();
+        // Out of Plasma's quick succession.
+        server.0.lock().unwrap().last = None;
+        indicator
+            .set_state(IndicatorState::critical("No text field focused"))
+            .await;
+        assert_eq!(open(&server), ["⚠️ Dictation error"]);
     }
 
     #[tokio::test]
