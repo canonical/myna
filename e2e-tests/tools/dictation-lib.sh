@@ -145,11 +145,7 @@ notify_watch_start() {
 }
 # Myna toasted nothing (the daemon falls back to notifications while no HUD
 # is registered).
-# How many Notify calls from Myna carry a summary: the empty one is the daemon
-# closing a toast it left behind, which shows nothing.
-myna_toasts() {
-    awk '/string "Myna"/ { summary = NR + 3 } NR == summary && !/string ""$/ { n++ } END { print n + 0 }'
-}
+myna_toasts() { grep -c 'string "Myna"'; }
 no_myna_toast() { [ "$(myna_toasts < "$NOTIFY_LOG")" = 0 ]; }
 # The same, for what was sent after `notify_mark` (the watch keeps appending).
 notify_mark() { wc -c < "$NOTIFY_LOG" > "$HOME/myna-shot/notify.mark"; }
