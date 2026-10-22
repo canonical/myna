@@ -480,7 +480,7 @@ RELEASE ?= noble
 ACTION ?= up
 
 .PHONY: try-desktop
-try-desktop: ## A desktop VM running HEAD (DESKTOP=xubuntu|gnome RELEASE=noble|resolute ACTION=up|update|console|reset|down|delete|status)
+try-desktop: ## A desktop VM running HEAD (DESKTOP=xubuntu|gnome|kde RELEASE=noble|resolute|stonking ACTION=up|update|console|reset|down|delete|status)
 	dev/try-desktop.sh --desktop $(DESKTOP) --release $(RELEASE) $(ACTION)
 
 .PHONY: testflinger

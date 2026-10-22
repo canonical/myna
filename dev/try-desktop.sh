@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # A desktop VM running THIS tree's Myna, to try by hand (not a test).
 #
-# Usage: dev/try-desktop.sh --desktop xubuntu|gnome --release noble|resolute ACTION
+# Usage: dev/try-desktop.sh --desktop xubuntu|gnome|kde --release noble|resolute|stonking ACTION
 #   (or: make try-desktop DESKTOP=xubuntu RELEASE=noble ACTION=up)
 #
 #   up       create myna-try-<desktop>-<release> from the e2e VM's `installed`
