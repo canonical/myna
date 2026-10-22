@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-19 16:15+0100\n"
+"POT-Creation-Date: 2026-10-23 00:30+0100\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -143,11 +143,11 @@ msgid "Cancel"
 msgstr ""
 
 #: data/myna-page.blp:67 data/onboarding-window.blp:7 src/app.rs:1784
-#: src/app.rs:5160 src/onboarding_ui.rs:1420 src/shortcut_ui.rs:591
+#: src/app.rs:5160 src/onboarding_ui.rs:1424 src/shortcut_ui.rs:591
 msgid "Dictation"
 msgstr ""
 
-#: data/onboarding-components.blp:18 src/app.rs:3872 src/onboarding_ui.rs:1421
+#: data/onboarding-components.blp:18 src/app.rs:3872 src/onboarding_ui.rs:1425
 msgid "Install components"
 msgstr ""
 
@@ -167,7 +167,7 @@ msgstr ""
 msgid "Installing…"
 msgstr ""
 
-#: data/onboarding-shortcut.blp:18 src/app.rs:4892 src/onboarding_ui.rs:1422
+#: data/onboarding-shortcut.blp:18 src/app.rs:4892 src/onboarding_ui.rs:1426
 msgid "How to dictate"
 msgstr ""
 
@@ -175,7 +175,7 @@ msgstr ""
 msgid "Set up shortcut"
 msgstr ""
 
-#: data/onboarding-shortcut.blp:58 src/onboarding_ui.rs:1137
+#: data/onboarding-shortcut.blp:58 src/onboarding_ui.rs:1141
 msgid ""
 "Log out and back in to turn on the dictation indicator (GNOME Shell "
 "extension)."
@@ -291,7 +291,7 @@ msgstr ""
 msgid "Up to {size}"
 msgstr ""
 
-#: src/app.rs:4051 src/onboarding_ui.rs:1083
+#: src/app.rs:4051 src/onboarding_ui.rs:1087
 msgid "Could not let Myna run in the background"
 msgstr ""
 
@@ -312,32 +312,32 @@ msgstr ""
 msgid "Message:"
 msgstr ""
 
-#: src/app.rs:4146 src/onboarding_ui.rs:1062
+#: src/app.rs:4146 src/onboarding_ui.rs:1066
 msgid "Enabling user daemons support"
 msgstr ""
 
-#: src/app.rs:4168 src/onboarding_ui.rs:1063
+#: src/app.rs:4168 src/onboarding_ui.rs:1067
 msgid "Installing Dictation app"
 msgstr ""
 
 #. TRANSLATORS: {step} is what is installing, such as "Installing speech-to-text model", and {percent} how much of its download has arrived.
-#: src/app.rs:4178 src/app.rs:4241 src/app.rs:4346 src/onboarding_ui.rs:1071
+#: src/app.rs:4178 src/app.rs:4241 src/app.rs:4346 src/onboarding_ui.rs:1075
 msgid "{step} ({percent}%)"
 msgstr ""
 
-#: src/app.rs:4192 src/onboarding_ui.rs:1064
+#: src/app.rs:4192 src/onboarding_ui.rs:1068
 msgid "Installing speech-to-text model"
 msgstr ""
 
-#: src/app.rs:4206 src/onboarding_ui.rs:1085
+#: src/app.rs:4206 src/onboarding_ui.rs:1089
 msgid "Installing the speech-to-text model failed"
 msgstr ""
 
-#: src/app.rs:4269 src/onboarding_ui.rs:1066
+#: src/app.rs:4269 src/onboarding_ui.rs:1070
 msgid "Enabling shell extension"
 msgstr ""
 
-#: src/app.rs:4442 src/onboarding_ui.rs:1087
+#: src/app.rs:4442 src/onboarding_ui.rs:1091
 msgid "Enabling the shell extension failed"
 msgstr ""
 
@@ -350,11 +350,11 @@ msgid "You can trigger Dictation anytime by using the keyboard shortcut:"
 msgstr ""
 
 #: src/app.rs:5256 src/onboarding_ui.rs:743 src/onboarding_ui.rs:750
-#: src/onboarding_ui.rs:997
+#: src/onboarding_ui.rs:1001
 msgid "Could not set up Dictation"
 msgstr ""
 
-#: src/app.rs:5289 src/onboarding_ui.rs:948
+#: src/app.rs:5289 src/onboarding_ui.rs:952
 msgid "Dictation is not set up yet. Select Next to try again."
 msgstr ""
 
@@ -382,19 +382,19 @@ msgstr ""
 msgid "Preview sound style"
 msgstr ""
 
-#: src/active_backend.rs:419
+#: src/active_backend.rs:420
 msgid "The change was cancelled."
 msgstr ""
 
-#: src/active_backend.rs:494
+#: src/active_backend.rs:495
 msgid "No model is connected."
 msgstr ""
 
-#: src/active_backend.rs:499
+#: src/active_backend.rs:500
 msgid "The model is not available to switch to."
 msgstr ""
 
-#: src/active_backend.rs:514
+#: src/active_backend.rs:515
 msgid "The model changed while it was being switched on. Try again."
 msgstr ""
 
@@ -918,48 +918,54 @@ msgstr ""
 
 #: src/onboarding_ui.rs:945
 msgid ""
+"Another input method is in use, and Dictation types through IBus. Choose "
+"IBus in the system settings."
+msgstr ""
+
+#: src/onboarding_ui.rs:949
+msgid ""
 "The input method IBus is not installed. Install the “ibus” package, then log "
 "out and back in."
 msgstr ""
 
-#: src/onboarding_ui.rs:950
+#: src/onboarding_ui.rs:954
 msgid "Setup status unavailable. The log has the details."
 msgstr ""
 
-#: src/onboarding_ui.rs:1065
+#: src/onboarding_ui.rs:1069
 msgid "Setting up the input method"
 msgstr ""
 
-#: src/onboarding_ui.rs:1084
+#: src/onboarding_ui.rs:1088
 msgid "Installing the Dictation app failed"
 msgstr ""
 
-#: src/onboarding_ui.rs:1086
+#: src/onboarding_ui.rs:1090
 msgid "Setting up the input method failed"
 msgstr ""
 
-#: src/onboarding_ui.rs:1134
+#: src/onboarding_ui.rs:1138
 msgid "Log out and back in to finish setting up the input method."
 msgstr ""
 
 #. TRANSLATORS: a download size in megabytes, such as "776 MB"; the space is a no-break space.
-#: src/onboarding_ui.rs:1366
+#: src/onboarding_ui.rs:1370
 msgid "{megabytes} MB"
 msgstr ""
 
-#: src/onboarding_ui.rs:1374
+#: src/onboarding_ui.rs:1378
 msgid "Checking the installation"
 msgstr ""
 
-#: src/onboarding_ui.rs:1379
+#: src/onboarding_ui.rs:1383
 msgid "Waiting for other software changes to finish"
 msgstr ""
 
-#: src/onboarding_ui.rs:1381
+#: src/onboarding_ui.rs:1385
 msgid "Setting up speech-to-text model"
 msgstr ""
 
-#: src/onboarding_ui.rs:1382
+#: src/onboarding_ui.rs:1386
 msgid "Starting dictation"
 msgstr ""
 

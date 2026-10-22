@@ -24,10 +24,10 @@ use crate::command::{CancellationToken, GioCommandRunner};
 use crate::domain::BackendSurfaceError;
 use crate::onboarding::{
     assess, can_advance, completes, failed_set_up_step, flag_enabled, forward_leads,
-    input_method_missing, install_view, installs, model_offer, needs_onboarding, next_install,
+    input_method_blocker, install_view, installs, model_offer, needs_onboarding, next_install,
     polls, relogin_pending, remaining_download, seed_spoken_language, set_up_plan, set_up_steps,
     settled, spoken_language, while_installing, Component, ComponentId, ComponentState,
-    DownloadSize, InstallView, Machine, ModelOffer, Step,
+    DownloadSize, InstallView, Machine, ModelOffer, Step, Unavailable,
 };
 use crate::ports::{
     BackendRepository, ClientSettings, SystemConfigurator, SystemConfiguratorError,
@@ -918,7 +918,7 @@ impl OnboardingUi {
             (_, Some((id, percent))) => Some((step_text(id, None), step_text(id, percent))),
             _ => None,
         };
-        let missing_input_method = input_method_missing(components) && !self.busy.get();
+        let input_method = input_method_blocker(components).filter(|_| !self.busy.get());
         let size = match model.filter(|_| offer) {
             Some(model) => match remaining_download(components, &model) {
                 DownloadSize::Exact(0) => String::new(),
@@ -940,7 +940,11 @@ impl OnboardingUi {
             busy.as_ref().map(|(step, _)| step.as_str()),
             &size,
         ));
-        let note = if missing_input_method {
+        let note = if input_method == Some(Unavailable::Incompatible) {
+            gettextrs::gettext(
+                "Another input method is in use, and Dictation types through IBus. Choose IBus in the system settings.",
+            )
+        } else if input_method.is_some() {
             gettextrs::gettext(
                 "The input method IBus is not installed. Install the “ibus” package, then log out and back in.",
             )
@@ -953,7 +957,7 @@ impl OnboardingUi {
         };
         page.show_status(match &busy {
             Some((_, text)) => ui::ComponentsStatus::Busy(text),
-            None if failed || missing_input_method => ui::ComponentsStatus::Warning(&note),
+            None if failed || input_method.is_some() => ui::ComponentsStatus::Warning(&note),
             None if note.is_empty() => ui::ComponentsStatus::Hidden,
             None => ui::ComponentsStatus::Note(&note),
         });
