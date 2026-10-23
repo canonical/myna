@@ -29,9 +29,15 @@ impl Accelerator {
     /// `<Mod1>` for `<Alt>`, `<Mod4>` for `<Super>`, a letter in either case.
     pub fn same_keys(&self, stored: &str) -> bool {
         match (chord(&self.0), chord(stored)) {
-            (Some(a), Some(b)) => a == b,
+            (Some((a, x)), Some((b, y))) => a == b && x.eq_ignore_ascii_case(y),
             _ => false,
         }
+    }
+
+    /// The modifiers, each by one name (`control`, `alt`, `super`, `shift`,
+    /// `meta`, `hyper`) and sorted, and the key as it is spelled.
+    pub fn parts(&self) -> (Vec<&'static str>, &str) {
+        chord(&self.0).expect("parsed")
     }
 }
 
@@ -41,7 +47,7 @@ impl fmt::Display for Accelerator {
     }
 }
 
-fn chord(accelerator: &str) -> Option<(Vec<&'static str>, String)> {
+fn chord(accelerator: &str) -> Option<(Vec<&'static str>, &str)> {
     let mut modifiers = Vec::new();
     let mut rest = accelerator.trim();
     while let Some(tail) = rest.strip_prefix('<') {
@@ -62,7 +68,7 @@ fn chord(accelerator: &str) -> Option<(Vec<&'static str>, String)> {
     }
     modifiers.sort_unstable();
     modifiers.dedup();
-    Some((modifiers, rest.to_ascii_lowercase()))
+    Some((modifiers, rest))
 }
 
 /// What Myna's binding runs.
@@ -154,6 +160,16 @@ mod tests {
         assert!(Accelerator::parse("<Shift><Meta><Hyper>F1")
             .unwrap()
             .same_keys("<Hyper><Meta><Shift>f1"));
+    }
+
+    #[test]
+    fn a_chord_splits_into_named_modifiers_and_its_key() {
+        let chord = Accelerator::parse("<Primary><Mod4><Shift>Page_Up").unwrap();
+        assert_eq!(
+            chord.parts(),
+            (vec!["control", "shift", "super"], "Page_Up")
+        );
+        assert_eq!(Accelerator::parse("F12").unwrap().parts(), (vec![], "F12"));
     }
 
     #[test]
