@@ -25,6 +25,7 @@ PACKED = [
     "myna-config-deb",
     "client/myna-config",
     "client/myna-core",
+    "client/myna-platform",
     "client/data",
     "client/build-support",
     "client/Cargo.toml",
