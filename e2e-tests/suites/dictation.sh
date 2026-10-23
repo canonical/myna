@@ -3,13 +3,15 @@
 # Dictation end to end on the real desktop session: activation -> a speech
 # clip played through a virtual microphone -> the fake backend (a scripted
 # transcript: "The quick brown fox" while recording, "jumps over the lazy dog."
-# at the end) -> IBus -> a GTK4 text field (tools/field-app.py), asserted from
-# the field's own report and the daemon's state, never from pixels.
+# at the end) -> IBus -> a text field (tools/field-app.py: Qt on Plasma, GTK4
+# elsewhere), asserted from the field's own report and the daemon's state,
+# never from pixels.
 #
 #   1. a toggle dictates into a plain field
 #   2. a password field receives nothing and the press is refused
 #   3. focus moved away mid-utterance: the rest is dropped, nothing lands in
-#      the field that took the focus
+#      the field that took the focus (on Plasma a field in another window:
+#      see tools/field-app.py)
 #   4. the bound key (a virtual keyboard, tools/uinput-keys.py, presses it on
 #      the real seat) starts and stops a dictation
 #   5. the key held 2 s (past the focus wait and the 1 s blip grace, deep
@@ -18,14 +20,14 @@
 #   6. the key held 1.5 s to stop toggles once and the tail still lands
 #   7. the first dictation after ibus-daemon restarts, by key, reaches the
 #      field: the daemon focuses the engine before it can name the field
-#   8. (Xubuntu only) the pill through a dictation, photographed on the real
-#      desktop: listening, finishing, the focus-lost notice, the secure-field
-#      error. The HUD is hosted by myna-hud-host, as the deb's autostart
-#      entry does; GNOME's shell extension is not in the VM, and its Wayland
-#      session cannot be photographed from inside anyway. The case waits for
+#   8. (Xubuntu, Plasma) the pill through a dictation, photographed on the
+#      real desktop: listening, finishing, the focus-lost notice, the
+#      secure-field error. The HUD is hosted by myna-hud-host, as the deb's
+#      autostart entry does (an X11 window on Xfce, a layer surface on
+#      KWin); GNOME's shell extension is not in the VM. The case waits for
 #      the HUD to register, then asserts the pill's window state, that the
 #      field kept focus and that the daemon sent no toast.
-#   9. (Xubuntu only) the daemon restarts and a dictation starts at once,
+#   9. (Xubuntu, Plasma) the daemon restarts and a dictation starts at once,
 #      with no wait for the HUD: the host's registration stands in for the
 #      pill that is on its way, so no toast, and the pill shows while still
 #      listening.
@@ -34,6 +36,7 @@
 #      the Shell's own IBus client, which libibus 1.5.33-1.5.34 crash with a
 #      non-empty attribute list (#18): the Shell logs no IBusAttrList double
 #      free through two GJS collections and is still the same process.
+#  11. (Xubuntu, Plasma) logging out ends the HUD host and its HUD.
 set -uo pipefail
 # shellcheck source=e2e-tests/suites/lib.sh
 source "$(dirname "$0")/lib.sh"
@@ -166,10 +169,13 @@ assert_dict "the key stops it" 'wait_until 10 dictation_state_is idle'
 assert_dict "the whole transcript is in the field" "wait_until 10 field_is plain '$FULL'"
 evidence 7
 
-if [ "$DESKTOP" = xubuntu ]; then
+HOSTED=''
+case $DESKTOP in xubuntu) HOSTED=x11 ;; kde) HOSTED=layer-shell ;; esac
+if [ -n "$HOSTED" ]; then
     echo "-- 8. the pill through a dictation, on the real desktop"
     dict journal_mark
     assert_dict "the HUD host runs the HUD" 'hud_host_start'
+    assert_dict "as the session's kind of host ($HOSTED)" "hud_host_kind_is $HOSTED"
     assert_dict "the toast watch is up" 'notify_watch_start'
     assert_dict "the field is cleared" 'field_clear'
     assert_dict "the plain field is focused afresh" 'field_focus other && field_focus plain'
@@ -258,4 +264,10 @@ evidence 10
 dict 'fake_streaming false; daemon_debug off' >/dev/null 2>&1
 
 dict 'mic_stop' >/dev/null 2>&1
+if [ -n "$HOSTED" ]; then
+    echo "-- 11. the HUD host ends with the session"
+    dict session_logout
+    assert_dict "the host and the HUD are gone" 'wait_until 20 hud_host_ended'
+    assert_dict "the host saw the session end" "grep -q 'the session has ended' myna-shot/out/hud-host.log"
+fi
 suite_status

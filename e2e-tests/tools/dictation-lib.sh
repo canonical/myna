@@ -35,7 +35,7 @@ wait_until() {
 
 dictation_prop() {
     gdbus call --session --dest $DAEMON --object-path $DAEMON_PATH \
-        --method org.freedesktop.DBus.Properties.Get $DAEMON "$1" | sed -E "s/^\(<'?([^'>]*)'?>,\)$/\1/"
+        --method org.freedesktop.DBus.Properties.Get $DAEMON "$1" 2>/dev/null | sed -E "s/^\(<'?([^'>]*)'?>,\)$/\1/"
 }
 dictation_state_is() { [ "$(dictation_prop State)" = "$1" ]; }
 # The captured level: non-zero only if the virtual microphone's audio arrives.
@@ -73,8 +73,30 @@ bind_toggle_key() {
             gsettings set $base custom-keybindings "['$path']" ;;
         *XFCE*)
             xfconf-query -c xfce4-keyboard-shortcuts -n -t string -p "/commands/custom/$1" -s "$cmd" ;;
+        *KDE*)
+            # A command shortcut, as Plasma's Shortcuts settings make one:
+            # kglobalaccel finds the entry through KSycoca (up to 1.5 s),
+            # and only the `_launch` its entry gives it is grabbed. Keys are
+            # Qt's, four to a sequence (fewer abort KWin).
+            local key entry=myna-e2e-toggle.desktop dir=$HOME/.local/share/applications
+            case $1 in '<Super>j') key=$((0x10000000 + 0x4a)) ;; *) echo "bind_toggle_key: no Qt key for $1" >&2; return 1 ;; esac
+            mkdir -p "$dir"
+            printf '[Desktop Entry]\nType=Application\nName=Myna e2e\nExec=%s\nNoDisplay=true\nX-KDE-GlobalAccel-CommandShortcut=true\n' \
+                "$cmd" > "$dir/$entry"
+            wait_until 10 kglobalaccel_registers "$entry"
+            kglobalaccel unregister "$entry" '' >/dev/null
+            kglobalaccel setForeignShortcutKeys "['$entry', '_launch', '', '']" "[([$key, 0, 0, 0],)]" >/dev/null ;;
         *) echo "bind_toggle_key: unknown desktop ${XDG_CURRENT_DESKTOP:-}" >&2; return 1 ;;
     esac
+}
+
+kglobalaccel() { # METHOD ARGS...
+    local method=$1; shift
+    gdbus call --session --dest org.kde.kglobalaccel --object-path /kglobalaccel \
+        --method "org.kde.KGlobalAccel.$method" "$@"
+}
+kglobalaccel_registers() {
+    kglobalaccel doRegister "['$1', '', 'Myna e2e', '']" >/dev/null && kglobalaccel getComponent "$1" >/dev/null
 }
 
 # The daemon's journal from a mark on: `journal_mark`, then `journal_count RE`.
@@ -109,17 +131,73 @@ mic_make_default() {
 
 default_source_is() { wpctl inspect @DEFAULT_AUDIO_SOURCE@ | grep -q "node.name = \"$1\""; }
 
+# Plasma (KWin) rather than an X11 desktop: the window checks below differ.
+plasma() { [[ ${XDG_CURRENT_DESKTOP:-} == *KDE* ]]; }
+
+# A KWin script: the compositor's own view of its windows, which Wayland
+# gives no client. Its print()s land in the user journal, its name last.
+kwin_script() {
+    local name=myna-e2e-$$-$RANDOM js since kwin=(--session --dest org.kde.KWin --object-path /Scripting)
+    js=$(mktemp --suffix=.js)
+    printf '%s\nprint("%s");\n' "$1" "$name" > "$js"
+    since=$(date +%s.%N)
+    # shellcheck disable=SC2016 # expands in the inner shell
+    gdbus call "${kwin[@]}" --method org.kde.kwin.Scripting.loadScript "$js" "$name" >/dev/null \
+        && gdbus call "${kwin[@]}" --method org.kde.kwin.Scripting.start >/dev/null \
+        && wait_until 5 sh -c 'journalctl --user --since "@$1" -o cat | grep -qx "js: $2"' sh "$since" "$name"
+    gdbus call "${kwin[@]}" --method org.kde.kwin.Scripting.unloadScript "$name" >/dev/null
+    rm -f "$js"
+    journalctl --user --since "@$since" -o cat | sed -n "/^js: $name\$/d; s/^js: //p"
+}
+# The work area (`workarea X Y W H`), then every window KWin shows:
+# ID CLASS ACTIVE WANTS_INPUT LAYER X Y W H (layer 9 is the overlay).
+kwin_windows() {
+    kwin_script 'const a = workspace.clientArea(KWin.MaximizeArea, workspace.activeScreen, workspace.currentDesktop);
+print(["workarea", a.x, a.y, a.width, a.height].join(" "));
+for (const w of workspace.windowList()) {
+    const g = w.frameGeometry;
+    print([w.internalId, w.resourceClass || "-", w === workspace.activeWindow ? 1 : 0,
+           w.wantsInput ? 1 : 0, w.layer, g.x, g.y, g.width, g.height].join(" "));
+}'
+}
+# KWin's focus-stealing prevention may leave a window launched from a shell
+# inactive: make the one holding FIELD active, as a click would (the Qt field
+# app gives `other` a window of its own).
+field_window_activate() {
+    local caption="Myna e2e fields"
+    [ "$1" != other ] || caption="$caption (other)"
+    plasma && kwin_script "for (const w of workspace.windowList())
+    if (w.caption === '$caption') workspace.activeWindow = w;" >/dev/null
+}
+
 # The HUD, hosted the way the myna-config deb's autostart entry hosts it on
-# Xfce: the supervisor starts myna.hud while the daemon owns its bus name.
-# (GNOME's shell extension does this there; the VM has no extension.)
+# Xfce and Plasma: the supervisor starts myna.hud while the daemon owns its
+# bus name. (GNOME's shell extension does this there; the VM has no extension.)
 hud_host_start() {
     mkdir -p "$HOME/myna-shot/out"
     session_env
     setsid "$HOME/myna-shot/myna-hud-host" >"$HOME/myna-shot/out/hud-host.log" 2>&1 </dev/null &
     wait_until 30 pgrep -u "$USER" -x myna-hud
 }
+# The HUD runs as KIND's host (`myna-hud --host KIND`).
+hud_host_kind_is() { pgrep -u "$USER" -ax myna-hud | grep -q -- "--host $1\$"; }
+# Log out of the desktop session; the host must see it end and stop.
+session_logout() {
+    if plasma; then
+        gdbus call --session --dest org.kde.Shutdown --object-path /Shutdown --method org.kde.Shutdown.logout >/dev/null
+    else
+        xfce4-session-logout --logout --fast
+    fi
+}
+hud_host_ended() { ! pgrep -u "$USER" -x myna-hud-host && ! pgrep -u "$USER" -x myna-hud; }
 # The pill is a mapped window only while the HUD has something to say.
-pill_shows() { DISPLAY=${DISPLAY:-:0} xdotool search --onlyvisible --name '^myna-hud$' >/dev/null; }
+pill_shows() {
+    if plasma; then
+        kwin_windows | awk '$2 == "myna-hud" { found = 1 } END { exit !found }'
+    else
+        DISPLAY=${DISPLAY:-:0} xdotool search --onlyvisible --name '^myna-hud$' >/dev/null
+    fi
+}
 
 # The HUD is a client of the daemon once it has said so (RegisterClient):
 # until then the daemon answers a dictation with a notification toast instead
@@ -193,35 +271,52 @@ shell_attr_list_criticals() {
 pill_while_listening() { pill_shows && dictation_state_is recording; }
 
 pill_id() { DISPLAY=${DISPLAY:-:0} xdotool search --onlyvisible --name '^myna-hud$' | head -1; }
-active_window() { DISPLAY=${DISPLAY:-:0} xprop -root _NET_ACTIVE_WINDOW | sed 's/.*# //'; }
+# The active window's id, and whether it is the pill.
+active_window() {
+    if plasma; then
+        kwin_windows | awk '$3 == 1 { print $1, ($2 == "myna-hud") }'
+    else
+        local id
+        id=$(DISPLAY=${DISPLAY:-:0} xprop -root _NET_ACTIVE_WINDOW | sed 's/.*# //')
+        echo "$id $([ "$id" = "$(printf '0x%x' "$(pill_id)")" ] && echo 1 || echo 0)"
+    fi
+}
 active_window_save() { active_window > "$HOME/myna-shot/active.window"; }
 # The active window is still the one `active_window_save` saw, and not the pill.
 active_window_kept() {
-    [ "$(active_window)" = "$(cat "$HOME/myna-shot/active.window")" ] \
-        && [ "$(active_window)" != "$(printf '0x%x' "$(pill_id)")" ]
+    local now
+    now=$(active_window)
+    [ "$now" = "$(cat "$HOME/myna-shot/active.window")" ] && [ "${now##* }" = 0 ]
 }
 
-# The pill as the window manager sees it: mapped, a notification-type window
-# that takes no input focus, bottom centre inside the work area (the panel's
-# strut is out of it). The numbers go to out/pill.txt for a human.
+# The pill as the window manager sees it: mapped, a window that takes no
+# input focus (an X11 notification-type window; a layer surface on KWin's
+# overlay layer), bottom centre inside the work area (the panel is out of
+# it). The numbers go to out/pill.txt for a human.
 pill_placed() {
-    local id out=$HOME/myna-shot/out/pill.txt
-    export DISPLAY=${DISPLAY:-:0}
-    id=$(pill_id) && [ -n "$id" ] || return 1
-    {
-        xprop -id "$id" _NET_WM_WINDOW_TYPE WM_HINTS _NET_WM_STATE
-        xwininfo -id "$id"
-        xprop -root _NET_WORKAREA
-    } > "$out" 2>&1
-    grep -q '^_NET_WM_WINDOW_TYPE.*_NET_WM_WINDOW_TYPE_NOTIFICATION' "$out" || return 1
-    grep -q 'Client accepts input or input focus: False' "$out" || return 1
-    grep -q 'Map State: IsViewable' "$out" || return 1
-    local x y w h wx wy ww wh
-    x=$(sed -n 's/.*Absolute upper-left X: *//p' "$out")
-    y=$(sed -n 's/.*Absolute upper-left Y: *//p' "$out")
-    w=$(sed -n 's/^ *Width: *//p' "$out")
-    h=$(sed -n 's/^ *Height: *//p' "$out")
-    read -r wx wy ww wh < <(sed -n 's/^_NET_WORKAREA.*= *//p' "$out" | tr -d ',' | cut -d' ' -f1-4)
+    local id out=$HOME/myna-shot/out/pill.txt x y w h wx wy ww wh
+    if plasma; then
+        kwin_windows > "$out"
+        read -r x y w h < <(awk '$2 == "myna-hud" && $4 == 0 && $5 == 9 { print $6, $7, $8, $9 }' "$out")
+        read -r wx wy ww wh < <(awk '$1 == "workarea" { print $2, $3, $4, $5 }' "$out")
+        [ -n "$x" ] && [ -n "$wx" ] || return 1
+    else
+        export DISPLAY=${DISPLAY:-:0}
+        id=$(pill_id) && [ -n "$id" ] || return 1
+        {
+            xprop -id "$id" _NET_WM_WINDOW_TYPE WM_HINTS _NET_WM_STATE
+            xwininfo -id "$id"
+            xprop -root _NET_WORKAREA
+        } > "$out" 2>&1
+        grep -q '^_NET_WM_WINDOW_TYPE.*_NET_WM_WINDOW_TYPE_NOTIFICATION' "$out" || return 1
+        grep -q 'Client accepts input or input focus: False' "$out" || return 1
+        grep -q 'Map State: IsViewable' "$out" || return 1
+        x=$(sed -n 's/.*Absolute upper-left X: *//p' "$out")
+        y=$(sed -n 's/.*Absolute upper-left Y: *//p' "$out")
+        w=$(sed -n 's/^ *Width: *//p' "$out")
+        h=$(sed -n 's/^ *Height: *//p' "$out")
+        read -r wx wy ww wh < <(sed -n 's/^_NET_WORKAREA.*= *//p' "$out" | tr -d ',' | cut -d' ' -f1-4)
+    fi
     echo "pill $w x $h at $x,$y; work area $ww x $wh at $wx,$wy" >> "$out"
     # Inside, centred within 32 px, and within 120 px of the bottom.
     [ "$x" -ge "$wx" ] && [ $((x + w)) -le $((wx + ww)) ] \
@@ -233,11 +328,16 @@ pill_placed() {
 # The HUD host's log carries no GTK critical (a layout bug the HUD survives).
 hud_log_clean() { ! grep -q 'CRITICAL' "$HOME/myna-shot/out/hud-host.log"; }
 
-# A checkpoint screenshot of the whole X11 desktop, collected by run-suite.sh
-# as artifacts/screenshots/dictation/NAME.png.
+# A checkpoint screenshot of the whole desktop, collected by run-suite.sh as
+# artifacts/screenshots/dictation/NAME.png. KWin lets only Spectacle take one.
 checkpoint() {
-    mkdir -p "$HOME/myna-shot/out/shots/dictation"
-    import -window root "$HOME/myna-shot/out/shots/dictation/$1.png"
+    local png=$HOME/myna-shot/out/shots/dictation/$1.png
+    mkdir -p "${png%/*}"
+    if plasma; then
+        spectacle -b -n -f -o "$png" >>"$HOME/myna-shot/out/spectacle.log" 2>&1
+    else
+        import -window root "$png"
+    fi
 }
 
 # Hold the backend still, so the daemon waits in `finalizing` for as long as a
@@ -260,12 +360,15 @@ mic_stop() {
     true
 }
 
+# The field app in the desktop's own toolkit: Qt on Plasma, else GTK4.
 field_start() {
+    local toolkit=()
     mkdir -p "$HOME/myna-shot/out"
     rm -f "$FIELD_STATE"
     session_env
+    ! plasma || toolkit=(--qt)
     # GTK would otherwise parse the desktop's (GTK3) theme and warn about it.
-    GTK_THEME=Adwaita setsid "$HOME/myna-shot/field-app.py" "$FIELD_STATE" \
+    GTK_THEME=Adwaita setsid "$HOME/myna-shot/field-app.py" "${toolkit[@]}" "$FIELD_STATE" \
         >"$HOME/myna-shot/out/field-app.log" 2>&1 </dev/null &
     wait_until 30 test -s "$FIELD_STATE"
 }
@@ -281,6 +384,8 @@ field_is() { [ "$(field_get "$1")" = "$2" ]; }
 # one and the field holds the focus.
 field_focus() {
     field_action focus "$1"
-    wait_until 20 field_is focus "$1" && wait_until 20 field_is active true
+    wait_until 20 field_is focus "$1" || return 1
+    wait_until 5 field_is active true \
+        || { field_window_activate "$1" && wait_until 15 field_is active true; }
 }
 field_clear() { field_action clear; wait_until 5 field_is plain ""; }
