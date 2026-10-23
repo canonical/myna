@@ -224,6 +224,36 @@ parts:
     organize:
       "*": usr/share/doc/myna/
 
+  # The HUD's layer-shell host (`myna-hud --host layer-shell`) links
+  # gtk4-layer-shell 1.x, which noble's archive lacks. Built against the
+  # gnome SDK's GTK. Its .pc names the stage, so the client part links the
+  # staged library; the binary needs it directly, ahead of the
+  # libwayland-client GTK pulls in, which is the load order it requires.
+  gtk4-layer-shell:
+    plugin: meson
+    source: https://github.com/wmww/gtk4-layer-shell/archive/refs/tags/v1.3.0.tar.gz
+    source-checksum: sha256/1ebb01ab14e98afd1727f68f64981c37bd23305b1f131f5667c02b94cf593192
+    meson-parameters:
+      - --prefix=/usr
+      - --buildtype=release
+      - -Dintrospection=false
+      - -Dvapi=false
+      - -Ddocs=false
+      - -Dexamples=false
+      - -Dtests=false
+    build-packages:
+      - meson
+      - ninja-build
+      - libwayland-dev
+      - wayland-protocols
+    override-build: |
+      craftctl default
+      sed -i "s|^prefix=.*|prefix=$CRAFT_STAGE/usr|" \
+          "$CRAFT_PART_INSTALL"/usr/lib/*/pkgconfig/gtk4-layer-shell-0.pc
+    prime:
+      - -usr/include
+      - -usr/lib/*/pkgconfig
+
   # The Rust workspace (client/), staged into this project by dev/prepare.sh
   # (craft-parts local sources must live inside the project dir), with the
   # snap version it resolved from git. Builds the shipped app + the testbed CLI,
@@ -231,6 +261,7 @@ parts:
   client:
     plugin: nil
     source: client
+    after: [gtk4-layer-shell]
     build-packages:
       - rustup
       - curl
