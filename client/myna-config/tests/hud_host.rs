@@ -172,17 +172,17 @@ impl Rig {
     }
 
     fn start_host(&self, grace_ms: &str) -> Child {
-        self.start_host_on(grace_ms, None)
+        self.start_host_on(grace_ms, &[])
     }
 
-    /// The host as a session with `display` (or none) starts it.
-    fn start_host_on(&self, grace_ms: &str, display: Option<&str>) -> Child {
+    /// The host as a session with only the display variables `vars` starts it.
+    fn start_host_on(&self, grace_ms: &str, vars: &[(&str, &str)]) -> Child {
         let mut command = Command::new(env!("CARGO_BIN_EXE_myna-hud-host"));
-        match display {
-            Some(display) => command.env("DISPLAY", display),
-            None => command.env_remove("DISPLAY"),
-        };
+        for name in ["DISPLAY", "WAYLAND_DISPLAY", "XDG_SESSION_TYPE"] {
+            command.env_remove(name);
+        }
         let child = command
+            .envs(vars.iter().copied())
             .env("DBUS_SESSION_BUS_ADDRESS", &self.address)
             .env("MYNA_HUD_BINARY", self.dir.join("hud"))
             .env("MYNA_HUD_HOST_GRACE_MS", grace_ms)
@@ -225,6 +225,32 @@ impl Rig {
 
     fn settle(&self) {
         std::thread::sleep(Duration::from_millis(700));
+    }
+
+    /// Wait for the host to leave on its own, its HUD stopped first.
+    fn ends_with_its_hud(&self, mut host: Child) {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let status = loop {
+            if let Some(status) = host.try_wait().unwrap() {
+                break status;
+            }
+            if Instant::now() > deadline {
+                let _ = host.kill();
+                panic!("the host outlived its display");
+            }
+            std::thread::sleep(Duration::from_millis(25));
+        };
+        assert!(status.success(), "{status:?}");
+        self.wait_for("term", |log| log.iter().any(|l| l == "term"));
+        assert!(!self.running(&self.marker()));
+    }
+
+    /// Replace the host started without a display by one started with `vars`.
+    fn restart_host_on(&mut self, vars: &[(&str, &str)]) -> Child {
+        let mut idle = self.host.take().unwrap();
+        let _ = idle.kill();
+        let _ = idle.wait();
+        self.start_host_on("3000", vars)
     }
 
     fn running(&self, marker: &str) -> bool {
@@ -421,28 +447,49 @@ fn the_host_and_its_hud_end_with_the_display() {
         return;
     };
     let mut rig = Rig::new("display", WELL_BEHAVED, "3000");
-    let mut idle = rig.host.take().unwrap();
-    let _ = idle.kill();
-    let _ = idle.wait();
-    let mut host = rig.start_host_on("3000", Some(&xvfb.1));
+    let host = rig.restart_host_on(&[("DISPLAY", &xvfb.1)]);
     rig.daemon_up();
     rig.wait_for("start", |log| Rig::count(log, "start") == 1);
 
     xvfb.stop();
+    rig.ends_with_its_hud(host);
+}
+
+/// On Wayland the compositor's socket is the session's display: the HUD is
+/// a layer surface on it, and the host ends when the compositor goes. Only
+/// the socket matters to the host, so a listener stands in for KWin.
+#[test]
+fn on_wayland_the_hud_is_a_layer_surface_and_ends_with_the_compositor() {
+    let mut rig = Rig::new("wayland", WELL_BEHAVED, "3000");
+    let socket = rig.dir.join("wayland-test");
+    let compositor = std::os::unix::net::UnixListener::bind(&socket).unwrap();
+    // Xwayland's DISPLAY is in a Plasma session too; Wayland wins.
+    let host = rig.restart_host_on(&[
+        ("WAYLAND_DISPLAY", socket.to_str().unwrap()),
+        ("DISPLAY", ":nowhere"),
+    ]);
+    compositor.set_nonblocking(true).unwrap();
     let deadline = Instant::now() + Duration::from_secs(10);
-    let status = loop {
-        if let Some(status) = host.try_wait().unwrap() {
-            break status;
+    let client = loop {
+        if let Ok((client, _)) = compositor.accept() {
+            break client;
         }
-        if Instant::now() > deadline {
-            let _ = host.kill();
-            panic!("the host outlived its display");
-        }
+        assert!(
+            Instant::now() < deadline,
+            "the host never connected to the compositor"
+        );
         std::thread::sleep(Duration::from_millis(25));
     };
-    assert!(status.success(), "{status:?}");
-    rig.wait_for("term", |log| log.iter().any(|l| l == "term"));
-    assert!(!rig.running(&rig.marker()));
+    rig.daemon_up();
+    rig.wait_for("start", |log| Rig::count(log, "start") == 1);
+    assert!(
+        rig.log().contains(&"start --host layer-shell".to_owned()),
+        "{:?}",
+        rig.log()
+    );
+
+    drop((client, compositor));
+    rig.ends_with_its_hud(host);
 }
 
 #[test]

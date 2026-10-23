@@ -100,6 +100,22 @@ impl Session {
         KdeComponents::with_host(self.host(), Arc::new(runner.clone()))
     }
 
+    /// The desktops that host the indicator through the autostart entry.
+    fn both(&self) -> [Box<dyn Components>; 2] {
+        let runner = FakeCommandRunner::default();
+        [
+            Box::new(self.components(&runner)),
+            Box::new(self.kde(&runner)),
+        ]
+    }
+
+    /// The HUD host's status, which both desktops read alike.
+    fn hud_host(&self) -> ComponentStatus {
+        let [xfce, kde] = self.both().map(|c| block_on(c.status(HUD_HOST_AUTOSTART)));
+        assert_eq!(xfce, kde);
+        xfce
+    }
+
     /// A kwinrc in `dir`, `user` or `system`.
     fn kwinrc(&self, dir: &str, body: &str) {
         std::fs::write(self.scratch.path(dir).join("kwinrc"), body).unwrap();
@@ -139,20 +155,22 @@ fn args(runner: &FakeCommandRunner) -> Vec<Vec<String>> {
 }
 
 #[test]
-fn xfce_needs_ibus_and_a_host_for_the_indicator() {
+fn xfce_and_plasma_need_ibus_and_a_host_for_the_indicator() {
     let session = Session::ibus("required");
-    let required = session.components(&FakeCommandRunner::default()).required();
-    let seen: Vec<(&str, Purpose)> = required
-        .iter()
-        .map(|component| (component.id.as_str(), component.purpose))
-        .collect();
-    assert_eq!(
-        seen,
-        [
-            (IBUS, Purpose::TextInput),
-            (HUD_HOST_AUTOSTART, Purpose::StatusSurface)
-        ]
-    );
+    for components in session.both() {
+        let seen: Vec<(String, Purpose)> = components
+            .required()
+            .into_iter()
+            .map(|component| (component.id, component.purpose))
+            .collect();
+        assert_eq!(
+            seen,
+            [
+                (IBUS.to_owned(), Purpose::TextInput),
+                (HUD_HOST_AUTOSTART.to_owned(), Purpose::StatusSurface)
+            ]
+        );
+    }
 }
 
 #[test]
@@ -266,29 +284,20 @@ fn a_commented_xinputrc_line_chooses_nothing() {
 #[test]
 fn the_indicator_host_is_the_autostart_entry_the_package_ships() {
     let session = Session::ibus("hud");
-    assert_eq!(
-        status(&session, HUD_HOST_AUTOSTART),
-        ComponentStatus::Unavailable
-    );
+    assert_eq!(session.hud_host(), ComponentStatus::Unavailable);
     let entry = session.autostart(
         "system",
         "[Desktop Entry]\nType=Application\nExec=myna-hud-host\nOnlyShowIn=XFCE;\n",
     );
     // Installed, but this session started before it was.
-    assert_eq!(
-        status(&session, HUD_HOST_AUTOSTART),
-        ComponentStatus::NeedsRelogin
-    );
+    assert_eq!(session.hud_host(), ComponentStatus::NeedsRelogin);
     session.run("myna-hud-host");
-    assert_eq!(
-        status(&session, HUD_HOST_AUTOSTART),
-        ComponentStatus::Active
-    );
+    assert_eq!(session.hud_host(), ComponentStatus::Active);
 
-    // Xfce's session settings turn an entry off with a user copy.
+    // Xfce's session settings and Plasma's turn an entry off with a user copy.
     session.autostart("user", "[Desktop Entry]\nHidden=true\n");
     assert_eq!(
-        status(&session, HUD_HOST_AUTOSTART),
+        session.hud_host(),
         ComponentStatus::Blocked(Blocker::TurnedOff)
     );
     std::fs::remove_file(
@@ -298,14 +307,11 @@ fn the_indicator_host_is_the_autostart_entry_the_package_ships() {
             .join(HUD_HOST_AUTOSTART),
     )
     .unwrap();
-    assert_eq!(
-        status(&session, HUD_HOST_AUTOSTART),
-        ComponentStatus::Active
-    );
+    assert_eq!(session.hud_host(), ComponentStatus::Active);
 
     std::fs::write(&entry, "[Desktop Entry]\nExec=x\nHidden=true\n").unwrap();
     assert_eq!(
-        status(&session, HUD_HOST_AUTOSTART),
+        session.hud_host(),
         ComponentStatus::Blocked(Blocker::TurnedOff)
     );
 }
@@ -313,22 +319,19 @@ fn the_indicator_host_is_the_autostart_entry_the_package_ships() {
 #[test]
 fn the_package_not_myna_settings_installs_the_host() {
     let session = Session::ibus("hud-enable");
-    let error = block_on(
-        session
-            .components(&FakeCommandRunner::default())
-            .enable(HUD_HOST_AUTOSTART),
-    )
-    .unwrap_err();
-    assert!(
-        matches!(
-            error,
-            ComponentError::Failed {
-                kind: StepKind::Setting,
-                ..
-            }
-        ),
-        "{error:?}"
-    );
+    for components in session.both() {
+        let error = block_on(components.enable(HUD_HOST_AUTOSTART)).unwrap_err();
+        assert!(
+            matches!(
+                error,
+                ComponentError::Failed {
+                    kind: StepKind::Setting,
+                    ..
+                }
+            ),
+            "{error:?}"
+        );
+    }
 }
 
 #[test]
@@ -355,7 +358,7 @@ fn the_shipped_entry_is_the_one_the_status_looks_for() {
         .load_from_file(&path, gio::glib::KeyFileFlags::NONE)
         .expect("the package ships the entry");
     let get = |key: &str| entry.string("Desktop Entry", key).unwrap().to_string();
-    assert_eq!(get("OnlyShowIn"), "XFCE;");
+    assert_eq!(get("OnlyShowIn"), "XFCE;KDE;");
     assert_eq!(get("NoDisplay"), "true");
     assert_eq!(get("Exec"), "/usr/libexec/myna-config/myna-hud-host");
     assert!(entry.boolean("Desktop Entry", "Hidden").is_err());
@@ -366,17 +369,6 @@ const KWIN_RUNS_IBUS: &str = "[Wayland]\nInputMethod[$e]=/usr/share/applications
 
 fn kde_status(session: &Session) -> ComponentStatus {
     block_on(session.kde(&FakeCommandRunner::default()).status(IBUS))
-}
-
-#[test]
-fn plasma_needs_ibus_and_nothing_hosts_the_indicator_yet() {
-    let session = Session::ibus("kde-required");
-    let required = session.kde(&FakeCommandRunner::default()).required();
-    assert_eq!(required.len(), 1);
-    assert_eq!(
-        (required[0].id.as_str(), required[0].purpose),
-        (IBUS, Purpose::TextInput)
-    );
 }
 
 #[test]
@@ -474,13 +466,8 @@ fn plasma_without_ibus_is_unavailable_and_nothing_is_run() {
     let runner = FakeCommandRunner::default();
     assert!(block_on(session.kde(&runner).enable(IBUS)).is_err());
     assert!(runner.calls().is_empty());
-    let components = session.kde(&runner);
     assert_eq!(
-        block_on(components.status(HUD_HOST_AUTOSTART)),
-        ComponentStatus::Unavailable
-    );
-    assert_eq!(
-        block_on(components.enable(HUD_HOST_AUTOSTART)),
-        Err(ComponentError::Unknown(HUD_HOST_AUTOSTART.into()))
+        block_on(session.kde(&runner).enable("myna-shell@canonical.com")),
+        Err(ComponentError::Unknown("myna-shell@canonical.com".into()))
     );
 }

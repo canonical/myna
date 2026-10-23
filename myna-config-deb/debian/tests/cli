@@ -27,4 +27,4 @@ grep -qF '<annotate key="org.freedesktop.policykit.exec.path">/usr/bin/myna-conf
 # The Xfce HUD host: the supervisor the autostart entry execs, started on Xfce only.
 exe=$(sed -n 's/^Exec=//p' /etc/xdg/autostart/com.canonical.Myna.HudHost.desktop)
 test -x "$exe"
-grep -qxF 'OnlyShowIn=XFCE;' /etc/xdg/autostart/com.canonical.Myna.HudHost.desktop
+grep -qxF 'OnlyShowIn=XFCE;KDE;' /etc/xdg/autostart/com.canonical.Myna.HudHost.desktop

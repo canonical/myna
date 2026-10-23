@@ -2,10 +2,16 @@
 //! timers, driving [`Machine`].
 
 use std::cell::RefCell;
+use std::io::Read;
+use std::os::fd::{AsRawFd, RawFd};
+use std::os::unix::net::UnixStream;
+use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::Duration;
 
 use gio::glib::{self, ControlFlow};
+use myna_platform::session::wayland_socket;
+use myna_platform::{Session, SessionEnv, SessionKind};
 
 use super::machine::{Action, Event, Machine, Note, EXIT_CANNOT_HOST};
 use super::{launch, DAEMON_BUS_NAME, DAEMON_OBJECT_PATH};
@@ -165,7 +171,9 @@ fn spawn(shared: &Shared) {
 
 /// Supervise until SIGTERM/SIGINT; returns the process exit code.
 pub fn run() -> i32 {
-    let argv = match launch::argv(|name| std::env::var(name).ok(), is_executable) {
+    let env = SessionEnv::from_process();
+    let kind = Session::detect(&env).kind;
+    let argv = match launch::argv(kind, |name| std::env::var(name).ok(), is_executable) {
         Ok(argv) => argv,
         Err(error) => {
             log(&format!("nothing to host: {error}"));
@@ -213,7 +221,7 @@ pub fn run() -> i32 {
             ControlFlow::Break
         });
     }
-    watch_display(&shared);
+    watch_display(&shared, Display::connect(kind, &env));
     main_loop.run();
     0
 }
@@ -224,28 +232,67 @@ fn end(shared: &Shared) {
     feed(shared, Event::Shutdown);
 }
 
-/// End with the session's X display. A logout leaves the lingering user
-/// manager and its bus running, so the bus name never says the session is over
-/// and the host would outlive it; the display going away does. No display, as
-/// on a Wayland session, is nothing to watch.
-fn watch_display(shared: &Shared) {
-    use std::os::fd::AsRawFd;
-    use x11rb::connection::Connection;
+/// The session's display server, held only to learn when it goes.
+enum Display {
+    X11(Box<x11rb::rust_connection::RustConnection>),
+    Wayland(UnixStream),
+}
 
-    let Ok((conn, _)) = x11rb::rust_connection::RustConnection::connect(None) else {
+impl Display {
+    /// The display the HUD will be hosted on; None when there is none.
+    fn connect(kind: SessionKind, env: &SessionEnv) -> Option<Self> {
+        match kind {
+            SessionKind::Wayland => {
+                let runtime_dir = std::env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from);
+                let socket =
+                    wayland_socket(env.wayland_display.as_deref()?, runtime_dir.as_deref())?;
+                let stream = UnixStream::connect(socket).ok()?;
+                stream.set_nonblocking(true).ok()?;
+                Some(Self::Wayland(stream))
+            }
+            _ => x11rb::rust_connection::RustConnection::connect(None)
+                .ok()
+                .map(|(conn, _)| Self::X11(Box::new(conn))),
+        }
+    }
+
+    fn fd(&self) -> RawFd {
+        match self {
+            Self::X11(conn) => conn.stream().as_raw_fd(),
+            Self::Wayland(stream) => stream.as_raw_fd(),
+        }
+    }
+
+    /// Whether what made the connection readable is its close. Nothing is
+    /// asked of the server, so all it can say is goodbye.
+    fn closed(&self) -> bool {
+        use x11rb::connection::Connection;
+        match self {
+            Self::X11(conn) => conn.poll_for_event().is_err(),
+            Self::Wayland(stream) => match (&mut &*stream).read(&mut [0; 64]) {
+                Ok(0) => true,
+                Ok(_) => false,
+                Err(error) => error.kind() != std::io::ErrorKind::WouldBlock,
+            },
+        }
+    }
+}
+
+/// End with the session's display. A logout leaves the lingering user
+/// manager and its bus running, so the bus name never says the session is over
+/// and the host would outlive it; the display going away does.
+fn watch_display(shared: &Shared, display: Option<Display>) {
+    let Some(display) = display else {
         return;
     };
     let shared = shared.clone();
-    let fd = conn.stream().as_raw_fd();
     glib::source::unix_fd_add_local(
-        fd,
+        display.fd(),
         glib::IOCondition::IN | glib::IOCondition::HUP | glib::IOCondition::ERR,
         move |_, condition| {
-            // Nothing is requested of the server, so what arrives is
-            // its goodbye; reading it tells a close from a stray event.
-            let closed = condition.intersects(glib::IOCondition::HUP | glib::IOCondition::ERR)
-                || conn.poll_for_event().is_err();
-            if closed {
+            if condition.intersects(glib::IOCondition::HUP | glib::IOCondition::ERR)
+                || display.closed()
+            {
                 log("the display is gone; the session has ended");
                 end(&shared);
                 return ControlFlow::Break;

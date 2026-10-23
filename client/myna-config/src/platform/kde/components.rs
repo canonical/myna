@@ -1,5 +1,6 @@
 //! What Myna needs from a Plasma Wayland session beyond its own processes:
-//! IBus as KWin's input method. On Wayland KWin, not the session's
+//! IBus as KWin's input method, and the autostart entry that hosts the
+//! dictation indicator (`platform::host`). On Wayland KWin, not the session's
 //! environment, runs the input method: the `.desktop` file kwinrc's
 //! `[Wayland] InputMethod` names, at once when it changes and at every login.
 
@@ -13,7 +14,9 @@ use myna_platform::components::{
 };
 
 use crate::command::{CancellationToken, CommandError, CommandRequest, CommandRunner};
-use crate::platform::host::{command_failed as failed, Host, IBUS};
+use crate::platform::host::{
+    command_failed as failed, enable_hud_host, hud_host, Host, HUD_HOST_AUTOSTART, IBUS,
+};
 
 /// IBus's own way to become KWin's input method: it writes kwinrc, tells
 /// KWin, and returns once KWin has started it.
@@ -107,22 +110,28 @@ fn names_ibus(entry: &str) -> bool {
 #[async_trait(?Send)]
 impl Components for KdeComponents {
     fn required(&self) -> Vec<Component> {
-        vec![Component {
-            id: IBUS.to_owned(),
-            purpose: Purpose::TextInput,
-        }]
+        vec![
+            Component {
+                id: IBUS.to_owned(),
+                purpose: Purpose::TextInput,
+            },
+            hud_host(),
+        ]
     }
 
     async fn status(&self, id: &str) -> ComponentStatus {
         match id {
             IBUS => self.ibus_status(),
+            HUD_HOST_AUTOSTART => self.host.hud_host_status(),
             _ => ComponentStatus::Unavailable,
         }
     }
 
     async fn enable(&self, id: &str) -> Result<(), ComponentError> {
-        if id != IBUS {
-            return Err(ComponentError::Unknown(id.to_owned()));
+        match id {
+            IBUS => {}
+            HUD_HOST_AUTOSTART => return enable_hud_host(),
+            _ => return Err(ComponentError::Unknown(id.to_owned())),
         }
         let step = START_IBUS.join(" ");
         match self.ibus_status() {

@@ -318,20 +318,30 @@ mod tests {
     }
 
     #[test]
-    fn plasma_needs_ibus_as_kwins_input_method() {
+    fn plasma_needs_ibus_as_kwins_input_method_and_the_hud_host() {
         let platform = Platform::for_profile(Profile::Kde);
         let required = platform.components().required();
+        let purposes = [Purpose::TextInput, Purpose::StatusSurface];
         assert_eq!(
             required
                 .iter()
                 .map(|c| (c.id.as_str(), c.purpose))
                 .collect::<Vec<_>>(),
-            [(host::IBUS, Purpose::TextInput)]
+            [host::IBUS, host::HUD_HOST_AUTOSTART]
+                .into_iter()
+                .zip(purposes)
+                .collect::<Vec<_>>()
         );
         let diagnostics = platform.diagnostics();
         assert_eq!(diagnostics.shell, None);
-        assert_eq!(diagnostics.components.len(), 1);
-        assert_eq!(diagnostics.components[0].purpose, Purpose::TextInput);
+        assert_eq!(
+            diagnostics
+                .components
+                .iter()
+                .map(|c| c.purpose)
+                .collect::<Vec<_>>(),
+            purposes
+        );
     }
 
     #[test]
