@@ -1,6 +1,6 @@
 //! The dictation shortcut as Myna Settings sees it, without GTK.
 //!
-//! The key is a GNOME custom shortcut that calls the daemon's `Toggle` over
+//! The key is a desktop shortcut that calls the daemon's `Toggle` over
 //! D-Bus.
 
 /// The key setup installs.

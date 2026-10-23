@@ -1,5 +1,6 @@
-//! What an application is called, from the desktop entries xfce4-keyboard-
-//! settings shows: Xfce stores a shortcut's command, not a label.
+//! Desktop entries: what an application is called and what it runs. Xfce
+//! stores a shortcut's command, not a label; kglobalaccel runs a command
+//! shortcut from an entry.
 
 use std::path::{Path, PathBuf};
 
@@ -26,7 +27,7 @@ pub fn name_of(command: &str, dirs: &[PathBuf]) -> Option<String> {
         let mut paths: Vec<PathBuf> = entries.flatten().map(|entry| entry.path()).collect();
         paths.sort();
         for path in paths {
-            let Some((exec, name)) = read(&path) else {
+            let Some(Entry { exec, name }) = read(&path) else {
                 continue;
             };
             let Some(exec) = words(&exec) else { continue };
@@ -58,8 +59,26 @@ fn words(command: &str) -> Option<Vec<String>> {
     )
 }
 
-/// An application entry's `Exec` and Name, as shown in the user's language.
-fn read(path: &Path) -> Option<(String, String)> {
+/// An application entry.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Entry {
+    /// The command line, field codes and `%%` as written.
+    pub exec: String,
+    /// The Name, in the user's language.
+    pub name: String,
+}
+
+/// The entry whose desktop file ID is `id`, from the first of `dirs` that has
+/// one. IDs of entries in subdirectories (`kde-foo.desktop` for
+/// `kde/foo.desktop`) are not looked up.
+pub fn entry(id: &str, dirs: &[PathBuf]) -> Option<Entry> {
+    dirs.iter()
+        .map(|dir| dir.join(id))
+        .find(|path| path.is_file())
+        .and_then(|path| read(&path))
+}
+
+fn read(path: &Path) -> Option<Entry> {
     if path.extension()? != "desktop" {
         return None;
     }
@@ -71,7 +90,7 @@ fn read(path: &Path) -> Option<(String, String)> {
     }
     let exec = file.string(group, "Exec").ok()?.to_string();
     let name = file.locale_string(group, "Name", None).ok()?.to_string();
-    Some((exec, name))
+    Some(Entry { exec, name })
 }
 
 #[cfg(test)]
@@ -138,6 +157,25 @@ mod tests {
         );
         assert_eq!(name_of("exo-open --launch WebBrowser", &dirs), None);
         std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn an_entry_is_found_by_its_id_in_the_first_directory_that_has_it() {
+        let user = dir_with(&[("a.desktop", "mine --now", "Mine")]);
+        let system = dir_with(&[("a.desktop", "tool", "Theirs"), ("b.desktop", "b", "B")]);
+        let dirs = [user.clone(), system.clone()];
+        assert_eq!(
+            entry("a.desktop", &dirs),
+            Some(Entry {
+                exec: "mine --now".into(),
+                name: "Mine".into()
+            })
+        );
+        assert_eq!(entry("b.desktop", &dirs).unwrap().name, "B");
+        assert_eq!(entry("c.desktop", &dirs), None);
+        for dir in [user, system] {
+            std::fs::remove_dir_all(dir).ok();
+        }
     }
 
     #[test]

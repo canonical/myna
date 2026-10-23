@@ -11,7 +11,7 @@ use std::task::{Context, Poll, Waker};
 
 use async_trait::async_trait;
 use libadwaita as adw;
-use myna_platform::activation::Activation;
+use myna_platform::activation::{Activation, ActivationError};
 use myna_platform::appearance::Appearance;
 use myna_platform::components::{
     Component, ComponentError, ComponentStatus, Components, Purpose, StepKind,
@@ -48,18 +48,13 @@ impl Platform {
                     Rc::new(gnome::components::GnomeComponents::new()),
                 ),
                 Profile::Xfce => (
-                    xfce::activation::XfconfActivation::open()
-                        .map(|activation| Rc::new(activation) as Rc<dyn Activation>)
-                        .map_err(|error| {
-                            gio::glib::g_warning!(crate::LOG_DOMAIN, "no Xfce shortcuts: {error}")
-                        })
-                        .ok(),
+                    opened(xfce::activation::XfconfActivation::open()),
                     Rc::new(xfce::components::XfceComponents::new(Arc::new(
                         crate::command::GioCommandRunner,
                     ))),
                 ),
                 Profile::Kde => (
-                    None,
+                    opened(kde::activation::KglobalaccelActivation::open()),
                     Rc::new(kde::components::KdeComponents::new(Arc::new(
                         crate::command::GioCommandRunner,
                     ))),
@@ -178,6 +173,16 @@ pub struct DesktopDiagnostics {
     pub shell: Option<String>,
     pub extension: Option<ExtensionReport>,
     pub components: Vec<ComponentFact>,
+}
+
+/// A backend that could not reach its desktop is reported and left out.
+fn opened(
+    activation: Result<impl Activation + 'static, ActivationError>,
+) -> Option<Rc<dyn Activation>> {
+    activation
+        .map(|activation| Rc::new(activation) as Rc<dyn Activation>)
+        .map_err(|error| gio::glib::g_warning!(crate::LOG_DOMAIN, "no desktop shortcuts: {error}"))
+        .ok()
 }
 
 /// A desktop Myna knows nothing about needs nothing from it.

@@ -1,8 +1,11 @@
-//! A stand-in xfconfd on a private session bus, shared by the Xfce backends'
-//! tests. The stand-in answers on its own thread, because the backends call
-//! synchronously; the test acts as another xfconf client through the same
+//! Stand-in desktop services on a private session bus, shared by the
+//! backends' tests: xfconfd here, kglobalaccel in [`kglobalaccel`]. A
+//! stand-in answers on its own thread, because the backends call
+//! synchronously; the test acts as another client through the same
 //! connection.
 #![allow(dead_code)]
+
+pub mod kglobalaccel;
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -42,119 +45,127 @@ type Store = Rc<RefCell<BTreeMap<String, Variant>>>;
 
 /// Serve xfconf's methods on the bus at `address` until it goes.
 pub fn serve(address: &str, ready: std::sync::mpsc::Sender<()>) {
+    serve_as(address, "org.xfce.Xfconf", ready, |connection| {
+        let store = Store::default();
+        let interface = gio::DBusNodeInfo::for_xml(XML)
+            .unwrap()
+            .lookup_interface("org.xfce.Xfconf")
+            .unwrap();
+        let emitter = connection.clone();
+        connection
+            .register_object("/org/xfce/Xfconf", &interface)
+            .method_call(move |_, _, _, _, method, parameters, invocation| {
+                let channel = parameters
+                    .child_value(0)
+                    .str()
+                    .unwrap_or_default()
+                    .to_owned();
+                let property = parameters
+                    .child_value(1)
+                    .str()
+                    .unwrap_or_default()
+                    .to_owned();
+                let mut store = store.borrow_mut();
+                let emit = |name: &str, body: Variant| {
+                    emitter
+                        .emit_signal(
+                            None,
+                            "/org/xfce/Xfconf",
+                            "org.xfce.Xfconf",
+                            name,
+                            Some(&body),
+                        )
+                        .unwrap();
+                };
+                match method {
+                    "GetProperty" => match store.get(&property) {
+                        Some(value) => invocation.return_value(Some(&Variant::tuple_from_iter([
+                            Variant::from_variant(value),
+                        ]))),
+                        None => invocation.return_dbus_error(NOT_FOUND, "no such property"),
+                    },
+                    "SetProperty" => {
+                        let value = parameters.child_value(2).as_variant().unwrap();
+                        store.insert(property.clone(), value.clone());
+                        emit(
+                            "PropertyChanged",
+                            Variant::tuple_from_iter([
+                                channel.to_variant(),
+                                property.to_variant(),
+                                Variant::from_variant(&value),
+                            ]),
+                        );
+                        invocation.return_value(None);
+                    }
+                    "GetAllProperties" => {
+                        let below = format!("{property}/");
+                        let root = property.is_empty() || property == "/";
+                        let found: Vec<Variant> = store
+                            .iter()
+                            .filter(|(path, _)| {
+                                root || **path == property || path.starts_with(&below)
+                            })
+                            .map(|(path, value)| {
+                                Variant::from_dict_entry(
+                                    &path.to_variant(),
+                                    &Variant::from_variant(value),
+                                )
+                            })
+                            .collect();
+                        if found.is_empty() && !root {
+                            invocation.return_dbus_error(NOT_FOUND, "no such property");
+                        } else {
+                            let array = Variant::array_from_iter_with_type(
+                                VariantTy::new("{sv}").unwrap(),
+                                found,
+                            );
+                            invocation.return_value(Some(&Variant::tuple_from_iter([array])));
+                        }
+                    }
+                    "ResetProperty" => {
+                        let recursive = parameters.child_value(2).get::<bool>().unwrap();
+                        let below = format!("{property}/");
+                        let gone: Vec<String> = store
+                            .keys()
+                            .filter(|path| {
+                                **path == property || (recursive && path.starts_with(&below))
+                            })
+                            .cloned()
+                            .collect();
+                        if gone.is_empty() {
+                            invocation.return_dbus_error(NOT_FOUND, "no such property");
+                            return;
+                        }
+                        for path in gone {
+                            store.remove(&path);
+                            emit(
+                                "PropertyRemoved",
+                                Variant::tuple_from_iter([channel.to_variant(), path.to_variant()]),
+                            );
+                        }
+                        invocation.return_value(None);
+                    }
+                    other => unreachable!("{other}"),
+                }
+            })
+            .build()
+            .expect("register the stand-in xfconfd");
+    });
+}
+
+/// Own `name` on the bus at `address`, with the objects `register` puts on
+/// the connection, until the bus goes.
+pub fn serve_as(
+    address: &str,
+    name: &str,
+    ready: std::sync::mpsc::Sender<()>,
+    register: impl FnOnce(&gio::DBusConnection),
+) {
     let context = MainContext::new();
     context
         .with_thread_default(|| {
             let connection = connect_to(address);
-            let store = Store::default();
-            let interface = gio::DBusNodeInfo::for_xml(XML)
-                .unwrap()
-                .lookup_interface("org.xfce.Xfconf")
-                .unwrap();
-            let emitter = connection.clone();
-            connection
-                .register_object("/org/xfce/Xfconf", &interface)
-                .method_call(move |_, _, _, _, method, parameters, invocation| {
-                    let channel = parameters
-                        .child_value(0)
-                        .str()
-                        .unwrap_or_default()
-                        .to_owned();
-                    let property = parameters
-                        .child_value(1)
-                        .str()
-                        .unwrap_or_default()
-                        .to_owned();
-                    let mut store = store.borrow_mut();
-                    let emit = |name: &str, body: Variant| {
-                        emitter
-                            .emit_signal(
-                                None,
-                                "/org/xfce/Xfconf",
-                                "org.xfce.Xfconf",
-                                name,
-                                Some(&body),
-                            )
-                            .unwrap();
-                    };
-                    match method {
-                        "GetProperty" => match store.get(&property) {
-                            Some(value) => {
-                                invocation.return_value(Some(&Variant::tuple_from_iter([
-                                    Variant::from_variant(value),
-                                ])))
-                            }
-                            None => invocation.return_dbus_error(NOT_FOUND, "no such property"),
-                        },
-                        "SetProperty" => {
-                            let value = parameters.child_value(2).as_variant().unwrap();
-                            store.insert(property.clone(), value.clone());
-                            emit(
-                                "PropertyChanged",
-                                Variant::tuple_from_iter([
-                                    channel.to_variant(),
-                                    property.to_variant(),
-                                    Variant::from_variant(&value),
-                                ]),
-                            );
-                            invocation.return_value(None);
-                        }
-                        "GetAllProperties" => {
-                            let below = format!("{property}/");
-                            let root = property.is_empty() || property == "/";
-                            let found: Vec<Variant> = store
-                                .iter()
-                                .filter(|(path, _)| {
-                                    root || **path == property || path.starts_with(&below)
-                                })
-                                .map(|(path, value)| {
-                                    Variant::from_dict_entry(
-                                        &path.to_variant(),
-                                        &Variant::from_variant(value),
-                                    )
-                                })
-                                .collect();
-                            if found.is_empty() && !root {
-                                invocation.return_dbus_error(NOT_FOUND, "no such property");
-                            } else {
-                                let array = Variant::array_from_iter_with_type(
-                                    VariantTy::new("{sv}").unwrap(),
-                                    found,
-                                );
-                                invocation.return_value(Some(&Variant::tuple_from_iter([array])));
-                            }
-                        }
-                        "ResetProperty" => {
-                            let recursive = parameters.child_value(2).get::<bool>().unwrap();
-                            let below = format!("{property}/");
-                            let gone: Vec<String> = store
-                                .keys()
-                                .filter(|path| {
-                                    **path == property || (recursive && path.starts_with(&below))
-                                })
-                                .cloned()
-                                .collect();
-                            if gone.is_empty() {
-                                invocation.return_dbus_error(NOT_FOUND, "no such property");
-                                return;
-                            }
-                            for path in gone {
-                                store.remove(&path);
-                                emit(
-                                    "PropertyRemoved",
-                                    Variant::tuple_from_iter([
-                                        channel.to_variant(),
-                                        path.to_variant(),
-                                    ]),
-                                );
-                            }
-                            invocation.return_value(None);
-                        }
-                        other => unreachable!("{other}"),
-                    }
-                })
-                .build()
-                .expect("register the stand-in xfconfd");
+            register(&connection);
             let main_loop = MainLoop::new(Some(&context), false);
             connection.connect_closed({
                 let main_loop = main_loop.clone();
@@ -166,7 +177,7 @@ pub fn serve(address: &str, ready: std::sync::mpsc::Sender<()>) {
                     "/org/freedesktop/DBus",
                     "org.freedesktop.DBus",
                     "RequestName",
-                    Some(&("org.xfce.Xfconf", 0u32).to_variant()),
+                    Some(&(name, 0u32).to_variant()),
                     None,
                     gio::DBusCallFlags::NONE,
                     5_000,
@@ -216,13 +227,20 @@ pub fn connect_to(address: &str) -> gio::DBusConnection {
 /// The client end of a stand-in xfconfd on a fresh bus. The server thread
 /// ends when the bus does.
 pub fn connect() -> (gio::DBusConnection, Bus, std::thread::JoinHandle<()>) {
+    connect_with(serve)
+}
+
+/// The client end of the stand-in `serve` runs on a fresh bus.
+pub fn connect_with(
+    serve: impl FnOnce(&str, std::sync::mpsc::Sender<()>) + Send + 'static,
+) -> (gio::DBusConnection, Bus, std::thread::JoinHandle<()>) {
     let (bus, address) = bus();
     let (ready, owned) = std::sync::mpsc::channel();
     let thread = std::thread::spawn({
         let address = address.clone();
         move || serve(&address, ready)
     });
-    owned.recv().expect("the stand-in owns org.xfce.Xfconf");
+    owned.recv().expect("the stand-in owns its name");
     (connect_to(&address), bus, thread)
 }
 
