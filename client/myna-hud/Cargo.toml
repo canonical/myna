@@ -71,6 +71,10 @@ async-io = "2"
 # The X11 status surface host (`--host x11`): EWMH properties GDK4 has no API
 # for, panel struts, and the work-area watch, on a connection of its own.
 x11rb = { version = "0.13", features = ["shape"] }
+# The layer-shell host (`--host layer-shell`): GTK has no API for a
+# wlr-layer-shell surface. Needs the C library at 1.0 or later, which noble's
+# archive lacks; the snap builds it.
+gtk4-layer-shell = "0.7"
 myna-freedesktop = { path = "../myna-freedesktop" }
 myna-platform = { path = "../myna-platform" }
 

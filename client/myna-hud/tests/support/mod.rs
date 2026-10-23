@@ -50,11 +50,13 @@ impl Drop for PrivateBus {
 }
 
 /// An X server started for one test, torn down on drop.
+#[allow(dead_code)] // Not every suite has an X server.
 pub struct Headless {
     server: Child,
     pub display: String,
 }
 
+#[allow(dead_code)]
 impl Headless {
     /// Spawn one with a `WxHxD` screen on a display number of its own
     /// choosing (`-displayfd`, the same trick as `xvfb-run -a`), or `None`

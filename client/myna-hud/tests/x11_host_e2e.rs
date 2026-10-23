@@ -493,7 +493,7 @@ fn the_x11_host_refuses_a_wayland_session() {
 
     assert_eq!(output.status.code(), Some(78), "{output:?}");
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("needs an X11 session"), "{stderr}");
+    assert!(stderr.contains("needs a session of kind X11"), "{stderr}");
 }
 
 #[test]

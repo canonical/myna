@@ -5,8 +5,9 @@
 //! * **hosted** (default) — consume `com.canonical.Myna.Dictation` and render the
 //!   pill. Under GNOME the `myna-shell` extension launches this through a
 //!   `Meta.WaylandClient` and owns the window's placement (R21). With
-//!   `--host x11` the HUD hosts itself on an X11 window manager
-//!   ([`myna_hud::host::x11`]); it refuses a Wayland session with
+//!   `--host x11` the HUD hosts itself on an X11 window manager, with
+//!   `--host layer-shell` on a wlr-layer-shell compositor
+//!   ([`myna_hud::host`]); a session or display it cannot host on exits
 //!   [`EXIT_WRONG_SESSION`].
 //! * `--lab` — the development lab: manual controls driving the identical
 //!   renderer modules with no backend at all.
@@ -22,7 +23,7 @@ use libadwaita::prelude::*;
 
 use myna_hud::bus::{self, BusEvent};
 use myna_hud::dbus_consumer::DictationService;
-use myna_hud::host::x11::X11Host;
+use myna_hud::host;
 use myna_hud::hud_logic::HudStyle;
 use myna_hud::platform::Platform;
 use myna_hud::signals::quit_on_signal;
@@ -32,21 +33,13 @@ use myna_platform::Profile;
 
 const APP_ID: &str = "com.canonical.Myna.Hud";
 
-/// `--host x11` outside an X11 session: retrying cannot help (EX_CONFIG).
+/// A `--host` this session cannot run: retrying cannot help (EX_CONFIG).
 const EXIT_WRONG_SESSION: u8 = 78;
 
-/// Who hosts the hosted HUD's window.
-#[derive(Clone, Copy, Debug, PartialEq)]
-enum Host {
-    /// A desktop shell (GNOME's `myna-shell`), or nobody.
-    External,
-    /// The HUD itself, on X11.
-    X11,
-}
-
+/// `None`: a desktop shell (GNOME's `myna-shell`) hosts the window, or nobody.
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Mode {
-    Hosted(Host),
+    Hosted(Option<host::Kind>),
     #[cfg(dev_lab)]
     Lab,
     #[cfg(dev_lab)]
@@ -63,13 +56,22 @@ fn main() -> glib::ExitCode {
     };
 
     let platform = Platform::current();
-    if mode == Mode::Hosted(Host::X11) {
+    let host = match mode {
+        Mode::Hosted(host) => host,
+        #[cfg(dev_lab)]
+        _ => None,
+    };
+    if let Some(host) = host {
+        let (kind, backend) = host.session();
         let session = &platform.session;
-        if session.kind != myna_platform::SessionKind::X11 {
-            eprintln!("myna-hud: --host x11 needs an X11 session, this one is {session:?}");
+        if session.kind != kind {
+            eprintln!(
+                "myna-hud: --host {} needs a session of kind {kind:?}, this one is {session:?}",
+                host.name()
+            );
             return glib::ExitCode::new(EXIT_WRONG_SESSION);
         }
-        gtk::gdk::set_allowed_backends("x11");
+        gtk::gdk::set_allowed_backends(backend);
     }
 
     // Lab / serve-dbus are developer harnesses that you want to run
@@ -94,6 +96,13 @@ fn main() -> glib::ExitCode {
     };
     if gtk::init().is_ok() {
         myna_hud::appearance::generic::remember_startup_theme();
+        if let Some(host) = host.filter(|host| !host.display_supports()) {
+            eprintln!(
+                "myna-hud: --host {}: the display cannot host it",
+                host.name()
+            );
+            return glib::ExitCode::new(EXIT_WRONG_SESSION);
+        }
     }
     let app = adw::Application::builder()
         .application_id(APP_ID)
@@ -128,13 +137,13 @@ fn main() -> glib::ExitCode {
 }
 
 fn parse_mode() -> Result<Mode, String> {
-    let mut mode = Mode::Hosted(Host::External);
+    let mut mode = Mode::Hosted(None);
     let mut arguments = std::env::args().skip(1);
     while let Some(argument) = arguments.next() {
         match argument.as_str() {
-            "--host" => mode = Mode::Hosted(parse_host(arguments.next().as_deref())?),
+            "--host" => mode = Mode::Hosted(Some(parse_host(arguments.next().as_deref())?)),
             other if other.starts_with("--host=") => {
-                mode = Mode::Hosted(parse_host(other.strip_prefix("--host="))?)
+                mode = Mode::Hosted(Some(parse_host(other.strip_prefix("--host="))?))
             }
             #[cfg(dev_lab)]
             "--lab" => mode = Mode::Lab,
@@ -166,12 +175,9 @@ fn parse_mode() -> Result<Mode, String> {
     Ok(mode)
 }
 
-fn parse_host(value: Option<&str>) -> Result<Host, String> {
-    match value {
-        Some("x11") => Ok(Host::X11),
-        Some(other) => Err(format!("myna-hud: unknown host {other}\n\n{USAGE}")),
-        None => Err(format!("myna-hud: --host needs a value\n\n{USAGE}")),
-    }
+fn parse_host(value: Option<&str>) -> Result<host::Kind, String> {
+    let value = value.ok_or_else(|| format!("myna-hud: --host needs a value\n\n{USAGE}"))?;
+    host::Kind::parse(value).ok_or_else(|| format!("myna-hud: unknown host {value}\n\n{USAGE}"))
 }
 
 #[cfg(dev_lab)]
@@ -182,6 +188,8 @@ The myna dictation HUD renderer.
 
   (no option)    consume com.canonical.Myna.Dictation and render the HUD
   --host x11     as above, placing its own window on an X11 window manager
+  --host layer-shell
+                 as above, as a layer surface on a Wayland compositor
   --lab          development lab: manual controls, no backend
   --serve-dbus   publish a simulated com.canonical.Myna.Dictation
   --version      print the version and exit
@@ -195,16 +203,18 @@ The myna dictation HUD renderer.
 
   (no option)    consume com.canonical.Myna.Dictation and render the HUD
   --host x11     as above, placing its own window on an X11 window manager
+  --host layer-shell
+                 as above, as a layer surface on a Wayland compositor
   --version      print the version and exit
   -h, --help     print this help and exit";
 
 /// The shipping path: render whatever the publisher reports. False when
 /// the requested host cannot run.
-fn activate_hosted(app: &adw::Application, host: Host, profile: Profile) -> bool {
+fn activate_hosted(app: &adw::Application, host: Option<host::Kind>, profile: Profile) -> bool {
     let hud = HudWindow::new(app, profile);
-    if host == Host::X11 {
-        if let Err(e) = X11Host::install(&hud) {
-            eprintln!("myna-hud: --host x11: {e}");
+    if let Some(host) = host {
+        if let Err(e) = host.install(&hud) {
+            eprintln!("myna-hud: --host {}: {e}", host.name());
             return false;
         }
     }

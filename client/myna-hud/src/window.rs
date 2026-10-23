@@ -12,8 +12,9 @@
 //! GNOME the `myna-shell` extension launches it through a
 //! `Meta.WaylandClient`, adopts the window, makes it a DOCK, and places it
 //! (R21) - a renderer that also positioned itself would fight its host.
-//! Where the HUD is its own host (`--host x11`), that host does all of it
-//! through [`HudWindow::set_host`] and the window's signals. In lab mode
+//! Where the HUD is its own host (`--host`, [`crate::host`]), that host does
+//! all of it, the X11 one through [`HudWindow::set_host`] and the window's
+//! signals, the layer-shell one through the compositor. In lab mode
 //! there is no host, so it presents as an ordinary window.
 //!
 //! ## Click-through (R22/T114)
