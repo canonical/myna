@@ -1,29 +1,22 @@
 //! What Myna needs from an Xfce session beyond its own processes: IBus as the
 //! active input method, so text can reach applications, and the autostart
-//! entry that hosts the dictation indicator.
+//! entry that hosts the dictation indicator (`platform::host`).
 //!
 //! Xubuntu does not install IBus, and Myna Settings is an unconfined deb app,
 //! so it never installs a package: a missing IBus is reported as such. What it
 //! may do is `im-config`, for the user, which takes effect at the next login.
 
-use std::path::Path;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use gio::glib;
 use myna_platform::components::{
-    Blocker, Component, ComponentError, ComponentStatus, Components, Purpose, StepKind,
+    Blocker, Component, ComponentError, ComponentStatus, Components, Purpose,
 };
 
 use crate::command::{CancellationToken, CommandError, CommandRequest, CommandRunner};
 use crate::platform::host::command_failed as failed;
-pub use crate::platform::host::{Host, IBUS};
-
-/// The XDG autostart entry that starts the HUD host with the session. The
-/// myna-config deb ships it in `/etc/xdg/autostart` (`data/` here).
-pub const HUD_HOST_AUTOSTART: &str = "com.canonical.Myna.HudHost.desktop";
-/// The supervisor the entry starts (`hud_host`).
-const HUD_HOST_PROCESS: &str = "myna-hud-host";
+use crate::platform::host::{enable_hud_host, hud_host};
+pub use crate::platform::host::{Host, HUD_HOST_AUTOSTART, IBUS};
 
 pub struct XfceComponents {
     host: Host,
@@ -72,38 +65,6 @@ impl XfceComponents {
             .map(|name| name.trim().to_owned())
     }
 
-    fn hud_host_status(&self) -> ComponentStatus {
-        let installed = self
-            .host
-            .config_dirs
-            .iter()
-            .map(|dir| dir.join("autostart").join(HUD_HOST_AUTOSTART))
-            .find(|path| path.is_file());
-        let Some(entry) = installed else {
-            return ComponentStatus::Unavailable;
-        };
-        // Xfce's session settings write a user copy with Hidden=true to turn
-        // an entry off; so does a user override of any autostart entry.
-        let user = self
-            .host
-            .config_home
-            .join("autostart")
-            .join(HUD_HOST_AUTOSTART);
-        if user.is_file() && key_file_says(&user, "Hidden", true) {
-            return ComponentStatus::Blocked(Blocker::TurnedOff);
-        }
-        if key_file_says(&entry, "Hidden", true) {
-            return ComponentStatus::Blocked(Blocker::TurnedOff);
-        }
-        // The entry starts the supervisor with the session, so one installed
-        // mid-session has not run yet.
-        if self.host.running(HUD_HOST_PROCESS) {
-            ComponentStatus::Active
-        } else {
-            ComponentStatus::NeedsRelogin
-        }
-    }
-
     /// `im-config` for the user: `-n` where it takes a framework name, `-w`
     /// in the 1.x series that replaced it.
     async fn choose_ibus(&self) -> Result<(), ComponentError> {
@@ -130,15 +91,6 @@ impl XfceComponents {
     }
 }
 
-/// Whether `[Desktop Entry]` sets `key` to `value`.
-fn key_file_says(path: &Path, key: &str, value: bool) -> bool {
-    let file = glib::KeyFile::new();
-    file.load_from_file(path, glib::KeyFileFlags::NONE).is_ok()
-        && file
-            .boolean("Desktop Entry", key)
-            .is_ok_and(|set| set == value)
-}
-
 #[async_trait(?Send)]
 impl Components for XfceComponents {
     fn required(&self) -> Vec<Component> {
@@ -147,17 +99,14 @@ impl Components for XfceComponents {
                 id: IBUS.to_owned(),
                 purpose: Purpose::TextInput,
             },
-            Component {
-                id: HUD_HOST_AUTOSTART.to_owned(),
-                purpose: Purpose::StatusSurface,
-            },
+            hud_host(),
         ]
     }
 
     async fn status(&self, id: &str) -> ComponentStatus {
         match id {
             IBUS => self.ibus_status(),
-            HUD_HOST_AUTOSTART => self.hud_host_status(),
+            HUD_HOST_AUTOSTART => self.host.hud_host_status(),
             _ => ComponentStatus::Unavailable,
         }
     }
@@ -174,11 +123,7 @@ impl Components for XfceComponents {
                 )),
                 _ => Err(failed("im-config", "IBus is not running")),
             },
-            HUD_HOST_AUTOSTART => Err(ComponentError::Failed {
-                kind: StepKind::Setting,
-                step: HUD_HOST_AUTOSTART.to_owned(),
-                message: "the myna-config package installs it".to_owned(),
-            }),
+            HUD_HOST_AUTOSTART => enable_hud_host(),
             other => Err(ComponentError::Unknown(other.to_owned())),
         }
     }
