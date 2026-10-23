@@ -96,8 +96,9 @@ if [ "$DISPLAY_MODE" = xvfb ]; then
     # Under x11 GTK loads libim-ibus, which on newer GTK + ibus (no IBus
     # reachable from Xvfb) recurses until the stack overflows as soon as a
     # window with a text widget maps. Users on Wayland never load it.
+    # WAYLAND_DISPLAY (Plasma) stays: only the windows go to Xvfb, and the
+    # session's profile and `ibus start --type kde-wayland` look for it.
     export GTK_IM_MODULE=gtk-im-context-simple
-    unset WAYLAND_DISPLAY
     # Without a compositor GTK paints popover and dialog shadows opaque black.
     xcompmgr -n 2>/dev/null & comp=$!
 fi

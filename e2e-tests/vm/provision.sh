@@ -9,7 +9,8 @@
 #                    backend not connected
 #   installed        components-only plus myna-whisper (a second backend to
 #                    switch to), myna:backend connected to parakeet and the
-#                    daemon restarted
+#                    daemon restarted; on Plasma also IBus as KWin's input
+#                    method, as onboarding leaves it
 #   localized        installed plus the Swedish language pack, which
 #                    translates snap's own output, and the Simplified
 #                    Chinese one, whose speakers get another model
@@ -87,11 +88,15 @@ stage components-only '
     sudo snap set system experimental.user-daemons=true
     sudo snap install --edge myna
     sudo snap install --edge myna-parakeet'
-stage installed '
+# What Settings runs to make IBus KWin's input method; Xfce and GNOME have one.
+IM_ON=''
+[ "$E2E_DESKTOP" != kde ] || IM_ON='timeout 60 ibus start --type kde-wayland'
+stage installed "
     sudo snap install --edge myna-whisper
     sudo snap connect myna:backend myna-parakeet:provider
     systemctl --user restart snap.myna.myna.service
-    systemctl --user is-active snap.myna.myna.service'
+    systemctl --user is-active snap.myna.myna.service
+    $IM_ON"
 stage localized '
     sudo apt-get update -q
     sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q \

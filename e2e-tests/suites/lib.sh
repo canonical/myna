@@ -9,7 +9,7 @@
 #   assert_input_method_up           the injector's input method is running
 #   suite_status                     exit 1 if any assertion failed
 #
-# DESKTOP (gnome|xubuntu) is exported by run-suite.sh. Where the desktops
+# DESKTOP (gnome|xubuntu|kde) is exported by run-suite.sh. Where the desktops
 # legitimately differ, the difference lives here, not in the suites.
 
 # shellcheck source=e2e-tests/vm/lib.sh
@@ -22,8 +22,8 @@ on() { on_vm "$VM" "$1"; }
 DESKTOP=${DESKTOP:-$E2E_DESKTOP}
 
 # The app runs on the real display of an X11 desktop, so its screenshots show
-# the panel, theme and pill; GNOME's Wayland session cannot be photographed
-# from inside, so there it runs under Xvfb.
+# the panel, theme and pill; xdotool cannot drive a Wayland session, so on
+# GNOME and Plasma it runs under Xvfb.
 SHOT_DISPLAY=xvfb
 [ "$DESKTOP" != xubuntu ] || SHOT_DISPLAY=real
 
@@ -55,7 +55,8 @@ PROMPT_DISMISSED=$(poll 'grep -q dismissing out/agent.log')
 
 # The dictation key set up by onboarding, in the desktop's own shortcut store:
 # a media-keys custom keybinding on GNOME, an xfsettingsd custom command on
-# Xfce, where it is only live while /commands/custom/override is true.
+# Xfce, where it is only live while /commands/custom/override is true, and a
+# kglobalaccel command shortcut on Plasma (Qt's Meta+J, four keys a sequence).
 # shellcheck disable=SC2016 # the commands expand in the VM
 assert_shortcut_bound() {
     case $DESKTOP in
@@ -64,16 +65,24 @@ assert_shortcut_bound() {
         xubuntu) assert_on "Super+J custom shortcut written (xfconf)" \
             'xfconf-query -c xfce4-keyboard-shortcuts -lv | grep "^/commands/custom/<Super>" | grep -q com.canonical.Myna.Dictation \
             && [ "$(xfconf-query -c xfce4-keyboard-shortcuts -p /commands/custom/override)" = true ]' ;;
+        kde) assert_on "Super+J command shortcut bound (kglobalaccel)" \
+            'gdbus call --session -d org.kde.kglobalaccel -o /kglobalaccel -m org.kde.KGlobalAccel.globalShortcutsByKey \
+                "([268435530, 0, 0, 0],)" "(0,)" | grep -q "com\.canonical\.Myna\.Toggle-"' ;;
     esac
 }
 
-# The input method dictated text goes through: ibus-daemon on both desktops,
-# and on Xfce also the session environment that makes toolkits use it.
+# The input method dictated text goes through: ibus-daemon on every desktop,
+# and what makes the session use it: the environment toolkits read on Xfce,
+# KWin's input method on Plasma.
 # shellcheck disable=SC2016 # the commands expand in the VM
 assert_input_method_up() {
     assert_on "ibus-daemon is running" 'pgrep -u "$USER" -x ibus-daemon >/dev/null'
-    [ "$DESKTOP" != xubuntu ] || assert_on "the Xfce session selects IBus" \
-        'systemctl --user show-environment | grep -qx "GTK_IM_MODULE=ibus"'
+    case $DESKTOP in
+        xubuntu) assert_on "the Xfce session selects IBus" \
+            'systemctl --user show-environment | grep -qx "GTK_IM_MODULE=ibus"' ;;
+        kde) assert_on "KWin runs IBus as its input method" \
+            'kreadconfig6 --file kwinrc --group Wayland --key InputMethod | grep -q IBus' ;;
+    esac
 }
 
 suite_status() {
