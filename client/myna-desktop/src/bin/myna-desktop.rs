@@ -797,65 +797,86 @@ fn toggle_command() -> String {
     format!("{} --toggle", exe_path())
 }
 
-/// `--install-shortcut <accel>`: bind a GNOME custom keybinding to
-/// `myna-desktop --toggle`, appending to any existing custom keybindings
-/// (never clobbering).
+/// `--install-shortcut <accel>`: bind a GNOME custom keybinding to the
+/// toggle, appending to any existing custom keybindings (never clobbering).
+///
+/// Through dconf, which needs no schema: the snap cannot see the host's, and
+/// gio there writes a keyfile. dconf reads `$XDG_CONFIG_HOME/dconf/user`
+/// directly but writes through the session's dconf-service, which always
+/// writes the real one; the snap points `XDG_CONFIG_HOME` there. An
+/// unreadable database reads as no keybindings, and the merge would then
+/// replace the user's list, so that refuses.
 fn install_shortcut(accel: &str) -> ExitCode {
-    const SCHEMA: &str = "org.gnome.settings-daemon.plugins.media-keys";
-    const PATH: &str = "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/myna/";
-    let kb_schema = format!("{SCHEMA}.custom-keybinding:{PATH}");
+    const LIST: &str = "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings";
+    let entry = format!("{LIST}/myna/");
     let command = toggle_command();
 
-    let gset = |args: &[&str]| {
-        host_gsettings()
-            .args(args)
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(false)
-    };
+    let config = std::env::var_os("XDG_CONFIG_HOME")
+        .filter(|dir| !dir.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".config")
+        });
+    let database = config.join("dconf/user");
+    if let Err(e) = std::fs::File::open(&database) {
+        eprintln!(
+            "cannot read {}: {e} - not touching keybindings.",
+            database.display()
+        );
+        eprintln!("bind one by hand: Settings > Keyboard > Custom Shortcuts > `{command}`");
+        return ExitCode::FAILURE;
+    }
 
-    // Read the current list and append our path if absent (don't clobber).
-    let current = host_gsettings()
-        .args(["get", SCHEMA, "custom-keybindings"])
+    let current = Command::new("dconf")
+        .args(["read", LIST])
         .output()
         .ok()
         .and_then(|o| String::from_utf8(o.stdout).ok())
         .unwrap_or_default();
-    let current = current.trim();
-    let want = format!("'{PATH}'");
-    let new_list = if current.contains(&want) {
-        current.to_string()
-    } else if current.is_empty() || current == "@as []" || current == "[]" {
-        format!("['{PATH}']")
-    } else {
-        // insert after the opening '['
-        current.replacen('[', &format!("[{want}, "), 1)
-    };
-
-    let ok = gset(&["set", SCHEMA, "custom-keybindings", &new_list])
-        && gset(&["set", &kb_schema, "name", "myna dictation"])
-        && gset(&["set", &kb_schema, "command", &command])
-        && gset(&["set", &kb_schema, "binding", accel]);
+    let ok = [
+        (
+            LIST.to_owned(),
+            custom_keybindings_with(current.trim(), &entry),
+        ),
+        (format!("{entry}name"), gvariant_string("myna dictation")),
+        (format!("{entry}command"), gvariant_string(&command)),
+        (format!("{entry}binding"), gvariant_string(accel)),
+    ]
+    .iter()
+    .all(|(key, value)| {
+        Command::new("dconf")
+            .args(["write", key, value])
+            .status()
+            .is_ok_and(|s| s.success())
+    });
 
     if ok {
         println!("bound {accel} → `{command}`");
-        println!("start the daemon (`myna-desktop --socket <path>`), focus a field, tap {accel}.");
+        println!("start the daemon, focus a field, tap {accel}.");
         ExitCode::SUCCESS
     } else {
-        eprintln!("failed to set the GNOME keybinding via gsettings.");
-        eprintln!("bind one manually: Settings → Keyboard → Custom Shortcuts → `{command}`");
+        eprintln!("failed to set the GNOME keybinding through dconf.");
+        eprintln!("bind one by hand: Settings > Keyboard > Custom Shortcuts > `{command}`");
         ExitCode::FAILURE
     }
 }
 
-/// Host `gsettings` for the unpackaged `--install-shortcut`. Dev launches
-/// run with `GSETTINGS_BACKEND=keyfile`, and a child inheriting it would
-/// write the GNOME keybinding into the keyfile instead of dconf - the
-/// keybinding has to live where GNOME's settings-daemon reads it.
-fn host_gsettings() -> Command {
-    let mut cmd = Command::new("gsettings");
-    cmd.env_remove("GSETTINGS_BACKEND");
-    cmd
+/// The custom keybinding paths `current` lists (dconf's text, empty when
+/// unset), with `entry` first if it is not there yet.
+fn custom_keybindings_with(current: &str, entry: &str) -> String {
+    let quoted = format!("'{entry}'");
+    if current.contains(&quoted) {
+        current.to_owned()
+    } else if matches!(current, "" | "[]" | "@as []") {
+        format!("[{quoted}]")
+    } else {
+        current.replacen('[', &format!("[{quoted}, "), 1)
+    }
+}
+
+/// `text` as a GVariant string literal, as `dconf write` takes it.
+fn gvariant_string(text: &str) -> String {
+    format!("'{}'", text.replace('\\', "\\\\").replace('\'', "\\'"))
 }
 
 /// `--status`: one screen answering "what state is dictation in, and why".
@@ -1620,15 +1641,26 @@ mod tests {
         assert_eq!(source(false, false), "built-in");
     }
 
-    // Dev launches set GSETTINGS_BACKEND=keyfile; the installer's whole job
-    // is writing the keybinding into dconf, so the child must not inherit it.
     #[test]
-    fn the_installers_gsettings_child_forgets_the_keyfile_backend() {
-        let cmd = host_gsettings();
-        assert!(
-            cmd.get_envs()
-                .any(|(key, value)| key == "GSETTINGS_BACKEND" && value.is_none()),
-            "GSETTINGS_BACKEND must be explicitly removed from the child env"
+    fn the_shortcut_joins_the_custom_keybindings_once() {
+        let entry = "/k/myna/";
+        for unset in ["", "[]", "@as []"] {
+            assert_eq!(custom_keybindings_with(unset, entry), "['/k/myna/']");
+        }
+        assert_eq!(
+            custom_keybindings_with("['/k/custom0/']", entry),
+            "['/k/myna/', '/k/custom0/']"
+        );
+        let bound = "['/k/custom0/', '/k/myna/']";
+        assert_eq!(custom_keybindings_with(bound, entry), bound);
+    }
+
+    #[test]
+    fn dconf_values_are_quoted_strings() {
+        assert_eq!(gvariant_string("<Super>t"), "'<Super>t'");
+        assert_eq!(
+            gvariant_string(r"/opt/it's\myna --toggle"),
+            r"'/opt/it\'s\\myna --toggle'"
         );
     }
 

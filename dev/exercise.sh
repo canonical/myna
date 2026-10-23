@@ -295,18 +295,15 @@ grep -qF -- "is required to run the daemon" "$WORK/desktop-nosocket.out" \
 # --toggle with nothing listening: exercises control_path + the client leg.
 run_cli myna-desktop desktop-toggle.out --toggle --control-socket "$WORK/absent.sock"
 
-# The shortcut installer shells out to gsettings. Under gated-tests.sh both
-# XDG_CONFIG_HOME and the session bus are scratch, so the dconf read lands in
-# a scratch database; and with GSETTINGS_BACKEND=keyfile (also exported there)
-# anything GSettings-side lands in the scratch keyfile - the installer's child
-# strips that variable precisely so its write stays dconf-shaped. Either way
-# the developer's real keybindings are untouched. It reports failure cleanly
-# where the GNOME schemas are absent, which is a path worth covering too.
-# The installer binds only on GNOME and the workshop is not a GNOME session,
-# so the desktop is forced.
+# The shortcut installer writes through dconf. Under gated-tests.sh both
+# XDG_CONFIG_HOME and the session bus are scratch, so the developer's real
+# keybindings are untouched. It refuses while the database is unreadable, so
+# a first write makes one. It binds only on GNOME and the workshop is not a
+# GNOME session, so the desktop is forced.
+dconf write /org/gnome/settings-daemon/plugins/media-keys/custom-keybindings "@as []"
 MYNA_PLATFORM=gnome run_cli myna-desktop desktop-shortcut.out --install-shortcut '<Super>t'
-grep -qiE "bound|failed to set" "$WORK/desktop-shortcut.out" \
-  || die "myna-desktop --install-shortcut said nothing (see $WORK/desktop-shortcut.out)"
+grep -q "^bound <Super>t" "$WORK/desktop-shortcut.out" \
+  || die "myna-desktop --install-shortcut bound nothing (see $WORK/desktop-shortcut.out)"
 
 # --- fail-loud merge (FR-005) --------------------------------------------------
 notice "merging coverage data"
