@@ -4,11 +4,11 @@
 //! is started on demand. A property is a slash path in a channel and holds a
 //! variant.
 
-use std::time::Duration;
-
-use gio::glib::{self, Variant, VariantTy};
+use gio::glib::{self, Variant};
 use gio::prelude::*;
 use myna_platform::activation::ActivationError;
+
+use crate::platform::dbus::{self, unavailable};
 
 const SERVICE: &str = "org.xfce.Xfconf";
 const PATH: &str = "/org/xfce/Xfconf";
@@ -17,8 +17,6 @@ const NOT_FOUND: [&str; 2] = [
     "org.xfce.Xfconf.Error.PropertyNotFound",
     "org.xfce.Xfconf.Error.ChannelNotFound",
 ];
-/// xfconfd that does not answer in this long is as good as absent.
-const CALL_TIMEOUT: Duration = Duration::from_secs(2);
 
 #[derive(Clone)]
 pub struct Xfconf {
@@ -32,9 +30,7 @@ pub struct Subscription(#[allow(dead_code)] Vec<gio::SignalSubscription>);
 impl Xfconf {
     /// `channel` on the session bus.
     pub fn session(channel: &str) -> Result<Self, ActivationError> {
-        let connection = gio::bus_get_sync(gio::BusType::Session, gio::Cancellable::NONE)
-            .map_err(|error| unavailable("the session bus", &error))?;
-        Ok(Self::with_connection(connection, channel))
+        Ok(Self::with_connection(dbus::session()?, channel))
     }
 
     pub fn with_connection(connection: gio::DBusConnection, channel: &str) -> Self {
@@ -127,28 +123,18 @@ impl Xfconf {
     }
 
     fn call(&self, method: &str, parameters: Variant, reply: &str) -> Result<Variant, glib::Error> {
-        self.connection.call_sync(
-            // A peer-to-peer connection has no bus to route by name.
-            self.connection
-                .flags()
-                .contains(gio::DBusConnectionFlags::MESSAGE_BUS_CONNECTION)
-                .then_some(SERVICE),
+        dbus::call(
+            &self.connection,
+            SERVICE,
             PATH,
             INTERFACE,
             method,
-            Some(&parameters),
-            Some(VariantTy::new(reply).expect("valid type")),
-            gio::DBusCallFlags::NONE,
-            CALL_TIMEOUT.as_millis() as i32,
-            gio::Cancellable::NONE,
+            parameters,
+            reply,
         )
     }
 }
 
 fn is_not_found(error: &glib::Error) -> bool {
     gio::DBusError::remote_error(error).is_some_and(|name| NOT_FOUND.contains(&name.as_str()))
-}
-
-fn unavailable(what: &str, error: &glib::Error) -> ActivationError {
-    ActivationError::Unavailable(format!("{what}: {}", error.message()))
 }

@@ -30,7 +30,7 @@ impl XfconfActivation {
     /// The session bus's xfconfd.
     pub fn open() -> Result<Self, ActivationError> {
         Ok(Self::with_xfconf(Xfconf::session(CHANNEL)?)
-            .with_applications(super::applications::application_dirs()))
+            .with_applications(crate::platform::applications::application_dirs()))
     }
 
     pub fn with_xfconf(xfconf: Xfconf) -> Self {
@@ -143,7 +143,8 @@ impl Activation for XfconfActivation {
                 }
                 found.push(Conflict {
                     action: if provider == COMMANDS {
-                        super::applications::name_of(&what, &self.applications).unwrap_or(what)
+                        crate::platform::applications::name_of(&what, &self.applications)
+                            .unwrap_or(what)
                     } else {
                         window_manager_action(&what)
                     },

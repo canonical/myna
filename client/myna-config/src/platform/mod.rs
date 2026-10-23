@@ -22,6 +22,8 @@ use crate::onboarding::ExtensionReport;
 use crate::ports::{FailedStep, SystemConfiguratorError};
 
 pub mod appearance;
+pub mod applications;
+pub mod dbus;
 pub mod gnome;
 pub mod host;
 pub mod kde;
