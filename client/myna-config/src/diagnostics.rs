@@ -14,7 +14,7 @@ use crate::machine::{
     bytes, AudioDrops, DaemonReport, InputLevels, InputReport, LastError, MachineFacts,
     ProcessMemory, SystemFacts,
 };
-use crate::onboarding::{ExtensionCopy, ExtensionReport};
+use crate::onboarding::{input_method_holds, ExtensionCopy, ExtensionReport};
 use crate::performance::{
     assess_clock, assess_pressure, ClockClass, ClockVerdict, PerformanceFacts, PressureWarning,
 };
@@ -103,7 +103,8 @@ pub enum OnboardingState {
     /// A model is installed but none is connected to `myna:backend`, so
     /// dictation fails with "Model not connected".
     NoModelConnected,
-    /// Everything is set up but the desktop has no IBus to type through.
+    /// Everything is set up but the desktop's IBus cannot be typed through:
+    /// not set up, not installed, or another input method in its place.
     NoInputMethod,
     /// Nothing to onboard; at least one discovered model is connected.
     Ready,
@@ -365,17 +366,19 @@ fn classify_onboarding(input: &DiagnosticInput) -> OnboardingState {
     {
         return OnboardingState::NoModelConnected;
     }
-    if input_method_missing(input) {
+    if input_method_held(input).is_some() {
         return OnboardingState::NoInputMethod;
     }
     OnboardingState::Ready
 }
 
-/// Whether the desktop needs an input method and has none installed.
-fn input_method_missing(input: &DiagnosticInput) -> bool {
-    input.desktop.iter().any(|fact| {
-        fact.purpose == Purpose::TextInput && fact.status == ComponentStatus::Unavailable
-    })
+/// The desktop's input method, when nothing can be typed through it.
+fn input_method_held(input: &DiagnosticInput) -> Option<ComponentStatus> {
+    input
+        .desktop
+        .iter()
+        .find(|fact| fact.purpose == Purpose::TextInput && input_method_holds(fact.status))
+        .map(|fact| fact.status)
 }
 
 /// Localized, user-facing label for an onboarding state.
@@ -384,7 +387,7 @@ pub fn onboarding_state_label(state: OnboardingState) -> String {
         OnboardingState::NoMyna => gettextrs::gettext("Dictation is not installed"),
         OnboardingState::NoBackend => gettextrs::gettext("No model installed"),
         OnboardingState::NoModelConnected => gettextrs::gettext("No model connected"),
-        OnboardingState::NoInputMethod => gettextrs::gettext("No input method installed"),
+        OnboardingState::NoInputMethod => gettextrs::gettext("No input method set up"),
         OnboardingState::Ready => gettextrs::gettext("Ready"),
         OnboardingState::Unavailable => gettextrs::gettext("Installation status unavailable"),
     }
@@ -628,10 +631,14 @@ fn render_body(
     out.push_str(":\n");
     let not_connected = (onboarding == OnboardingState::NoModelConnected)
         .then(|| gettextrs::gettext("No model is connected. Choose one to use for dictation."));
-    let no_input_method = input_method_missing(input).then(|| {
-        gettextrs::gettext(
+    let no_input_method = input_method_held(input).map(|status| match status {
+        ComponentStatus::Unavailable => gettextrs::gettext(
             "IBus is not installed, so Myna cannot type. Install the “ibus” package, then log out and back in.",
-        )
+        ),
+        ComponentStatus::Blocked(_) => gettextrs::gettext(
+            "Another input method is in use, and Dictation types through IBus. Choose IBus in the system settings.",
+        ),
+        _ => gettextrs::gettext("IBus is not set up, so Myna cannot type. Set up Dictation to turn it on."),
     });
     let problems: Vec<&String> = input
         .problems
@@ -1222,13 +1229,28 @@ mod tests {
         assert_eq!(report.onboarding(), OnboardingState::NoInputMethod);
         let text = report.copy_text();
         assert!(
-            text.contains("Onboarding: No input method installed"),
+            text.contains("Onboarding: No input method set up"),
             "{text}"
         );
         assert!(
             text.contains("Problems:\n  IBus is not installed"),
             "{text}"
         );
+        for (status, problem) in [
+            (ComponentStatus::Inactive, "IBus is not set up"),
+            (ComponentStatus::NeedsRelogin, "IBus is not set up"),
+            (
+                ComponentStatus::Blocked(Blocker::Incompatible),
+                "Another input method is in use",
+            ),
+        ] {
+            let report = present_diagnostics(input(status));
+            assert_eq!(report.onboarding(), OnboardingState::NoInputMethod);
+            let text = report.copy_text();
+            assert!(text.contains(&format!("Problems:\n  {problem}")), "{text}");
+        }
+        let report = present_diagnostics(input(ComponentStatus::Failed));
+        assert_eq!(report.onboarding(), OnboardingState::Ready);
         let report = present_diagnostics(input(ComponentStatus::Active));
         assert_eq!(report.onboarding(), OnboardingState::Ready);
         assert!(report.copy_text().contains("Problems:\n  (none)"));

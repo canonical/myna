@@ -49,8 +49,7 @@ impl ComponentId {
 
     /// Whether dictation needs it. Only these gate the component step and
     /// open the wizard at startup. The desktop's pieces do not, bar an input
-    /// method that is not installed (`Component::blocks`): the wizard cannot
-    /// install them, and Diagnostics says what is missing.
+    /// method nothing can be typed through (`Component::blocks`).
     pub const fn required(self) -> bool {
         !self.is_desktop()
     }
@@ -131,8 +130,8 @@ pub struct Component {
 
 impl Component {
     /// Whether dictation cannot work while this stands. A desktop's pieces
-    /// do not, but for an input method Myna cannot type through: not
-    /// installed, or another one in its place.
+    /// do not, but for an input method Myna cannot type through: not set up,
+    /// not installed, or another one in its place.
     pub fn blocks(&self) -> bool {
         (self.id.required() && !self.satisfied()) || self.lacks_input_method()
     }
@@ -141,7 +140,10 @@ impl Component {
         self.id == ComponentId::InputMethod
             && matches!(
                 self.state,
-                ComponentState::Unavailable(Unavailable::NotInstalled | Unavailable::Incompatible)
+                ComponentState::Missing
+                    | ComponentState::Unavailable(
+                        Unavailable::NotInstalled | Unavailable::Incompatible
+                    )
             )
     }
 
@@ -489,6 +491,16 @@ pub fn needs_onboarding(components: &[Component]) -> bool {
     components.iter().any(Component::blocks)
 }
 
+/// Whether an input method in this state holds the wizard and keeps
+/// Diagnostics from reading ready: nothing can be typed through it.
+pub fn input_method_holds(status: ComponentStatus) -> bool {
+    Component {
+        id: ComponentId::InputMethod,
+        state: ComponentState::of(status),
+    }
+    .lacks_input_method()
+}
+
 /// Why the desktop's input method holds the wizard, if it does: not
 /// installed, or another one in its place. The wizard can change neither, and
 /// nothing can be typed until the user does.
@@ -826,16 +838,24 @@ mod tests {
                 .find(|component| component.id == ComponentId::InputMethod)
                 .map(|component| component.state);
             assert_eq!(found, Some(state), "{status:?}");
-            // Only an IBus that is not installed, or another input method
-            // in its place, holds the wizard: nothing could be typed.
+            // An input method nothing could be typed through holds the
+            // wizard; only the user can fix one not installed, or another in
+            // its place.
             let holds = matches!(
                 status,
-                ComponentStatus::Unavailable | ComponentStatus::Blocked(Blocker::Incompatible)
+                ComponentStatus::Inactive
+                    | ComponentStatus::NeedsRelogin
+                    | ComponentStatus::Unavailable
+                    | ComponentStatus::Blocked(Blocker::Incompatible)
             );
             assert_eq!(needs_onboarding(&components), holds, "{status:?}");
+            assert_eq!(input_method_holds(status), holds, "{status:?}");
             assert_eq!(
                 input_method_blocker(&components).is_some(),
-                holds,
+                matches!(
+                    status,
+                    ComponentStatus::Unavailable | ComponentStatus::Blocked(Blocker::Incompatible)
+                ),
                 "{status:?}"
             );
         }
@@ -873,6 +893,19 @@ mod tests {
             input_method_blocker(&components),
             Some(Unavailable::Incompatible)
         );
+    }
+
+    #[test]
+    fn an_input_method_not_set_up_opens_the_wizard_to_turn_it_on() {
+        let components = assess(Machine {
+            input_method: Some(ComponentStatus::Inactive),
+            ..ready()
+        });
+        assert!(needs_onboarding(&components));
+        assert!(!can_advance(Step::Components, &components));
+        assert_eq!(install_plan(&components), [ComponentId::InputMethod]);
+        assert_eq!(install_view(&components, None), InstallView::Offer);
+        assert_eq!(input_method_blocker(&components), None);
     }
 
     #[test]

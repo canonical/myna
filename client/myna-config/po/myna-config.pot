@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-23 00:30+0100\n"
+"POT-Creation-Date: 2026-10-23 09:57+0100\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -89,7 +89,7 @@ msgstr ""
 msgid "Install more models"
 msgstr ""
 
-#: data/main-window.blp:9 src/app.rs:126 src/diagnostics.rs:408
+#: data/main-window.blp:9 src/app.rs:126 src/diagnostics.rs:411
 #: data/com.canonical.Myna.Config.metainfo.xml:8
 #: data/com.canonical.Myna.Config.desktop:3
 msgid "Myna Settings"
@@ -105,7 +105,7 @@ msgstr ""
 
 #: data/main-window.blp:39 data/myna-page.blp:71 src/app.rs:1442
 #: src/app.rs:3129 src/app.rs:3567 src/backend_apply.rs:379
-#: src/diagnostics.rs:608 src/presentation.rs:157
+#: src/diagnostics.rs:611 src/presentation.rs:157
 msgid "Model"
 msgstr ""
 
@@ -402,7 +402,7 @@ msgstr ""
 msgid "Recommended"
 msgstr ""
 
-#: src/backend_ui.rs:188 src/diagnostics.rs:439
+#: src/backend_ui.rs:188 src/diagnostics.rs:442
 msgid "Languages"
 msgstr ""
 
@@ -434,7 +434,7 @@ msgid ""
 "succeeds."
 msgstr ""
 
-#: src/backend_ui.rs:811 src/diagnostics.rs:630
+#: src/backend_ui.rs:811 src/diagnostics.rs:633
 msgid "No model is connected. Choose one to use for dictation."
 msgstr ""
 
@@ -508,16 +508,16 @@ msgstr ""
 msgid "Diagnostics copied to clipboard"
 msgstr ""
 
-#: src/backend_ui.rs:2205 src/diagnostics.rs:384
+#: src/backend_ui.rs:2205 src/diagnostics.rs:387
 msgid "Dictation is not installed"
 msgstr ""
 
-#: src/backend_ui.rs:2206 src/diagnostics.rs:385
+#: src/backend_ui.rs:2206 src/diagnostics.rs:388
 msgid "No model installed"
 msgstr ""
 
-#: src/backend_ui.rs:2207 src/diagnostics.rs:387
-msgid "No input method installed"
+#: src/backend_ui.rs:2207 src/diagnostics.rs:390
+msgid "No input method set up"
 msgstr ""
 
 #: src/backend_ui.rs:2396
@@ -648,7 +648,7 @@ msgstr ""
 msgid "None selected. Choose one below."
 msgstr ""
 
-#: src/backend_ui.rs:2787 src/diagnostics.rs:613
+#: src/backend_ui.rs:2787 src/diagnostics.rs:616
 msgid "Services"
 msgstr ""
 
@@ -916,7 +916,7 @@ msgstr ""
 msgid "Close Myna Settings."
 msgstr ""
 
-#: src/onboarding_ui.rs:945
+#: src/onboarding_ui.rs:945 src/diagnostics.rs:639
 msgid ""
 "Another input method is in use, and Dictation types through IBus. Choose "
 "IBus in the system settings."
@@ -1041,377 +1041,382 @@ msgstr ""
 msgid "Finish dictating to preview sounds"
 msgstr ""
 
-#: src/diagnostics.rs:170
+#: src/diagnostics.rs:171
 msgid "Paste the diagnostics report from your clipboard here."
 msgstr ""
 
-#: src/diagnostics.rs:225
+#: src/diagnostics.rs:226
 msgid "The microphone has a large DC offset"
 msgstr ""
 
-#: src/diagnostics.rs:229
+#: src/diagnostics.rs:230
 msgid ""
 "It costs headroom and points to an audio driver fault. Try another input in "
 "the system sound settings."
 msgstr ""
 
-#: src/diagnostics.rs:245
+#: src/diagnostics.rs:246
 msgid "The CPU clock is capped by system policy"
 msgstr ""
 
-#: src/diagnostics.rs:247
+#: src/diagnostics.rs:248
 msgid "limited to"
 msgstr ""
 
-#: src/diagnostics.rs:249 src/diagnostics.rs:327 src/diagnostics.rs:686
+#: src/diagnostics.rs:250 src/diagnostics.rs:328 src/diagnostics.rs:693
 msgid "of"
 msgstr ""
 
-#: src/diagnostics.rs:253
+#: src/diagnostics.rs:254
 msgid "Dictation will be slow. A power tool has capped the CPU clock."
 msgstr ""
 
-#: src/diagnostics.rs:263
+#: src/diagnostics.rs:264
 msgid "The power profile is set to low-power"
 msgstr ""
 
-#: src/diagnostics.rs:267
+#: src/diagnostics.rs:268
 msgid ""
 "Dictation will be slow. Switch to Balanced or Performance in the system "
 "power settings."
 msgstr ""
 
-#: src/diagnostics.rs:277
+#: src/diagnostics.rs:278
 msgid "Firmware is holding the CPU at its lowest clock"
 msgstr ""
 
-#: src/diagnostics.rs:281
+#: src/diagnostics.rs:282
 msgid ""
 "Dictation will be slow. Unplug the charger, wait a few seconds, and plug it "
 "back in. If that does not help, power off fully and start again."
 msgstr ""
 
-#: src/diagnostics.rs:290
+#: src/diagnostics.rs:291
 msgid "The system is short of memory"
 msgstr ""
 
-#: src/diagnostics.rs:294
+#: src/diagnostics.rs:295
 msgid ""
 "Dictation will stutter. Close applications until the machine stops swapping."
 msgstr ""
 
-#: src/diagnostics.rs:300
+#: src/diagnostics.rs:301
 msgid "Disk activity is stalling the system"
 msgstr ""
 
-#: src/diagnostics.rs:304
+#: src/diagnostics.rs:305
 msgid "Dictation will stutter. Wait for the transfer or indexing to finish."
 msgstr ""
 
-#: src/diagnostics.rs:310
+#: src/diagnostics.rs:311
 msgid "Other programs are saturating the CPU"
 msgstr ""
 
-#: src/diagnostics.rs:314
+#: src/diagnostics.rs:315
 msgid "Dictation will be slow. Pause the build or workload before dictating."
 msgstr ""
 
-#: src/diagnostics.rs:325 src/diagnostics.rs:684
+#: src/diagnostics.rs:326 src/diagnostics.rs:691
 msgid "reached"
 msgstr ""
 
-#: src/diagnostics.rs:337
+#: src/diagnostics.rs:338
 msgid "of the last 10 s stalled"
 msgstr ""
 
-#: src/diagnostics.rs:386
+#: src/diagnostics.rs:389
 msgid "No model connected"
 msgstr ""
 
-#: src/diagnostics.rs:388
+#: src/diagnostics.rs:391
 msgid "Ready"
 msgstr ""
 
-#: src/diagnostics.rs:389
+#: src/diagnostics.rs:392
 msgid "Installation status unavailable"
 msgstr ""
 
-#: src/diagnostics.rs:396
+#: src/diagnostics.rs:399
 msgid "Connected"
 msgstr ""
 
-#: src/diagnostics.rs:397
+#: src/diagnostics.rs:400
 msgid "Multiple connections"
 msgstr ""
 
-#: src/diagnostics.rs:398
+#: src/diagnostics.rs:401
 msgid "Not connected"
 msgstr ""
 
-#: src/diagnostics.rs:412
+#: src/diagnostics.rs:415
 msgid "Onboarding"
 msgstr ""
 
-#: src/diagnostics.rs:419
+#: src/diagnostics.rs:422
 msgid "System"
 msgstr ""
 
-#: src/diagnostics.rs:423
+#: src/diagnostics.rs:426
 msgid "OS"
 msgstr ""
 
-#: src/diagnostics.rs:427
+#: src/diagnostics.rs:430
 msgid "kernel"
 msgstr ""
 
-#: src/diagnostics.rs:435
+#: src/diagnostics.rs:438
 msgid "Desktop"
 msgstr ""
 
-#: src/diagnostics.rs:446
+#: src/diagnostics.rs:449
 msgid "Machine"
 msgstr ""
 
-#: src/diagnostics.rs:450 src/diagnostics.rs:465
+#: src/diagnostics.rs:453 src/diagnostics.rs:468
 msgid "CPU"
 msgstr ""
 
-#: src/diagnostics.rs:451 src/diagnostics.rs:528 src/diagnostics.rs:620
+#: src/diagnostics.rs:454 src/diagnostics.rs:531 src/diagnostics.rs:623
 msgid "Memory"
 msgstr ""
 
-#: src/diagnostics.rs:455 src/diagnostics.rs:460
+#: src/diagnostics.rs:458 src/diagnostics.rs:463
 msgid "GPU"
 msgstr ""
 
-#: src/diagnostics.rs:456 src/diagnostics.rs:847
+#: src/diagnostics.rs:459 src/diagnostics.rs:854
 msgid "none"
 msgstr ""
 
-#: src/diagnostics.rs:466
+#: src/diagnostics.rs:469
 msgid "(no model answered show-machine)"
 msgstr ""
 
-#: src/diagnostics.rs:471
+#: src/diagnostics.rs:474
 msgid "Performance"
 msgstr ""
 
-#: src/diagnostics.rs:478 src/diagnostics.rs:485 src/diagnostics.rs:511
+#: src/diagnostics.rs:481 src/diagnostics.rs:488 src/diagnostics.rs:514
 msgid "Clock"
 msgstr ""
 
-#: src/diagnostics.rs:479
+#: src/diagnostics.rs:482
 msgid "(no cpufreq information)"
 msgstr ""
 
-#: src/diagnostics.rs:490
+#: src/diagnostics.rs:493
 msgid "Profile"
 msgstr ""
 
-#: src/diagnostics.rs:493
+#: src/diagnostics.rs:496
 msgid "Power"
 msgstr ""
 
-#: src/diagnostics.rs:498
+#: src/diagnostics.rs:501
 msgid "Pressure"
 msgstr ""
 
 #. TRANSLATORS: {cpu}, {memory} and {io} are shares such as "0.03%"; cpu, memory and io are kernel resource names, keep them.
-#: src/diagnostics.rs:501
+#: src/diagnostics.rs:504
 msgid "cpu {cpu}, memory {memory}, io {io} of the last 10 s stalled"
 msgstr ""
 
-#: src/diagnostics.rs:512
+#: src/diagnostics.rs:515
 msgid "(not measured yet)"
 msgstr ""
 
-#: src/diagnostics.rs:517
+#: src/diagnostics.rs:520
 msgid "Daemon"
 msgstr ""
 
-#: src/diagnostics.rs:525 src/diagnostics.rs:553 src/diagnostics.rs:562
+#: src/diagnostics.rs:528 src/diagnostics.rs:556 src/diagnostics.rs:565
 msgid "Version"
 msgstr ""
 
-#: src/diagnostics.rs:535
+#: src/diagnostics.rs:538
 msgid "Audio"
 msgstr ""
 
-#: src/diagnostics.rs:542
+#: src/diagnostics.rs:545
 msgid "Input"
 msgstr ""
 
-#: src/diagnostics.rs:548
+#: src/diagnostics.rs:551
 msgid "Last error"
 msgstr ""
 
-#: src/diagnostics.rs:556
+#: src/diagnostics.rs:559
 msgid "Process"
 msgstr ""
 
-#: src/diagnostics.rs:557 src/diagnostics.rs:798
+#: src/diagnostics.rs:560 src/diagnostics.rs:805
 msgid "not running"
 msgstr ""
 
-#: src/diagnostics.rs:563 src/diagnostics.rs:810 src/diagnostics.rs:819
+#: src/diagnostics.rs:566 src/diagnostics.rs:817 src/diagnostics.rs:826
 msgid "not installed"
 msgstr ""
 
-#: src/diagnostics.rs:569
+#: src/diagnostics.rs:572
 msgid "Shell extension"
 msgstr ""
 
-#: src/diagnostics.rs:582
+#: src/diagnostics.rs:585
 msgid "Models"
 msgstr ""
 
-#: src/diagnostics.rs:586
+#: src/diagnostics.rs:589
 msgid "(none discovered)"
 msgstr ""
 
-#: src/diagnostics.rs:601 src/presentation.rs:164
+#: src/diagnostics.rs:604 src/presentation.rs:164
 msgid "Engine"
 msgstr ""
 
-#: src/diagnostics.rs:605
+#: src/diagnostics.rs:608
 msgid "none selected"
 msgstr ""
 
-#: src/diagnostics.rs:627
+#: src/diagnostics.rs:630
 msgid "Problems"
 msgstr ""
 
-#: src/diagnostics.rs:633
+#: src/diagnostics.rs:636
 msgid ""
 "IBus is not installed, so Myna cannot type. Install the “ibus” package, then "
 "log out and back in."
 msgstr ""
 
-#: src/diagnostics.rs:645 src/diagnostics.rs:659
+#: src/diagnostics.rs:641
+msgid ""
+"IBus is not set up, so Myna cannot type. Set up Dictation to turn it on."
+msgstr ""
+
+#: src/diagnostics.rs:652 src/diagnostics.rs:666
 msgid "(none)"
 msgstr ""
 
-#: src/diagnostics.rs:655
+#: src/diagnostics.rs:662
 msgid "Warnings"
 msgstr ""
 
-#: src/diagnostics.rs:680
+#: src/diagnostics.rs:687
 msgid "not probed"
 msgstr ""
 
-#: src/diagnostics.rs:693
+#: src/diagnostics.rs:700
 msgid "policy allows"
 msgstr ""
 
-#: src/diagnostics.rs:700
+#: src/diagnostics.rs:707
 msgid "cores in this class"
 msgstr ""
 
-#: src/diagnostics.rs:707
+#: src/diagnostics.rs:714
 msgid "mains"
 msgstr ""
 
-#: src/diagnostics.rs:708 src/diagnostics.rs:713
+#: src/diagnostics.rs:715 src/diagnostics.rs:720
 msgid "battery"
 msgstr ""
 
-#: src/diagnostics.rs:762
+#: src/diagnostics.rs:769
 msgid "chunks dropped this session"
 msgstr ""
 
-#: src/diagnostics.rs:770
+#: src/diagnostics.rs:777
 msgid "no dictation yet"
 msgstr ""
 
-#: src/diagnostics.rs:773
+#: src/diagnostics.rs:780
 msgid "speech"
 msgstr ""
 
-#: src/diagnostics.rs:774
+#: src/diagnostics.rs:781
 msgid "no speech heard"
 msgstr ""
 
-#: src/diagnostics.rs:778
+#: src/diagnostics.rs:785
 msgid "offset"
 msgstr ""
 
-#: src/diagnostics.rs:780
+#: src/diagnostics.rs:787
 msgid "floor"
 msgstr ""
 
-#: src/diagnostics.rs:787
+#: src/diagnostics.rs:794
 msgid "Input method"
 msgstr ""
 
-#: src/diagnostics.rs:788
+#: src/diagnostics.rs:795
 msgid "Indicator host"
 msgstr ""
 
-#: src/diagnostics.rs:794
+#: src/diagnostics.rs:801
 msgid "active"
 msgstr ""
 
-#: src/diagnostics.rs:796
+#: src/diagnostics.rs:803
 msgid "set up, starts at the next login"
 msgstr ""
 
-#: src/diagnostics.rs:799
+#: src/diagnostics.rs:806
 msgid "not set up"
 msgstr ""
 
-#: src/diagnostics.rs:800
+#: src/diagnostics.rs:807
 msgid "turned off"
 msgstr ""
 
-#: src/diagnostics.rs:802
+#: src/diagnostics.rs:809
 msgid "locked by the administrator"
 msgstr ""
 
-#: src/diagnostics.rs:804
+#: src/diagnostics.rs:811
 msgid "hidden by another copy"
 msgstr ""
 
-#: src/diagnostics.rs:806
+#: src/diagnostics.rs:813
 msgid "another input method is in use"
 msgstr ""
 
-#: src/diagnostics.rs:807
+#: src/diagnostics.rs:814
 msgid "not supported on this desktop"
 msgstr ""
 
-#: src/diagnostics.rs:809
+#: src/diagnostics.rs:816
 msgid "failed"
 msgstr ""
 
-#: src/diagnostics.rs:818
+#: src/diagnostics.rs:825
 msgid "gnome-shell did not answer"
 msgstr ""
 
-#: src/diagnostics.rs:822
+#: src/diagnostics.rs:829
 msgid "installed since login, starts at the next one"
 msgstr ""
 
-#: src/diagnostics.rs:825
+#: src/diagnostics.rs:832
 msgid "installed since login, not enabled"
 msgstr ""
 
-#: src/diagnostics.rs:828
+#: src/diagnostics.rs:835
 msgid "myna-config package"
 msgstr ""
 
-#: src/diagnostics.rs:829
+#: src/diagnostics.rs:836
 msgid "Ubuntu package"
 msgstr ""
 
-#: src/diagnostics.rs:830
+#: src/diagnostics.rs:837
 msgid "development override"
 msgstr ""
 
-#: src/diagnostics.rs:831
+#: src/diagnostics.rs:838
 msgid "user copy"
 msgstr ""
 
-#: src/diagnostics.rs:832
+#: src/diagnostics.rs:839
 msgid "other system copy"
 msgstr ""
 
