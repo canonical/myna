@@ -4,6 +4,7 @@
 //! The rest of the application names `myna-platform` contracts, never a
 //! desktop: [`Platform`] is built once from the session's [`Profile`].
 
+use std::cell::OnceCell;
 use std::future::Future;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -11,6 +12,7 @@ use std::task::{Context, Poll, Waker};
 
 use async_trait::async_trait;
 use libadwaita as adw;
+use myna_freedesktop::portal::{AccentFrom, PortalAppearance};
 use myna_platform::activation::{Activation, ActivationError};
 use myna_platform::appearance::Appearance;
 use myna_platform::components::{
@@ -34,7 +36,8 @@ pub struct Platform {
     profile: Profile,
     activation: Option<Rc<dyn Activation>>,
     components: Rc<dyn Components>,
-    appearance: Rc<dyn Appearance>,
+    /// Built on first use: it asks the settings portal.
+    appearance: OnceCell<Rc<dyn Appearance>>,
 }
 
 impl Platform {
@@ -61,19 +64,11 @@ impl Platform {
                 ),
                 Profile::Generic => (None, Rc::new(NoComponents)),
             };
-        let appearance: Rc<dyn Appearance> = match profile {
-            Profile::Gnome => Rc::new(gnome::appearance::GnomeAppearance),
-            Profile::Xfce => Rc::new(match xfce::xfconf::Xfconf::session("xsettings") {
-                Ok(xfconf) => appearance::GtkAppearance::with_xfconf(xfconf),
-                Err(_) => appearance::GtkAppearance::default(),
-            }),
-            Profile::Kde | Profile::Generic => Rc::new(appearance::GtkAppearance::default()),
-        };
         Self {
             profile,
             activation,
             components,
-            appearance,
+            appearance: OnceCell::new(),
         }
     }
 
@@ -105,9 +100,24 @@ impl Platform {
         self.activation.clone()
     }
 
-    /// The desktop's reduced-motion and high-contrast preferences.
+    /// The desktop's reduced-motion and high-contrast preferences: the
+    /// settings portal's, and what GTK (and xfconf on Xfce) says where it
+    /// states none.
     pub fn appearance(&self) -> Rc<dyn Appearance> {
-        self.appearance.clone()
+        self.appearance
+            .get_or_init(|| {
+                let gtk: Rc<dyn Appearance> = match self.profile {
+                    Profile::Xfce => Rc::new(match xfce::xfconf::Xfconf::session("xsettings") {
+                        Ok(xfconf) => appearance::GtkAppearance::with_xfconf(xfconf),
+                        Err(_) => appearance::GtkAppearance::default(),
+                    }),
+                    Profile::Gnome | Profile::Kde | Profile::Generic => {
+                        Rc::new(appearance::GtkAppearance::default())
+                    }
+                };
+                PortalAppearance::session(gtk, AccentFrom::Portal)
+            })
+            .clone()
     }
 
     /// The colour scheme libadwaita should take. On GNOME its settings portal
@@ -117,7 +127,7 @@ impl Platform {
         match self.profile {
             Profile::Gnome => adw::ColorScheme::Default,
             Profile::Xfce | Profile::Kde | Profile::Generic
-                if self.appearance.read().prefers_dark =>
+                if self.appearance().read().prefers_dark =>
             {
                 adw::ColorScheme::ForceDark
             }

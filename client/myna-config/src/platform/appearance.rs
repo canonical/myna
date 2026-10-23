@@ -1,5 +1,6 @@
-//! Appearance for desktops without GNOME's schemas, Xfce among them: what GTK
-//! itself sees.
+//! Appearance as GTK itself sees it: the fallback for whatever the settings
+//! portal does not state, and the whole answer on Xfce, whose portal has no
+//! Settings interface.
 //!
 //! Xfce's xfsettingsd publishes xfconf as XSETTINGS, which GTK maps to
 //! `GtkSettings`: `gtk-enable-animations` (`Net/EnableAnimations`, unset in
@@ -77,7 +78,7 @@ fn adw_high_contrast() -> bool {
 }
 
 /// `GtkSettings:gtk-enable-animations`, true where there are no settings.
-pub(super) fn animations_enabled() -> bool {
+fn animations_enabled() -> bool {
     gtk::Settings::default().is_none_or(|settings| settings.is_gtk_enable_animations())
 }
 
@@ -140,8 +141,6 @@ impl Appearance for GtkAppearance {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::platform::gnome::appearance::GnomeAppearance;
-    use gio::prelude::*;
     use myna_platform::conformance::appearance::{run, Fixture};
 
     fn settle() {
@@ -154,9 +153,7 @@ mod tests {
         }
     }
 
-    struct Rig {
-        gnome: bool,
-    }
+    struct Rig;
 
     impl Fixture for Rig {
         fn setup(&mut self) -> Box<dyn Appearance> {
@@ -164,11 +161,7 @@ mod tests {
             settings.set_gtk_enable_animations(true);
             settings.set_gtk_theme_name(Some("Adwaita"));
             settle();
-            if self.gnome {
-                Box::new(GnomeAppearance)
-            } else {
-                Box::new(GtkAppearance::default())
-            }
+            Box::new(GtkAppearance::default())
         }
 
         fn set_reduced_motion(&mut self, on: bool) -> bool {
@@ -179,20 +172,6 @@ mod tests {
         }
 
         fn set_high_contrast(&mut self, on: bool) -> bool {
-            if self.gnome {
-                // Only a throwaway backend may be written: the user's is dconf.
-                let backend = gio::SettingsBackend::default();
-                if backend.type_().name() != "GMemorySettingsBackend" {
-                    return false;
-                }
-                return gio::SettingsSchemaSource::default()
-                    .and_then(|source| source.lookup("org.gnome.desktop.a11y.interface", true))
-                    .is_some_and(|_| {
-                        gio::Settings::new("org.gnome.desktop.a11y.interface")
-                            .set_boolean("high-contrast", on)
-                            .is_ok()
-                    });
-            }
             gtk::Settings::default()
                 .expect("display")
                 .set_gtk_theme_name(Some(if on { "HighContrast" } else { "Adwaita" }));
@@ -200,9 +179,6 @@ mod tests {
         }
 
         fn set_prefers_dark(&mut self, on: bool) -> bool {
-            if self.gnome {
-                return false;
-            }
             gtk::Settings::default()
                 .expect("display")
                 .set_gtk_theme_name(Some(if on { "Adwaita-dark" } else { "Adwaita" }));
@@ -219,24 +195,8 @@ mod tests {
         crate::ui::on_gtk_thread(|| {
             gtk::init().expect("display");
             adw::init().expect("libadwaita");
-            let report = run(&mut Rig { gnome: false });
+            let report = run(&mut Rig);
             assert!(report.not_applicable.is_empty(), "{report:?}");
-        });
-    }
-
-    #[test]
-    fn the_gnome_backend_conforms() {
-        crate::ui::on_gtk_thread(|| {
-            gtk::init().expect("display");
-            adw::init().expect("libadwaita");
-            let report = run(&mut Rig { gnome: true });
-            assert!(
-                report.not_applicable.iter().all(|check| matches!(
-                    *check,
-                    "high_contrast_is_read_back" | "dark_is_read_back"
-                )),
-                "{report:?}"
-            );
         });
     }
 }

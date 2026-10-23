@@ -10,7 +10,12 @@ description = "Backends over freedesktop.org services, shared by the HUD and Myn
 # need no display.
 [dependencies]
 gio.workspace = true
+myna-platform = { path = "../myna-platform" }
 
 [features]
 # Stand-in services on a private session bus, for the backends' tests.
 testing = []
+
+[dev-dependencies]
+myna-freedesktop = { path = ".", features = ["testing"] }
+myna-platform = { path = "../myna-platform", features = ["conformance"] }

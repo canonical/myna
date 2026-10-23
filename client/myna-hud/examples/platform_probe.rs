@@ -4,6 +4,7 @@
 // developer confirms which sources a given machine actually offers.
 //
 // Run with:  xvfb-run -a cargo run -p myna-hud --example platform_probe
+// `--watch` keeps it running and prints the readings at every change.
 
 use gtk::prelude::*;
 use gtk4 as gtk;
@@ -37,8 +38,8 @@ fn main() {
             platform::probe_gtk_reduced_motion()
         );
         println!(
-            "enable-animations    : {:?}   (raw, not inverted)",
-            platform::probe_enable_animations()
+            "gtk-enable-animations: {:?}",
+            platform::probe_gtk_enable_animations()
         );
         println!(
             "resolved             : {}",
@@ -47,10 +48,6 @@ fn main() {
                 .reduced_motion
         );
         println!("--- accent (R18/R26) ---");
-        println!(
-            "adw resolved rgba    : {:?}   (None = libadwaita < 1.7)",
-            platform::probe_platform_accent()
-        );
         // A widget styled the way `style.css` styles the ribbon, so the
         // CSS path is exercised exactly as production does it.
         let provider = gtk::CssProvider::new();
@@ -69,15 +66,22 @@ fn main() {
             "theme @accent_bg_color: {:?}   (the primary source)",
             platform::probe_css_accent(&probe)
         );
-        let palette = palette_for(
-            myna_hud::appearance::for_profile(Platform::current().profile, &probe)
-                .read()
-                .accent,
-        );
+        let appearance = myna_hud::appearance::for_profile(Platform::current().profile, &probe);
+        let palette = palette_for(appearance.read().accent);
         println!("ribbon palette       : {palette:?}");
 
-        app.quit();
+        if !std::env::args().any(|arg| arg == "--watch") {
+            app.quit();
+            return;
+        }
+        let hold = app.hold();
+        let subscription = appearance.watch(Box::new({
+            let appearance = appearance.clone();
+            move |freshness| println!("changed ({freshness:?}): {:?}", appearance.read())
+        }));
+        // Lives as long as the application.
+        std::mem::forget((hold, subscription));
     });
 
-    app.run();
+    app.run_with_args::<&str>(&[]);
 }

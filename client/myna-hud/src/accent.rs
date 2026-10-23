@@ -1,23 +1,16 @@
 //! accent — PURE accent-color resolution (feature 004, 2026-07-30
 //! wave-ribbon redesign; research R18, mechanism amended R26; contract
-//! extension.md RC25). Resolves GNOME's desktop-wide accent-color preference
-//! (`org.gnome.desktop.interface`'s `accent-color`) into the wave ribbon's
-//! colour palette.
+//! extension.md RC25). Resolves the desktop's accent into the wave ribbon's
+//! colour palette; reading it is [`crate::appearance`]'s.
 //!
-//! The settings-backed half (schema/key-existence-guarded reads, `changed::`
-//! subscriptions, the libadwaita style-manager probe) is application-layer
-//! wiring; the reduced-motion resolution lives in [`crate::motion`] with
-//! E2b's two-safe-sources design.
+//! Resolution order ([`crate::appearance::for_profile`] composes it):
 //!
-//! Resolution order (the application layer probes; see
-//! [`palette_for`]):
-//!
-//! 1. **The theme** — `@accent_bg_color` read back from a styled widget
-//!    ([`resolve_theme_accent_palette`]). Direct, needs no version probing,
-//!    and correct for Yaru's tints and variants by construction. This is
-//!    the analogue of the extension's `-st-accent-color`.
-//! 2. `AdwStyleManager:accent-color-rgba` (libadwaita ≥ 1.7) — measured
-//!    identical to (1) for every accent.
+//! 1. On GNOME, **the theme** - `@accent_bg_color` read back from a styled
+//!    widget ([`resolve_theme_accent_palette`]), correct for Yaru's tints and
+//!    variants by construction: the analogue of the extension's
+//!    `-st-accent-color`. Elsewhere the settings portal's `accent-color`
+//!    comes first: libadwaita rounds Plasma's accent to its nearest own.
+//! 2. The other of the two.
 //! 3. [`fallback_palette`] (Ubuntu orange), only if the desktop reports no
 //!    accent whatsoever.
 //!

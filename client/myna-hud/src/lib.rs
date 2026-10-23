@@ -19,7 +19,6 @@
 //!   the Cairo painter is deliberately not ported),
 //!   [`hud_logic`] (icon/phase/color/notice rules),
 //!   [`accent`] (accent-color resolution rules, R26),
-//!   [`motion`] (reduced-motion resolution, absent-safe, R26/E2b),
 //!   [`simulator`] (lab-controls ↔ wire-state mapping).
 //! - **Application half** (Phase C): the window/pill UI, GLArea renderer,
 //!   D-Bus consumer, lab and simulator modes.
@@ -38,7 +37,6 @@ pub mod hud_logic;
 pub mod indicator;
 #[cfg(dev_lab)]
 pub mod lab;
-pub mod motion;
 pub mod notice_slot;
 pub mod pill;
 pub mod platform;

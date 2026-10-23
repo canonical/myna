@@ -1285,6 +1285,8 @@ name = "myna-freedesktop"
 version = "0.0.0"
 dependencies = [
  "gio",
+ "myna-freedesktop",
+ "myna-platform",
 ]
 
 [[package]]
@@ -1298,6 +1300,7 @@ dependencies = [
  "gtk4",
  "libadwaita",
  "libc",
+ "myna-freedesktop",
  "myna-platform",
  "tokio",
  "x11rb",

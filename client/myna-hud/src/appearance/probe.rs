@@ -1,7 +1,7 @@
 //! probe - the live sources behind the HUD's [`Appearance`](myna_platform::appearance::Appearance) backends: the
 //! **accent colour** (R18/R26), **reduced motion** (E2b, FR-022a) and high
-//! contrast. The rules live in [`crate::accent`] and [`crate::motion`]; this
-//! module only reads the sources.
+//! contrast, as GTK and libadwaita see them. The palette lives in
+//! [`crate::accent`]; this module only reads the sources.
 //!
 //! Only *host* preferences are read here. Myna's own settings are not: the
 //! HUD is told what to draw by the publisher (`HudStyle`), because this
@@ -29,21 +29,6 @@
 //! (including `wartybrown`, which upstream has no enum member for)
 //! automatically; and it was measured identical to
 //! `AdwStyleManager:accent-color-rgba` for every accent.
-//!
-//! `AdwStyleManager:accent-color-rgba` remains as a fallback for stacks
-//! where the CSS lookup yields nothing, read as a **boxed `gdk::RGBA`** and
-//! deliberately never as the `AdwAccentColor` enum: Yaru adds
-//! `ADW_ACCENT_COLOR_BROWN = ADW_ACCENT_COLOR_SLATE + 100`, outside
-//! upstream's enumeration, so mapping the enum would abort or mis-name a
-//! colour the RGBA reports exactly.
-//!
-//! ## Crash guard (E2b)
-//!
-//! `org.gnome.desktop.a11y.interface reduced-motion` is NEVER read. It is
-//! new in gsettings-desktop-schemas, and constructing a `gio::Settings` for
-//! a missing schema - or reading a missing key - **aborts the process**.
-//! Every GSettings access below is guarded through
-//! [`settings_for_schema_key`], which consults the schema source first.
 
 use glib::translate::ToGlibPtr;
 use gtk::glib;
@@ -53,14 +38,6 @@ use libadwaita as adw;
 
 use myna_platform::appearance::Rgb;
 
-/// `org.gnome.desktop.interface`, home of both `accent-color` and the
-/// `enable-animations` fallback.
-pub(super) const INTERFACE_SCHEMA: &str = "org.gnome.desktop.interface";
-pub(super) const ACCENT_KEY: &str = "accent-color";
-/// Watched because a Yaru accent variant is selected by theme name.
-pub(super) const GTK_THEME_KEY: &str = "gtk-theme";
-pub(super) const ANIMATIONS_KEY: &str = "enable-animations";
-
 /// `GtkSettings`' reduced-motion property (GTK ≥ 4.22).
 pub(super) const GTK_REDUCED_MOTION_PROPERTY: &str = "gtk-interface-reduced-motion";
 /// `GtkReducedMotion.no_preference` - the one value meaning "full motion".
@@ -69,25 +46,10 @@ const GTK_REDUCED_MOTION_NO_PREFERENCE: i32 = 0;
 /// updated, so the theme is already current when it fires.
 pub(super) const ADW_ACCENT_RGBA_PROPERTY: &str = "accent-color-rgba";
 
-/// Build a [`gio::Settings`] for `schema` only if the schema **and** `key`
-/// both exist on this system; otherwise `None`.
-///
-/// This is the guard that keeps a missing schema/key from aborting the
-/// process (E2b) - the reason the HUD may never touch a GSettings key
-/// without asking first.
-pub fn settings_for_schema_key(schema: &str, key: &str) -> Option<gtk::gio::Settings> {
-    let source = gtk::gio::SettingsSchemaSource::default()?;
-    let schema_obj = source.lookup(schema, true)?;
-    if !schema_obj.has_key(key) {
-        return None;
-    }
-    Some(gtk::gio::Settings::new(schema))
-}
-
 /// Read `GtkSettings:gtk-interface-reduced-motion` if this GTK has it.
 ///
-/// Returns `None` on GTK < 4.22, where [`crate::motion`] falls back to the
-/// inverted `enable-animations`.
+/// Returns `None` on GTK < 4.22, where `gtk-enable-animations` is all there
+/// is.
 ///
 /// The property is a **`GtkReducedMotion` enum**, not a boolean
 /// (`no_preference = 0`, `reduce = 1`) - reading it as a `bool` fails and
@@ -106,7 +68,7 @@ pub fn probe_gtk_reduced_motion() -> Option<bool> {
 }
 
 /// Decode whatever `gtk-interface-reduced-motion` holds into the boolean
-/// [`crate::motion`] expects. Split out from the probe so the enum handling
+/// the backend expects. Split out from the probe so the enum handling
 /// is testable without a display.
 pub fn decode_reduced_motion(value: &glib::Value) -> Option<bool> {
     if let Ok(flag) = value.get::<bool>() {
@@ -118,13 +80,6 @@ pub fn decode_reduced_motion(value: &glib::Value) -> Option<bool> {
         return Some(raw != GTK_REDUCED_MOTION_NO_PREFERENCE);
     }
     None
-}
-
-/// Read `org.gnome.desktop.interface enable-animations` (raw, NOT inverted
-/// - [`crate::motion::reduced_motion`] owns that), schema/key guarded.
-pub fn probe_enable_animations() -> Option<bool> {
-    let settings = settings_for_schema_key(INTERFACE_SCHEMA, ANIMATIONS_KEY)?;
-    Some(settings.boolean(ANIMATIONS_KEY))
 }
 
 /// `GtkSettings:gtk-enable-animations`, which GTK fills from XSETTINGS
@@ -177,26 +132,5 @@ pub fn probe_css_accent(widget: &impl IsA<gtk::Widget>) -> Option<Rgb> {
         color.red() as f64,
         color.green() as f64,
         color.blue() as f64,
-    ))
-}
-
-/// The desktop's accent as libadwaita resolves it.
-///
-/// `adw_style_manager_get_accent_color_rgba()` (libadwaita ≥ 1.6, the
-/// crate's floor) - a plain value read, needing no widget and no notion of
-/// when a style was last recomputed. On Ubuntu it is also complete: the
-/// Yaru patches feed accent *variants*, which are selected by theme name
-/// rather than by the `accent-color` key, into this same property, so a
-/// `Yaru-olive` desktop reports olive here.
-///
-/// Read as a `gdk::RGBA`, never as `AdwAccentColor`: Yaru adds
-/// `ADW_ACCENT_COLOR_BROWN = ADW_ACCENT_COLOR_SLATE + 100`, outside
-/// upstream's enumeration, which the Rust enum cannot represent.
-pub fn probe_platform_accent() -> Option<Rgb> {
-    let rgba = adw::StyleManager::default().accent_color_rgba();
-    Some(Rgb::clamped(
-        rgba.red() as f64,
-        rgba.green() as f64,
-        rgba.blue() as f64,
     ))
 }

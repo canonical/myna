@@ -1,5 +1,6 @@
-//! Appearance for desktops that are not GNOME, Xfce among them: what GTK
-//! itself sees, with no GSettings.
+//! Appearance as GTK itself sees it, with no GSettings: the fallback for
+//! whatever the settings portal does not state, and the whole answer on Xfce,
+//! whose portal has no Settings interface.
 //!
 //! On Xfce, xfsettingsd publishes `/Net`, `/Xft` and `/Gtk` xfconf properties
 //! as XSETTINGS and GTK maps them to `GtkSettings`: `Net/ThemeName` is

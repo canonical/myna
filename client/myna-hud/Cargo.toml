@@ -71,6 +71,7 @@ async-io = "2"
 # The X11 status surface host (`--host x11`): EWMH properties GDK4 has no API
 # for, panel struts, and the work-area watch, on a connection of its own.
 x11rb = { version = "0.13", features = ["shape"] }
+myna-freedesktop = { path = "../myna-freedesktop" }
 myna-platform = { path = "../myna-platform" }
 
 [dev-dependencies]
