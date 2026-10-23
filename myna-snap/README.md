@@ -141,8 +141,8 @@ for the socket to exist (`sudo snap start myna-whisper.server`).
 ## Activation
 
 Everything is **press-to-toggle**: tap the key to start, tap again to stop.
-The key is a custom shortcut, which Myna Settings writes (GNOME media-keys or
-Xfce xfconf), calling the daemon's `com.canonical.Myna.Dictation.Toggle` over D-Bus. `myna` also listens
+The key is a custom shortcut, which Myna Settings writes (GNOME media-keys, Xfce
+xfconf or Plasma kglobalaccel), calling the daemon's `com.canonical.Myna.Dictation.Toggle` over D-Bus. `myna` also listens
 on a control socket that `myna.toggle` pokes, slower by `snap run`'s
 startup; `myna.install-shortcut '<Super>t'` binds that without Myna
 Settings, on GNOME only.
@@ -157,7 +157,7 @@ Noble. Hold-to-talk, the one thing only the portal offered, is not planned.
 terminal). `--control` and `--stdin` are mutually exclusive.
 
 **Indicator**: `com.canonical.Myna.Dictation` is always served for the myna-shell
-GNOME extension or, on Xfce, the HUD's X11 host, falling back to desktop notifications by itself when the
+GNOME extension or, on Xfce and Plasma, the HUD host, falling back to desktop notifications by itself when the
 session bus is unreachable - so there is no flag to set. `myna --no-dbus`
 forces the notification path for debugging. The experimental GTK `--overlay`
 was removed (T150).
@@ -249,7 +249,7 @@ gdbus introspect --session --dest com.canonical.Myna.Dictation \
   daemon serves `com.canonical.Myna.Dictation` by default, so ALL feedback (including
   errors) goes to its properties; without the myna-shell extension nothing
   renders it (notifications are only the fallback when the bus can't be
-  owned). On Xfce the HUD host renders it, and only while the daemon owns the
+  owned). On Xfce and Plasma the HUD host renders it, and only while the daemon owns the
   name. Critical session errors are always printed to the daemon's
   stderr, so run `myna` from a terminal and read them there. For the full
   stage-by-stage trace add `MYNA_DEBUG=1` (`ctrl`/`capture`/`ws`/`inject`

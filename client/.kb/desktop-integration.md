@@ -8,7 +8,7 @@ Read the top-level `.kb/agents.md` file before continuing below.
 
 `myna-desktop` composes three replaceable boundaries around the orchestrator:
 
-- `Trigger` produces activation edges: every poke toggles. A GNOME custom shortcut calls `com.canonical.Myna.Dictation.Toggle`; `myna.toggle` connects to the control socket instead, for shortcuts older Myna Settings wrote, and both feed one channel with one parity. A held key's repeats toggle nothing (below). Stdin is debug-only.
+- `Trigger` produces activation edges: every poke toggles. The desktop's custom shortcut (GNOME media-keys, Xfce xfconf, Plasma kglobalaccel) calls `com.canonical.Myna.Dictation.Toggle`; `myna.toggle` connects to the control socket instead, for shortcuts older Myna Settings wrote, and both feed one channel with one parity. A held key's repeats toggle nothing (below). Stdin is debug-only.
 - `Injector` hands out one `Target` per utterance, the sole owner of the right to write into the focused application. The contract is `myna_platform::text_input` (`.kb/platform-layer.md`), and the controller names nothing else of text input: no IBus type, only the contract and the capabilities a backend reports. The production implementation is an IBus engine; tests use a mock that models the field it writes into.
 - `Indicator` publishes dictation state. Notifications are the fallback, used only while no client is registered with the daemon (`RegisterClient`, any unique bus name, pruned when it vanishes). The host that will show the pill owns that registration, not just the HUD: the HUD needs seconds to start and register, so the host (the HUD host supervisor on Xfce and Plasma, the GNOME extension) registers the moment the daemon's name appears, before spawning the HUD, and unregisters when it gives up (exit 78, backoff budget spent, extension disabled, supervisor stopping); a restarted daemon starts with an empty registry and is registered with again. The HUD still registers itself, and a HUD that maps mid-dictation reflects the current `State` on connect. While the GNOME extension hosts the standalone `myna-hud` renderer; on X11 window managers the renderer hosts itself (`myna-hud --host x11`, `.kb/platform-layer.md`).
 - The toast is one notification replaced in place and closed by id. A state whose text the live toast already shows sends nothing, unless it is an error, which the user may have closed: the controller publishes `Recording` again on `Loading` and `Ready`, and Plasma refuses an identical `Notify` in quick succession (`ExcessNotificationGeneration`). A refused `Notify` keeps the old id, so `Hidden` still closes that toast.
@@ -92,8 +92,9 @@ cosmetic:
   Emulated keys go wherever focus happens to be at delivery, including a
   different window if focus moved mid-utterance.
 
-There is no cross-desktop text-commit portal yet, so IBus stays the GNOME path
-and `input-method-v2` the wlroots path. The genuinely-unsettled question is
+There is no cross-desktop text-commit portal yet, so IBus stays the path on
+GNOME, Xfce and Plasma (where KWin runs it as its input method), and
+`input-method-v2` the wlroots path. The genuinely-unsettled question is
 whether a portable IM/text-injection interface ever standardises; until then
 `Injector` is the portability boundary and IBus is the shipping backend.
 

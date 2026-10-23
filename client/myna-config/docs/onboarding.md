@@ -102,8 +102,9 @@ error.
 
 The extension row is the desktop's status surface host, and what the wizard
 asks of the desktop comes from `Platform::current().components()`
-(`platform/mod.rs`), not from GNOME. On Xfce that is two optional components,
-listed after the model: the input method and the HUD host's autostart entry.
+(`platform/mod.rs`), not from GNOME. On Xfce and Plasma that is two optional
+components, listed after the model: the input method and the HUD host's
+autostart entry.
 The step has no row per component: one is named in the line under the button
 only when it blocks.
 The input method is IBus: installed, set for the session
@@ -118,7 +119,11 @@ a problem. Settings never installs packages: a root `apt-get` in the set-up
 executor would widen the privilege surface (lock, network, a prompt whose
 message speaks of snaps) for a machine state the deb's `Recommends: ibus`
 already covers. The autostart entry is shipped by the myna-config deb and
-only read.
+only read. On Plasma the input method is IBus as KWin's: kwinrc's `[Wayland]
+InputMethod` naming IBus' panel and its daemon running is satisfied; nothing
+named is fixed at once with `ibus start --type kde-wayland`, so no re-login;
+fcitx5 or plasma-keyboard named (or fcitx5 running) blocks the step with a
+line saying to choose IBus, and is never switched.
 
 The settings window's main menu reopens the wizard (Set Up Dictation), modal
 over the window. It refuses while a backend operation is in flight: the wizard
@@ -370,7 +375,8 @@ The key is a desktop custom shortcut that this unconfined application writes
 itself: on GNOME, Myna's entry under
 `/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/myna/`
 (`platform/gnome/activation.rs`); on Xfce, an xfconf `/commands/custom` entry
-(`platform/xfce/activation.rs`). It runs `gdbus call ... --method com.canonical.Myna.Dictation.Toggle`
+(`platform/xfce/activation.rs`); on Plasma, a kglobalaccel command shortcut
+(`platform/kde/activation.rs`). It runs `gdbus call ... --method com.canonical.Myna.Dictation.Toggle`
 (`shortcut::TOGGLE_COMMAND`, so the deb depends on `libglib2.0-bin`), which
 reaches the daemon without `snap run`'s 90-130 ms of startup. A daemon that
 still publishes `Shortcut` predates a working `Toggle`, so against one the

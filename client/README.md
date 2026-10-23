@@ -75,8 +75,8 @@ myna-testbed --list-devices
 
 ### The dictation app - `myna-desktop` (hotkey → IBus injection)
 
-The shipped push-to-talk app. Needs a GNOME (Wayland) or Xfce (X11) session and a running
-IBus daemon. Activation must not depend on terminal focus (dictation injects into
+The shipped push-to-talk app. Needs a GNOME (Wayland), Xfce (X11) or KDE Plasma 6 (Wayland) session and a
+running IBus daemon (on Plasma, IBus as KWin's input method). Activation must not depend on terminal focus (dictation injects into
 *another* app), so the default is **toggle-to-talk via a desktop custom keyboard
 shortcut**: the app runs as a daemon on a control socket, and a shortcut
 bound to `myna-desktop --toggle` pokes it (tap = start, tap = stop). This works
@@ -92,7 +92,7 @@ myna-desktop --socket /tmp/myna.sock --language en   # the daemon (leave running
 
 The other activation mode is `--stdin` (terminal debug - injects back into the terminal). Feedback defaults to
 desktop notifications; on GNOME the myna-shell extension hosts the richer
-overlay HUD (feature 004), on Xfce the HUD's X11 host does (`myna-hud --host x11`). The former GTK `--overlay` was removed in T150.
+overlay HUD (feature 004), on Xfce and Plasma `myna-hud-host` runs the HUD as its own host (`myna-hud --host x11`, `--host layer-shell` on Wayland). The former GTK `--overlay` was removed in T150.
 
 See `.kb/desktop-integration.md` for the controller and injection invariants.
 

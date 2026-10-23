@@ -1,7 +1,7 @@
 # Myna Settings end-to-end tests
 
 The real Myna Settings binary driven through its user flows (onboarding,
-backend switching, model settings) on fresh GNOME or Xubuntu desktop LXD VMs,
+backend switching, model settings) on fresh GNOME, Xubuntu or Kubuntu desktop LXD VMs,
 one per series and desktop, with the store's latest/edge snaps. Assertions are machine state
 (snapd, systemd, dconf); screenshots are artifacts for a human.
 
@@ -10,6 +10,7 @@ make snap-fake                            # once: the dictation suite's backend
 make e2e                                  # noble, every suite
 make e2e E2E_RELEASE=resolute SUITES=backend-switch
 make e2e E2E_DESKTOP=xubuntu              # Xfce on X11 (noble)
+make e2e E2E_DESKTOP=kde E2E_RELEASE=resolute   # Plasma 6 on Wayland
 make e2e E2E_VM_MEMORY=4GiB E2E_MYNA_SNAP=$PWD/myna-snap/myna_*.snap   # smaller VM, the tree's snap
 e2e-tests/vm/provision.sh --release noble --force   # after an edge bump
 ```
@@ -26,12 +27,13 @@ myna-noble`), which builds the binary. The first run provisions the VM
 suite then restores the one its `# snapshot:` header names. Artifacts (app and
 polkit logs, the journal, burst frames) land in
 `e2e-tests/.run/artifacts/<release>-<suite>/` (`<desktop>-<release>-<suite>`
-for Xubuntu, whose VM is `myna-e2e-xubuntu-<release>`).
+for Xubuntu and Kubuntu, whose VMs are `myna-e2e-<desktop>-<release>`).
 
 Screenshots at fixed checkpoints (`<suite>/<NN>-<checkpoint>.png`) are
 collected in `e2e-tests/.run/artifacts/screenshots/`. On Xubuntu they are of
-the real desktop, pill included; on GNOME of the app under Xvfb. CI compares
-the Xubuntu set with the last approved nightly in a contact sheet
+the real desktop, pill included; on GNOME of the app under Xvfb; on Kubuntu
+the app's under Xvfb and the pill's of the real desktop. CI compares
+the Xubuntu noble and Kubuntu resolute sets with the last approved nightly in a contact sheet
 (`tools/contact-sheet.py`; see AGENTS.md for how to re-baseline). Build one
 by hand with `python3 -I e2e-tests/tools/contact-sheet.py --current A
 --baseline B --out sheet.html`.

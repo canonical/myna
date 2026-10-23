@@ -15,7 +15,7 @@ use std::sync::Arc;
 /// fallback only when no HUD client is registered.
 ///
 /// A client is anything that registered, and the HUD is not the only kind: the
-/// process that hosts the HUD (the Xfce supervisor, the GNOME extension)
+/// process that hosts the HUD (the Xfce and Plasma supervisor, the GNOME extension)
 /// registers the moment the daemon's name appears, well before the HUD can,
 /// so the toast does not stand in for a pill that is on its way.
 ///

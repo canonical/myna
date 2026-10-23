@@ -38,7 +38,7 @@ The client pushes PCM to a backend; inference snaps never access the microphone.
 - `dev/` - Development, packaging, benchmark, and quality-gate scripts.
 - `docs/` - Human-run system test plans and multilingual test passages.
 - `specs/` - Frozen feature-design artifacts retained for historical context.
-- `e2e-tests/` - Myna Settings and dictation driven through AT-SPI on fresh LXD desktop VMs (GNOME, or Xubuntu via `E2E_DESKTOP`).
+- `e2e-tests/` - Myna Settings and dictation driven through AT-SPI on fresh LXD desktop VMs (GNOME, or Xubuntu or Kubuntu via `E2E_DESKTOP`).
 - `tests/` - Confined end-to-end tests (spread), the Testflinger lab-hardware run, and the AppArmor denial gate that spread, e2e and Testflinger share (`tests/lib/`).
 
 # Documents

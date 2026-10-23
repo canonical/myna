@@ -41,8 +41,9 @@ impl Platform {
     }
 
     /// Why `--install-shortcut` cannot bind `command` here, `None` where it
-    /// can. It writes a GNOME media-keys entry; Xfce's xfconf entry is
-    /// Myna Settings' (a GTK crate the daemon does not link).
+    /// can. It writes a GNOME media-keys entry; Xfce's xfconf and Plasma's
+    /// kglobalaccel entries are Myna Settings' (a GTK crate the daemon does
+    /// not link).
     pub fn install_shortcut_refusal(&self, command: &str) -> Option<String> {
         let session = match self.profile {
             Profile::Gnome => return None,
