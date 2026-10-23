@@ -26,6 +26,9 @@ sudo add-apt-repository ppa:canonical-desktop-team/myna
 sudo apt install myna-config
 ```
 
+Then open Myna Settings: it installs the models and the desktop pieces Myna
+needs, and binds the dictation key.
+
 To build the latest **package** locally, run `make build-deb` followed by `sudo apt install ./target/deb/*/myna-config_*.deb`.
 
 To build the latest **binary** locally,
@@ -35,6 +38,18 @@ To build the latest **binary** locally,
 workshop exec myna -- bash -lc 'cd /project/client && cargo build --release --locked'
 ./client/target/release/myna-config
 ```
+
+## Desktops
+
+| Desktop | Releases | Notes |
+|---|---|---|
+| Ubuntu (GNOME, Wayland) | 24.04 and later | The pill is a GNOME Shell extension Settings enables. |
+| Xubuntu (Xfce, X11) | 24.04 | Settings makes IBus (which myna-config recommends) the input method, effective at next login. |
+| Kubuntu (KDE Plasma 6, Wayland) | 26.04 and later | Settings makes IBus (which myna-config recommends) KWin's input method, effective at once. |
+
+Myna types through IBus only. On Plasma, fcitx5 as the input method is not
+supported yet: Settings says so and leaves it in place. Plasma on X11 is best
+effort; Plasma 5 (Kubuntu 24.04) is not supported.
 
 ## Develop
 
