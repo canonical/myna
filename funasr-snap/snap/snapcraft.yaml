@@ -80,7 +80,7 @@ parts:
     source: version
     parse-info: [version.metainfo.xml]
 
-  # LICENSE (AGPL-3.0-or-later) and NOTICE (model attribution), staged into
+  # LICENSE (AGPL-3.0-or-later) and NOTICE (third-party notices), staged into
   # licenses/ by dev/stage-licenses.sh from dev/prepare.sh.
   licenses:
     plugin: dump

@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import ast
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -910,8 +911,8 @@ def test_declares_the_project_license(snap_dir: str) -> None:
 def test_ships_the_license_text(snap_dir: str) -> None:
     """AGPL section 6: a binary distribution carries the license text.
 
-    ``dev/stage-licenses.sh`` copies LICENSE (and the snap's NOTICE, when it
-    has one) into ``<snap>/licenses/``, and a ``licenses`` part dumps that
+    ``dev/stage-licenses.sh`` copies LICENSE and NOTICE (the tree's, then the
+    snap's own when it has one) into ``<snap>/licenses/``, and a ``licenses`` part dumps that
     directory under ``usr/share/doc/<snap>/``. The store's `license` field
     alone does not put the text in the package.
     """
@@ -928,6 +929,18 @@ def test_ships_the_license_text(snap_dir: str) -> None:
     assert "dev/stage-licenses.sh" in prepare, (
         f"{snap_dir}/dev/prepare.sh does not stage licenses/ (dev/stage-licenses.sh)"
     )
+
+
+def test_every_snap_carries_the_trees_notices(tmp_path: Path) -> None:
+    """Third-party code in the tree (the HUD's icons, Whisper's normalisers)
+    ships in the snaps, so its notices do, ahead of the snap's own."""
+    (tmp_path / "NOTICE").write_text("the snap's models\n", encoding="utf-8")
+    subprocess.run(
+        [REPO_ROOT / "dev" / "stage-licenses.sh", tmp_path], check=True, capture_output=True
+    )
+    staged = (tmp_path / "licenses" / "NOTICE").read_text(encoding="utf-8")
+    tree = (REPO_ROOT / "NOTICE").read_text(encoding="utf-8")
+    assert staged.startswith(tree) and staged.endswith("the snap's models\n"), staged
 
 
 @pytest.mark.parametrize("snap_dir", ALL_SNAPS)
