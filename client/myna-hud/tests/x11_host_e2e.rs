@@ -14,7 +14,7 @@ mod support;
 
 use std::process::{Command, Stdio};
 use std::sync::mpsc::{self, Receiver};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use x11rb::connection::Connection;
 use x11rb::protocol::shape::{ConnectionExt as _, SK};
@@ -27,13 +27,12 @@ use x11rb::rust_connection::RustConnection;
 use x11rb::wrapper::ConnectionExt as _;
 
 use myna_platform::status_surface::{placement, Point, Rect, Size, BOTTOM_MARGIN};
-use support::{dictation, Headless, Hud, PrivateBus};
+use support::{dictation, wait_until, Headless, Hud, PrivateBus, WAIT};
 
 const SCREEN: Size = Size {
     width: 1024,
     height: 768,
 };
-const WAIT: Duration = Duration::from_secs(20);
 
 x11rb::atom_manager! {
     Atoms: AtomsCookie {
@@ -212,14 +211,6 @@ fn next_map(seen: &Receiver<Seen>, messages: &mut Vec<Seen>) -> AtMap {
             Ok(message) => messages.push(message),
             Err(e) => panic!("the HUD never asked to be mapped: {e}"),
         }
-    }
-}
-
-fn wait_until(what: &str, mut done: impl FnMut() -> bool) {
-    let deadline = Instant::now() + WAIT;
-    while !done() {
-        assert!(Instant::now() < deadline, "timed out waiting until {what}");
-        std::thread::sleep(Duration::from_millis(50));
     }
 }
 
@@ -462,15 +453,7 @@ fn the_hud_hosts_itself_on_x11() {
 
     // Stopped as its supervisor stops it, it leaves cleanly (and, under
     // coverage, writes its profile).
-    assert_eq!(unsafe { libc::kill(pid as libc::pid_t, libc::SIGTERM) }, 0);
-    let deadline = Instant::now() + WAIT;
-    let status = loop {
-        if let Some(status) = hud.0.try_wait().expect("try_wait") {
-            break status;
-        }
-        assert!(Instant::now() < deadline, "myna-hud ignored SIGTERM");
-        std::thread::sleep(Duration::from_millis(50));
-    };
+    let status = hud.terminate();
     assert_eq!(status.code(), Some(0), "myna-hud exited {status}");
 }
 

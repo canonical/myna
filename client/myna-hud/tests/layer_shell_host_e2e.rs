@@ -18,9 +18,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use myna_platform::status_surface::BOTTOM_MARGIN;
-use support::{dictation, Hud, PrivateBus};
-
-const WAIT: Duration = Duration::from_secs(20);
+use support::{dictation, wait_for, Hud, PrivateBus, WAIT};
 
 /// A headless sway in a runtime directory of its own, torn down on drop.
 struct Sway {
@@ -49,14 +47,7 @@ impl Sway {
             .stderr(Stdio::null())
             .spawn()
             .expect("sway (the workshop installs it)");
-        let deadline = Instant::now() + WAIT;
-        let display = loop {
-            if let Some(name) = socket(&runtime) {
-                break name;
-            }
-            assert!(Instant::now() < deadline, "sway made no Wayland socket");
-            std::thread::sleep(Duration::from_millis(20));
-        };
+        let display = wait_for("sway makes a Wayland socket", || socket(&runtime));
         Self {
             compositor,
             runtime,
@@ -299,16 +290,7 @@ fn the_hud_is_a_layer_surface_on_wayland() {
         "the remapped HUD takes pointer input"
     );
 
-    let pid = hud.0.id();
-    assert_eq!(unsafe { libc::kill(pid as libc::pid_t, libc::SIGTERM) }, 0);
-    let deadline = Instant::now() + WAIT;
-    let status = loop {
-        if let Some(status) = hud.0.try_wait().expect("try_wait") {
-            break status;
-        }
-        assert!(Instant::now() < deadline, "myna-hud ignored SIGTERM");
-        std::thread::sleep(Duration::from_millis(50));
-    };
+    let status = hud.terminate();
     assert_eq!(status.code(), Some(0), "myna-hud exited {status}");
 }
 

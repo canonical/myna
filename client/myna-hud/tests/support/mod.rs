@@ -5,7 +5,30 @@
 pub mod dictation;
 
 use std::io::BufRead;
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Command, ExitStatus, Stdio};
+use std::time::{Duration, Instant};
+
+/// How long a suite waits for the HUD to do something.
+#[allow(dead_code)] // Not every suite polls.
+pub const WAIT: Duration = Duration::from_secs(20);
+
+#[allow(dead_code)]
+pub fn wait_until(what: &str, mut done: impl FnMut() -> bool) {
+    wait_for(what, || done().then_some(()))
+}
+
+/// What `found` finds, polled for up to [`WAIT`].
+#[allow(dead_code)]
+pub fn wait_for<T>(what: &str, mut found: impl FnMut() -> Option<T>) -> T {
+    let deadline = Instant::now() + WAIT;
+    loop {
+        if let Some(value) = found() {
+            return value;
+        }
+        assert!(Instant::now() < deadline, "timed out waiting until {what}");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
 
 /// A session bus that exists only for one test, torn down on drop.
 ///
@@ -93,6 +116,23 @@ impl Drop for Headless {
 
 /// A HUD process, killed on drop so a failed assertion leaves nothing behind.
 pub struct Hud(pub Child);
+
+impl Hud {
+    /// SIGTERM, as its supervisor stops it, and how it exited.
+    #[allow(dead_code)] // Not every suite stops it.
+    pub fn terminate(&mut self) -> ExitStatus {
+        let pid = self.0.id() as libc::pid_t;
+        assert_eq!(unsafe { libc::kill(pid, libc::SIGTERM) }, 0, "kill failed");
+        let deadline = Instant::now() + Duration::from_secs(30);
+        loop {
+            if let Some(status) = self.0.try_wait().expect("try_wait") {
+                return status;
+            }
+            assert!(Instant::now() < deadline, "myna-hud ignored SIGTERM");
+            std::thread::sleep(Duration::from_millis(50));
+        }
+    }
+}
 
 impl Drop for Hud {
     fn drop(&mut self) {

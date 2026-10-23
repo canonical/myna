@@ -59,7 +59,6 @@ async fn sigterm_quits_the_application_instead_of_killing_it() {
             .env_remove("WAYLAND_DISPLAY");
     }
     let mut hud = Hud(command.spawn().expect("spawn myna-hud"));
-    let pid = hud.0.id() as libc::pid_t;
 
     // Up means owning the name: GTK is running, the window exists (unmapped,
     // as idle), and the bus consumer is attached - i.e. there is a frame loop
@@ -91,19 +90,7 @@ async fn sigterm_quits_the_application_instead_of_killing_it() {
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
 
-    assert_eq!(unsafe { libc::kill(pid, libc::SIGTERM) }, 0, "kill failed");
-
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
-    let status = loop {
-        if let Some(status) = hud.0.try_wait().expect("try_wait") {
-            break status;
-        }
-        assert!(
-            tokio::time::Instant::now() < deadline,
-            "myna-hud ignored SIGTERM"
-        );
-        tokio::time::sleep(Duration::from_millis(50)).await;
-    };
+    let status = hud.terminate();
 
     assert_eq!(
         status.signal(),

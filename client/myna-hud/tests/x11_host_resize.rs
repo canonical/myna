@@ -16,7 +16,7 @@ use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use x11rb::connection::Connection;
 use x11rb::protocol::xproto::{
@@ -27,12 +27,11 @@ use x11rb::protocol::Event;
 use x11rb::rust_connection::RustConnection;
 
 use myna_platform::status_surface::{placement, Point, Rect, Size, BOTTOM_MARGIN};
-use support::{dictation, Headless, Hud, PrivateBus};
+use support::{dictation, wait_until, Headless, Hud, PrivateBus};
 
 /// How late the window manager answers each request.
 const LAG: Duration = Duration::from_millis(3);
 const CYCLES: usize = 25;
-const WAIT: Duration = Duration::from_secs(20);
 
 /// A window manager that grants every request late, as xfwm4 does: a managed
 /// window's size held within its `WM_NORMAL_HINTS` limits, and every request
@@ -178,14 +177,6 @@ fn centred(conn: &RustConnection, root: Window, window: Window) -> bool {
         x: at.dst_x.into(),
         y: at.dst_y.into(),
     } == placement(screen, size, BOTTOM_MARGIN)
-}
-
-fn wait_until(what: &str, mut done: impl FnMut() -> bool) {
-    let deadline = Instant::now() + WAIT;
-    while !done() {
-        assert!(Instant::now() < deadline, "timed out waiting until {what}");
-        std::thread::sleep(Duration::from_millis(10));
-    }
 }
 
 #[test]
