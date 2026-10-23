@@ -20,12 +20,15 @@ the scripts). Its cloud-init is `vm/user-data.common` merged with
 the display environment `on_vm` hands out are per desktop. Xubuntu is Xfce on
 X11 (lightdm autologin). KDE is Kubuntu's Plasma 6 on Wayland (sddm autologin
 into the `plasma` session, `kubuntu-desktop` without its application
-Recommends); `on_vm` gives it `WAYLAND_DISPLAY=wayland-0`, and no suite runs
-on it yet. `spectacle -b -n -f -o FILE` through `on_vm` photographs the real
-session (KWin's ScreenShot2 is restricted to Spectacle's desktop entry). A
-window launched through `on_vm` is usually activated on map, but not always:
-wait for the app to say it is active, and fall back to a KWin script
-(`org.kde.kwin.Scripting.loadScript`, `workspace.activeWindow = w`). Kate
+Recommends); `on_vm` gives it `WAYLAND_DISPLAY=wayland-0`. Its `installed`
+stage also makes IBus KWin's input method, as onboarding does (a bare Plasma
+has none). `spectacle -b -n -f -o FILE` through `on_vm` photographs the real
+session (KWin's ScreenShot2 is restricted to Spectacle's desktop entry).
+Wayland gives no client a view of other windows, so the dictation helpers
+ask KWin: a KWin script (`org.kde.kwin.Scripting.loadScript`) prints the
+window list into the user journal (`kwin_windows`). A window launched through
+`on_vm` is usually activated on map, but not always: wait for the app to say
+it is active, and fall back to a script's `workspace.activeWindow = w`. Kate
 needs a document named on its command line: session restore reopens it on
 its Welcome page, which has no text field.
 
@@ -33,17 +36,19 @@ its Welcome page, which has no text field.
 
 `shot` runs the app on the real display of an X11 desktop (Xubuntu: `shot.sh
 --display real`, so a screenshot shows the panel, theme, pill and
-notifications) and under its own Xvfb on GNOME, whose Wayland session cannot
-be photographed from inside. A checkpoint is a fixed name,
+notifications) and under its own Xvfb on GNOME and Plasma, whose Wayland
+sessions xdotool cannot drive. There only the windows go to Xvfb: the app
+keeps the session's `WAYLAND_DISPLAY`, which picks Plasma's profile and which
+`ibus start --type kde-wayland` requires. A checkpoint is a fixed name,
 `shot:shots/<suite>/<NN>-<checkpoint>.png`; the dictation suite takes its
 pill checkpoints (listening, finishing, notice, error, with the backend held
 still by SIGSTOP so `finalizing` lasts) with `checkpoint NAME` on Xubuntu
-only. `run-suite.sh` moves them to `.run/artifacts/screenshots/<suite>/`; the
+and Plasma. `run-suite.sh` moves them to `.run/artifacts/screenshots/<suite>/`; the
 workflow uploads them as `screenshots-<desktop>-<release>` (30 days), beside
 the whole `.run/artifacts/` upload.
 
 The nightly `contact-sheet` job runs `tools/contact-sheet.py` on the Xubuntu
-noble set and the last approved one: one self-contained HTML page, each
+noble and the Kubuntu resolute sets, each against the last approved one: one self-contained HTML page, each
 checkpoint current beside baseline, with NEW, MISSING, changed and same
 badges (same = identical bytes; the panel clock makes most differ, so it is a
 page to look at). "Approved" is the newest green scheduled or dispatched E2E
@@ -52,9 +57,10 @@ intended UI change, merge it and dispatch E2E on `main` (`make ci-e2e` from
 main, or the Actions tab); once that run is green it is the baseline. Tests
 never assert pixels.
 
-The `dictation` suite does not use `shot`. It runs `tools/field-app.py` (a
-GTK4 window of plain and password entries that reports itself as JSON) in the
-real session, a speech clip looped on a virtual PipeWire speaker whose
+The `dictation` suite does not use `shot`. It runs `tools/field-app.py` (plain
+and password entries that report themselves as JSON; GTK4, or Qt6 on Plasma,
+whose apps reach KWin through text-input-v2 rather than v3) in the real
+session, a speech clip looped on a virtual PipeWire speaker whose
 loopback is the default microphone (`dictation` provisioning stage), and the
 fake backend snap, so the transcript is scripted. The daemon is the store's
 edge myna snap unless `E2E_MYNA_SNAP=PATH` names one built from the tree
@@ -63,18 +69,27 @@ its D-Bus `Toggle` and reads `State`/`AudioPeak` from it; one case presses a
 bound key through `tools/uinput-keys.py`, a virtual keyboard on the real seat
 (the same on both desktops; it also presses Escape to leave GNOME's initial
 Overview, where a new window is not focused). Helpers are in
-`tools/dictation-lib.sh`. On Xubuntu it also runs the `myna-hud-host`
-supervisor from the build (what the deb's autostart entry runs) so the HUD
-pill exists; the VM has no deb. CI builds the tree's myna snap and passes it
+`tools/dictation-lib.sh`. On Xubuntu and Plasma it also runs the
+`myna-hud-host` supervisor from the build (what the deb's autostart entry
+runs) so the HUD pill exists; the VM has no deb. CI builds the tree's myna snap and passes it
 as `E2E_MYNA_SNAP`, so the daemon and HUD under test are the tree's, not
 edge's.
 
-The pill case (Xubuntu) waits for the HUD to register with the daemon
+The pill case (Xubuntu, Plasma) waits for the HUD to register with the daemon
 (`hud_registered`) before dictating, since until then the daemon toasts
-instead; it then asserts the pill is a mapped notification-type window that
-takes no input focus, bottom centre in the work area, that the field app stays
-active, that no Myna toast was sent (a `dbus-monitor` watch, with a positive
-control) and that the HUD's log has no GTK critical.
+instead; it then asserts the host kind (`--host x11` or `layer-shell`), that
+the pill is mapped, takes no input focus (an X11 notification-type window, a
+layer surface on KWin's overlay layer) and sits bottom centre in the work
+area, that the field app stays active, that no Myna toast was sent (a
+`dbus-monitor` watch, with a positive control) and that the HUD's log has no
+GTK critical. The suite ends by logging out: the host and HUD must go.
+
+On Plasma the Qt field app keeps `other` in a window of its own, so the
+focus-loss cases move focus between windows. Inside one window, Qt's
+text-input-v2 tells KWin a new field was entered, KWin passes on only a
+state update (and a `reset`, which IBus's Wayland panel drops), so IBus never
+sees a focus change and the rest of an utterance lands in the new field. A
+KWin bug; move `other` back once it is fixed.
 
 `dev/try-desktop.sh` (`make try-desktop`) reuses the provisioning above for a
 manual-test VM; it only ever copies the `installed` snapshot of an e2e VM.
@@ -85,11 +100,12 @@ manual-test VM; it only ever copies the `installed` snapshot of an e2e VM.
   `myna-e2e-<desktop>-<release>`, so they coexist. A new desktop adds a
   `user-data.<desktop>`, a `session_up` arm and, unless its suites draw on
   their own Xvfb, an `on_vm` arm in `lib.sh`; shared packages go in `user-data.common`.
-- Every job blocks pull requests: GNOME on noble, resolute and stonking and
-  Xubuntu on noble, gathered into `e2e-result`, the one check to require
-  (a repo setting). It passes when they all pass, or when the pull request
-  touches none of the paths the `changes` job lists. Other Xubuntu releases
-  are not in the matrix yet. Keep GNOME's job names stable.
+- Every pull-request job blocks: GNOME on noble, resolute and stonking,
+  Xubuntu on noble and Kubuntu on resolute, gathered into `e2e-result`, the
+  one check to require (a repo setting). It passes when they all pass, or
+  when the pull request touches none of the paths the `changes` job lists.
+  Kubuntu on stonking runs nightly only; other Xubuntu releases are not in
+  the matrix yet. Keep GNOME's job names stable.
 - `E2E_VM_MEMORY` (default 6GiB, CI's) sizes every VM copy; a laptop that is
   also somebody's desktop uses `E2E_VM_MEMORY=4GiB`, one running VM at a time.
 
