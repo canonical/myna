@@ -52,8 +52,11 @@ if ! lxc info "$VM" >/dev/null 2>&1; then
     lxc init "$(image "$RELEASE")" "$VM" --vm ${E2E_POOL:+-s "$E2E_POOL"} \
         -c limits.cpu=4 -c limits.memory="$E2E_VM_MEMORY" -d root,size=20GiB \
         -c cloud-init.user-data="$(user_data)"
-    lxc start "$VM"
-    # The display manager only starts from the next boot, the first stage's.
+fi
+# The display manager only starts from the next boot, the first stage's. A
+# run that died before that stage finishes the first boot here.
+if ! snapshots "$VM" | grep -qx bare; then
+    lxc start "$VM" 2>/dev/null || true
     wait_booted "$VM"
     # A suite's copy is a new instance to cloud-init, which would run the
     # whole user-data again.
