@@ -1,19 +1,17 @@
-//! Stand-in desktop services on a private session bus, shared by the
-//! backends' tests: xfconfd here, kglobalaccel in [`kglobalaccel`]. A
-//! stand-in answers on its own thread, because the backends call
-//! synchronously; the test acts as another client through the same
-//! connection.
+//! Stand-in desktop services on a private session bus
+//! ([`myna_freedesktop::testing`]), shared by the backends' tests: xfconfd
+//! here, kglobalaccel in [`kglobalaccel`].
 #![allow(dead_code)]
 
 pub mod kglobalaccel;
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
-use std::io::BufRead;
 use std::rc::Rc;
 
-use gio::glib::{MainContext, MainLoop, Variant, VariantTy};
+use gio::glib::{Variant, VariantTy};
 use gio::prelude::*;
+pub use myna_freedesktop::testing::*;
 
 const XML: &str = "<node>\
   <interface name='org.xfce.Xfconf'>\
@@ -153,105 +151,8 @@ pub fn serve(address: &str, ready: std::sync::mpsc::Sender<()>) {
     });
 }
 
-/// Own `name` on the bus at `address`, with the objects `register` puts on
-/// the connection, until the bus goes.
-pub fn serve_as(
-    address: &str,
-    name: &str,
-    ready: std::sync::mpsc::Sender<()>,
-    register: impl FnOnce(&gio::DBusConnection),
-) {
-    let context = MainContext::new();
-    context
-        .with_thread_default(|| {
-            let connection = connect_to(address);
-            register(&connection);
-            let main_loop = MainLoop::new(Some(&context), false);
-            connection.connect_closed({
-                let main_loop = main_loop.clone();
-                move |_, _, _| main_loop.quit()
-            });
-            connection
-                .call_sync(
-                    Some("org.freedesktop.DBus"),
-                    "/org/freedesktop/DBus",
-                    "org.freedesktop.DBus",
-                    "RequestName",
-                    Some(&(name, 0u32).to_variant()),
-                    None,
-                    gio::DBusCallFlags::NONE,
-                    5_000,
-                    gio::Cancellable::NONE,
-                )
-                .expect("own the name");
-            ready.send(()).unwrap();
-            main_loop.run();
-        })
-        .expect("own the server's context");
-}
-
-/// A session bus that lives as long as the test.
-pub struct Bus(std::process::Child);
-
-impl Drop for Bus {
-    fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
-    }
-}
-
-pub fn bus() -> (Bus, String) {
-    let mut child = std::process::Command::new("dbus-daemon")
-        .args(["--session", "--nofork", "--print-address"])
-        .stdout(std::process::Stdio::piped())
-        .spawn()
-        .expect("dbus-daemon is installed where the suites run");
-    let mut address = String::new();
-    std::io::BufReader::new(child.stdout.take().unwrap())
-        .read_line(&mut address)
-        .unwrap();
-    (Bus(child), address.trim().to_owned())
-}
-
-pub fn connect_to(address: &str) -> gio::DBusConnection {
-    MainContext::ref_thread_default()
-        .block_on(gio::DBusConnection::for_address_future(
-            address,
-            gio::DBusConnectionFlags::AUTHENTICATION_CLIENT
-                | gio::DBusConnectionFlags::MESSAGE_BUS_CONNECTION,
-            None,
-        ))
-        .expect("connect to the private bus")
-}
-
 /// The client end of a stand-in xfconfd on a fresh bus. The server thread
 /// ends when the bus does.
 pub fn connect() -> (gio::DBusConnection, Bus, std::thread::JoinHandle<()>) {
     connect_with(serve)
-}
-
-/// The client end of the stand-in `serve` runs on a fresh bus.
-pub fn connect_with(
-    serve: impl FnOnce(&str, std::sync::mpsc::Sender<()>) + Send + 'static,
-) -> (gio::DBusConnection, Bus, std::thread::JoinHandle<()>) {
-    let (bus, address) = bus();
-    let (ready, owned) = std::sync::mpsc::channel();
-    let thread = std::thread::spawn({
-        let address = address.clone();
-        move || serve(&address, ready)
-    });
-    owned.recv().expect("the stand-in owns its name");
-    (connect_to(&address), bus, thread)
-}
-
-/// Everything on one context per test, which the signals are delivered to.
-pub fn on_own_context<T>(test: impl FnOnce() -> T) -> T {
-    MainContext::new()
-        .with_thread_default(test)
-        .expect("own the test's context")
-}
-
-pub fn settle() {
-    let context = MainContext::ref_thread_default();
-    while context.iteration(false) {}
 }

@@ -17,6 +17,7 @@ The client is a Rust workspace that turns activation events into bounded microph
 
 - `myna-core/` - Shared audio, event, settings, and wire types, plus the language-to-model recommendation.
 - `myna-platform/` - Desktop-neutral contracts (session and profile, text input, activation, appearance, components, status surface placement) and their conformance kit.
+- `myna-freedesktop/` - Backends over freedesktop.org services shared by the HUD and Myna Settings (bounded bus calls) and the private-bus test kit.
 - `myna-audio/` - Native PipeWire capture, device discovery and cue playback.
 - `myna-orchestrator/` - Session and residency state machines plus boundary traits.
 - `myna-cli/` - `myna-testbed` development binary.

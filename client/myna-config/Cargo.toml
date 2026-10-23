@@ -28,6 +28,7 @@ libc = "0.2"
 gtk4 = { version = "0.10", features = ["v4_14"] }
 libadwaita = { version = "0.8", features = ["v1_5"] }
 myna-core = { path = "../myna-core" }
+myna-freedesktop = { path = "../myna-freedesktop" }
 myna-platform = { path = "../myna-platform" }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
@@ -42,5 +43,6 @@ ignored = ["gettext-rs"]
 glib-build-tools = "0.21"
 
 [dev-dependencies]
+myna-freedesktop = { path = "../myna-freedesktop", features = ["testing"] }
 myna-platform = { path = "../myna-platform", features = ["conformance"] }
 sha2.workspace = true

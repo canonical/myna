@@ -1,7 +1,8 @@
 #!/bin/sh
 # Stage the myna-config Debian source package from the committed tree.
 #
-# The deb builds a three-crate workspace (myna-core, myna-platform, myna-config) cut out of
+# The deb builds a four-crate workspace (myna-core, myna-platform,
+# myna-freedesktop, myna-config) cut out of
 # client/, with its crates.io dependencies vendored into the orig tarball so
 # the build runs offline. Output, under target/deb/<series>/ by default, so
 # one series' staging never wipes another's packages:
@@ -59,7 +60,7 @@ stage="$out/myna-config-$upstream"
 
 rm -rf "$out"
 mkdir -p "$stage"
-git -C "$root" archive HEAD client/Cargo.toml client/Cargo.lock client/build-support client/data client/myna-core client/myna-platform client/myna-config \
+git -C "$root" archive HEAD client/Cargo.toml client/Cargo.lock client/build-support client/data client/myna-core client/myna-platform client/myna-freedesktop client/myna-config \
     | tar -x -C "$stage" --strip-components=1
 # The binaries report the version build-support/version.rs finds staged here.
 echo "$upstream" > "$stage/.version"
@@ -75,7 +76,7 @@ git -C "$root" archive HEAD extensions/myna-shell | tar -x -C "$ext_tmp"
 # Tests that read the repository (snapcraft.yaml, docs, dev/) have nothing to read here.
 rm "$stage/myna-config/tests/snap_packaging.rs" "$stage/myna-config/tests/client_version.rs"
 
-members='members = ["myna-core", "myna-platform", "myna-config"]'
+members='members = ["myna-core", "myna-platform", "myna-freedesktop", "myna-config"]'
 if [ "$(grep -c '^members = ' "$stage/Cargo.toml")" != 1 ]; then
     echo "error: expected exactly one workspace members line in client/Cargo.toml" >&2
     exit 1

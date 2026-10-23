@@ -1,0 +1,16 @@
+[package]
+name = "myna-freedesktop"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Backends over freedesktop.org services, shared by the HUD and Myna Settings"
+
+# gio only: no toolkit, so the HUD and Settings can share it and its tests
+# need no display.
+[dependencies]
+gio.workspace = true
+
+[features]
+# Stand-in services on a private session bus, for the backends' tests.
+testing = []
