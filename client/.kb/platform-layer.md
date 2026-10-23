@@ -26,7 +26,7 @@ The layer is being introduced in steps: the contracts exist and `text_input` is 
 - `activation` - read, bind and clear Myna's toggle accelerator, list the shortcuts holding a key (reserved ones flagged), release a conflict, watch for changes. `Accelerator` is GTK accelerator syntax, which both GSettings media-keys and xfconf `xfce4-keyboard-shortcuts` store, with spelling-insensitive comparison. Backends: GNOME's media-keys custom shortcut, Xfce's xfconf `/commands/custom/<accelerator>` and Plasma's kglobalaccel command shortcut (Myna Settings, below).
 - `appearance` - accent, reduced motion and high contrast as plain readings, watched through a callback that says whether readings are already current. Palette and fallback policy stay in the HUD. Backend: the settings portal over the GTK one, in the HUD and in Myna Settings (below).
 - `components` - the desktop pieces Myna needs outside its own processes (GNOME's shell extension; Xfce's status surface autostart entry and IBus as the active input method; IBus as KWin's input method on Plasma), each with a purpose and a status, and enabling one as far as Myna can without authorization. Backends: GNOME's shell extension, Xfce's IBus and autostart entry, and Plasma's IBus (Myna Settings, below).
-- `status_surface` - pure placement: bottom-centre of the chosen monitor's work area, the monitor chosen by focus then pointer then primary, and the work area an X11 host derives from EWMH struts. It matches the GNOME extension's `place.js`; hosting the window is the backend's. Backends: the GNOME extension, and the HUD's own X11 host (below).
+- `status_surface` - pure placement: bottom-centre of the chosen monitor's work area, the monitor chosen by focus then pointer then primary, and the work area an X11 host derives from EWMH struts. It matches the GNOME extension's `place.js`; hosting the window is the backend's. Backends: the GNOME extension, and the HUD's own X11 and layer-shell hosts (below).
 - `Subscription` - what a watch returns; dropping it ends the watch.
 
 ## The X11 status surface host
@@ -40,6 +40,16 @@ The layer is being introduced in steps: the contracts exist and `text_input` is 
 - Re-placed on `_NET_WORKAREA` changes, on the window's own resizes and, with the monitor re-chosen, on monitor changes. The work area is the monitor less the `_NET_WM_STRUT_PARTIAL` (or `_NET_WM_STRUT`) of every `_NET_CLIENT_LIST` window, since `_NET_WORKAREA` is one rectangle for all monitors. A DOCK-typed client along the monitor's bottom that claims no strut also lowers it by its height, shown or autohidden below the edge: Xubuntu's launcher hides intelligently and has none, as `place.js` does for dash-to-dock.
 
 `tests/x11_host_e2e.rs` plays the window manager under Xvfb and checks what it sees at map request time. GNOME's hover fade to 20% is not ported.
+
+## The layer-shell status surface host
+
+`myna-hud --host layer-shell` (`myna-hud/src/host/layer_shell.rs`) makes the HUD a `zwlr_layer_shell_v1` surface through gtk4-layer-shell, for Wayland compositors that offer the protocol (KWin; not mutter). The hosts share `host::Kind`: each names the session kind it needs and the GDK backend pinned for it, and `main` exits 78 before GTK starts when the session is another kind, and after GTK starts when the display cannot host (`gtk_layer_is_supported` false, as on GNOME). The surface is set up once, before the window is realized, and gtk4-layer-shell recreates it with the same properties on every remap after an idle unmap:
+
+- Overlay layer, anchored to the bottom edge alone, margin `BOTTOM_MARGIN` there, exclusive zone 0, keyboard interactivity none, namespace `myna-hud`. The compositor does the placement `status_surface` describes: a surface anchored to one edge is centred along it, and exclusive zone 0 keeps it clear of other surfaces' exclusive zones (the panels), which is the work area. No output is named, so the compositor chooses one: a Wayland client cannot tell which output has focus. Measured on KWin 6.6 (one output, 1280x800, bottom panel 48 px): the pill lands at bottom-centre 24 px above the panel, in the overlay layer, never active, and the focused window keeps focus through every map. Several outputs are not measured.
+- Keyboard interactivity none means the compositor never gives it keyboard focus; the window's empty input region (`window.rs`) makes it click-through.
+- gtk4-layer-shell replaces some of libwayland-client's symbols, so it must be loaded before libwayland-client. The binary needs it directly and libwayland-client only through GTK, so the loader's breadth-first order puts it first; a direct dependency on libwayland-client listed ahead of it would break that. The snap builds it (1.3.0, `gtk4-layer-shell` part) against the gnome SDK, since noble's archive has none; the workshop installs the distribution's.
+
+`tests/layer_shell_host_e2e.rs` runs the binary under a headless sway and reads the requests it sends from libwayland's `WAYLAND_DEBUG=client` log, across an idle unmap and remap.
 
 ## The Xfce supervisor
 
