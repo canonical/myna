@@ -52,15 +52,11 @@ impl Platform {
                 ),
                 Profile::Xfce => (
                     opened(xfce::activation::XfconfActivation::open()),
-                    Rc::new(xfce::components::XfceComponents::new(Arc::new(
-                        crate::command::GioCommandRunner,
-                    ))),
+                    Rc::new(xfce::components::XfceComponents::new(commands())),
                 ),
                 Profile::Kde => (
                     opened(kde::activation::KglobalaccelActivation::open()),
-                    Rc::new(kde::components::KdeComponents::new(Arc::new(
-                        crate::command::GioCommandRunner,
-                    ))),
+                    Rc::new(kde::components::KdeComponents::new(commands())),
                 ),
                 Profile::Generic => (None, Rc::new(NoComponents)),
             };
@@ -183,6 +179,10 @@ pub struct DesktopDiagnostics {
     pub shell: Option<String>,
     pub extension: Option<ExtensionReport>,
     pub components: Vec<ComponentFact>,
+}
+
+fn commands() -> Arc<dyn crate::command::CommandRunner> {
+    Arc::new(crate::command::GioCommandRunner)
 }
 
 /// A backend that could not reach its desktop is reported and left out.

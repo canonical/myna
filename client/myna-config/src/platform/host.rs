@@ -1,14 +1,19 @@
-//! The machine as the desktops' component statuses read it, and what they
-//! share: IBus as the input method Myna types through, and the autostart
-//! entry that hosts the dictation indicator where no shell extension does.
+//! The machine as the desktops' component statuses read it, and the
+//! components the desktops without a shell extension share: IBus as the input
+//! method Myna types through, set up each desktop's way, and the autostart
+//! entry that hosts the dictation indicator.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
+use async_trait::async_trait;
 use gio::glib;
 use myna_platform::components::{
-    Blocker, Component, ComponentError, ComponentStatus, Purpose, StepKind,
+    Blocker, Component, ComponentError, ComponentStatus, Components, Purpose, StepKind,
 };
+
+use crate::command::CommandRunner;
 
 /// IBus as the active input method.
 pub const IBUS: &str = "ibus";
@@ -19,21 +24,90 @@ pub const HUD_HOST_AUTOSTART: &str = "com.canonical.Myna.HudHost.desktop";
 /// The supervisor the entry starts (`hud_host`).
 const HUD_HOST_PROCESS: &str = "myna-hud-host";
 
-/// The HUD host's entry, as a component.
-pub fn hud_host() -> Component {
-    Component {
-        id: HUD_HOST_AUTOSTART.to_owned(),
-        purpose: Purpose::StatusSurface,
+/// How a desktop makes IBus the input method.
+#[async_trait(?Send)]
+pub trait IbusSetup: Default {
+    /// The step that sets it up, as a failure names it.
+    const STEP: &'static str;
+    /// Where the user switches away from another input method.
+    const SETTINGS: &'static str;
+
+    fn status(&self, host: &Host) -> ComponentStatus;
+
+    async fn set_up(&self, runner: &dyn CommandRunner) -> Result<(), ComponentError>;
+}
+
+/// IBus set up `S`'s way, and the HUD host's autostart entry.
+pub struct HostComponents<S> {
+    host: Host,
+    runner: Arc<dyn CommandRunner>,
+    ibus: S,
+}
+
+impl<S: IbusSetup> HostComponents<S> {
+    pub fn new(runner: Arc<dyn CommandRunner>) -> Self {
+        Self::with_host(Host::current(), runner)
+    }
+
+    pub fn with_host(host: Host, runner: Arc<dyn CommandRunner>) -> Self {
+        Self {
+            host,
+            runner,
+            ibus: S::default(),
+        }
     }
 }
 
-/// Myna Settings cannot install the entry; only the package does.
-pub fn enable_hud_host() -> Result<(), ComponentError> {
-    Err(ComponentError::Failed {
-        kind: StepKind::Setting,
-        step: HUD_HOST_AUTOSTART.to_owned(),
-        message: "the myna-config package installs it".to_owned(),
-    })
+#[async_trait(?Send)]
+impl<S: IbusSetup> Components for HostComponents<S> {
+    fn required(&self) -> Vec<Component> {
+        vec![
+            Component {
+                id: IBUS.to_owned(),
+                purpose: Purpose::TextInput,
+            },
+            Component {
+                id: HUD_HOST_AUTOSTART.to_owned(),
+                purpose: Purpose::StatusSurface,
+            },
+        ]
+    }
+
+    async fn status(&self, id: &str) -> ComponentStatus {
+        match id {
+            IBUS => self.ibus.status(&self.host),
+            HUD_HOST_AUTOSTART => self.host.hud_host_status(),
+            _ => ComponentStatus::Unavailable,
+        }
+    }
+
+    async fn enable(&self, id: &str) -> Result<(), ComponentError> {
+        match id {
+            IBUS => {}
+            // Myna Settings cannot install the entry; only the package does.
+            HUD_HOST_AUTOSTART => {
+                return Err(ComponentError::Failed {
+                    kind: StepKind::Setting,
+                    step: HUD_HOST_AUTOSTART.to_owned(),
+                    message: "the myna-config package installs it".to_owned(),
+                })
+            }
+            _ => return Err(ComponentError::Unknown(id.to_owned())),
+        }
+        let failed = |message: &str| Err(command_failed(S::STEP, message));
+        match self.ibus.status(&self.host) {
+            ComponentStatus::Active | ComponentStatus::ActiveAfterRelogin => Ok(()),
+            ComponentStatus::Inactive | ComponentStatus::NeedsRelogin => {
+                self.ibus.set_up(self.runner.as_ref()).await
+            }
+            ComponentStatus::Unavailable => failed("IBus is not installed"),
+            ComponentStatus::Blocked(_) => failed(&format!(
+                "another input method is chosen; switch it in {}",
+                S::SETTINGS
+            )),
+            ComponentStatus::Failed => failed("IBus is not running"),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]

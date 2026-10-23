@@ -6,8 +6,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use myna_config::command::{CommandError, CommandOutput, FakeCommandRunner};
+use myna_config::platform::host::{Host, HUD_HOST_AUTOSTART, IBUS};
 use myna_config::platform::kde::components::KdeComponents;
-use myna_config::platform::xfce::components::{Host, XfceComponents, HUD_HOST_AUTOSTART, IBUS};
+use myna_config::platform::xfce::components::XfceComponents;
 use myna_platform::components::{
     Blocker, ComponentError, ComponentStatus, Components, Purpose, StepKind,
 };
