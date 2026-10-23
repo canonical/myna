@@ -19,7 +19,7 @@ flowchart LR
         ibus["IBus"]
         shell["GNOME Shell extension"]
         hud["myna-hud"]
-        hudhost["myna-hud-host<br/>Xfce supervisor (myna-config deb)"]
+        hudhost["myna-hud-host<br/>Xfce/Plasma supervisor (myna-config deb)"]
     end
 
     subgraph inference["Inference backend snap"]
@@ -46,7 +46,7 @@ flowchart LR
     ibus --> app
     client -.->|"D-Bus state"| shell
     shell -->|"hosts (GNOME)"| hud
-    hudhost -->|"supervises --host x11 (Xfce)"| hud
+    hudhost -->|"supervises --host x11 / layer-shell"| hud
     hudhost -.->|"watches the daemon's bus name"| client
 
     snapd -->|"installs and connects"| client
@@ -54,6 +54,6 @@ flowchart LR
     modelctl -->|"selects model and engine"| engine
 ```
 
-The HUD has two hosts: on GNOME the Shell extension starts and positions it, and on Xfce `myna-hud-host` (shipped in the myna-config deb, started by an XDG autostart entry) runs `myna-hud --host x11` only while the daemon owns its D-Bus name, and the HUD places its own window on X11.
+The HUD has two hosts: on GNOME the Shell extension starts and positions it, and on Xfce and Plasma `myna-hud-host` (shipped in the myna-config deb, started by an XDG autostart entry) runs `myna-hud --host x11`, or `--host layer-shell` on Wayland, only while the daemon owns its D-Bus name, and the HUD places its own window.
 
 The client is the only component with microphone and desktop access. Inference backends receive PCM through a connected local Unix socket and do not access the network or microphone. A backend shares its socket through an `inference-provider` content slot whose directory holds a `provider.env` naming the snap and the socket; the client reads every connected share at each activation and uses the one that offers a live Unix socket, refusing to choose when more than one does. Unstable text remains presentation state; only committed text reaches IBus.

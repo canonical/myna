@@ -8,7 +8,7 @@ Besides the application it installs the GSettings schema the daemon reads,
 the desktop entry, icons and AppStream metainfo, the polkit action, and the
 myna-shell GNOME Shell extension
 (`/usr/share/gnome/gnome-shell/extensions/myna-shell@canonical.com`) and, for
-Xfce, `myna-hud-host` (`/usr/libexec/myna-config/`) with the autostart entry
+Xfce and Plasma, `myna-hud-host` (`/usr/libexec/myna-config/`) with the autostart entry
 `/etc/xdg/autostart/com.canonical.Myna.HudHost.desktop`.
 
 ## Build
