@@ -1,5 +1,9 @@
 //! A private session bus and X server for the tests that run the real binary.
 
+// Not every suite publishes.
+#[allow(dead_code)]
+pub mod dictation;
+
 use std::io::BufRead;
 use std::process::{Child, Command, Stdio};
 

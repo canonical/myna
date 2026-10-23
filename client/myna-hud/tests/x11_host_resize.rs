@@ -26,62 +26,13 @@ use x11rb::protocol::xproto::{
 use x11rb::protocol::Event;
 use x11rb::rust_connection::RustConnection;
 
-use myna_hud::dbus_consumer::{BUS_NAME, OBJECT_PATH};
 use myna_platform::status_surface::{placement, Point, Rect, Size, BOTTOM_MARGIN};
-use support::{Headless, Hud, PrivateBus};
+use support::{dictation, Headless, Hud, PrivateBus};
 
 /// How late the window manager answers each request.
 const LAG: Duration = Duration::from_millis(3);
 const CYCLES: usize = 25;
 const WAIT: Duration = Duration::from_secs(20);
-
-struct Dictation {
-    state: String,
-    message: String,
-}
-
-#[zbus::interface(name = "com.canonical.Myna.Dictation")]
-impl Dictation {
-    #[zbus(property)]
-    fn state(&self) -> String {
-        self.state.clone()
-    }
-    #[zbus(property)]
-    fn status_message(&self) -> String {
-        self.message.clone()
-    }
-    #[zbus(property)]
-    fn audio_rms(&self) -> f64 {
-        0.0
-    }
-    #[zbus(property)]
-    fn audio_peak(&self) -> f64 {
-        0.0
-    }
-    #[zbus(property)]
-    fn hud_style(&self) -> String {
-        "bar".into()
-    }
-    fn register_client(&self) -> u32 {
-        1
-    }
-}
-
-fn publish(connection: &zbus::blocking::Connection, state: &str, message: &str) {
-    let iface = connection
-        .object_server()
-        .interface::<_, Dictation>(OBJECT_PATH)
-        .expect("served interface");
-    {
-        let mut dictation = iface.get_mut();
-        dictation.state = state.into();
-        dictation.message = message.into();
-    }
-    let emitter = iface.signal_emitter();
-    let dictation = iface.get();
-    zbus::block_on(dictation.status_message_changed(emitter)).expect("emit StatusMessage");
-    zbus::block_on(dictation.state_changed(emitter)).expect("emit State");
-}
 
 /// A window manager that grants every request late, as xfwm4 does: a managed
 /// window's size held within its `WM_NORMAL_HINTS` limits, and every request
@@ -249,20 +200,7 @@ fn the_pill_is_never_laid_out_under_its_content() {
     let root = conn.setup().roots[screen].root;
     window_manager(&headless.display);
 
-    let publisher = zbus::blocking::connection::Builder::address(bus.address.as_str())
-        .unwrap()
-        .name(BUS_NAME)
-        .unwrap()
-        .serve_at(
-            OBJECT_PATH,
-            Dictation {
-                state: "idle".into(),
-                message: String::new(),
-            },
-        )
-        .unwrap()
-        .build()
-        .expect("publish com.canonical.Myna.Dictation");
+    let publisher = dictation::serve(&bus.address, "idle");
 
     let mut hud = Hud(Command::new(env!("CARGO_BIN_EXE_myna-hud"))
         .args(["--host", "x11"])
@@ -308,7 +246,7 @@ fn the_pill_is_never_laid_out_under_its_content() {
     for _ in 0..CYCLES {
         let before = criticals.load(Ordering::SeqCst);
         for (state, message) in steps {
-            publish(&publisher, state, message);
+            dictation::publish(&publisher, state, message);
             if state == "idle" {
                 wait_until("idle unmaps the HUD", || hud_window(&conn, root).is_none());
             } else {
