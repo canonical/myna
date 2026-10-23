@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gresources>
+  <gresource prefix="/com/canonical/Myna/Hud/icons/scalable/status">
+    <file>audio-input-microphone-symbolic.svg</file>
+    <file>dialog-information-symbolic.svg</file>
+    <file>microphone-disabled-symbolic.svg</file>
+  </gresource>
+</gresources>

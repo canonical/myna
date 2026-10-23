@@ -14,3 +14,13 @@ Whisper (https://github.com/openai/whisper), tag v20250625, commit
 License. The full licence text and a list of the modifications head each
 Python file. They are part of the myna wheel, so they ship inside
 myna-bench.pyz and every inference snap's server.
+
+client/myna-hud/data/icons/
+---------------------------
+
+audio-input-microphone-symbolic.svg, microphone-disabled-symbolic.svg and
+dialog-information-symbolic.svg: from adwaita-icon-theme 51.0
+(https://gitlab.gnome.org/GNOME/adwaita-icon-theme), Copyright the GNOME
+Project, unmodified. Upstream offers them under the GNU LGPL, version 3, or
+CC-BY-SA 3.0; Myna takes them under the LGPL-3.0. They are compiled into the
+myna-hud binary, so they ship inside the myna snap.

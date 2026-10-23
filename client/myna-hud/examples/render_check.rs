@@ -30,7 +30,7 @@ use gtk::{glib, graphene};
 use gtk4 as gtk;
 use libadwaita as adw;
 
-use myna_hud::hud_logic::HudStyle;
+use myna_hud::hud_logic::{icon_for_severity, HudStyle};
 use myna_hud::pill::{Pill, PILL_WIDTH};
 use myna_hud::platform::Platform;
 use myna_hud::segmented_meter::BAR_COUNT;
@@ -266,7 +266,7 @@ fn problem_state_faults(pill: &Pill) -> Vec<String> {
     let icon = first_image(root).and_then(|image| image.icon_name());
     if icon
         .as_deref()
-        .is_none_or(|name| name == "audio-input-microphone-symbolic")
+        .is_none_or(|name| name == icon_for_severity(None))
     {
         faults.push(format!("the glyph is {icon:?}, a live mic"));
     }

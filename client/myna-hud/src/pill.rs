@@ -140,9 +140,9 @@ pub struct Pill {
 impl Pill {
     /// Build the pill and wire its clock, renderer and preference tracking.
     pub fn new(profile: Profile) -> Rc<Self> {
-        load_css();
+        load_resources();
 
-        let icon = gtk::Image::from_icon_name("audio-input-microphone-symbolic");
+        let icon = gtk::Image::from_icon_name(icon_for_severity(None));
         icon.add_css_class("myna-hud-icon");
         icon.set_pixel_size(24);
         icon.set_valign(gtk::Align::Center);
@@ -808,8 +808,14 @@ fn build_model(state: &PillState) -> crate::ribbon::RibbonModel {
     })
 }
 
-/// Install the pill's stylesheet once per display.
-fn load_css() {
+/// Install the pill's stylesheet and icons on the display. The icons join
+/// hicolor, so the desktop's theme still wins wherever the HUD can see it.
+fn load_resources() {
+    static ICONS: std::sync::Once = std::sync::Once::new();
+    ICONS.call_once(|| {
+        gtk::gio::resources_register_include!("myna-hud.gresource")
+            .expect("the HUD's icon resources");
+    });
     let provider = gtk::CssProvider::new();
     provider.load_from_string(include_str!("style.css"));
     if let Some(display) = gdk::Display::default() {
@@ -818,5 +824,6 @@ fn load_css() {
             &provider,
             gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
         );
+        gtk::IconTheme::for_display(&display).add_resource_path("/com/canonical/Myna/Hud/icons");
     }
 }

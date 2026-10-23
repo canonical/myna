@@ -3,6 +3,11 @@ mod version;
 
 fn main() {
     version::emit();
+    glib_build_tools::compile_resources(
+        &["data/icons/scalable/status"],
+        "data/myna-hud.gresource.xml",
+        "myna-hud.gresource",
+    );
     println!("cargo:rustc-check-cfg=cfg(dev_lab)");
     println!("cargo:rustc-check-cfg=cfg(coverage)");
     // Coverage builds instrument with `--cfg coverage`; the lab is dev-only

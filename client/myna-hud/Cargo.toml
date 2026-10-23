@@ -78,6 +78,9 @@ gtk4-layer-shell = "0.7"
 myna-freedesktop = { path = "../myna-freedesktop" }
 myna-platform = { path = "../myna-platform" }
 
+[build-dependencies]
+glib-build-tools = "0.21"
+
 [dev-dependencies]
 myna-platform = { path = "../myna-platform", features = ["conformance"] }
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "time"] }
