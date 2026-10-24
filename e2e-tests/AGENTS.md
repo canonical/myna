@@ -62,7 +62,12 @@ and password entries that report themselves as JSON; GTK4, or Qt6 on Plasma,
 whose apps reach KWin through text-input-v2 rather than v3) in the real
 session, a speech clip looped on a virtual PipeWire speaker whose
 loopback is the default microphone (`dictation` provisioning stage), and the
-fake backend snap, so the transcript is scripted. The daemon is the store's
+fake backend snap, so the transcript is scripted. PipeWire must run realtime
+(a precondition) and no dictation may lose audio: on a loaded runner a
+SCHED_OTHER graph drops cycles, which the daemon reports as lost capture.
+Linger starts PipeWire before the login session, when RTKit grants nothing,
+so the same stage puts `ubuntu` in the `pipewire` group, whose rlimits
+PipeWire ships. The daemon is the store's
 edge myna snap unless `E2E_MYNA_SNAP=PATH` names one built from the tree
 (`make snap-myna`), which `run-suite.sh` installs over it in each run. It drives the daemon through
 its D-Bus `Toggle` and reads `State`/`AudioPeak` from it; one case presses a

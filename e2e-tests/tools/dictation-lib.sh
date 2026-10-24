@@ -106,6 +106,11 @@ journal_count() {
     journalctl --user -u snap.myna.myna.service --no-pager --since "@$(cat "$JOURNAL_MARK")" \
         | grep -c -- "$1"
 }
+# Faults the daemon logged this boot for audio the capture never received.
+audio_lost_count() { journalctl --user -b -u snap.myna.myna.service --no-pager | grep -c 'ctrl: capture lost'; }
+
+# A thread of PipeWire's graph runs realtime.
+pipewire_realtime() { ps -L -o cls= -p "$(pgrep -d, -xu "$USER" pipewire)" | grep -qE 'FF|RR'; }
 
 # Restart the session's ibus-daemon and wait for it to serve again, so the
 # next activation is its first: it has not read the engine's properties yet.

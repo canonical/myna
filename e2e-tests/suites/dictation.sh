@@ -68,6 +68,7 @@ assert_on "precondition: the backend is the fake" \
     'snap connections myna | grep -q "myna:backend.*myna-fake-backend:provider"'
 assert_on "precondition: the daemon is idle" \
     "$LIB; wait_until 20 dictation_state_is idle"
+assert_on "precondition: PipeWire runs realtime" "$LIB; pipewire_realtime"
 assert_on "the virtual microphone is made the default source" \
     "$LIB; mic_make_default"
 assert_on "precondition: the virtual microphone is the default source" \
@@ -262,6 +263,8 @@ if [ "$DESKTOP" = gnome ]; then
 fi
 evidence 10
 dict 'fake_streaming false; daemon_debug off' >/dev/null 2>&1
+# shellcheck disable=SC2016 # expands in the VM
+assert_dict "no dictation lost audio" '[ "$(audio_lost_count)" = 0 ]'
 
 dict 'mic_stop' >/dev/null 2>&1
 if [ -n "$HOSTED" ]; then
