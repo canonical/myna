@@ -26,6 +26,8 @@ packages:
   - layer-shell-qt
   - wayland-utils
   - policykit-desktop-privileges
+  # pipewire-bin Recommends it and the ISO ships it.
+  - rtkit
   # What the myna-config deb Depends on, which the suites' bare binary needs.
   - libadwaita-1-0
   - libglib2.0-bin
