@@ -1304,3 +1304,28 @@ async fn ibus_preedit_visual_probe() {
     target.release().await;
     eprintln!("probe done — was the preedit visible and underlined?");
 }
+
+/// The first acquire after ibus-daemon starts, as after every restart. The
+/// daemon calls `CreateEngine` within the `SetGlobalEngine` round trip; an
+/// object server not yet listening drops it, and the daemon fails the switch
+/// after 15 s. Lost a few times in 60 on a loaded machine.
+#[tokio::test]
+async fn the_first_acquire_on_a_fresh_daemon_is_answered() {
+    skip_unless_ibus!();
+    let _serial = exclusive().await;
+    let mut hung = 0;
+    for _ in 0..40 {
+        let daemon = FreshDaemon::start().await;
+        let field = Field::open_at(&daemon.address, 0, 0).await;
+        let address = daemon.address.as_str().try_into().expect("address");
+        let mut injector = IbusInjector::connect_to(address)
+            .await
+            .expect("connect to the fresh daemon");
+        match tokio::time::timeout(HANG_GUARD, injector.acquire()).await {
+            Ok(acquired) => acquired.expect("acquire a plain field").release().await,
+            Err(_) => hung += 1,
+        }
+        field.close().await;
+    }
+    assert_eq!(hung, 0, "first acquires on a fresh daemon that hung");
+}

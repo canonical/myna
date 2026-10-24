@@ -1196,7 +1196,6 @@ async fn call(
 pub struct IbusInjector {
     conn: Connection,
     state: Arc<EngineState>,
-    objects_served: bool,
 }
 
 impl IbusInjector {
@@ -1209,16 +1208,26 @@ impl IbusInjector {
     /// Connect to the IBus daemon at `address`, as `connect` does to the
     /// session's.
     pub async fn connect_to(address: Address) -> Result<Self, InjectError> {
+        let state = Arc::new(EngineState::new());
+        // Served by the builder, which returns only once the object server
+        // listens: `ObjectServer::at` returns before, and a `CreateEngine`
+        // arriving in between is dropped unanswered.
         let conn = zbus::conn::Builder::address(address)
             .map_err(|e| InjectError::Unavailable(format!("bad IBus address: {e}")))?
+            .serve_at(FACTORY_PATH, FactoryObject)
+            .and_then(|b| {
+                b.serve_at(
+                    ENGINE_PATH,
+                    EngineObject {
+                        state: state.clone(),
+                    },
+                )
+            })
+            .map_err(|e| InjectError::Backend(format!("serve engine: {e}")))?
             .build()
             .await
             .map_err(|e| InjectError::Unavailable(format!("cannot connect to IBus: {e}")))?;
-        Ok(Self {
-            conn,
-            state: Arc::new(EngineState::new()),
-            objects_served: false,
-        })
+        Ok(Self { conn, state })
     }
 
     /// Read the currently active global engine's name (to restore later).
@@ -1236,28 +1245,6 @@ impl IbusInjector {
     /// The active global engine's name (read-only; for tests/diagnostics).
     pub async fn global_engine(&self) -> Option<String> {
         self.global_engine_name().await
-    }
-
-    async fn serve_objects(&mut self) -> Result<(), InjectError> {
-        if self.objects_served {
-            return Ok(());
-        }
-        let server = self.conn.object_server();
-        server
-            .at(FACTORY_PATH, FactoryObject)
-            .await
-            .map_err(|e| InjectError::Backend(format!("serve factory: {e}")))?;
-        server
-            .at(
-                ENGINE_PATH,
-                EngineObject {
-                    state: self.state.clone(),
-                },
-            )
-            .await
-            .map_err(|e| InjectError::Backend(format!("serve engine: {e}")))?;
-        self.objects_served = true;
-        Ok(())
     }
 }
 
@@ -1278,9 +1265,7 @@ impl Injector for IbusInjector {
         // Read before the switch; recorded once it has succeeded.
         let displaced = self.global_engine_name().await;
 
-        // Register our component + serve the factory/engine, then become active.
         call(&self.conn, "RegisterComponent", &(ibus_component(),)).await?;
-        self.serve_objects().await?;
         self.state.content_type.send_replace(ContentType::default());
         // Before the switch, which focuses the engine before it returns.
         let lease = self.state.mint();
