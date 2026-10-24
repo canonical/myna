@@ -150,6 +150,10 @@ context.modules = [
   }
 ]
 CONF
+    # Linger starts PipeWire before the login session, when RTKit grants it
+    # nothing, so its graph often ran SCHED_OTHER and dropped audio. The
+    # group makes it realtime through the rlimits PipeWire ships instead.
+    sudo usermod -aG pipewire ubuntu
     systemctl --user restart pipewire pipewire-pulse wireplumber
     sudo snap install --dangerous myna-fake-backend.snap
     rm myna-fake-backend.snap
