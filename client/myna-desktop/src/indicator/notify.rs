@@ -76,6 +76,7 @@ impl NotifyIndicator {
 
     /// Show or replace the lifecycle toast, returning the (possibly new)
     /// notification id. Runs the blocking D-Bus round-trip off the runtime.
+    /// A failed update leaves the previous toast alive, so keep its id.
     /// Freedesktop `Timeout` is not reliably honored, so we always use
     /// `Timeout::Never` and close ourselves after `hold_ms_for` for errors.
     async fn show(&self, summary: String, body: String, error: bool) -> Option<u32> {
@@ -106,6 +107,7 @@ impl NotifyIndicator {
         .await
         .ok()
         .flatten()
+        .or(self.id)
     }
 
     /// Close the live toast, if any.
