@@ -1051,12 +1051,28 @@ async fn enumerate_observes_add_and_remove() {
 async fn enumerated_name_is_a_usable_target() {
     skip_unless_enabled!();
     let devices = InputDevices::new().expect("registry connect");
-    let _vsrc = VirtualSource::spawn("myna-test-src-029");
-    let dev = devices.list().into_iter().next().unwrap_or_else(|| {
-        panic!("the gate promised a graph, and it lists no sources. {HOW_TO_RUN}")
-    });
+    let virtual_source = VirtualSource::spawn("myna-test-src-029");
+    let mut device_changes = devices.watch();
+    // Other tests add and remove sources, so wait for our own registry entry.
+    let device = tokio::time::timeout(Duration::from_secs(6), async {
+        loop {
+            if let Some(device) = devices
+                .list()
+                .into_iter()
+                .find(|device| device.node_name == virtual_source.node_name)
+            {
+                break device;
+            }
+            device_changes
+                .changed()
+                .await
+                .expect("device registry closed before the created source appeared");
+        }
+    })
+    .await
+    .expect("the created virtual source must appear in device enumeration");
     let source = CaptureSource::builder(AudioFormat::default())
-        .target(dev.node_name.clone())
+        .target(device.node_name)
         .backend(Box::new(PipeWireBackend::new()))
         .build();
     let mut stats = source.stats();
