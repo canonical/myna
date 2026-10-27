@@ -7,7 +7,8 @@
 #   --desktop D    the desktop VM to use (default $E2E_DESKTOP, else gnome)
 #   --binary PATH  test this myna-config instead of building one in the
 #                  myna-noble workshop
-# E2E_VM_MEMORY=4GiB sizes the guest (default 6GiB, what CI gives it).
+# E2E_VM_MEMORY=4GiB sizes the guest (default 6GiB, what CI gives it);
+# E2E_VM_CPUS its vCPUs (default 3).
 # E2E_MYNA_SNAP=PATH installs that myna snap (`make snap-myna`) over the
 # store's edge one in each run, keeping its connections (not on a machine
 # that has none yet, nor for a suite headed `# myna: store`).
@@ -80,7 +81,7 @@ for SUITE in "${SUITES[@]}"; do
     echo "== $SUITE: from $VM/$SNAP"
     RUN=$VM-run
     lxc delete --force "$RUN" 2>/dev/null || true
-    lxc copy "$VM/$SNAP" "$RUN" -c limits.memory="$E2E_VM_MEMORY"
+    lxc copy "$VM/$SNAP" "$RUN" -c limits.cpu="$E2E_VM_CPUS" -c limits.memory="$E2E_VM_MEMORY"
     lxc start "$RUN"
     wait_ready "$RUN"
     # A copy boots into snapd's refresh window: a store refresh of myna in

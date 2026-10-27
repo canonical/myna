@@ -126,6 +126,9 @@ manual-test VM; it only ever copies the `installed` snapshot of an e2e VM.
   the matrix yet. Keep GNOME's job names stable.
 - `E2E_VM_MEMORY` (default 6GiB, CI's) sizes every VM copy; a laptop that is
   also somebody's desktop uses `E2E_VM_MEMORY=4GiB`, one running VM at a time.
+- `E2E_VM_CPUS` (default 3) gives every VM copy one vCPU fewer than CI's
+  4-core runner: with all four, the runner took them from the guest and
+  capture lost audio.
 
 - Assert machine state (`assert_on`), never pixels. `waitfor:`/`gone:` gate
   the flow; a suite that needs a long `wait:` is missing a waitable

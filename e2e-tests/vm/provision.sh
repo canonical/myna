@@ -51,7 +51,7 @@ if ! lxc info "$VM" >/dev/null 2>&1; then
     # E2E_POOL: a copy-on-write pool (zfs, btrfs) when the default is `dir`,
     # where every per-suite copy is a full copy of the disk.
     lxc init "$(image "$RELEASE")" "$VM" --vm ${E2E_POOL:+-s "$E2E_POOL"} \
-        -c limits.cpu=4 -c limits.memory="$E2E_VM_MEMORY" -d root,size=20GiB \
+        -c limits.cpu="$E2E_VM_CPUS" -c limits.memory="$E2E_VM_MEMORY" -d root,size=20GiB \
         -c cloud-init.user-data="$(user_data)"
 fi
 # The display manager only starts from the next boot, the first stage's. A

@@ -9,6 +9,9 @@
 #   steal%    time the hypervisor ran something else on our vCPUs
 #   psi-ms    CPU pressure: ms some runnable task waited for a CPU
 #   load1     the 1-minute load average
+#
+# A second past 200 ms of pressure adds a line naming the five busiest
+# processes over the next 0.2 s.
 set -u
 exec >>"$1" 2>/dev/null
 cpus=$(nproc)
@@ -23,5 +26,9 @@ while sleep 1; do
     span=$((total - p_total)); [ "$span" -gt 0 ] || span=1
     echo "$(date +%T.%6N) $((100 * (busy - p_busy) / span)) $((100 * (steal - p_steal) / span))" \
         "$(((now - p_psi) / 1000)) $(cut -d' ' -f1 /proc/loadavg)"
+    if [ $(((now - p_psi) / 1000)) -gt 200 ]; then
+        top -bn2 -d0.2 -w 200 | awk '/^top -/ { n++ } n == 2 && f { printf " %s=%s", $12, $9; if (++k == 5) exit }
+            n == 2 && $1 == "PID" { f = 1 }' | sed 's/^/  busiest:/'; echo
+    fi
     p_busy=$busy p_steal=$steal p_total=$total p_psi=$now
 done

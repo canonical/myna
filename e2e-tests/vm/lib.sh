@@ -13,6 +13,11 @@ DESKTOPS="gnome xubuntu kde"
 # laptop that is also somebody's desktop sets E2E_VM_MEMORY=4GiB (it applies
 # to every copy a suite runs in, whatever the VM was provisioned with).
 export E2E_VM_MEMORY=${E2E_VM_MEMORY:-6GiB}
+# The guest's vCPUs: one fewer than CI's 4-core runner, which needs a core of
+# its own for QEMU, LXD and the suite's lxc exec polling. With all four the
+# runner took the vCPUs from the guest mid-dictation, and capture lost audio
+# (out/cpu-guest.log: steal and CPU pressure at the loss). Every copy too.
+export E2E_VM_CPUS=${E2E_VM_CPUS:-3}
 # Which desktop the VM runs; scripts take --desktop to override.
 export E2E_DESKTOP=${E2E_DESKTOP:-gnome}
 
