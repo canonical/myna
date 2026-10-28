@@ -4,7 +4,8 @@ Read this document before evaluating a model or a change to one (new
 backend, quantisation, export, runtime or execution provider), treating
 Parakeet's window-collapse rate as a port bug, tuning ONNX Runtime CUDA
 execution, re-attempting an fp16 Parakeet export, changing Parakeet's keyword
-biasing, or reviving the Nemotron 3.5 ASR evaluation.
+biasing, giving Whisper keywords, or reviving the Nemotron 3.5 ASR
+evaluation.
 
 Read the top-level `.kb/agents.md` file before continuing below.
 
@@ -12,8 +13,9 @@ Read the top-level `.kb/agents.md` file before continuing below.
 
 Findings from the 2026-09-17 Parakeet GPU workstream (fp32 CUDA export, NeMo
 parity, fp16 attempt), the 2026-09-19 keyword-biasing tuning (Parakeet decode
-bias) and its 2026-10-13 follow-up (post-correction, the Spanish tier), and
-the parked Nemotron 3.5 ASR evaluation. Numbers are
+bias) and its 2026-10-13 follow-up (post-correction, the Spanish tier), the
+rejected Whisper keyword prompt, and the parked Nemotron 3.5 ASR evaluation.
+Numbers are
 from zephyrus (RTX 4080 Laptop 12 GB, driver 595) on the 82-clip
 `corpus/english/manifest-balanced.json` (+ 5-minute long-form clip) or FLEURS
 (40 clips/language), unless noted.
@@ -235,6 +237,45 @@ says): 199 keyword clips with 105 keywords, 80 ordinary clips, and
 Recall starts lower than English because the set is mostly foreign names
 read in Spanish (Nyiragongo, Addenbrooke, Brzezinski). No Portuguese FLEURS
 split is cached; pt_br test is 621 MB.
+
+## Whisper takes no keywords (2026-10-28)
+
+Whisper was given the vocabulary as a prompt line, `"Glossary: <a>, <b>."`:
+first in `initial_prompt`, then in faster-whisper's `hotwords`, which it puts
+ahead of the previous text in every 30 s window. Neither shipped, and the
+adapter's greeting lists no `keywords`: conditioning Whisper on a word list
+breaks transcription.
+
+The balanced tier's 5-minute clip, every shipped model with its own snap
+policy, the 100-word stress list's 27 that fit 111 tokens, WER off -> on:
+
+| model | batch | streaming |
+|---|---|---|
+| tiny, int8 | 3.87 -> 177.04% | 4.88 -> 5.60% |
+| base, float32 | 3.59 -> 10.47% | 3.44 -> 7.46% |
+| small, float32 | 2.01 -> 2.01% | 2.87 -> 2.58% |
+| large-v3-turbo, int8 CPU | 1.43 -> 20.52% | 1.87 -> 24.10% |
+| large-v3, int8 CPU | 59.97 -> 2.44% | 1.58 -> 3.44% |
+
+The large models ship float16 on the GPU; int8 on the CPU stands in for
+them here, and large-v3 batch loops without any glossary at all in it.
+
+- Skips: base ends its first window after one segment with no closing
+  timestamp, so faster-whisper seeks a full 30 s and 54 words go. The
+  adapter's coverage check sees the 25.8 s hole, but the nudged re-decodes
+  carry the same prompt and fail the same way.
+- Loops: tiny inserts 704 words of "might have thought that"; turbo batch
+  "George?", turbo streaming "Grosvenor", past the recital filter.
+- Neither length nor wording decides it: on the
+  clip's first 60 s, base lost 54 of 142 words with a one-keyword glossary,
+  10 or 27 keywords, the bare list, or one sentence of the story's names, and
+  none with three keywords or a sentence of plain prose. In the first three
+  windows no_speech_prob rose from 0.05-0.08 to 0.52-0.93, past the 0.6 the
+  silence skip needs: any of them decoded under `_LOG_PROB_THRESHOLD` would
+  have been dropped whole as silence.
+- Small was clean on this clip; one clip is not evidence it is safe.
+- Untried, and free of the prompt: Parakeet's post-correction run on
+  Whisper's word probabilities, or a bias inside the beam search.
 
 ## Nemotron 3.5 ASR (parked, not built)
 
