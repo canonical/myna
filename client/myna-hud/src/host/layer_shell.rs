@@ -18,6 +18,8 @@
 
 use std::rc::Rc;
 
+use gtk::prelude::*;
+use gtk4 as gtk;
 use gtk4_layer_shell::{Edge, KeyboardMode, Layer, LayerShell};
 
 use myna_platform::status_surface::BOTTOM_MARGIN;
@@ -32,8 +34,10 @@ pub fn supported() -> bool {
     gtk4_layer_shell::is_supported()
 }
 
-/// Make `hud`'s window a layer surface. Before it is realized: the role is
-/// chosen when the surface is created.
+/// Make `hud`'s window a layer surface, then realize it unmapped. The role
+/// has to be set first: it is chosen when the surface is created. Realizing
+/// now brings up GTK's renderer and the GPU driver while the HUD starts,
+/// rather than on the first map, as a dictation begins.
 pub fn install(hud: &Rc<HudWindow>) {
     let window = hud.window();
     window.init_layer_shell();
@@ -43,4 +47,5 @@ pub fn install(hud: &Rc<HudWindow>) {
     window.set_margin(Edge::Bottom, BOTTOM_MARGIN);
     window.set_keyboard_mode(KeyboardMode::None);
     window.set_exclusive_zone(0);
+    WidgetExt::realize(window);
 }
