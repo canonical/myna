@@ -249,6 +249,24 @@ unboosted choice (`_decode_sequence`, `rerank(rival=True)`):
   "done" -> "Dene", "like" -> "Lige") for no recall: not shipped, the
   five-letter floor stays.
 
+## A keyword heard as split words (2026-10-29)
+
+Parakeet writes "PulseAudio" as "pulse audio" (and "Pulse Audio"): the right
+letters across a word boundary, which neither the automaton (no boundary in
+a keyword's spelling) nor a word-at-a-time correction can reach. `correct`
+now joins two or three adjacent words whose letters, folded, are exactly a
+listed keyword; punctuation may only open the first and close the last.
+
+| run | recall | WER | false hits |
+|---|---|---|---|
+| PulseAudio/PipeWire clips (36, 6 voices) | 7 -> 45/48 | - | - |
+| frozen set, batch | 78.0 -> 78.3% | 3.19 -> 3.16 | 4/852 = |
+| ordinary slice + 100-list | 7/7 = | 1.42 = | 2/8294 = |
+| Spanish ordinary + 100-list | - | 2.83 = | 0/7996 = |
+
+The 3 left are the French voice's recognition failures ("PLL's audio", a
+sentence decoded as French), not split words.
+
 ## Spanish keyword tier (FLEURS es_419, 2026-10-13)
 
 `download-corpus --preset fleurs-keywords:es_419` (frozen set

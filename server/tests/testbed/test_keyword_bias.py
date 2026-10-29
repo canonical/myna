@@ -270,5 +270,34 @@ def test_a_phrase_keyword_is_not_a_correction_target():
     assert _correct(["Siobhan", "New York"], (" Yorke", 0.1))[0] == [" Yorke"]
 
 
+def test_words_that_spell_a_keyword_together_become_it():
+    assert _correct(
+        ["Siobhan", "PulseAudio"], (" pulse", 0.99), (" audio", 0.99), (" is", 0.99)
+    ) == (
+        [" PulseAudio", " is"],
+        pytest.approx([0.0, 0.2]),
+    )
+
+
+def test_a_joined_keyword_keeps_the_last_words_punctuation():
+    pieces = [(" the", 0.99), (" Pulse", 0.99), (" Audio", 0.99), (".", 0.99)]
+    assert _correct(["Siobhan", "PulseAudio"], *pieces)[0] == [" the", " PulseAudio."]
+
+
+def test_three_words_may_spell_a_keyword():
+    pieces = [(" test", 0.99), (" fling", 0.99), (" er", 0.99)]
+    assert _correct(["Siobhan", "Testflinger"], *pieces)[0] == [" Testflinger"]
+
+
+def test_punctuation_between_words_keeps_them_apart():
+    pieces = [(" pulse", 0.99), (",", 0.99), (" audio", 0.99)]
+    assert _correct(["Siobhan", "PulseAudio"], *pieces)[0] == [" pulse", ",", " audio"]
+
+
+def test_words_spelling_more_than_a_keyword_are_left_alone():
+    pieces = [(" pulse", 0.99), (" audios", 0.99)]
+    assert _correct(["Siobhan", "PulseAudio"], *pieces)[0] == [" pulse", " audios"]
+
+
 def test_a_word_with_no_letters_is_left_alone():
     assert _correct(["Siobhan"], (" 42", 0.1))[0] == [" 42"]

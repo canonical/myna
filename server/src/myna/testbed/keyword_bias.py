@@ -12,8 +12,9 @@ that commits to the keyword earns most. The bonus only re-ranks non-blank
 tokens: the decoder calls `rerank` only when its own choice is not blank.
 
 After the decode, `correct` rewrites a word that is a keyword but for accents
-and case to the keyword as written, and an unsure word a near miss of one to
-it (murmure's post-correction, gated on the model's confidence).
+and case to the keyword as written, and so a run of words that spell one
+together, and an unsure word a near miss of one to it (murmure's
+post-correction, gated on the model's confidence).
 """
 
 from __future__ import annotations
@@ -21,6 +22,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from collections.abc import Sequence
+from itertools import pairwise
 
 import numpy as np
 from numpy.typing import NDArray
@@ -42,6 +44,9 @@ CORRECT_BELOW_CONFIDENCE = 0.8
 # eight. Two edits on a shorter word reach ordinary words.
 _CORRECT_MIN_LETTERS = 5
 _CORRECT_TWO_EDITS_LETTERS = 8
+
+# The most words a keyword may be heard split into.
+_JOIN_WORDS = 3
 
 _WORD = re.compile(r"(\s*)(\W*?)([^\W\d_]+(?:'[^\W\d_]+)*)(\W*)", re.DOTALL)
 
@@ -171,23 +176,48 @@ class KeywordBias:
     ) -> tuple[list[str], list[float]]:
         """``tokens`` with each corrected word folded into one token, timed
         at its first. ``confidences`` are the tokens' unboosted probabilities."""
+        starts = [i for i, token in enumerate(tokens) if i == 0 or token.startswith(" ")]
+        bounds = list(pairwise([*starts, len(tokens)]))
+        words = ["".join(tokens[a:b]) for a, b in bounds]
         out_tokens: list[str] = []
         out_times: list[float] = []
-        start = 0
-        while start < len(tokens):
-            end = start + 1
-            while end < len(tokens) and not tokens[end].startswith(" "):
-                end += 1
-            word = "".join(tokens[start:end])
-            replaced = self._corrected(word, min(confidences[start:end]))
+        i = 0
+        while i < len(words):
+            a, b = bounds[i]
+            span, replaced = 1, None
+            for n in (_JOIN_WORDS, 2):
+                replaced = self._joined(words[i : i + n]) if i + n <= len(words) else None
+                if replaced is not None:
+                    span = n
+                    break
             if replaced is None:
-                out_tokens += tokens[start:end]
-                out_times += timestamps[start:end]
+                replaced = self._corrected(words[i], min(confidences[a:b]))
+            if replaced is None:
+                out_tokens += tokens[a:b]
+                out_times += timestamps[a:b]
             else:
                 out_tokens.append(replaced)
-                out_times.append(timestamps[start])
-            start = end
+                out_times.append(timestamps[a])
+            i += span
         return out_tokens, out_times
+
+    def _joined(self, words: list[str]) -> str | None:
+        """``words`` as the one keyword their letters spell together: the
+        decoder wrote "pulse audio" for "PulseAudio". Only the first may open
+        with punctuation and only the last close with it."""
+        matches = [_WORD.fullmatch(word) for word in words]
+        if not all(matches):
+            return None
+        parts = [match.groups() for match in matches if match]
+        if any(part[1] for part in parts[1:]) or any(part[3] for part in parts[:-1]):
+            return None
+        keyword = self._spellings.get("".join(_fold(part[2]) for part in parts))
+        if keyword is None:
+            return None
+        space, before, core, _ = parts[0]
+        if keyword.islower() and core[0].isupper():
+            keyword = keyword[0].upper() + keyword[1:]
+        return space + before + keyword + parts[-1][3]
 
     def _corrected(self, word: str, confidence: float) -> str | None:
         match = _WORD.fullmatch(word)
