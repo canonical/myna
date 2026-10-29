@@ -1,3 +1,20 @@
+myna-config (0.3.1-0ubuntu1) tenacious; urgency=medium
+
+  * Teach Myna your words: add names and terms to the vocabulary in
+    Myna Settings' Model tab, and the Parakeet model is far more likely
+    to write them the way you did (#1). Whisper and FunASR do not use
+    it yet.
+  * Switching engine or model no longer leaves the old one's files on
+    disk (#61).
+  * Typing on Plasma Wayland keeps your keyboard layout during a
+    dictation (#4).
+  * Setting up Myna on Xfce and Plasma no longer stops at the indicator
+    step until the next login (#79).
+  * On Plasma with software rendering, the first dictation no longer
+    stalls while the pill starts.
+
+ -- Charles <charles05@canonical.com>  Thu, 29 Oct 2026 14:55:35 +0000
+
 myna-config (0.3.0-0ubuntu1) stonking; urgency=medium
 
   * KDE Plasma 6 is supported. Myna Settings sets up IBus as KWin's
