@@ -1126,7 +1126,7 @@ def test_cli_wires_the_device_and_the_candidate_names_it():
 # duration head always says "advance one frame", so a test reads as the
 # token race at each frame.
 
-_KW_VOCAB = [" the", " cat", " Si", "ob", "han", "a", "x", "<blk>"]
+_KW_VOCAB = [" the", " cat", " Si", "ob", "han", "a", "x", " S", "i", "<blk>"]
 _KW_BLANK = len(_KW_VOCAB) - 1
 _KW = {token: i for i, token in enumerate(_KW_VOCAB)}
 
@@ -1215,6 +1215,19 @@ def test_the_rollback_returns_to_the_first_boosted_token():
 def test_a_match_the_model_chose_itself_is_not_rolled_back():
     frames = [{" Si": 5.0}, {" cat": 40.0, "ob": 0.0}]
     assert _decode(frames, ["Siobhan"]) == ([" Si", " cat"], pytest.approx([0.0, 0.08]))
+
+
+def test_a_match_the_model_started_that_breaks_tries_a_longer_piece():
+    # " S" is the model's own start, boosted past " Si"; " S" then breaks, so
+    # the frame is decided again without it, and " Si" goes on to complete.
+    frames = [{" S": 5.0, " Si": 1.0}, {"x": 5.0, "i": 0.0, "ob": 0.0}, {"a": 5.0, "han": 0.0}]
+    assert _decode(frames)[0] == [" S", "x", "a"]
+    assert _decode(frames, ["Siobhan"])[0] == [" Si", "ob", "han"]
+
+
+def test_a_longer_piece_that_breaks_too_leaves_the_models_own_choice():
+    frames = [{" S": 5.0, " Si": 1.0}, {"x": 5.0, "i": 0.0, "ob": 0.0}, {"a": 40.0, "han": 0.0}]
+    assert _decode(frames, ["Siobhan"]) == _decode(frames)
 
 
 def test_a_rolled_back_frame_may_start_a_fresh_boost_later():
@@ -1308,8 +1321,8 @@ def test_the_random_script_does_try_the_keyword():
     seen = []
     real_rerank = KeywordBias.rerank
 
-    def rerank(self, state, logits, token):
-        chosen = real_rerank(self, state, logits, token)
+    def rerank(self, state, logits, token, **kwargs):
+        chosen = real_rerank(self, state, logits, token, **kwargs)
         seen.append(chosen != token)
         return chosen
 

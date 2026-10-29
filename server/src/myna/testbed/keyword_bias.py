@@ -141,11 +141,16 @@ class KeywordBias:
             offer = self._offers[state] = (ids, self._bonus[ids])
         return offer
 
-    def rerank(self, state: int, logits: NDArray[np.float32], token: int) -> int:
+    def rerank(
+        self, state: int, logits: NDArray[np.float32], token: int, *, rival: bool = False
+    ) -> int:
         """``token`` (the decoder's non-blank argmax over ``logits``), or the
-        candidate whose boosted logit strictly beats it."""
+        candidate whose boosted logit strictly beats it. A ``rival`` is never
+        ``token`` itself."""
         ids, bonus = self._offer(state)
         scores = logits[ids] + bonus
+        if rival:
+            scores = np.where(ids == token, -np.inf, scores)
         best = int(np.argmax(scores))
         return int(ids[best]) if scores[best] > logits[token] else token
 

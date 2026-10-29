@@ -217,6 +217,38 @@ unless noted:
   English keywords only "Erdoğan" and "Chişinău" use a letter the
   vocabulary lacks, and every Portuguese letter is in it.
 
+## A match the model starts itself rewinds too (2026-10-29)
+
+"Myna" sent alone, 72 Kokoro clips (9 voices, 8 sentences, the word as
+/ˈmaɪnə/), recall 0/72 off and 6/72 on. The decoder picked a lone " M",
+which as the keyword's first piece also took its bonus and outranked " My";
+the next frame went "ina", "yn" could not catch up, and no rewind existed for
+a match the model chose. Now such a match rewinds once on breaking, and the
+frame is decided again among the other pieces against the model's
+unboosted choice (`_decode_sequence`, `rerank(rival=True)`):
+
+| run | recall | WER | false hits |
+|---|---|---|---|
+| Myna clips, batch | 6 -> 21/72 | 14.40 -> 11.32 | - |
+| Myna clips, streaming (snap settings) | 6 -> 21/72 | - | - |
+| frozen set, batch | 74.3 -> 78.0% | 3.36 -> 3.19 | 3 -> 4/852 |
+| frozen set, streaming (snap settings) | 74.0 -> 77.7% | 3.39 -> 3.22 | 3 -> 4/852 |
+| ordinary slice + 100-list | 7/7 = | 1.42 = | 2/8294 = |
+| Spanish keyword clips | 52.9 -> 53.6% | 6.27 -> 6.21 | 0/597 = |
+| Spanish ordinary + 100-list | 3/4 = | 2.83 = | 0/7996 = |
+
+- The new frozen "false hit" is "Newsome" for a spoken "Newsome's" (the
+  baseline wrote "Newsom's"); 11 frozen clips gained, none lost. RTF 0.0214
+  -> 0.0217.
+- What stays missed is mostly homophones: "minor", "miner" and "mine" are
+  /ˈmaɪnə(r)/, and the British voice wrote one of them on 7 of 8 clips. No
+  acoustic bias can tell those apart. The rest is "Mina": after " My" the
+  next frame wants a word end, the vowel already spent.
+- Correcting four-letter words one edit away (for "Mina") took the Myna
+  clips to 30/72 but the frozen false hits to 7/852 ("eyes" -> "ewes",
+  "done" -> "Dene", "like" -> "Lige") for no recall: not shipped, the
+  five-letter floor stays.
+
 ## Spanish keyword tier (FLEURS es_419, 2026-10-13)
 
 `download-corpus --preset fleurs-keywords:es_419` (frozen set

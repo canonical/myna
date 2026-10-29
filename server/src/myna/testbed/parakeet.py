@@ -442,7 +442,9 @@ class _Unbiased:
     """The decode's matcher for a session without keywords: keeps the
     model's choice, and no match ever starts."""
 
-    def rerank(self, state: int, logits: NDArray[np.float32], token: int) -> int:
+    def rerank(
+        self, state: int, logits: NDArray[np.float32], token: int, *, rival: bool = False
+    ) -> int:
         return token
 
     def advance(self, state: int, token: int) -> tuple[int, bool]:
@@ -457,8 +459,9 @@ _UNBIASED = _Unbiased()
 
 @dataclass
 class _Rewind:
-    """Where `_decode_sequence` resumes when a boosted match comes to nothing:
-    the loop state just before its first boosted token."""
+    """Where `_decode_sequence` resumes when a match comes to nothing: the
+    loop state just before its first token. ``own`` when the model chose
+    that token itself."""
 
     t: int
     emitted_at_frame: int
@@ -466,6 +469,7 @@ class _Rewind:
     state: int
     n_tokens: int
     decoder_state: tuple[NDArray[np.float32], NDArray[np.float32]]
+    own: bool = False
 
 
 class _ParakeetOnnx:
@@ -675,7 +679,10 @@ class _ParakeetOnnx:
         completes. If it breaks first, or the audio ends inside it, the decode
         rewinds to the first boosted token and takes the model's own choice
         there: a wrong guess costs the joint calls since, not the transcript.
-        The duration head is read as it comes: it is a separate head, not
+        A match the model started itself rewinds too, once, to try the best
+        other keyword piece there against its unboosted choice: a lone " M"
+        loses "Myna" when the next frame goes "ina", where " My" goes on to
+        "na". The duration head is read as it comes: it is a separate head, not
         conditioned on the token chosen. Each emitted token's probability
         before the bonus is kept for ``bias.correct``, which the result passes
         through. Without ``bias`` no match ever starts, so nothing rewinds.
@@ -690,7 +697,7 @@ class _ParakeetOnnx:
         prev_token = self._blank_idx
         state = ROOT
         rewind: _Rewind | None = None
-        unbiased = False
+        unbiased = rival = False
         with _zone("decode_sequence"):
             while t < encodings_len or rewind is not None:
                 broken = t >= encodings_len
@@ -701,8 +708,14 @@ class _ParakeetOnnx:
                     token = int(np.argmax(vocab_logits))
                     fresh = False
                     if token != self._blank_idx and not unbiased:
-                        chosen = matcher.rerank(state, vocab_logits, token)
-                        if chosen != token and rewind is None:
+                        chosen = matcher.rerank(state, vocab_logits, token, rival=rival)
+                        starts = (
+                            chosen == token
+                            and not rival
+                            and state == ROOT
+                            and matcher.advance(state, token)[1]
+                        )
+                        if (chosen != token or starts) and rewind is None:
                             rewind = _Rewind(
                                 t,
                                 emitted_at_frame,
@@ -710,10 +723,11 @@ class _ParakeetOnnx:
                                 state,
                                 len(tokens),
                                 (buffers.state_in[0].copy(), buffers.state_in[1].copy()),
+                                own=starts,
                             )
                             fresh = True
                         token = chosen
-                    unbiased = False
+                    unbiased = rival = False
                     if token != self._blank_idx:
                         after, extended = matcher.advance(state, token)
                         broken = rewind is not None and not (extended or fresh)
@@ -745,7 +759,8 @@ class _ParakeetOnnx:
                     del confidences[rewind.n_tokens :]
                     buffers.state_in[0][...] = rewind.decoder_state[0]
                     buffers.state_in[1][...] = rewind.decoder_state[1]
-                    rewind, unbiased = None, True
+                    rival, unbiased = rewind.own, not rewind.own
+                    rewind = None
         if bias is None:
             return tokens, timestamps
         return bias.correct(tokens, timestamps, confidences)

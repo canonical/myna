@@ -208,6 +208,15 @@ def test_the_argmax_itself_is_kept_when_it_is_the_best_candidate():
     assert bias.rerank(ROOT, logits, ID[" Sio"]) == ID[" Sio"]
 
 
+def test_a_rival_beats_the_argmax_unboosted_or_leaves_it():
+    bias = _bias("Siobhan", boost=1.0)
+    close = _logits(**{" Sio": 9.0, " Si": 8.0})
+    assert bias.rerank(ROOT, close, ID[" Sio"]) == ID[" Sio"]
+    assert bias.rerank(ROOT, close, ID[" Sio"], rival=True) == ID[" Si"]
+    far = _logits(**{" Sio": 9.0, " Si": 6.0})
+    assert bias.rerank(ROOT, far, ID[" Sio"], rival=True) == ID[" Sio"]
+
+
 def _correct(keywords, *pieces):
     """Run ``correct`` over (token, confidence) pairs; tokens time 0.1 s apart."""
     tokens = [token for token, _ in pieces]
