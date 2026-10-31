@@ -102,6 +102,7 @@ impl Poke {
         let at = Instant::now();
         let mut last = self.last.lock().unwrap_or_else(|e| e.into_inner());
         let gap = last.map(|before| at.duration_since(before));
+        myna_core::dbg_log!("trigger", "poke, {gap:?} after the one before");
         *last = Some(at);
         let _ = self.tx.try_send(Arrival { at, gap });
     }
