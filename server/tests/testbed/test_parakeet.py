@@ -1165,6 +1165,16 @@ def _decode(frames, keywords=()):
     return model._decode_sequence(encodings, len(encodings), bias=bias)
 
 
+def test_a_decode_without_keywords_runs_the_joint_once_per_frame():
+    frames = [{" the": 5.0}, {" cat": 5.0}, {"a": 5.0}, {"x": 5.0}]
+    model, encodings = _scripted_model(*frames)
+    calls = []
+    run = model._decoder_joint.run
+    model._decoder_joint.run = lambda names, feeds: calls.append(1) or run(names, feeds)
+    assert model._decode_sequence(encodings, len(encodings))[0] == [" the", " cat", "a", "x"]
+    assert len(calls) == len(frames)
+
+
 def test_a_boosted_keyword_that_completes_is_kept():
     frames = [{" the": 5.0, " Si": 0.0}, {"a": 5.0, "ob": 0.0}, {"x": 5.0, "han": 0.0}]
     assert _decode(frames) == ([" the", "a", "x"], [0.0, 0.08, 0.16])

@@ -448,7 +448,7 @@ class _Unbiased:
         return token
 
     def advance(self, state: int, token: int) -> tuple[int, bool]:
-        return ROOT, True
+        return ROOT, False
 
     def complete(self, state: int) -> bool:
         return False
