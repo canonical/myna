@@ -75,7 +75,8 @@ for SUITE in "${SUITES[@]}"; do
     fi
     snapshots "$VM" | grep -qx "$SNAP" \
         || { echo "$VM lacks snapshot $SNAP; run vm/provision.sh --release $REL --desktop $E2E_DESKTOP" >&2; exit 1; }
-    ARTIFACTS=$RUN_DIR/artifacts/$TAG-$SUITE
+    ITER=$(( ${ITER:-0} + 1 ))
+    ARTIFACTS=$RUN_DIR/artifacts/$TAG-$SUITE-$ITER
     rm -rf "$ARTIFACTS" "$RUN_DIR/artifacts/screenshots/$SUITE"; mkdir -p "$ARTIFACTS"
 
     echo "== $SUITE: from $VM/$SNAP"

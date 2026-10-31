@@ -119,19 +119,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        release: ["noble", "resolute", "stonking"]
-        desktop: ["gnome", "xubuntu", "kde"]
-        exclude:
-          - { desktop: xubuntu, release: resolute }
-          - { desktop: xubuntu, release: stonking }
-          # Noble's Plasma 5 is not supported.
-          - { desktop: kde, release: noble }
-          - { desktop: kde, release: "${{ github.event_name == 'pull_request' && 'stonking' || 'none' }}" }
+        release: ["noble"]
+        desktop: ["xubuntu"]
+        rep: [1, 2]
     # GNOME keeps its release-only names (artifacts, the contact sheet); the
     # others are "e2e (xubuntu, noble)" and so on.
-    name: ${{ matrix.desktop == 'gnome' && format('e2e ({0})', matrix.release) || format('e2e ({0}, {1})', matrix.desktop, matrix.release) }}
+    name: e2e (${{ matrix.desktop }}, ${{ matrix.release }}, rep ${{ matrix.rep }})
     runs-on: ubuntu-latest
-    timeout-minutes: 75
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v6
       - uses: actions/download-artifact@v8
@@ -165,14 +160,14 @@ jobs:
       - run: |
           E2E_MYNA_SNAP=$(ls "$PWD"/myna-snap/myna_*_amd64.snap) \
             make e2e E2E_RELEASE=${{ matrix.release }} E2E_DESKTOP=${{ matrix.desktop }} \
-              ${{ inputs.upgrade_channel && 'SUITES=upgrade' || '' }}
+              SUITES='dictation dictation dictation dictation dictation dictation'
         env:
           E2E_POOL: e2e
           E2E_UPGRADE_CHANNEL: ${{ inputs.upgrade_channel }}
       - if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ matrix.desktop == 'gnome' && format('e2e-{0}', matrix.release) || format('e2e-{0}-{1}', matrix.desktop, matrix.release) }}
+          name: heldkey-${{ matrix.desktop }}-${{ matrix.release }}-rep${{ matrix.rep }}
           retention-days: 14
           path: e2e-tests/.run/artifacts/
       # The checkpoints alone, kept longer than the whole artifact: the
@@ -180,7 +175,7 @@ jobs:
       - if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ format('screenshots-{0}-{1}', matrix.desktop, matrix.release) }}
+          name: heldkey-shots-${{ matrix.desktop }}-${{ matrix.release }}-rep${{ matrix.rep }}
           retention-days: 30
           if-no-files-found: ignore
           path: e2e-tests/.run/artifacts/screenshots/

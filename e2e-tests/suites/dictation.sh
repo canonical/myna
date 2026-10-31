@@ -73,6 +73,7 @@ assert_on "the virtual microphone is made the default source" \
     "$LIB; mic_make_default"
 assert_on "precondition: the virtual microphone is the default source" \
     "$LIB; default_source_is myna-e2e-mic"
+assert_dict "bench: the daemon logs at the debug tier" 'daemon_debug on'
 dict 'mic_start myna-shot/speech.wav'
 assert_dict "the virtual keyboard is up" 'keys_start'
 # GNOME starts in the Overview, where a new window is not focused.
