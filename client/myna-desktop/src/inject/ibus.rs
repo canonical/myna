@@ -818,8 +818,15 @@ impl EngineState {
         let blip = self.next_blip.fetch_add(1, Ordering::Relaxed);
         let mut began = false;
         self.lease.send_modify(|lease| {
+            let before = lease.binding.clone();
             lease.focus(change, blip);
             began = lease.away() == Some(blip);
+            myna_core::dbg_log!(
+                "inject",
+                "lease {}: {change:?} (blip {blip}): {before:?} -> {:?}",
+                lease.id,
+                lease.binding
+            );
         });
         if !began {
             return;
@@ -873,6 +880,13 @@ impl EngineState {
                         }
                     ));
             if expired {
+                myna_core::dbg_log!(
+                    "inject",
+                    "lease {}: blip {blip} expired ({:?}, last activation {:?} ago)",
+                    lease.id,
+                    lease.binding,
+                    lease.activated_at.map(|at| at.elapsed())
+                );
                 lease.binding = Binding::Lost;
             }
             expired
