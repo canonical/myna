@@ -64,20 +64,8 @@ if [ -z "$BINARY" ]; then
     done
 fi
 
-rc=0
-for SUITE in "${SUITES[@]}"; do
-    FILE=$HERE/suites/$SUITE.sh
-    SNAP=$(sed -n 's/^# snapshot: //p' "$FILE")
-    NEEDS=$(sed -n 's/^# requires: //p' "$FILE")
-    if [ -n "$NEEDS" ] && [ -z "${!NEEDS:-}" ]; then
-        echo "== $SUITE: skipped, $NEEDS is not set"
-        continue
-    fi
-    snapshots "$VM" | grep -qx "$SNAP" \
-        || { echo "$VM lacks snapshot $SNAP; run vm/provision.sh --release $REL --desktop $E2E_DESKTOP" >&2; exit 1; }
-    ARTIFACTS=$RUN_DIR/artifacts/$TAG-$SUITE
-    rm -rf "$ARTIFACTS" "$RUN_DIR/artifacts/screenshots/$SUITE"; mkdir -p "$ARTIFACTS"
-
+# One run of $SUITE from $SNAP into $ARTIFACTS; sets src, and rc on denials.
+attempt() {
     echo "== $SUITE: from $VM/$SNAP"
     RUN=$VM-run
     lxc delete --force "$RUN" 2>/dev/null || true
@@ -98,9 +86,9 @@ for SUITE in "${SUITES[@]}"; do
         # and wait for the HUD to go. The service comes back after.
         # shellcheck disable=SC2016 # expands in the VM
         on_vm "$RUN" 'systemctl --user stop snap.myna.myna.service
-pkill -x myna-hud-host || true
-for _ in $(seq 40); do pgrep -x myna-hud >/dev/null || exit 0; pkill -x myna-hud; sleep 0.5; done
-echo "the HUD did not stop" >&2; exit 1'
+    pkill -x myna-hud-host || true
+    for _ in $(seq 40); do pgrep -x myna-hud >/dev/null || exit 0; pkill -x myna-hud; sleep 0.5; done
+    echo "the HUD did not stop" >&2; exit 1'
         lxc exec "$RUN" -- snap install --dangerous /root/myna.snap
         on_vm "$RUN" 'systemctl --user start snap.myna.myna.service'
     fi
@@ -126,7 +114,6 @@ echo "the HUD did not stop" >&2; exit 1'
     VM=$RUN REL=$REL DESKTOP=$E2E_DESKTOP bash "$FILE" || src=$?
     echo "== $SUITE rc=$src"
     kill "$sampler" "$vcpus"
-    [ $src = 0 ] || rc=1
 
     lxc file pull -r "$RUN/home/ubuntu/myna-shot/out" "$ARTIFACTS/" || true
     if [ -d "$ARTIFACTS/out/shots/$SUITE" ]; then
@@ -140,6 +127,34 @@ echo "the HUD did not stop" >&2; exit 1'
         echo "== $SUITE: AppArmor denials"
         rc=1
     fi
+}
+
+rc=0
+for SUITE in "${SUITES[@]}"; do
+    FILE=$HERE/suites/$SUITE.sh
+    SNAP=$(sed -n 's/^# snapshot: //p' "$FILE")
+    NEEDS=$(sed -n 's/^# requires: //p' "$FILE")
+    if [ -n "$NEEDS" ] && [ -z "${!NEEDS:-}" ]; then
+        echo "== $SUITE: skipped, $NEEDS is not set"
+        continue
+    fi
+    snapshots "$VM" | grep -qx "$SNAP" \
+        || { echo "$VM lacks snapshot $SNAP; run vm/provision.sh --release $REL --desktop $E2E_DESKTOP" >&2; exit 1; }
+    ARTIFACTS=$RUN_DIR/artifacts/$TAG-$SUITE
+    rm -rf "$ARTIFACTS" "$RUN_DIR/artifacts/screenshots/$SUITE"; mkdir -p "$ARTIFACTS"
+
+    attempt
+    # A CI runner is virtual: its host now and then stops the vCPUs for tens
+    # of milliseconds, which no priority inside the guest can win back, and
+    # capture reports the audio lost. A suite that failed with every loss
+    # just after such a stall (tools/vm-stalls.py) runs once more.
+    if [ "$src" != 0 ] && python3 -I "$HERE/tools/vm-stalls.py" "$ARTIFACTS/journal.log" "$ARTIFACTS/out/stalls-guest.log"; then
+        echo "== $SUITE: every capture loss followed a VM stall; once more"
+        rm -rf "$ARTIFACTS-stalled" "$RUN_DIR/artifacts/screenshots/$SUITE"
+        mv "$ARTIFACTS" "$ARTIFACTS-stalled"; mkdir -p "$ARTIFACTS"
+        attempt
+    fi
+    [ "$src" = 0 ] || rc=1
 done
 echo "== artifacts in $RUN_DIR/artifacts"
 exit $rc

@@ -73,7 +73,13 @@ coarse for a 40-200 ms loss, so `tools/stall-probe.py` also logs, to
 `out/stalls-guest.log`, each wakeup a FIFO 99 thread in the VM got over
 15 ms late, and to `stalls-host.log` each 10 ms in which the host kept a vCPU
 thread runnable but waiting more than 5 ms. A guest stall with no host wait
-is the layer under the runner.
+is the layer under the runner. On CI such stalls (17-300 ms, a few
+per dictation) matched host waits and preceded every capture loss measured,
+and neither the vCPU count, pinning, THP defrag nor renicing QEMU removed
+them: realtime behaviour on a virtual runner needs give. So a suite that
+failed with every loss right after a guest stall (`tools/vm-stalls.py`)
+runs once more, keeping the first attempt as `<suite>-stalled`; a loss with
+no stall before it fails the suite as before.
 Linger starts PipeWire before the login session, when RTKit grants nothing,
 so the same stage puts `ubuntu` in the `pipewire` group, whose rlimits
 PipeWire ships. The daemon is the store's
