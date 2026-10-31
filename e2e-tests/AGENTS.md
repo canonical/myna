@@ -68,7 +68,12 @@ SCHED_OTHER graph drops cycles, which the daemon reports as lost capture.
 Every suite's artifacts carry `out/cpu-guest.log` and `cpu-host.log`
 (`tools/cpu-sample.sh`): busy, steal and CPU pressure a second, in the VM and
 on the host. Lost capture with steal on the guest is the hypervisor taking the
-vCPUs, which no realtime priority inside the VM can win back.
+vCPUs, which no realtime priority inside the VM can win back. A second is too
+coarse for a 40-200 ms loss, so `tools/stall-probe.py` also logs, to
+`out/stalls-guest.log`, each wakeup a FIFO 99 thread in the VM got over
+15 ms late, and to `stalls-host.log` each 10 ms in which the host kept a vCPU
+thread runnable but waiting more than 5 ms. A guest stall with no host wait
+is the layer under the runner.
 Linger starts PipeWire before the login session, when RTKit grants nothing,
 so the same stage puts `ubuntu` in the `pipewire` group, whose rlimits
 PipeWire ships. The daemon is the store's
