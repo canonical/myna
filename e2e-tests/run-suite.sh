@@ -115,11 +115,15 @@ echo "the HUD did not stop" >&2; exit 1'
     on_vm "$RUN" 'mkdir -p myna-shot/out'
     lxc exec "$RUN" -- setsid -f /home/ubuntu/myna-shot/cpu-sample.sh /home/ubuntu/myna-shot/out/cpu-guest.log
     "$HERE"/tools/cpu-sample.sh "$ARTIFACTS/cpu-host.log" & sampler=$!
+    # Stalls under a second: a guest thread that nothing in the guest can
+    # preempt, against the time the host kept each vCPU waiting.
+    lxc exec "$RUN" -- setsid -f chrt -f 99 python3 -I /home/ubuntu/myna-shot/stall-probe.py gaps /home/ubuntu/myna-shot/out/stalls-guest.log
+    python3 -I "$HERE"/tools/stall-probe.py vcpus "$ARTIFACTS/stalls-host.log" & vcpus=$!
 
     src=0
     VM=$RUN REL=$REL DESKTOP=$E2E_DESKTOP bash "$FILE" || src=$?
     echo "== $SUITE rc=$src"
-    kill "$sampler"
+    kill "$sampler" "$vcpus"
     [ $src = 0 ] || rc=1
 
     lxc file pull -r "$RUN/home/ubuntu/myna-shot/out" "$ARTIFACTS/" || true
