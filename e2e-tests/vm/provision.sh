@@ -79,6 +79,7 @@ stage() {
     [ -z "$prepare" ] || "$prepare"
     on_vm "$VM" "set -e; $script"
     wait_snapd_idle "$VM"
+    snapd_cache_save "$VM"
     stop_vm "$VM"
     lxc snapshot "$VM" "$name"
 }

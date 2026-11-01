@@ -77,6 +77,7 @@ attempt() {
     # after it would replace the snap under test.
     lxc exec "$RUN" -- snap refresh --hold >/dev/null
     wait_snapd_idle "$RUN"
+    [ "$SNAP" != bare ] || snapd_cache_seed "$RUN"
     # Not over a machine without myna (`bare`): onboarding installs the store's.
     if [ -n "${E2E_MYNA_SNAP:-}" ] && ! grep -qx '# myna: store' "$FILE" \
         && lxc exec "$RUN" -- snap list myna >/dev/null 2>&1; then

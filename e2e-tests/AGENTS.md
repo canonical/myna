@@ -162,5 +162,11 @@ manual-test VM; it only ever copies the `installed` snapshot of an e2e VM.
   count too.
 - Snapshots are taken stopped. A suite that needs a new machine state gets a
   new provisioning stage, not setup in the suite.
+- Each provisioning stage ends by saving the VM's snapd download cache to
+  `.run/snapd-cache/` (blobs named by sha3-384, snapd's key), and every suite
+  from `bare` is seeded with it, so onboarding installs from the store
+  without fetching what provisioning already fetched. A new edge revision
+  misses and downloads as before. onboarding-full keeps each install change's
+  tasks in `out/install-tasks.txt`.
 - `tools/` descends from the prototypes in `~/myna-onboarding-stable/tools`;
   driver oddities there (`harness.md`) are measured toolkit behaviour.

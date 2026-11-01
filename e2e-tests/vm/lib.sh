@@ -131,6 +131,40 @@ done
 echo "snapd still busy" >&2; exit 1'
 }
 
+# The snaps a provisioning stage downloaded, kept on the host by sha3-384
+# (snapd's own cache key), so a suite from `bare` installs them without
+# fetching them again: onboarding-full otherwise re-downloads ~800 MB the
+# same job already fetched, and a slow store runs out its time.
+SNAPD_CACHE=$RUN_DIR/snapd-cache
+snapd_cache_save() {
+    local tmp f
+    mkdir -p "$SNAPD_CACHE"
+    tmp=$(mktemp -d "$RUN_DIR/snapd-cache-pull.XXXXXX")
+    if lxc file pull -r "$1/var/lib/snapd/cache" "$tmp/" 2>/dev/null; then
+        for f in "$tmp"/cache/*; do
+            [ ! -f "$f" ] || [ -e "$SNAPD_CACHE/${f##*/}" ] || mv "$f" "$SNAPD_CACHE/"
+        done
+    fi
+    rm -rf "$tmp"
+    echo "== snapd cache: $(find "$SNAPD_CACHE" -type f | wc -l) blobs, $(du -sh "$SNAPD_CACHE" | cut -f1)"
+}
+
+# Put the saved blobs in VM $1's snapd cache. snapd prunes unreferenced
+# entries, and its periodic cleanup drops even linked ones, so each blob is
+# also kept under /var/cache/e2e-blobs and relinked whenever it goes.
+snapd_cache_seed() {
+    [ -n "$(find "$SNAPD_CACHE" -type f 2>/dev/null | head -1)" ] || return 0
+    lxc exec "$1" -- mkdir -p /var/lib/snapd/cache /var/cache/e2e-blobs
+    lxc file push "$SNAPD_CACHE"/* "$1/var/cache/e2e-blobs/"
+    # shellcheck disable=SC2016 # expands in the VM
+    lxc exec "$1" -- sh -c 'setsid -f sh -c '\''while :; do
+    for f in /var/cache/e2e-blobs/*; do
+        [ -e "/var/lib/snapd/cache/${f##*/}" ] || ln "$f" /var/lib/snapd/cache/
+    done
+    sleep 1
+done'\'' </dev/null >/dev/null 2>&1'
+}
+
 # Shut down cleanly before a snapshot; a devel-series guest can outlast
 # LXD's default timeout, and then power-off is the lesser harm.
 stop_vm() { lxc stop --timeout 180 "$1" || lxc stop --force "$1"; }

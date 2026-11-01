@@ -23,8 +23,17 @@ shot --polkit allow --monitor "$P" \
     "burst:$P-install:5:900:How to dictate" \
     "waitfor:Done@$BTN" shot:$S/04-how-to-dictate.png \
     "click:Done@$BTN" \
-    "$(poll '! pgrep -x myna-config')" \
-    || { echo "onboarding run failed" >&2; exit 1; }
+    "$(poll '! pgrep -x myna-config')"
+ran=$?
+# Where an install's time went, task by task: a download, a snapd refresh.
+# shellcheck disable=SC2016 # expands in the VM
+on 'for id in $(snap changes | awk "/Install/ {print \$1}"); do
+    echo "== change $id"; snap tasks "$id"
+done > myna-shot/out/install-tasks.txt 2>&1
+# A seeded blob snapd installed from is linked into place: 3+ links, not 2.
+echo "== seeded blobs (links, size, sha3)" >> myna-shot/out/install-tasks.txt
+stat -c "%h %s %n" /var/cache/e2e-blobs/* >> myna-shot/out/install-tasks.txt 2>&1' || true
+[ "$ran" = 0 ] || { echo "onboarding run failed" >&2; exit 1; }
 
 assert_on "user-daemons flag on" \
     'sudo snap get system experimental.user-daemons | grep -q true'
