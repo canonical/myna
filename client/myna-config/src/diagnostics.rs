@@ -204,7 +204,7 @@ pub fn present_diagnostics(input: DiagnosticInput) -> DiagnosticReport {
         .map(performance_warnings)
         .unwrap_or_default();
     if let Some(InputReport::Levels(levels)) = input.daemon_report.as_ref().and_then(|r| r.input) {
-        warnings.extend(input_warning(levels));
+        warnings.extend(input_warnings(levels));
     }
     let (body, hanging) = align_fields(&render_body(&input, onboarding, &warnings));
     DiagnosticReport {
@@ -219,17 +219,36 @@ pub fn present_diagnostics(input: DiagnosticInput) -> DiagnosticReport {
 /// near -80 dBFS, issue #64's at -13.
 const OFFSET_WARNING_DB: i32 = -40;
 
-fn input_warning(levels: InputLevels) -> Option<Warning> {
-    (levels.offset_db >= OFFSET_WARNING_DB).then(|| Warning {
-        cause: format!(
-            "{} ({} dBFS)",
-            gettextrs::gettext("The microphone has a large DC offset"),
-            levels.offset_db
-        ),
-        remedy: gettextrs::gettext(
-            "It costs headroom and points to an audio driver fault. Try another input in the system sound settings.",
-        ),
-    })
+/// Below this SNR the models start losing words; the daemon warns at the
+/// same point (`MIN_SNR_DB` in myna-desktop's controller).
+const SNR_WARNING_DB: i32 = 10;
+
+fn input_warnings(levels: InputLevels) -> Vec<Warning> {
+    let mut warnings = Vec::new();
+    if levels.offset_db >= OFFSET_WARNING_DB {
+        warnings.push(Warning {
+            cause: format!(
+                "{} ({} dBFS)",
+                gettextrs::gettext("The microphone has a large DC offset"),
+                levels.offset_db
+            ),
+            remedy: gettextrs::gettext(
+                "It costs headroom and points to an audio driver fault. Try another input in the system sound settings.",
+            ),
+        });
+    }
+    if let Some(snr) = levels.snr_db.filter(|&snr| snr < SNR_WARNING_DB) {
+        warnings.push(Warning {
+            cause: format!(
+                "{} (SNR {snr} dB)",
+                gettextrs::gettext("Background noise was high in the last dictation"),
+            ),
+            remedy: gettextrs::gettext(
+                "Noise this close to the voice costs words. Move away from it or use a headset microphone.",
+            ),
+        });
+    }
+    warnings
 }
 
 fn performance_warnings(facts: &PerformanceFacts) -> Vec<Warning> {
@@ -780,8 +799,12 @@ fn input_summary(input: InputReport) -> String {
         Some(db) => format!("{} {db} dBFS", gettextrs::gettext("speech")),
         None => gettextrs::gettext("no speech heard"),
     };
+    let snr = levels
+        .snr_db
+        .map(|db| format!(", SNR {db} dB"))
+        .unwrap_or_default();
     format!(
-        "{} {} dBFS, {} {} dBFS, {speech}",
+        "{} {} dBFS, {} {} dBFS, {speech}{snr}",
         gettextrs::gettext("offset"),
         levels.offset_db,
         gettextrs::gettext("floor"),
@@ -1303,6 +1326,7 @@ mod tests {
                     offset_db: -82,
                     floor_db: -61,
                     speech_db: Some(-27),
+                    snr_db: Some(31),
                 })),
                 last_error: None,
             }),
@@ -1343,7 +1367,7 @@ mod tests {
         assert!(text.contains("3 chunks dropped this session"), "{text}");
         assert_eq!(
             field_value(&text, "Input"),
-            Some("offset -82 dBFS, floor -61 dBFS, speech -27 dBFS"),
+            Some("offset -82 dBFS, floor -61 dBFS, speech -27 dBFS, SNR 31 dB"),
             "{text}"
         );
         assert!(report.warnings().is_empty(), "{:?}", report.warnings());
@@ -1391,6 +1415,7 @@ mod tests {
                 offset_db,
                 floor_db: -60,
                 speech_db: None,
+                snr_db: None,
             })
         };
         let report = with_input(levels(-13));
@@ -1406,6 +1431,34 @@ mod tests {
         );
         assert_eq!(with_input(levels(-40)).warnings().len(), 1);
         assert!(with_input(levels(-41)).warnings().is_empty());
+    }
+
+    #[test]
+    fn a_noisy_last_dictation_is_a_warning() {
+        let levels = |snr_db| {
+            InputReport::Levels(InputLevels {
+                offset_db: -90,
+                floor_db: -40,
+                speech_db: Some(-3),
+                snr_db,
+            })
+        };
+        let report = with_input(levels(Some(6)));
+        assert_eq!(
+            field_value(&report.copy_text(), "Input"),
+            Some("offset -90 dBFS, floor -40 dBFS, speech -3 dBFS, SNR 6 dB")
+        );
+        assert_eq!(report.warnings().len(), 1);
+        assert!(
+            report.warnings()[0].cause.contains("(SNR 6 dB)"),
+            "{:?}",
+            report.warnings()
+        );
+        assert_eq!(with_input(levels(Some(9))).warnings().len(), 1);
+        assert!(with_input(levels(Some(10))).warnings().is_empty());
+        // A loud floor under loud speech, an AGC headset's, is not noise.
+        assert!(with_input(levels(Some(37))).warnings().is_empty());
+        assert!(with_input(levels(None)).warnings().is_empty());
     }
 
     #[test]

@@ -262,6 +262,9 @@ pub struct InputLevels {
     pub floor_db: i32,
     /// The loudest sustained voice; `None` when none was heard.
     pub speech_db: Option<i32>,
+    /// The speech-band SNR in whole dB; `None` when the session had too
+    /// little sound, or the daemon predates the property.
+    pub snr_db: Option<i32>,
 }
 
 /// What the daemon says about its input.
@@ -351,6 +354,9 @@ fn parse_daemon_report(all: &gio::glib::Variant) -> DaemonReport {
                     offset_db: dbfs(offset),
                     floor_db: dbfs(floor),
                     speech_db: (speech > 0.0).then(|| dbfs(speech)),
+                    snr_db: level("InputSnr")
+                        .filter(|snr| snr.is_finite())
+                        .map(|snr| snr.round() as i32),
                 })
             } else {
                 InputReport::NotYet
@@ -442,8 +448,29 @@ mod tests {
                 offset_db: -13,
                 floor_db: -60,
                 speech_db: None,
+                snr_db: None,
             }))
         );
+        let report = parse_daemon_report(&reply(&[
+            ("InputOffset", 0.0001f64.to_variant()),
+            ("InputNoiseFloor", 0.01f64.to_variant()),
+            ("InputSpeechLevel", 0.68f64.to_variant()),
+            ("InputSnr", 36.6f64.to_variant()),
+        ]));
+        let Some(InputReport::Levels(levels)) = report.input else {
+            panic!("levels expected: {:?}", report.input);
+        };
+        assert_eq!(levels.snr_db, Some(37));
+        let report = parse_daemon_report(&reply(&[
+            ("InputOffset", 0.0001f64.to_variant()),
+            ("InputNoiseFloor", 0.01f64.to_variant()),
+            ("InputSpeechLevel", 0.68f64.to_variant()),
+            ("InputSnr", f64::NAN.to_variant()),
+        ]));
+        let Some(InputReport::Levels(levels)) = report.input else {
+            panic!("levels expected: {:?}", report.input);
+        };
+        assert_eq!(levels.snr_db, None, "NaN is no estimate");
         let report = parse_daemon_report(&reply(&[
             ("InputOffset", f64::NAN.to_variant()),
             ("InputNoiseFloor", f64::NAN.to_variant()),
