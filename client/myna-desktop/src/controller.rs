@@ -260,33 +260,22 @@ pub enum Delivery {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum InputQuality {
     Ok,
-    /// The input's quietest moment is loud, or speech barely clears it:
-    /// broadband noise that degrades every model's transcript.
+    /// Noise sits close enough under the speech to cost the models words.
     Noisy,
 }
 
-/// A noise floor above this (linear full scale, -50 dBFS) is noisy on its
-/// own. A healthy headset sits near -80 dBFS; a laptop with its fan on near
-/// -55 dBFS. Prototype calibration, from the HUD meter's headset baseline.
-pub const NOISE_FLOOR_LIMIT: f32 = 0.003_16;
+/// Below this speech-band SNR the input is noisy: where every backend's WER
+/// has started to climb.
+pub const MIN_SNR_DB: f32 = 10.0;
 
-/// Speech must clear the floor by this ratio (15 dB) to count as clean.
-pub const MIN_SPEECH_TO_NOISE: f32 = 5.6;
-
-/// Classify a session's input from its final stats snapshot.
+/// Classify a session's input from its final stats snapshot. No estimate
+/// (under half a second of sound, or a silent input) is nothing to judge:
+/// the empty transcript already says "No speech detected".
 pub fn input_quality(stats: &AudioStats) -> InputQuality {
-    if stats.noise_floor <= 0.0 {
-        // Digital silence: a muted or absent input, which the empty
-        // transcript already reports as "No speech detected".
-        return InputQuality::Ok;
+    match stats.snr_db {
+        Some(snr) if snr < MIN_SNR_DB => InputQuality::Noisy,
+        _ => InputQuality::Ok,
     }
-    if stats.noise_floor > NOISE_FLOOR_LIMIT {
-        return InputQuality::Noisy;
-    }
-    if stats.speech_level > 0.0 && stats.speech_level / stats.noise_floor < MIN_SPEECH_TO_NOISE {
-        return InputQuality::Noisy;
-    }
-    InputQuality::Ok
 }
 
 /// The verdict for a session: `Ok` where there was no capture to judge, since
@@ -789,6 +778,7 @@ impl DesktopController {
                     offset: heard.offset,
                     noise_floor: heard.noise_floor,
                     speech_level: heard.speech_level,
+                    snr_db: heard.snr_db,
                 })
                 .await;
         }
@@ -1492,48 +1482,27 @@ mod tests {
 
     // ── Input quality ─────────────────────────────────────────────────────────
 
-    fn stats(noise_floor: f32, speech_level: f32) -> AudioStats {
+    fn stats(snr_db: Option<f32>) -> AudioStats {
         AudioStats {
-            noise_floor,
-            speech_level,
+            snr_db,
             ..Default::default()
         }
     }
 
     #[test]
-    fn a_quiet_input_with_clear_speech_is_ok() {
-        // The HUD meter's headset baseline: -80 dBFS floor, -41 dBFS speech.
-        assert_eq!(input_quality(&stats(1e-4, 0.009)), InputQuality::Ok);
-        // A quiet room where nothing was said: nothing to judge.
-        assert_eq!(input_quality(&stats(1e-4, 0.0)), InputQuality::Ok);
-    }
-
-    #[test]
-    fn digital_silence_is_not_noise() {
-        assert_eq!(input_quality(&stats(0.0, 0.0)), InputQuality::Ok);
-        assert_eq!(input_quality(&stats(-1.0, 0.5)), InputQuality::Ok);
-    }
-
-    #[test]
-    fn a_loud_floor_is_noisy_on_its_own() {
-        assert_eq!(input_quality(&stats(0.004, 0.0)), InputQuality::Noisy);
-        assert_eq!(input_quality(&stats(0.004, 0.5)), InputQuality::Noisy);
+    fn noise_close_under_the_speech_is_noisy() {
+        assert_eq!(input_quality(&stats(Some(4.0))), InputQuality::Noisy);
         assert_eq!(
-            input_quality(&stats(NOISE_FLOOR_LIMIT, 0.5)),
-            InputQuality::Ok,
-            "the limit itself is still fine"
+            input_quality(&stats(Some(MIN_SNR_DB - 0.01))),
+            InputQuality::Noisy
         );
+        assert_eq!(input_quality(&stats(Some(MIN_SNR_DB))), InputQuality::Ok);
+        assert_eq!(input_quality(&stats(Some(37.0))), InputQuality::Ok);
     }
 
     #[test]
-    fn speech_barely_above_the_floor_is_noisy() {
-        assert_eq!(input_quality(&stats(0.002, 0.005)), InputQuality::Noisy);
-        assert_eq!(input_quality(&stats(0.002, 0.0113)), InputQuality::Ok);
-        // Exactly 15 dB is clean (powers of two keep the ratio exact).
-        assert_eq!(
-            input_quality(&stats(0.001_953_125, 0.010_937_5)),
-            InputQuality::Ok
-        );
+    fn no_estimate_is_nothing_to_judge() {
+        assert_eq!(input_quality(&stats(None)), InputQuality::Ok);
     }
 
     // ── Auto-stop ─────────────────────────────────────────────────────────────

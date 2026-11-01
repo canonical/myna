@@ -220,6 +220,7 @@ impl Indicator for DbusIndicator {
             ("InputOffset", levels.offset),
             ("InputNoiseFloor", levels.noise_floor),
             ("InputSpeechLevel", levels.speech_level),
+            ("InputSnr", levels.snr_db.unwrap_or(f32::NAN)),
         ] {
             bus.set_property(name, PropertyValue::F64(value.into()))
                 .await;
@@ -258,7 +259,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn input_levels_are_published_as_three_doubles() {
+    async fn input_levels_are_published_as_doubles() {
         let fake = FakeBus::new();
         let service = crate::dbus::DictationService::new(fake.clone());
         let mut indicator = DbusIndicator::new(service.bus(), Readiness::default());
@@ -268,6 +269,7 @@ mod tests {
                 offset: -0.25,
                 noise_floor: 0.001,
                 speech_level: 0.0,
+                snr_db: Some(12.5),
             })
             .await;
 
@@ -283,7 +285,19 @@ mod tests {
             fake.property("InputSpeechLevel"),
             Some(PropertyValue::F64(0.0))
         );
+        assert_eq!(fake.property("InputSnr"), Some(PropertyValue::F64(12.5)));
         assert!(fake.property("State").is_none());
+
+        indicator
+            .set_input_levels(super::super::InputLevels {
+                snr_db: None,
+                ..Default::default()
+            })
+            .await;
+        assert!(
+            matches!(fake.property("InputSnr"), Some(PropertyValue::F64(v)) if v.is_nan()),
+            "no estimate is NaN"
+        );
     }
 
     /// Contract publisher.md P1 / data-model E1: every IndicatorState maps to

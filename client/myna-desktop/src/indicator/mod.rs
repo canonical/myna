@@ -103,6 +103,8 @@ pub struct InputLevels {
     pub noise_floor: f32,
     /// The loudest sustained voice; `0.0` when none was heard.
     pub speech_level: f32,
+    /// The speech-band SNR in dB; `None` when there was too little sound.
+    pub snr_db: Option<f32>,
 }
 
 /// The activity-indicator seam. `set_state` is idempotent per state.

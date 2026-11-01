@@ -70,6 +70,7 @@ struct ServedState {
     input_offset: f64,
     input_noise_floor: f64,
     input_speech_level: f64,
+    input_snr: f64,
     /// The latest failure's headline, empty until one happens. Sticky: see
     /// [`crate::dbus::publish_last_error`].
     last_error: String,
@@ -93,6 +94,7 @@ impl ServedState {
             input_offset: f64::NAN,
             input_noise_floor: f64::NAN,
             input_speech_level: f64::NAN,
+            input_snr: f64::NAN,
             ..Default::default()
         }
     }
@@ -303,6 +305,13 @@ impl DictationObject {
             .lock()
             .expect("served state poisoned")
             .input_speech_level
+    }
+
+    /// `InputSnr`: the last session's speech-band signal-to-noise ratio in
+    /// dB; NaN until a session has ended, or when it had too little sound.
+    #[zbus(property)]
+    async fn input_snr(&self) -> f64 {
+        self.served.lock().expect("served state poisoned").input_snr
     }
 
     #[zbus(property)]
@@ -592,6 +601,7 @@ impl Bus for ZbusBus {
                     ("InputOffset", PropertyValue::F64(v)) => served.input_offset = *v,
                     ("InputNoiseFloor", PropertyValue::F64(v)) => served.input_noise_floor = *v,
                     ("InputSpeechLevel", PropertyValue::F64(v)) => served.input_speech_level = *v,
+                    ("InputSnr", PropertyValue::F64(v)) => served.input_snr = *v,
                     ("LastError", PropertyValue::Str(s)) => served.last_error = s.clone(),
                     ("LastErrorDetail", PropertyValue::Str(s)) => {
                         served.last_error_detail = s.clone()
@@ -621,6 +631,7 @@ impl Bus for ZbusBus {
                 "InputOffset" => iface.input_offset_changed(emitter).await,
                 "InputNoiseFloor" => iface.input_noise_floor_changed(emitter).await,
                 "InputSpeechLevel" => iface.input_speech_level_changed(emitter).await,
+                "InputSnr" => iface.input_snr_changed(emitter).await,
                 "LastError" => iface.last_error_changed(emitter).await,
                 "LastErrorDetail" => iface.last_error_detail_changed(emitter).await,
                 "LastErrorTime" => iface.last_error_time_changed(emitter).await,
