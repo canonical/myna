@@ -125,9 +125,8 @@ pub struct HighPass {
 }
 
 impl HighPass {
-    pub fn new(sample_rate_hz: u32, channels: usize) -> Self {
-        let pole =
-            (-2.0 * std::f32::consts::PI * HIGH_PASS_HZ / sample_rate_hz.max(1) as f32).exp();
+    pub fn new(sample_rate_hz: u32, channels: usize, cutoff_hz: f32) -> Self {
+        let pole = (-2.0 * std::f32::consts::PI * cutoff_hz / sample_rate_hz.max(1) as f32).exp();
         Self {
             pole,
             state: vec![None; channels.max(1)],

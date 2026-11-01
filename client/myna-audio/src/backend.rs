@@ -12,8 +12,9 @@ use myna_core::{AudioFormat, CaptureError, CaptureHealth, PcmChunk, StopHandle};
 use tokio::sync::watch;
 
 use crate::ring::Ring;
+use crate::snr::SnrEstimator;
 use crate::stats::AudioStats;
-use crate::voice::{HighPass, VoiceTracker, FRAME as VOICE_FRAME};
+use crate::voice::{HighPass, VoiceTracker, FRAME as VOICE_FRAME, HIGH_PASS_HZ};
 
 /// What to capture. The adapter passes this through from its builder.
 pub struct CaptureSpec {
@@ -51,6 +52,7 @@ pub struct Producer {
     session_peak: f32,
     voice: VoiceTracker,
     voice_filter: HighPass,
+    snr: SnrEstimator,
     offset: OffsetMedian,
 }
 
@@ -75,7 +77,12 @@ impl Producer {
             captured: Duration::ZERO,
             session_peak: 0.0,
             voice: VoiceTracker::default(),
-            voice_filter: HighPass::new(format.sample_rate_hz, format.channels.into()),
+            voice_filter: HighPass::new(
+                format.sample_rate_hz,
+                format.channels.into(),
+                HIGH_PASS_HZ,
+            ),
+            snr: SnrEstimator::new(format.sample_rate_hz, format.channels.into()),
             offset: OffsetMedian::default(),
         }
     }
@@ -143,6 +150,7 @@ impl Producer {
         for (frame_rms, frame) in frame_levels(&chunk, &mut self.voice_filter) {
             self.voice.observe(frame_rms, frame);
         }
+        self.snr.observe(&chunk);
         self.captured += chunk.duration();
         self.session_peak = self.session_peak.max(peak);
         if let Some(overload) = self.ring.push(chunk) {
@@ -157,6 +165,7 @@ impl Producer {
             noise_floor: self.voice.noise_floor(),
             speech_level: self.voice.speech_level(),
             offset: self.offset.median(),
+            snr_db: self.snr.snr_db(),
             last_voice: self.voice.last_voice(),
         });
     }
@@ -348,7 +357,7 @@ mod tests {
     }
 
     fn voice_filter() -> HighPass {
-        HighPass::new(16_000, 1)
+        HighPass::new(16_000, 1, HIGH_PASS_HZ)
     }
 
     #[test]
@@ -437,7 +446,10 @@ mod tests {
             channels: 2,
             ..AudioFormat::default()
         };
-        let frames = frame_levels(&PcmChunk::new(data, format), &mut HighPass::new(16_000, 2));
+        let frames = frame_levels(
+            &PcmChunk::new(data, format),
+            &mut HighPass::new(16_000, 2, HIGH_PASS_HZ),
+        );
         for (rms, _) in frames {
             // Both channels' samples in one RMS: the tone's 0.0707 over two.
             assert!((rms - 0.05).abs() < 0.003, "rms {rms}");

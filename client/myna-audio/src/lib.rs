@@ -41,6 +41,7 @@ mod fake;
 mod native;
 pub mod playback;
 mod ring;
+mod snr;
 mod source;
 mod stats;
 mod voice;

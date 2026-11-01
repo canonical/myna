@@ -35,6 +35,10 @@ pub struct AudioStats {
     /// not move. A healthy input sits within a thousandth of zero; issue
     /// #64's microphone sat at -0.22.
     pub offset: f32,
+    /// The session's speech-band signal-to-noise ratio in dB, blind and
+    /// unmoved by gain (see [`crate::snr::SnrEstimator`]); `None` until half
+    /// a second of non-silent audio has been heard.
+    pub snr_db: Option<f32>,
     /// Capture time at which sustained voice was last heard (see
     /// [`crate::voice::VoiceTracker`]); `None` until it has been. Measured in
     /// captured audio, not wall-clock, so a stalled device does not read as
