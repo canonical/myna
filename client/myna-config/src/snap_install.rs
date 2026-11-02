@@ -20,6 +20,55 @@ pub fn install_request(snap: &str) -> String {
     format!("POST /v2/snaps/{snap} (install, {INSTALL_CHANNEL})")
 }
 
+/// How every store error line starts in the journal.
+pub const STORE_ERROR_PREFIX: &str = "myna-config: store: ";
+
+/// A store answer snapd gave up on, as it words one: `got unexpected HTTP
+/// status code 408 via GET to "https://api.snapcraft.io/..."`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StoreError {
+    pub status: u16,
+    pub method: String,
+    pub url: String,
+}
+
+impl StoreError {
+    pub fn find(text: &str) -> Option<Self> {
+        let (_, rest) = text.split_once("got unexpected HTTP status code ")?;
+        let (status, rest) = rest.split_once(" via ")?;
+        let (method, rest) = rest.split_once(" to \"")?;
+        let (url, _) = rest.split_once('"')?;
+        Some(Self {
+            status: status.parse().ok()?,
+            method: method.to_owned(),
+            url: url.to_owned(),
+        })
+    }
+
+    /// The store may answer otherwise when asked again.
+    pub fn transient(&self) -> bool {
+        matches!(self.status, 408 | 429 | 500..=599)
+    }
+
+    /// One journal line per store failure, kept as evidence of the store's
+    /// availability.
+    pub fn evidence(&self, snap: &str, retrying: bool) -> String {
+        let next = if retrying { "retrying" } else { "giving up" };
+        format!(
+            "{STORE_ERROR_PREFIX}HTTP {} from {} {} installing {snap}; {next}",
+            self.status, self.method, self.url
+        )
+    }
+}
+
+/// The store error a failed install carries, if any.
+fn store_error(outcome: &Result<(), SystemConfiguratorError>) -> Option<StoreError> {
+    match outcome {
+        Err(SystemConfiguratorError::Execution { message, .. }) => StoreError::find(message),
+        _ => None,
+    }
+}
+
 /// Failed reads in a row, a second apart, that end following: snapd
 /// restarting mid-install is not the install failing.
 const UNREADABLE_READS: u32 = 10;
@@ -46,6 +95,25 @@ pub enum ChangeFailure {
 /// download percentage, measured against at least `expected_bytes`, which
 /// never goes down, and none while no download runs.
 pub async fn install(
+    configurator: &dyn SystemConfigurator,
+    snap: &str,
+    expected_bytes: u64,
+    follow: &Follow<'_>,
+    report: &dyn Fn(Option<u8>),
+) -> Result<(), SystemConfiguratorError> {
+    let outcome = install_once(configurator, snap, expected_bytes, follow, report).await;
+    let Some(error) = store_error(&outcome).filter(StoreError::transient) else {
+        return outcome;
+    };
+    eprintln!("{}", error.evidence(snap, true));
+    let outcome = install_once(configurator, snap, expected_bytes, follow, report).await;
+    if let Some(error) = store_error(&outcome) {
+        eprintln!("{}", error.evidence(snap, false));
+    }
+    outcome
+}
+
+async fn install_once(
     configurator: &dyn SystemConfigurator,
     snap: &str,
     expected_bytes: u64,
@@ -121,5 +189,46 @@ pub async fn follow_change(
             report(percent);
         }
         (follow.sleep)(follow.interval).await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const TIMEOUT: &str = "- Fetch and check assertions for snap \"myna\" (37) (cannot fetch \
+        assertion: got unexpected HTTP status code 408 via GET to \"https://api.snapcraft.io/v2/x\")";
+
+    #[test]
+    fn snapds_wording_of_a_store_answer_is_read() {
+        let error = StoreError::find(TIMEOUT).unwrap();
+        assert_eq!(
+            error,
+            StoreError {
+                status: 408,
+                method: "GET".to_owned(),
+                url: "https://api.snapcraft.io/v2/x".to_owned(),
+            }
+        );
+        assert_eq!(
+            error.evidence("myna", true),
+            "myna-config: store: HTTP 408 from GET https://api.snapcraft.io/v2/x installing myna; retrying"
+        );
+        assert_eq!(StoreError::find("cannot perform the following tasks"), None);
+    }
+
+    #[test]
+    fn only_answers_that_may_change_are_transient() {
+        let status = |status| StoreError {
+            status,
+            method: String::new(),
+            url: String::new(),
+        };
+        for code in [408, 429, 500, 502, 503, 504] {
+            assert!(status(code).transient(), "{code}");
+        }
+        for code in [400, 401, 403, 404] {
+            assert!(!status(code).transient(), "{code}");
+        }
     }
 }

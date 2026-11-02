@@ -24,16 +24,19 @@ type Started = Result<Option<String>, SystemConfiguratorError>;
 
 #[derive(Clone, Default)]
 struct Snapd {
-    started: Rc<RefCell<Option<Started>>>,
+    started: Rc<RefCell<VecDeque<Started>>>,
     installs: Rc<RefCell<Vec<String>>>,
     reads: Rc<RefCell<VecDeque<Result<ChangeInProgress, String>>>>,
 }
 
 impl Snapd {
     fn starting(started: Started) -> Self {
-        let snapd = Self::default();
-        snapd.started.replace(Some(started));
-        snapd
+        Self::default().and_starting(started)
+    }
+
+    fn and_starting(self, started: Started) -> Self {
+        self.started.borrow_mut().push_back(started);
+        self
     }
 
     fn then(self, change: serde_json::Value) -> Self {
@@ -92,7 +95,10 @@ impl SystemConfigurator for Snapd {
         _cancellation: CancellationToken,
     ) -> Result<Option<String>, SystemConfiguratorError> {
         self.installs.borrow_mut().push(snap.to_owned());
-        self.started.borrow_mut().take().expect("one install")
+        self.started
+            .borrow_mut()
+            .pop_front()
+            .expect("no more installs")
     }
 
     async fn snap_change(
@@ -234,6 +240,49 @@ fn a_failed_change_names_the_request_that_started_it() {
             "cannot perform the following tasks",
         ))
     );
+    assert_eq!(*snapd.installs.borrow(), ["myna"]);
+}
+
+const STORE_TIMEOUT: &str = "cannot perform the following tasks:\n- Fetch and check assertions \
+    for snap \"myna\" (37) (cannot fetch assertion: got unexpected HTTP status code 408 via GET \
+    to \"https://api.snapcraft.io/v2/assertions/snap-declaration/16/x?max-format=7\")";
+
+/// The store timing out is the store's moment, not the install failing.
+#[test]
+fn a_store_timeout_is_installed_once_more() {
+    let snapd = Snapd::starting(Ok(Some("12".to_owned())))
+        .then(failed(STORE_TIMEOUT.into(), "Error"))
+        .and_starting(Ok(Some("12".to_owned())))
+        .then(change(true, &[]));
+
+    assert_eq!(run(&snapd).0, Ok(()));
+    assert_eq!(*snapd.installs.borrow(), ["myna", "myna"]);
+}
+
+#[test]
+fn a_store_failing_twice_fails_the_install() {
+    let snapd = Snapd::starting(Ok(Some("12".to_owned())))
+        .then(failed(STORE_TIMEOUT.into(), "Error"))
+        .and_starting(Ok(Some("12".to_owned())))
+        .then(failed(STORE_TIMEOUT.into(), "Error"));
+
+    let outcome = run(&snapd).0;
+
+    assert!(
+        matches!(&outcome, Err(SystemConfiguratorError::Execution { message, .. }) if message.contains("408")),
+        "{outcome:?}"
+    );
+    assert_eq!(*snapd.installs.borrow(), ["myna", "myna"]);
+}
+
+/// A store answer that will not change on asking again.
+#[test]
+fn a_store_refusal_is_not_asked_again() {
+    let refusal = STORE_TIMEOUT.replace("408", "404");
+    let snapd = Snapd::starting(Ok(Some("12".to_owned()))).then(failed(refusal.into(), "Error"));
+
+    assert!(run(&snapd).0.is_err());
+    assert_eq!(*snapd.installs.borrow(), ["myna"]);
 }
 
 #[test]

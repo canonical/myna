@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::command::CommandRequest;
 use crate::domain::CommandResult;
+use crate::snap_install::StoreError;
 
 /// Command-line flag that runs a backend apply's plan.
 pub const APPLY_PLAN_FLAG: &str = "--apply-plan";
@@ -135,7 +136,7 @@ pub fn run_plan(kind: PlanKind, json: &str) -> PlanExit {
     let mut results = Vec::with_capacity(plan.len());
     let mut exit = PlanExit::Success;
     for operation in plan {
-        let result = execute(&operation);
+        let result = run_operation(&operation, execute);
         let failed = result.exit_status != Some(0);
         results.push(result);
         if failed {
@@ -151,6 +152,38 @@ pub fn run_plan(kind: PlanKind, json: &str) -> PlanExit {
         }
     }
     exit
+}
+
+/// A Myna snap's install the store answered with an error that may not
+/// recur runs once more. Each store error goes to stderr, which the caller
+/// logs as evidence of the store's availability.
+fn run_operation(
+    operation: &PlanOperation,
+    execute: impl Fn(&PlanOperation) -> PlanResult,
+) -> PlanResult {
+    let result = execute(operation);
+    let ["install", "--edge", snap] = operation
+        .arguments
+        .iter()
+        .map(String::as_str)
+        .collect::<Vec<_>>()[..]
+    else {
+        return result;
+    };
+    let store_error = |result: &PlanResult| {
+        (result.exit_status != Some(0))
+            .then(|| StoreError::find(&result.stderr))
+            .flatten()
+    };
+    let Some(error) = store_error(&result).filter(StoreError::transient) else {
+        return result;
+    };
+    eprintln!("{}", error.evidence(snap, true));
+    let result = execute(operation);
+    if let Some(error) = store_error(&result) {
+        eprintln!("{}", error.evidence(snap, false));
+    }
+    result
 }
 
 fn execute(operation: &PlanOperation) -> PlanResult {
@@ -337,6 +370,59 @@ mod tests {
             executable: "snap".to_owned(),
             arguments: arguments.iter().map(|value| (*value).to_owned()).collect(),
         }
+    }
+
+    const TIMEOUT: &str = "error: cannot perform the following tasks:\n- Fetch and check \
+        assertions for snap \"myna\" (37) (cannot fetch assertion: got unexpected HTTP status \
+        code 408 via GET to \"https://api.snapcraft.io/v2/x\")\n";
+
+    fn ran(operation: &PlanOperation, exit_status: i32, stderr: &str) -> PlanResult {
+        PlanResult {
+            executable: operation.executable.clone(),
+            arguments: operation.arguments.clone(),
+            exit_status: Some(exit_status),
+            stdout: String::new(),
+            stderr: stderr.to_owned(),
+        }
+    }
+
+    /// Each run of `operation`, the results given in turn.
+    fn runs(results: &[(i32, &str)]) -> (usize, PlanResult) {
+        let operation = op(&["install", "--edge", "myna"]);
+        let count = std::cell::Cell::new(0);
+        let result = run_operation(&operation, |operation| {
+            let (exit_status, stderr) = results[count.get()];
+            count.set(count.get() + 1);
+            ran(operation, exit_status, stderr)
+        });
+        (count.get(), result)
+    }
+
+    #[test]
+    fn an_install_the_store_timed_out_runs_once_more() {
+        let (count, result) = runs(&[(1, TIMEOUT), (0, "")]);
+        assert_eq!((count, result.exit_status), (2, Some(0)));
+    }
+
+    #[test]
+    fn a_second_store_timeout_is_the_operation_failing() {
+        let (count, result) = runs(&[(1, TIMEOUT), (1, TIMEOUT)]);
+        assert_eq!((count, result.exit_status), (2, Some(1)));
+    }
+
+    #[test]
+    fn other_failures_and_other_operations_run_once() {
+        assert_eq!(runs(&[(1, "error: snap \"myna\" not found")]).0, 1);
+        assert_eq!(runs(&[(1, &TIMEOUT.replace("408", "404"))]).0, 1);
+        let count = std::cell::Cell::new(0);
+        run_operation(
+            &op(&["set", "system", "experimental.user-daemons=true"]),
+            |operation| {
+                count.set(count.get() + 1);
+                ran(operation, 1, TIMEOUT)
+            },
+        );
+        assert_eq!(count.get(), 1);
     }
 
     #[test]

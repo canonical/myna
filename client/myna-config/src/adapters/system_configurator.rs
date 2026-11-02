@@ -19,7 +19,7 @@ use crate::ports::{
     SetUpPlan, SystemConfigurator, SystemConfiguratorError, SystemConfiguratorFailure,
 };
 use crate::snap_changes::ChangeInProgress;
-use crate::snap_install::install_request;
+use crate::snap_install::{install_request, STORE_ERROR_PREFIX};
 
 /// Fixed plug reference the direct snapd adapter is willing to send. Any
 /// switch step whose typed target does not match these exact allowlists is
@@ -473,6 +473,17 @@ pub(crate) fn snapd_error_to_system_error(
 /// variable it would pass on; it exits 127 as for a denial.
 const PKEXEC_ENVIRONMENT_REFUSED: &str = "This incident has been reported.";
 
+/// The executor's store errors, into this process's log: the evidence
+/// stays even when its retry succeeded.
+fn log_store_errors(stderr: &str) {
+    for line in stderr
+        .lines()
+        .filter(|line| line.starts_with(STORE_ERROR_PREFIX))
+    {
+        eprintln!("{line}");
+    }
+}
+
 /// Run the whole plan as root under a single `pkexec`. The executor prints
 /// one result per operation it ran, stopping at the first failure, so a
 /// partial apply still reports exactly which commands completed.
@@ -509,7 +520,13 @@ async fn execute_plan(
     let request = CommandRequest::new("pkexec".to_owned(), arguments.clone())
         .without_inherited("SHELL")
         .without_timeout();
-    match runner.run(request, cancellation).await {
+    let outcome = runner.run(request, cancellation).await;
+    match &outcome {
+        Ok(output) => log_store_errors(output.stderr()),
+        Err(CommandError::NonZero { stderr, .. }) => log_store_errors(stderr),
+        Err(_) => {}
+    }
+    match outcome {
         Ok(output) => match apply_plan::decode_results(output.stdout()) {
             Ok(results) => Ok(results),
             Err(message) => Err(SystemConfiguratorFailure::new(
