@@ -36,8 +36,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--adapter",
         default="whisper",
         choices=("whisper", "parakeet", "nemotron", "funasr", "fake"),
-        help="ASR backend ('fake' = scripted, no model — for wire/contract testing; "
-        "'nemotron' always streams)",
+        help="ASR backend ('fake' = scripted, no model — for wire/contract testing)",
     )
     parser.add_argument(
         "--model",
@@ -71,7 +70,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--streaming",
         action="store_true",
-        help="enable streaming mode (progressive committed segments; whisper/parakeet; "
+        help="enable streaming mode (progressive committed segments; whisper/parakeet/nemotron; "
         "fake: one unstable hypothesis ahead of the first segment)",
     )
     parser.add_argument(
@@ -235,7 +234,7 @@ def build_adapter(args: argparse.Namespace) -> Adapter:
     if args.adapter == "nemotron":
         from myna.testbed.nemotron import NemotronAdapter
 
-        return NemotronAdapter(args.model)
+        return NemotronAdapter(args.model, streaming=args.streaming)
 
     if args.adapter == "funasr":
         from myna.testbed.funasr import FunasrAdapter

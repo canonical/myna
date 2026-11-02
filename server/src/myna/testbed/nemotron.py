@@ -33,7 +33,7 @@ import gc
 import json
 import os
 import re
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -79,24 +79,28 @@ _LOAD_HEARTBEAT_S = 2.0
 # or "friend? <en-US> He" reads "friend?  He".
 _LANGUAGE_TAG = re.compile(r" ?<[a-z]{2,3}-[A-Z]{2}>")
 
-# A session names its language by code; the 3.5 prompts are locales.
-_LOCALES = {
-    "en": "en-US",
-    "fr": "fr-FR",
-    "es": "es-ES",
-    "de": "de-DE",
-    "it": "it-IT",
-    "pt": "pt-BR",
-    "nl": "nl-NL",
-    "tr": "tr-TR",
-    "ru": "ru-RU",
-    "ar": "ar-AR",
-    "hi": "hi-IN",
-    "ja": "ja-JP",
-    "ko": "ko-KR",
-    "vi": "vi-VN",
-    "uk": "uk-UA",
-}
+# The languages the 3.5 model card lists, in its order. Its prompt dictionary
+# has slots for 84; the rest were not trained.
+MULTILINGUAL = (
+    "en", "es", "de", "fr", "it", "ar", "ja", "ko", "pt", "ru", "hi", "zh",
+    "vi", "he", "nl", "cs", "da", "pl", "no", "sv", "th", "tr", "bg", "el",
+    "et", "fi", "hr", "hu", "lt", "lv", "ro", "sk", "uk", "mt", "sl",
+)  # fmt: skip
+
+
+def prompt_index(prompts: dict[str, int], language: str | None) -> int | None:
+    """The prompt for a session's language: the key itself ("fr", "pt-BR"),
+    else the dictionary's first locale of that language ("ja" -> "ja-JP");
+    None for one the model was not trained on."""
+    if not language:
+        return None
+    if language in prompts:
+        return prompts[language]
+    code = language.split("-")[0].lower()
+    if code not in MULTILINGUAL:
+        return None
+    return next((i for key, i in prompts.items() if key.split("-")[0] == code), None)
+
 
 Floats = NDArray[np.float32]
 
@@ -302,10 +306,9 @@ class _Model:
         if self.prompt is None:
             return None
         width = int(self.prompt.get_inputs()[1].shape[-1])
-        locale = (
-            language if language and "-" in language else _LOCALES.get((language or "").lower())
-        )
-        index = self.prompts.get(locale or "", self.prompts.get("auto", 0))
+        index = prompt_index(self.prompts, language)
+        if index is None:
+            index = self.prompts.get("auto", 0)
         vector = np.zeros((1, width), np.float32)
         vector[0, index] = 1.0
         return vector
@@ -375,6 +378,13 @@ class Stream:
         return self.decoder.decode(frames[0], self.model.joint_step)
 
 
+def _append_to(texts: list[str]) -> Callable[[str], Awaitable[None]]:
+    async def append(text: str) -> None:
+        texts.append(text)
+
+    return append
+
+
 def _default_model_dir() -> str:
     env = os.environ.get("MODEL_DIR")
     if env:
@@ -386,16 +396,24 @@ class NemotronAdapter:
     """Nemotron cache-aware streaming ONNX behind ``SttService``."""
 
     def __init__(
-        self, model_dir: str | None = None, *, encoder_threads: int = ENCODER_THREADS
+        self,
+        model_dir: str | None = None,
+        *,
+        streaming: bool = True,
+        encoder_threads: int = ENCODER_THREADS,
     ) -> None:
+        """``streaming=False`` decodes exactly the same way and holds every
+        commit back for one final at the end: the batch emission mode, for
+        clients and benchmarks that compare the two."""
         self._model_dir = Path(model_dir or _default_model_dir())
+        self._streaming = streaming
         self._encoder_threads = encoder_threads
         self._model: _Model | None = None
         self._model_lock = asyncio.Lock()
 
     @property
     def streaming(self) -> bool:
-        return True
+        return self._streaming
 
     @property
     def candidate(self) -> Candidate:
@@ -407,7 +425,7 @@ class NemotronAdapter:
 
     def capabilities(self) -> Capabilities:
         prompts = self._model.prompts if self._model else {}
-        languages = tuple(sorted({code for code, loc in _LOCALES.items() if loc in prompts})) or (
+        languages = tuple(c for c in MULTILINGUAL if prompt_index(prompts, c) is not None) or (
             "en",
         )
         return Capabilities(
@@ -416,7 +434,7 @@ class NemotronAdapter:
             input_formats=(FORMAT,),
             punctuation=True,
             translation=False,
-            streaming=True,
+            streaming=self._streaming,
             runtime={
                 **runtime_versions(("onnxruntime", "onnxruntime")),
                 "execution_provider": "CPUExecutionProvider",
@@ -470,6 +488,7 @@ class NemotronAdapter:
             model = await self._load_with_heartbeat(emit)
             stream = Stream(model, prompt=model.prompt_vector(config.language))
             committed: list[str] = []
+            held: list[str] = []
 
             async def commit(text: str) -> None:
                 if not committed:
@@ -484,10 +503,13 @@ class NemotronAdapter:
                     )
                     committed.append(text)
 
+            # Batch decodes the same way and holds the text back.
+            step = commit if self._streaming else _append_to(held)
             async for chunk in audio:
                 samples = np.frombuffer(chunk.data, "<i2").astype(np.float32) / 32768.0
-                await commit(await asyncio.to_thread(stream.feed, samples))
-            await commit(await asyncio.to_thread(stream.finish))
+                await step(await asyncio.to_thread(stream.feed, samples))
+            await step(await asyncio.to_thread(stream.finish))
+            await commit("".join(held))
             await emit(TranscriptionDone(text="".join(committed)))
         except Exception as exc:
             await emit(

@@ -314,6 +314,16 @@ async def test_every_step_commits_and_done_is_their_concatenation(adapter):
     assert events[-1] == TranscriptionDone(text="Hello world.")
 
 
+async def test_batch_holds_every_step_for_one_final(adapter):
+    adapter._streaming = False
+    ScriptedStream.texts = [" Hello", "", " world."]
+    events = await run(adapter)
+    finals = [e for e in events if isinstance(e, TranscriptionFinal)]
+    assert [(f.text, f.segment_index) for f in finals] == [("Hello world.", 0)]
+    assert events[-1] == TranscriptionDone(text="Hello world.")
+    assert not adapter.capabilities().streaming
+
+
 async def test_leading_space_only_text_is_not_a_commit(adapter):
     ScriptedStream.texts = [" ", " Hi", ""]
     events = await run(adapter)
@@ -364,8 +374,8 @@ async def test_capabilities_and_candidate(adapter):
 async def test_a_multilingual_model_lists_the_languages_it_has_prompts_for(adapter):
     ScriptedStream.texts = ["", ""]
     await run(adapter, chunks=1)
-    adapter._model.prompts = {"en-US": 0, "fr-FR": 1, "xx-YY": 2}
-    assert adapter.capabilities().languages == ("en", "fr")
+    adapter._model.prompts = {"en-US": 0, "fr-FR": 1, "xx-YY": 2, "ja-JP": 3}
+    assert adapter.capabilities().languages == ("en", "fr", "ja")
 
 
 async def test_unload_forgets_the_model(adapter):
@@ -395,8 +405,12 @@ def test_the_language_prompt(tmp_path):
     model.prompt = None
     assert model.prompt_vector("fr") is None
     model.prompt = Prompt()
-    model.prompts = {"auto": 0, "en-US": 1, "fr-FR": 2}
-    assert int(np.argmax(model.prompt_vector("fr"))) == 2
-    assert int(np.argmax(model.prompt_vector("fr-FR"))) == 2
+    model.prompts = {"auto": 0, "en-US": 1, "en-GB": 2, "fr-FR": 3, "fr": 3, "sw-KE": 4}
+    assert int(np.argmax(model.prompt_vector("fr"))) == 3
+    assert int(np.argmax(model.prompt_vector("fr-FR"))) == 3
+    assert int(np.argmax(model.prompt_vector("en"))) == 1  # the first English locale
+    assert int(np.argmax(model.prompt_vector("en-GB"))) == 2
+    assert int(np.argmax(model.prompt_vector("FR-ca"))) == 3
+    assert int(np.argmax(model.prompt_vector("sw"))) == 0  # a slot, but untrained
     assert int(np.argmax(model.prompt_vector("zz"))) == 0
     assert int(np.argmax(model.prompt_vector(None))) == 0
