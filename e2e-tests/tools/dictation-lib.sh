@@ -165,15 +165,6 @@ for (const w of workspace.windowList()) {
            w.wantsInput ? 1 : 0, w.layer, g.x, g.y, g.width, g.height].join(" "));
 }'
 }
-# KWin's focus-stealing prevention may leave a window launched from a shell
-# inactive: make the one holding FIELD active, as a click would (the Qt field
-# app gives `other` a window of its own).
-field_window_activate() {
-    local caption="Myna e2e fields"
-    [ "$1" != other ] || caption="$caption (other)"
-    plasma && kwin_script "for (const w of workspace.windowList())
-    if (w.caption === '$caption') workspace.activeWindow = w;" >/dev/null
-}
 
 # The HUD, hosted the way the myna-config deb's autostart entry hosts it on
 # Xfce and Plasma: the supervisor starts myna.hud while the daemon owns its
@@ -389,8 +380,6 @@ field_is() { [ "$(field_get "$1")" = "$2" ]; }
 # one and the field holds the focus.
 field_focus() {
     field_action focus "$1"
-    wait_until 20 field_is focus "$1" || return 1
-    wait_until 5 field_is active true \
-        || { field_window_activate "$1" && wait_until 15 field_is active true; }
+    wait_until 20 field_is focus "$1" && wait_until 20 field_is active true
 }
 field_clear() { field_action clear; wait_until 5 field_is plain ""; }

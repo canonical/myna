@@ -133,7 +133,7 @@ def run_qt(state):
         state.write(
             {name: w.text() for name, w in fields.items()},
             next((n for n, w in fields.items() if w is focused), None),
-            qt.activeWindow() is not None,
+            focused is not None and focused.isActiveWindow(),
         )
 
     # Only ActivationChange is sure to see activeWindow() up to date.

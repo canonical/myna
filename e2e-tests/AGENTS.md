@@ -26,10 +26,10 @@ has none). `spectacle -b -n -f -o FILE` through `on_vm` photographs the real
 session (KWin's ScreenShot2 is restricted to Spectacle's desktop entry).
 Wayland gives no client a view of other windows, so the dictation helpers
 ask KWin: a KWin script (`org.kde.kwin.Scripting.loadScript`) prints the
-window list into the user journal (`kwin_windows`). A window launched through
-`on_vm` is usually activated on map, but not always: wait for the app to say
-it is active, and fall back to a script's `workspace.activeWindow = w`. The
-Qt field app reports `active` on each window's `ActivationChange`: its
+window list into the user journal (`kwin_windows`). KWin activates a window
+launched through `on_vm` on map, and the Qt field app's own `activateWindow()`
+moves between its windows, so `field_focus` only waits for the app to say so.
+The Qt app reports `active` on each window's `ActivationChange`: its
 `applicationStateChanged` can precede `activeWindow()`, which right after
 login left the report stale with KWin's window active. Kate
 needs a document named on its command line: session restore reopens it on
