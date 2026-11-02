@@ -20,8 +20,8 @@ The model directory, as ``dev/nemotron/export_nemotron_onnx.py`` and
 - ``vocab.txt``, ``config.json``: tokens (blank last) and the streaming shape.
 
 The int8 graphs are used when present. Checked against NeMo on 2026-11-02 with
-``dev/nemotron/parity.py``: fp32 token-identical over whole clips, int8 within
-0.3-0.6 WER points of it at half the CPU.
+``dev/nemotron/parity.py``: fp32 token-identical over whole clips; the int8
+export (the encoder's MatMuls only) scores within noise of fp32 at 0.2 core.
 
 Needs onnxruntime alone; the ``parakeet`` extra carries the same pin.
 """

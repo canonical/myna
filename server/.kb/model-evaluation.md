@@ -417,8 +417,20 @@ encoder threads:
 | alestro | torch dynamic int8 (Linear only) | 11.3% | 0.4 / 0.7 s | 0.50 |
 | alestro | ONNX int8 (this adapter) | 12.2% | 0.4 / 0.7 s | 0.34 |
 
-ONNX fp32 scored 3.5% / 11.9% offline. ORT's `quantize_dynamic` takes the 77
-Conv layers as well as the 289 MatMuls; quantising MatMul alone (as torch
-did) is the untried fix for alestro's 0.9 points. Exporting and quantising
-peak around 7 GB: cap the job, do not lift the cap.
+The ONNX rows quantised every op. ORT's `quantize_dynamic` takes the
+encoder's 77 Conv layers as well as its 289 MatMuls; torch's dynamic int8 took
+the Linear layers alone. Quantising the encoder's MatMuls only (what the export
+now does; the decoder_joint keeps every op) scored offline through the
+adapter, on chug (Ryzen 9 7950X3D; its all-ops transcripts are byte-identical
+to the laptop's):
 
+| encoder | nogaps | alestro | CPU, 2 threads | size |
+|---|---|---|---|---|
+| fp32 | 3.5% | 11.9% | 0.48 | 2.4 GB |
+| int8, every op | 3.7% | 12.2% | 0.24 | 622 MB |
+| int8, MatMul only | 3.8% | 11.9% | 0.205 | 839 MB |
+
+The WER differences are a few words in ~1900, inside the noise of two clips;
+the CPU difference is not (the int8 Conv kernels run slower than fp32 ones).
+Exporting and quantising peak around 7 GB: cap the job, do not lift the cap,
+or use a throwaway machine.

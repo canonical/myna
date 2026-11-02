@@ -35,7 +35,7 @@ OUT_DIR receives:
 
 - ``encoder-model.onnx`` and ``decoder_joint-model.onnx`` (fp32, external
   weights), from NeMo's exporter with ``cache_support``, and their
-  ``.int8.onnx`` dynamic-quantised twins.
+  ``.int8.onnx`` twins (dynamic; the encoder's MatMul weights only).
 - ``prompt-model.onnx``, for a model with a language prompt only: NeMo's
   exporter drops ``PromptStreamingMixin._apply_prompt_to_encoded``.
 - ``vocab.txt``, ``config.json``: tokens (blank last), the streaming
@@ -163,7 +163,15 @@ with (out / "vocab.txt").open("w", encoding="utf-8") as fh:
 for part in ("encoder", "decoder_joint"):
     src = out / f"{part}-model.onnx"
     t0 = time.time()
-    quantize_dynamic(src, out / f"{part}-model.int8.onnx", weight_type=QuantType.QInt8)
+    # The encoder's MatMuls only: quantising its 77 Conv layers as well cost
+    # alestro 0.3 WER points and ran slower (0.241 core against 0.205),
+    # measured 2026-11-02. The decoder_joint keeps every op (its LSTM too).
+    quantize_dynamic(
+        src,
+        out / f"{part}-model.int8.onnx",
+        weight_type=QuantType.QInt8,
+        op_types_to_quantize=["MatMul"] if part == "encoder" else None,
+    )
     print("quantised", part, f"{time.time() - t0:.0f}s", flush=True)
 
 for name in sorted(p.name for p in out.iterdir() if p.suffix == ".onnx"):
