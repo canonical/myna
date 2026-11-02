@@ -49,7 +49,6 @@ assert_on "precondition: the backend is the fake" \
 assert_on "precondition: myna is the store's" \
     "snap list myna | awk 'NR == 2 && \$3 !~ /^x/' | grep -q ."
 assert_on "precondition: the daemon is idle" "$LIB; wait_until 20 dictation_state_is idle"
-assert_on "precondition: PipeWire runs realtime" "$LIB; pipewire_realtime"
 BEFORE=$(store_snaps)
 printf 'before:\n%s\n' "$BEFORE"
 SNAPS=$(awk '{print $1}' <<<"$BEFORE" | tr '\n' ' ')

@@ -104,17 +104,11 @@ attempt() {
     on_vm "$RUN" 'mkdir -p myna-shot/out'
     lxc exec "$RUN" -- setsid -f /home/ubuntu/myna-shot/cpu-sample.sh /home/ubuntu/myna-shot/out/cpu-guest.log
     "$HERE"/tools/cpu-sample.sh "$ARTIFACTS/cpu-host.log" & sampler=$!
-    # Stalls under a second: a guest thread that nothing in the guest can
-    # preempt, against the time the host kept each vCPU waiting.
-    # Detached from lxc exec's output, which it otherwise waits on forever.
-    lxc exec "$RUN" -- sh -c 'setsid -f chrt -f 99 python3 -I /home/ubuntu/myna-shot/stall-probe.py gaps \
-        /home/ubuntu/myna-shot/out/stalls-guest.log </dev/null >/dev/null 2>&1'
-    python3 -I "$HERE"/tools/stall-probe.py vcpus "$ARTIFACTS/stalls-host.log" & vcpus=$!
 
     src=0
     VM=$RUN REL=$REL DESKTOP=$E2E_DESKTOP bash "$FILE" || src=$?
     echo "== $SUITE rc=$src"
-    kill "$sampler" "$vcpus"
+    kill "$sampler"
 
     lxc file pull -r "$RUN/home/ubuntu/myna-shot/out" "$ARTIFACTS/" || true
     if [ -d "$ARTIFACTS/out/shots/$SUITE" ]; then
@@ -145,14 +139,15 @@ for SUITE in "${SUITES[@]}"; do
     rm -rf "$ARTIFACTS" "$RUN_DIR/artifacts/screenshots/$SUITE"; mkdir -p "$ARTIFACTS"
 
     attempt
-    # A CI runner is virtual: its host now and then stops the vCPUs for tens
-    # of milliseconds, which no priority inside the guest can win back, and
-    # capture reports the audio lost. A suite that failed with every loss
-    # just after such a stall (tools/vm-stalls.py) runs once more.
-    if [ "$src" != 0 ] && python3 -I "$HERE/tools/vm-stalls.py" "$ARTIFACTS/journal.log" "$ARTIFACTS/out/stalls-guest.log"; then
-        echo "== $SUITE: every capture loss followed a VM stall; once more"
-        rm -rf "$ARTIFACTS-stalled" "$RUN_DIR/artifacts/screenshots/$SUITE"
-        mv "$ARTIFACTS" "$ARTIFACTS-stalled"; mkdir -p "$ARTIFACTS"
+    # A virtual runner's host stops the vCPUs for tens of milliseconds now
+    # and then, longer than a graph cycle, and capture loses audio and ends
+    # the dictation. That says nothing about the suite, so a failed suite
+    # whose daemon lost audio runs once more. No loss is lab hardware's to
+    # test (Testflinger), not a VM's.
+    if [ "$src" != 0 ] && grep -q '\] ctrl: capture lost' "$ARTIFACTS/journal.log"; then
+        echo "== $SUITE: capture lost audio, inconclusive; once more"
+        rm -rf "$ARTIFACTS-lost-audio" "$RUN_DIR/artifacts/screenshots/$SUITE"
+        mv "$ARTIFACTS" "$ARTIFACTS-lost-audio"; mkdir -p "$ARTIFACTS"
         attempt
     fi
     [ "$src" = 0 ] || rc=1

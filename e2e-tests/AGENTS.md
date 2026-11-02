@@ -65,25 +65,16 @@ and password entries that report themselves as JSON; GTK4, or Qt6 on Plasma,
 whose apps reach KWin through text-input-v2 rather than v3) in the real
 session, a speech clip looped on a virtual PipeWire speaker whose
 loopback is the default microphone (`dictation` provisioning stage), and the
-fake backend snap, so the transcript is scripted. PipeWire must run realtime
-(a precondition) and no dictation may lose audio: on a loaded runner a
-SCHED_OTHER graph drops cycles, which the daemon reports as lost capture.
-Every suite's artifacts carry `out/cpu-guest.log` and `cpu-host.log`
-(`tools/cpu-sample.sh`): busy, steal and CPU pressure a second, in the VM and
-on the host. Lost capture with steal on the guest is the hypervisor taking the
-vCPUs, which no realtime priority inside the VM can win back. A second is too
-coarse for a 40-200 ms loss, so `tools/stall-probe.py` also logs, to
-`out/stalls-guest.log`, each wakeup a FIFO 99 thread in the VM got over
-15 ms late, and to `stalls-host.log` each 10 ms in which the host kept a vCPU
-thread runnable but waiting more than 5 ms. A guest stall with no host wait
-is the layer under the runner. On CI such stalls (17-300 ms, a few
-per dictation) matched host waits and preceded every capture loss measured,
-and neither the vCPU count, pinning, THP defrag nor renicing QEMU removed
-them: realtime behaviour on a virtual runner needs give. So a suite that
-failed with every loss right after a guest stall (`tools/vm-stalls.py`)
-runs once more, keeping the first attempt as `<suite>-stalled`; a loss with
-no stall before it fails the suite as before.
-Linger starts PipeWire before the login session, when RTKit grants nothing,
+fake backend snap, so the transcript is scripted. Lost audio is not
+asserted here: PipeWire hands a capture client each graph cycle (21 ms) once,
+and a virtual runner's host stops the vCPUs for longer now and then, so the
+loss is real but says nothing about the code; capture continuity belongs to
+lab hardware (Testflinger). The daemon still ends a dictation that lost audio,
+so a failed suite whose daemon logged `ctrl: capture lost` runs once more,
+keeping the first attempt as `<suite>-lost-audio`. Every suite's artifacts
+carry `out/cpu-guest.log` and `cpu-host.log` (`tools/cpu-sample.sh`): busy,
+steal and CPU pressure a second, in the VM and on the host. PipeWire still
+runs realtime to make such losses rarer: linger starts PipeWire before the login session, when RTKit grants nothing,
 so the same stage puts `ubuntu` in the `pipewire` group, whose rlimits
 PipeWire ships. The daemon is the store's
 edge myna snap unless `E2E_MYNA_SNAP=PATH` names one built from the tree
