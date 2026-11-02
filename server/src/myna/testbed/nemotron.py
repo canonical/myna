@@ -75,8 +75,9 @@ ENCODER_THREADS = 2
 _LOAD_HEARTBEAT_S = 2.0
 
 # The 3.5 models write the language after terminal punctuation ("<fr-FR>")
-# even when it is set.
-_LANGUAGE_TAG = re.compile(r"<[a-z]{2,3}-[A-Z]{2}>")
+# even when it is set, as a word of its own: its leading space goes with it,
+# or "friend? <en-US> He" reads "friend?  He".
+_LANGUAGE_TAG = re.compile(r" ?<[a-z]{2,3}-[A-Z]{2}>")
 
 # A session names its language by code; the 3.5 prompts are locales.
 _LOCALES = {

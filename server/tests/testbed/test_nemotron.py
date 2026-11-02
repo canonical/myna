@@ -167,7 +167,8 @@ def test_vocab_and_text(tmp_path):
     )
     pieces = load_vocab(tmp_path / "vocab.txt")
     assert pieces[1] == "▁hel" and pieces[-1] == "<blk>"
-    assert detokenize(pieces, [1, 2, 4, 3]) == " hello. "
+    assert detokenize(pieces, [1, 2, 4, 3]) == " hello."
+    assert detokenize(pieces, [1, 4, 3, 1]) == " hel. hel"
     assert detokenize(pieces, []) == ""
 
 

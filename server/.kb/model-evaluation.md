@@ -434,3 +434,19 @@ The WER differences are a few words in ~1900, inside the noise of two clips;
 the CPU difference is not (the int8 Conv kernels run slower than fp32 ones).
 Exporting and quantising peak around 7 GB: cap the job, do not lift the cap,
 or use a throwaway machine.
+
+The 3.5 multilingual checkpoint goes through the same export (its
+`prompt-model.onnx` within 3e-5 of torch; left context 56, not 70) and the
+same adapter, MatMul-only int8, on chug:
+
+| clip | language | 3.5 WER | English model | torch 3.5 int8 |
+|---|---|---|---|---|
+| nogaps_fr | fr | 15.5% | - | 15.5% at 0.65 core |
+| nogaps_fr | auto | 15.4% | - | - |
+| nogaps | en | 4.8% | 3.8% | - |
+| alestro | en | 12.5% | 11.9% | - |
+
+0.20 core throughout. English stays on the English model. The language tags
+3.5 writes after terminal punctuation are single vocabulary pieces carrying
+their own word-start space; the adapter drops both.
+
