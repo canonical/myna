@@ -4,8 +4,8 @@ Read this document before evaluating a model or a change to one (new
 backend, quantisation, export, runtime or execution provider), treating
 Parakeet's window-collapse rate as a port bug, tuning ONNX Runtime CUDA
 execution, re-attempting an fp16 Parakeet export, changing Parakeet's keyword
-biasing, giving Whisper keywords, or reviving the Nemotron 3.5 ASR
-evaluation.
+biasing, giving Whisper keywords, or changing the Nemotron streaming adapter
+(export, quantisation, mel, the 3.5 multilingual model).
 
 Read the top-level `.kb/agents.md` file before continuing below.
 
@@ -14,7 +14,8 @@ Read the top-level `.kb/agents.md` file before continuing below.
 Findings from the 2026-09-17 Parakeet GPU workstream (fp32 CUDA export, NeMo
 parity, fp16 attempt), the 2026-09-19 keyword-biasing tuning (Parakeet decode
 bias) and its 2026-10-13 follow-up (post-correction, the Spanish tier), the
-rejected Whisper keyword prompt, and the parked Nemotron 3.5 ASR evaluation.
+rejected Whisper keyword prompt, the September Nemotron 3.5 ASR evaluation,
+and the 2026-11-02 Nemotron streaming ONNX adapter.
 Numbers are
 from zephyrus (RTX 4080 Laptop 12 GB, driver 595) on the 82-clip
 `corpus/english/manifest-balanced.json` (+ 5-minute long-form clip) or FLEURS
@@ -327,7 +328,7 @@ them here, and large-v3 batch loops without any glossary at all in it.
 - Untried, and free of the prompt: Parakeet's post-correction run on
   Whisper's word probabilities, or a bias inside the beam search.
 
-## Nemotron 3.5 ASR (parked, not built)
+## Nemotron 3.5 ASR (September evaluation)
 
 `nvidia/nemotron-3.5-asr-streaming-0.6b`, rev `ea30d66`, OpenMDW-1.1.
 Evaluated 2026-09-17, never packaged as a snap engine.
@@ -347,8 +348,8 @@ Export recipe (NeMo 3.0.0, inference is torch-free):
   `valid_out_len`; the inference loop follows NeMo's
   `pad_and_drop_preencoded` semantics and flushes with one chunk of silence
   appended after the real audio.
-- Recipe script: deleted 2026-10-11 with the evaluation parked; recover it
-  with `git log --diff-filter=D -- dev/eval/export_nemotron35_onnx.py`.
+- Recipe script: revived 2026-11-02 as `dev/nemotron/export_nemotron_onnx.py`
+  (both checkpoints), see the next section.
 
 Accuracy, 2026-09-17:
 
@@ -382,3 +383,42 @@ see `server/.kb/benchmarking.md`.
   bring the scratch scripts (streaming inference loop, int8 quantization,
   FLEURS harness, NeMo reference runner) beside it, each with its own PEP 723
   metadata; never add nemo/torch to `server/uv.lock`.
+
+## Nemotron streaming ONNX adapter (2026-11-02)
+
+`myna.testbed.nemotron` (`--adapter nemotron`) runs
+`nvidia/nemotron-speech-streaming-en-0.6b` cache-aware, torch-free, for live
+captions. Built from the captions feasibility run, which found it the only
+method that commits every word within about a second and never rewrites one.
+
+- Export: `dev/nemotron/export_nemotron_onnx.py MODEL.nemo OUT 6` (right
+  context 6 = 0.56 s chunks; 13 = 1.12 s gave the same WER, commits 0.4 s
+  later). The graph bakes in `drop_extra_pre_encoded`, so every step, the
+  first too, follows NeMo's `pad_and_drop_preencoded`: 56 new mel frames
+  after 9 already seen, zeros before the first. NeMo's caches are
+  layer-first, the export's batch-first, and the cache time axes are
+  dynamic, so the export writes their sizes to `config.json`.
+- Mel: Parakeet's `nemo128.onnx` normalises per feature; Nemotron is
+  `normalize: NA`. `dev/nemotron/raw_mel.py` cuts that graph before its
+  normalisation tail: mean abs diff 0.0008 vs NeMo (the 16.6 maximum is
+  NeMo's `log(2^-24)` floor in digital silence), WER unchanged.
+- Parity (`dev/nemotron/parity.py`, NeMo and the export stepped through the
+  same chunks): fp32 encoder within 7e-6 and token-identical over whole 5-6
+  minute clips. The adapter fed in 100 ms pieces reproduces the harness's
+  int8 transcript exactly, which pins the incremental mel and the chunking.
+
+Caption clips, real time over the wire (`dev/captions_eval`), int8, 2
+encoder threads:
+
+| clip | method | WER | commit p50/p90 | server CPU |
+|---|---|---|---|---|
+| nogaps | torch dynamic int8 (Linear only) | 3.7% | 0.3 / 0.7 s | 0.51 |
+| nogaps | ONNX int8 (this adapter) | 3.7% | 0.3 / 0.7 s | 0.36 |
+| alestro | torch dynamic int8 (Linear only) | 11.3% | 0.4 / 0.7 s | 0.50 |
+| alestro | ONNX int8 (this adapter) | 12.2% | 0.4 / 0.7 s | 0.34 |
+
+ONNX fp32 scored 3.5% / 11.9% offline. ORT's `quantize_dynamic` takes the 77
+Conv layers as well as the 289 MatMuls; quantising MatMul alone (as torch
+did) is the untried fix for alestro's 0.9 points. Exporting and quantising
+peak around 7 GB: cap the job, do not lift the cap.
+

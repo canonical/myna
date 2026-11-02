@@ -35,14 +35,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--adapter",
         default="whisper",
-        choices=("whisper", "parakeet", "funasr", "fake"),
-        help="ASR backend ('fake' = scripted, no model — for wire/contract testing)",
+        choices=("whisper", "parakeet", "nemotron", "funasr", "fake"),
+        help="ASR backend ('fake' = scripted, no model — for wire/contract testing; "
+        "'nemotron' always streams)",
     )
     parser.add_argument(
         "--model",
         default=None,
         help="model id/path; default per adapter (whisper: tiny; "
-        "funasr: ONNX model dir — default: staged cache snapshot)",
+        "funasr: ONNX model dir — default: staged cache snapshot; "
+        "nemotron: exported model dir — default: $MODEL_DIR)",
     )
     parser.add_argument(
         "--device",
@@ -229,6 +231,11 @@ def build_adapter(args: argparse.Namespace) -> Adapter:
                 getattr(args, "stream_partial_tail_s", None), PARTIAL_TAIL_S
             ),
         )
+
+    if args.adapter == "nemotron":
+        from myna.testbed.nemotron import NemotronAdapter
+
+        return NemotronAdapter(args.model)
 
     if args.adapter == "funasr":
         from myna.testbed.funasr import FunasrAdapter
