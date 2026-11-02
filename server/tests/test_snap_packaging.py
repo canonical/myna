@@ -807,8 +807,10 @@ ORT_PINNING_SNAPS: set[str] = set()
 # explicit list because the cap is the load-bearing decision: each value was
 # measured (T65), and a cap that appears here without one is how funasr
 # shipped 4 threads on every machine in the first place. Anything leaving
-# this set needs process-control adding to its snap.
-THREAD_CAPPED_ADAPTERS = {"parakeet.py", "funasr.py"}
+# this set needs process-control adding to its snap. nemotron's 2 is a
+# budget as much as a measurement: captions run for hours beside everything
+# else, and 4 threads spun for 4.6x the CPU at the same latency.
+THREAD_CAPPED_ADAPTERS = {"parakeet.py", "funasr.py", "nemotron.py"}
 
 
 def test_pinning_daemons_plug_process_control(snap) -> None:

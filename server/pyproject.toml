@@ -33,6 +33,11 @@ parakeet = [
     # gone, but lifting the cap moves the runtime the perf baseline measured.
     "onnxruntime>=1.27,<1.28",
 ]
+# Nemotron cache-aware streaming via ONNX Runtime (no torch): the same
+# runtime pin as parakeet, whose snap runtime it would share.
+nemotron = [
+    "onnxruntime>=1.27,<1.28",
+]
 # FunASR / SenseVoice batch adapter (feature 009): ONNX Runtime + fbank +
 # sentencepiece, no torch/NeMo. The single funasr-onnx dep pulls in all
 # transitive deps (onnxruntime, kaldi-native-fbank, sentencepiece, numpy,

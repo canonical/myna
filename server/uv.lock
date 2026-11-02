@@ -1,5 +1,5 @@
 version = 1
-revision = 5
+revision = 3
 requires-python = ">=3.12"
 resolution-markers = [
     "python_full_version >= '3.15' and platform_machine != 's390x' and sys_platform == 'win32'",
@@ -1293,6 +1293,9 @@ benchmarker = [
 funasr = [
     { name = "funasr-onnx", marker = "python_full_version < '3.13'" },
 ]
+nemotron = [
+    { name = "onnxruntime" },
+]
 parakeet = [
     { name = "onnxruntime" },
 ]
@@ -1329,13 +1332,14 @@ requires-dist = [
     { name = "funasr-onnx", marker = "python_full_version < '3.13' and extra == 'funasr'", specifier = ">=0.4.2" },
     { name = "numpy", marker = "python_full_version < '3.13'", specifier = ">=1.26" },
     { name = "numpy", marker = "python_full_version >= '3.13'", specifier = ">=2.3" },
+    { name = "onnxruntime", marker = "extra == 'nemotron'", specifier = ">=1.27,<1.28" },
     { name = "onnxruntime", marker = "extra == 'parakeet'", specifier = ">=1.27,<1.28" },
     { name = "psutil", marker = "extra == 'benchmarker'", specifier = ">=5" },
     { name = "pyarrow", marker = "extra == 'parquet'", specifier = ">=22" },
     { name = "pyyaml", marker = "extra == 'benchmarker'", specifier = ">=6" },
     { name = "websockets", specifier = ">=16.0" },
 ]
-provides-extras = ["whisper", "parakeet", "funasr", "benchmarker", "parquet"]
+provides-extras = ["whisper", "parakeet", "nemotron", "funasr", "benchmarker", "parquet"]
 
 [package.metadata.requires-dev]
 dev = [
