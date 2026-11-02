@@ -28,7 +28,10 @@ Wayland gives no client a view of other windows, so the dictation helpers
 ask KWin: a KWin script (`org.kde.kwin.Scripting.loadScript`) prints the
 window list into the user journal (`kwin_windows`). A window launched through
 `on_vm` is usually activated on map, but not always: wait for the app to say
-it is active, and fall back to a script's `workspace.activeWindow = w`. Kate
+it is active, and fall back to a script's `workspace.activeWindow = w`. The
+Qt field app reports `active` on each window's `ActivationChange`: its
+`applicationStateChanged` can precede `activeWindow()`, which right after
+login left the report stale with KWin's window active. Kate
 needs a document named on its command line: session restore reopens it on
 its Welcome page, which has no text field.
 

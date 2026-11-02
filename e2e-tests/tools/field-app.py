@@ -120,6 +120,7 @@ def run_gtk(state):
 
 
 def run_qt(state):
+    from PyQt6.QtCore import QEvent, QObject
     from PyQt6.QtWidgets import QApplication, QFormLayout, QLineEdit, QWidget
 
     qt = QApplication([sys.argv[0]])
@@ -134,6 +135,15 @@ def run_qt(state):
             next((n for n, w in fields.items() if w is focused), None),
             qt.activeWindow() is not None,
         )
+
+    # Only ActivationChange is sure to see activeWindow() up to date.
+    class Activation(QObject):
+        def eventFilter(self, _watched, event):
+            if event.type() == QEvent.Type.ActivationChange:
+                report()
+            return False
+
+    activation = Activation()
 
     def focus(name):
         fields[name].window().activateWindow()
@@ -153,8 +163,8 @@ def run_qt(state):
     add_controls(control, focus, lambda: [w.clear() for w in fields.values()])
     control.register()
     qt.focusChanged.connect(report)
-    qt.applicationStateChanged.connect(report)
     for title, window in reversed(windows.items()):
+        window.installEventFilter(activation)
         window.setWindowTitle(title)
         window.resize(480, 120)
         window.show()
