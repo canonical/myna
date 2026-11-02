@@ -1,0 +1,14 @@
+name: nemotron-3-5
+description: Nemotron 3.5 ASR Streaming 0.6B (multilingual, punctuation) — cache-aware streaming, int8 ONNX
+model-card-url: https://huggingface.co/nvidia/nemotron-3.5-asr-streaming-0.6b
+quantization: int8
+capabilities:
+  - realtime-transcription
+disk-size: 930M
+# Weights shipped as a snap component, exported from NVIDIA's checkpoint by
+# dev/nemotron/export_nemotron_onnx.py. The session's language picks the
+# model's language prompt; unset, it detects.
+components:
+  - model-nemotron-3-5
+environment:
+  - MODEL_DIR=$SNAP_COMPONENTS/model-nemotron-3-5

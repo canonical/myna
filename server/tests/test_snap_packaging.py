@@ -45,6 +45,7 @@ INFERENCE_SNAPS = {
     "whisper-snap": "myna-whisper",
     "parakeet-snap": "myna-parakeet",
     "funasr-snap": "myna-funasr",
+    "nemotron-snap": "myna-nemotron",
 }
 
 # The inference-snaps-cli (modelctl) release every snap must pin. One version

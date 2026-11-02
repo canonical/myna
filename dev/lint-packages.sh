@@ -26,6 +26,7 @@ SNAP_DIRS=(
     whisper-snap
     parakeet-snap
     funasr-snap
+    nemotron-snap
 )
 
 failed=0

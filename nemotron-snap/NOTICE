@@ -1,0 +1,32 @@
+Third-party notices for the myna-nemotron snap
+==============================================
+
+Model components
+----------------
+
+model-nemotron-en: an int8 ONNX export, made by Myna's
+dev/nemotron/export_nemotron_onnx.py, of NVIDIA's Nemotron Speech Streaming
+0.6B (https://huggingface.co/nvidia/nemotron-speech-streaming-en-0.6b,
+revision 7a9b763e6c5fb103da690219c049fac917aa50b1).
+Licensed by NVIDIA Corporation under the NVIDIA Open Model License.
+The agreement ships beside the weights as LICENSE in the component.
+
+model-nemotron-3-5: an int8 ONNX export, made by the same script, of
+NVIDIA's Nemotron 3.5 ASR Streaming 0.6B
+(https://huggingface.co/nvidia/nemotron-3.5-asr-streaming-0.6b, revision
+ea30d66debe3740a08b573244286791d423d6b3e), under the OpenMDW License
+Agreement, version 1.1, which ships beside the weights as LICENSE in the
+component.
+
+Both components carry mel.onnx, derived from the nemo128.onnx preprocessor
+of the murmure model bundle the myna-parakeet snap ships.
+
+Runtimes
+--------
+
+onnxruntime is MIT licensed; its wheel's own license file is installed
+alongside it.
+
+The server code in this snap is part of Myna and is licensed under the GNU
+Affero General Public License, version 3 or later; see LICENSE next to this
+file.

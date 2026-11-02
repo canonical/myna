@@ -1,0 +1,22 @@
+#!/bin/bash -eu
+
+socket_path="$(modelctl get ws.unix-socket)"
+idle="$(modelctl get sleep-idle-seconds)"
+
+# Emission mode (set at install, overridable with `modelctl set streaming=`).
+# The decode is the same either way; batch holds the text for one final.
+streaming="$(modelctl get streaming 2>/dev/null || true)"
+stream_args=()
+[ "${streaming:-false}" = "true" ] && stream_args=(--streaming)
+
+# MODEL_DIR is exported from the active model.yaml and points at the
+# installed model component (see models/*/model.yaml).
+exec "$SNAP/bin/myna-server" \
+    --socket "$socket_path" \
+    --share-provider \
+    --adapter nemotron \
+    "${stream_args[@]}" \
+    --model "${MODEL_DIR:?MODEL_DIR unset — is a model component installed? try: myna-nemotron.nemotron use-model nemotron-en}" \
+    --sleep-idle-seconds "${idle:-0}" \
+    --idle-action unload \
+    "$@"

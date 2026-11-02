@@ -156,6 +156,7 @@ PURGEABLE = frozenset(
         "myna-whisper",
         "myna-parakeet",
         "myna-funasr",
+        "myna-nemotron",
         "myna-fake-backend",
     }
 )

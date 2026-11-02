@@ -1,0 +1,14 @@
+#!/bin/bash
+# Stage the myna wheel into wheels/ for the server-app part.
+# Run from anywhere; operates on the repo this script lives in.
+set -euo pipefail
+
+snap_dir="$(cd "$(dirname "$0")/.." && pwd)"
+repo_root="$(dirname "$snap_dir")"
+"$repo_root/dev/stage-licenses.sh" "$snap_dir"
+"$repo_root/dev/stage-version.sh" "$snap_dir" server nemotron-snap
+
+cd "$repo_root/server"
+rm -f "$snap_dir"/wheels/myna-*.whl
+uv build --wheel --out-dir "$snap_dir/wheels"
+ls -l "$snap_dir/wheels"

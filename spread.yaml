@@ -72,6 +72,7 @@ exclude:
     - whisper-snap/myna-whisper+gpu-nvidia.comp
     - parakeet-snap
     - funasr-snap
+    - nemotron-snap
     - fake-snap/stage
     - fake-snap/prime
     - fake-snap/parts

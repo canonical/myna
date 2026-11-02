@@ -1,0 +1,40 @@
+#!/bin/bash -eu
+
+tag="snap.$SNAP_INSTANCE_NAME.hook.install"
+
+# Stdout and stderr also go to the journal, through pipes: redirecting to
+# >(...) opens /dev/fd/N with O_CREAT, which AppArmor logs as a denial.
+if [ -z "${MYNA_HOOK_LOGGED:-}" ]; then
+    set -o pipefail
+    { MYNA_HOOK_LOGGED=1 "$0" "$@" 2>&1 1>&3 3>&- | logger --stderr --priority error --tag="$tag"; } 3>&1 \
+        | logger --stderr --tag="$tag"
+    exit
+fi
+
+#
+# Set generic config
+#
+
+# The session socket, inside the provider content share, under the key
+# modelctl's `status` reads for a ws+unix runtime server
+# (runtimes/*/runtime.yaml) to report the entrypoint.
+modelctl set --package ws.unix-socket="$SNAP_COMMON/share/provider/myna.sock"
+modelctl set --package verbose="false"
+# Idle-unload: release the model after this many idle seconds (0 = never).
+# 5 min keeps frequent dictation warm but frees RAM when you walk away.
+modelctl set --package sleep-idle-seconds="300"
+# Streaming emission: each chunk's words commit as they are decoded, the
+# reason this snap exists. false holds them for one final at the end. The
+# key's presence is also how tools see the snap supports streaming at all.
+modelctl set --package streaming="true"
+
+#
+# Activate the single engine.
+#
+# This snap ships exactly one engine, so hardware scoring has nothing to
+# decide. Selecting it by name also keeps `modelctl show-engine` /
+# `list-models` / `status` answering on a sideloaded install, where
+# hardware-observe is not auto-connected.
+#
+
+modelctl use-engine cpu --assume-yes --verbose

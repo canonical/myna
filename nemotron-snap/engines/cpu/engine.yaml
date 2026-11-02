@@ -1,0 +1,22 @@
+name: cpu
+summary: Nemotron streaming int8 via onnxruntime on CPU
+description: |
+  Runs NVIDIA's Nemotron cache-aware streaming transducers (int8 ONNX) with
+  onnxruntime on amd64/arm64 CPUs over the Myna Unix-socket session API.
+  Every 0.56 s chunk is decoded once and its words commit at once.
+vendor: Canonical Ltd
+
+devices:
+  anyof:
+    - type: cpu
+      architecture: amd64
+    - type: cpu
+      architecture: arm64
+
+runtime: onnxruntime-cpu
+
+model:
+  default: nemotron-en
+  options:
+    - nemotron-en
+    - nemotron-3-5
