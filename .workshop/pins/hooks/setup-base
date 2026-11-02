@@ -3,7 +3,7 @@
 # sources with one snapshot, and pins it above the installed versions so a
 # base image newer than the snapshot is brought back to it.
 set -euo pipefail
-APT_SNAPSHOT=20261026T000000Z
+APT_SNAPSHOT=20261102T000000Z
 
 # CI drops an apt-proxy file here to fetch through the runner's apt-cacher-ng
 # (.github/actions/apt-cache), which caches only plain http. The snapshot
