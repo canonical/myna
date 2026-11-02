@@ -16,24 +16,32 @@ on 2026-11-02 against NeMo's own preprocessor (dither 0): mean abs diff
 """
 
 import sys
+from pathlib import Path
 
 import onnx
 
-src, dst = sys.argv[1], sys.argv[2]
-model = onnx.load(src)
-graph = model.graph
-cut = next(i for i, node in enumerate(graph.node) if node.output[0] == "tmp_21")
-nodes = list(graph.node[: cut + 1])
-nodes[-1].output[0] = "features"
-del graph.node[:]
-graph.node.extend(nodes)
-del graph.output[:]
-graph.output.append(
-    onnx.helper.make_tensor_value_info("features", onnx.TensorProto.FLOAT, ["batch_size", 128, "T"])
-)
-used = {name for node in graph.node for name in node.input}
-kept = [init for init in graph.initializer if init.name in used]
-del graph.initializer[:]
-graph.initializer.extend(kept)
-onnx.checker.check_model(model)
-onnx.save(model, dst)
+
+def cut(src: Path, dst: Path) -> None:
+    model = onnx.load(str(src))
+    graph = model.graph
+    last = next(i for i, node in enumerate(graph.node) if node.output[0] == "tmp_21")
+    nodes = list(graph.node[: last + 1])
+    nodes[-1].output[0] = "features"
+    del graph.node[:]
+    graph.node.extend(nodes)
+    del graph.output[:]
+    graph.output.append(
+        onnx.helper.make_tensor_value_info(
+            "features", onnx.TensorProto.FLOAT, ["batch_size", 128, "T"]
+        )
+    )
+    used = {name for node in graph.node for name in node.input}
+    kept = [init for init in graph.initializer if init.name in used]
+    del graph.initializer[:]
+    graph.initializer.extend(kept)
+    onnx.checker.check_model(model)
+    onnx.save(model, str(dst))
+
+
+if __name__ == "__main__":
+    cut(Path(sys.argv[1]), Path(sys.argv[2]))

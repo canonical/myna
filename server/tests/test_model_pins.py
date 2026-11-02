@@ -45,6 +45,9 @@ PINNED = {
     # NVIDIA's checkpoint the float exports are made from: a commit, and the
     # bytes, since the .nemo is re-exported rather than shipped.
     "dev/parakeet/export_parakeet_onnx.py": r'^REVISION = "[0-9a-f]{40}"$',
+    # Nemotron's are exported too, two checkpoints: each pinned to a commit.
+    "nemotron-snap/dev/download-models.sh": r"^\s+\[[\w.]+\]=nvidia/[\w.-]+@[0-9a-f]{40}$",
+    "dev/nemotron/export_nemotron_onnx.py": r'^\s+revision="[0-9a-f]{40}",$',
 }
 
 
@@ -137,3 +140,38 @@ def test_parakeet_int8_component_stages_exactly_what_the_fetcher_writes() -> Non
         "parakeet-snap/dev/download-models.sh stages a different file set than "
         "dev/parakeet/fetch_parakeet_onnx.py fetches"
     )
+
+
+def _nemotron_checkpoints() -> dict[str, tuple[str, str, str]]:
+    return {
+        key: (repo, revision, sha256)
+        for key, repo, revision, sha256 in re.findall(
+            r'"([\w.]+)": Checkpoint\(\s*repo="([^"]+)",\s*revision="([^"]+)",'
+            r'\s*file="[^"]+",\s*sha256="([^"]+)"',
+            _text("dev/nemotron/export_nemotron_onnx.py"),
+        )
+    }
+
+
+def test_nemotron_export_verifies_every_checkpoint() -> None:
+    checkpoints = _nemotron_checkpoints()
+    assert checkpoints, "dev/nemotron/export_nemotron_onnx.py names no Checkpoint"
+    for key, (_repo, revision, sha256) in checkpoints.items():
+        assert re.fullmatch(r"[0-9a-f]{40}", revision), f"{key}: {revision} is not a commit"
+        assert re.fullmatch(r"[0-9a-f]{64}", sha256), f"{key}: no sha256 for the checkpoint"
+
+
+def test_nemotron_pins_agree() -> None:
+    """Each component's stamp names the checkpoint, right context and recipe
+    the export tool writes, or the staging script would re-export forever, or
+    stage graphs made from another checkpoint."""
+    tool = _text("dev/nemotron/export_nemotron_onnx.py")
+    script = _text("nemotron-snap/dev/download-models.sh")
+    right = re.search(r"^RIGHT_CONTEXT = ([0-9]+)$", tool, re.M)
+    recipe = re.search(r"^RECIPE = ([0-9]+)$", tool, re.M)
+    assert right and recipe
+    assert re.search(rf"^right_context={right.group(1)}$", script, re.M)
+    assert re.search(rf"^recipe={recipe.group(1)}$", script, re.M)
+    staged = dict(re.findall(r"^\s+\[([\w.]+)\]=(\S+@[0-9a-f]{40})$", script, re.M))
+    exported = {key: f"{repo}@{rev}" for key, (repo, rev, _sha) in _nemotron_checkpoints().items()}
+    assert staged == exported
