@@ -1,4 +1,4 @@
-# The four published snaps, built natively on an amd64 and an arm64 runner
+# The five published snaps, built natively on an amd64 and an arm64 runner
 # (snapcraft does not cross-build), smoke-tested there with myna-bench on a few
 # LibriSpeech clips, and released. A release tag releases to edge; a manual run
 # can release to a branch such as edge/rc1 to try a candidate as a store
@@ -34,7 +34,7 @@ jobs:
       fail-fast: false
       matrix:
         arch: [amd64, arm64]
-        snap: [myna, parakeet, whisper, funasr]
+        snap: [myna, parakeet, whisper, funasr, nemotron]
         include:
           - snap: myna
             name: myna
@@ -53,6 +53,13 @@ jobs:
             fetch: uv run --no-project --with 'modelscope>=1.34' python dev/fetch_funasr_model.py --target ./funasr-snap/components/model-sensevoice-onnx
             model: sensevoice
             component: model-sensevoice
+          # Exported from NVIDIA's checkpoints, NeMo and torch in the
+          # exporter's own uv environment, as parakeet's fp32 component is.
+          - snap: nemotron
+            name: myna-nemotron
+            fetch: cd nemotron-snap && ./dev/download-models.sh
+            model: nemotron-en
+            component: model-nemotron-en
     name: build (${{ matrix.snap }}, ${{ matrix.arch }})
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     timeout-minutes: 150
@@ -163,7 +170,7 @@ jobs:
       fail-fast: false
       matrix:
         arch: [amd64, arm64]
-        snap: [myna, parakeet, whisper, funasr]
+        snap: [myna, parakeet, whisper, funasr, nemotron]
     name: publish (${{ matrix.snap }}, ${{ matrix.arch }})
     # publish-snap.sh names the .snap after this runner's architecture.
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}

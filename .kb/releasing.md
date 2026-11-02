@@ -27,7 +27,7 @@ The steps, in order:
 1. `make release-notes > notes.md` drafts the features and fixes since the last tag, internal scopes left out, each followed by the GitHub issues its commit body names (`#79`): a fix commit names its issue in the body, never with a `Fixes` trailer, which would close the issue on the push to `main` rather than on release. Drop a reference that is only a related mention. Cut it down to the highlights a user cares about; keep the full lists only where they help.
 2. `dch -v X.Y.Z-0ubuntu1 -D <devel series>` in `myna-config-deb/`, with the highlights as its bullets. Commit it and push it to main.
 3. `git tag -s --cleanup=verbatim -F notes.md vX.Y.Z`, then `git push origin vX.Y.Z`. `.github/workflows/release.yml` drafts the GitHub Release from the tag message and the footer.
-4. The tag also runs `.github/workflows/snaps.yml`, which builds, smoke-tests and releases the four snaps to edge on amd64 and arm64 runners, once the `store-edge` environment's reviewer approves. `make publish-<snap> CHANNEL=latest/edge` from the tagged checkout is the fallback for amd64.
+4. The tag also runs `.github/workflows/snaps.yml`, which builds, smoke-tests and releases the five snaps to edge on amd64 and arm64 runners, once the `store-edge` environment's reviewer approves. `make publish-<snap> CHANNEL=latest/edge` from the tagged checkout is the fallback for amd64.
 5. From the tagged checkout, the PPA uploads per series (`myna-config-deb/AGENTS.md`). The PPA builds arm64 from the same uploads.
 6. Once the store and the PPA serve `X.Y.Z` on both architectures, `gh release edit vX.Y.Z --draft=false`.
 7. Close each issue the notes say this release fixes, with a comment linking the release.
