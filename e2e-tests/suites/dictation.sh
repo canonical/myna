@@ -77,6 +77,9 @@ dict 'mic_start myna-shot/speech.wav'
 assert_dict "the virtual keyboard is up" 'keys_start'
 # GNOME starts in the Overview, where a new window is not focused.
 dict 'key escape'
+# Every case at the debug tier, so a rare failure (#5's "Focus lost") logs
+# its pokes and lease changes.
+assert_dict "the daemon logs at the debug tier" 'daemon_debug on'
 assert_dict "the field app is up" 'field_start'
 assert_dict "the field is focused and the window active" 'field_focus plain'
 
