@@ -194,12 +194,8 @@ for i in range(steps):
 
 text = model.tokenizer.ids_to_text
 print(f"steps {steps}, encoder max abs diff {worst:.4g}")
-print(
-    f"tokens identical: {tokens == nemo_tokens} ({len(tokens)} vs {len(nemo_tokens)})"
-)
-print(
-    f"cpu s: nemo {nemo_cpu:.1f}, onnx {onnx_cpu:.1f} for {len(pcm) / 16000:.0f} s audio"
-)
+print(f"tokens identical: {tokens == nemo_tokens} ({len(tokens)} vs {len(nemo_tokens)})")
+print(f"cpu s: nemo {nemo_cpu:.1f}, onnx {onnx_cpu:.1f} for {len(pcm) / 16000:.0f} s audio")
 print("NeMo:", text(nemo_tokens))
 print("ONNX:", text(tokens))
 if args.text:

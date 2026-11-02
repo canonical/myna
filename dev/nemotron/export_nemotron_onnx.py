@@ -140,10 +140,19 @@ with (out / "vocab.txt").open("w", encoding="utf-8") as fh:
             "source": Path(nemo_path).name,
             "att_context_size": [left, right],
             "streaming": {k: plain(v) for k, v in vars(cfg).items()},
-            "preprocessor": {
-                k: plain(v) for k, v in dict(model.cfg.preprocessor).items()
-            },
+            "preprocessor": {k: plain(v) for k, v in dict(model.cfg.preprocessor).items()},
             "subsampling_factor": model.encoder.subsampling_factor,
+            # Batch-first, as the export takes them; NeMo keeps them layer-first.
+            "cache_shapes": dict(
+                zip(
+                    ("cache_last_channel", "cache_last_time", "cache_last_channel_len"),
+                    (
+                        [1, *c.shape[:1], *c.shape[2:]] if c.dim() > 1 else list(c.shape)
+                        for c in model.encoder.get_initial_cache_state(batch_size=1)
+                    ),
+                    strict=True,
+                )
+            ),
             "prompts": prompts,
         },
         default=str,

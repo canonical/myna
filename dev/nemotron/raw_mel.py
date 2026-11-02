@@ -29,9 +29,11 @@ del graph.node[:]
 graph.node.extend(nodes)
 del graph.output[:]
 graph.output.append(
-    onnx.helper.make_tensor_value_info(
-        "features", onnx.TensorProto.FLOAT, ["batch_size", 128, "T"]
-    )
+    onnx.helper.make_tensor_value_info("features", onnx.TensorProto.FLOAT, ["batch_size", 128, "T"])
 )
+used = {name for node in graph.node for name in node.input}
+kept = [init for init in graph.initializer if init.name in used]
+del graph.initializer[:]
+graph.initializer.extend(kept)
 onnx.checker.check_model(model)
 onnx.save(model, dst)
