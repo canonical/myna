@@ -1,11 +1,12 @@
 # Myna's nightly lab run: the store's latest/edge snaps on one lab machine,
-# through tests/testflinger/dut.sh at the submitting commit. submit.sh fills
-# __QUEUE__ and __COMMIT__; the machine fetches everything else itself.
+# through tests/testflinger/<suite>.sh at the submitting commit. submit.sh
+# fills __QUEUE__, __DISTRO__, __SUITE__ and __COMMIT__; the machine fetches
+# everything else itself.
 job_queue: __QUEUE__
 global_timeout: 10800
 output_timeout: 1200
 provision_data:
-  distro: noble
+  distro: __DISTRO__
 test_data:
   test_cmds: |
     #!/bin/bash
@@ -17,7 +18,7 @@ test_data:
     # The sweep can be quiet for longer than output_timeout.
     (while sleep 300; do echo "heartbeat $(date -Is)"; done) &
     HB=$!
-    ssh -n $D 'sudo myna/tests/testflinger/dut.sh' 2>&1 | tee artifacts/dut.log
+    ssh -n $D 'sudo myna/tests/testflinger/__SUITE__.sh' 2>&1 | tee artifacts/__SUITE__.log
     rc=${PIPESTATUS[0]}
     kill $HB
     scp "$D:myna/tests/testflinger/out/*.jsonl" "$D:myna/tests/testflinger/out/*.out" artifacts/ || true

@@ -1,8 +1,8 @@
 # Nightly lab run (tests/testflinger/): the store's latest/edge snaps on real
-# hardware, through the adapter smoke and a per-language FLEURS accuracy
+# hardware. `accuracy`: the adapter smoke and a per-language FLEURS accuracy
 # gate. Needs repository secrets TESTFLINGER_CLIENT_ID and
 # TESTFLINGER_SECRET_KEY and the variable TESTFLINGER_QUEUE; without them the
-# job is skipped.
+# jobs are skipped.
 name: Testflinger
 
 on:
@@ -11,9 +11,13 @@ on:
   workflow_dispatch:
 
 jobs:
-  smoke:
+  lab:
     if: vars.TESTFLINGER_QUEUE != ''
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [accuracy]
     timeout-minutes: 90
     env:
       TESTFLINGER_CLIENT_ID: ${{ secrets.TESTFLINGER_CLIENT_ID }}
@@ -21,13 +25,13 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - run: sudo snap install testflinger-cli
-      - run: make testflinger TESTFLINGER_QUEUE=${{ vars.TESTFLINGER_QUEUE }}
+      - run: make testflinger TESTFLINGER_QUEUE=${{ vars.TESTFLINGER_QUEUE }} TESTFLINGER_SUITE=${{ matrix.suite }}
       - name: Gate verdict
         if: always()
-        run: sed -n '/^gate /,$p' tests/testflinger/out/artifacts/dut.log >> "$GITHUB_STEP_SUMMARY" || true
+        run: sed -n '/^gate /,$p' tests/testflinger/out/${{ matrix.suite }}/artifacts/${{ matrix.suite }}.log >> "$GITHUB_STEP_SUMMARY" || true
       - if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: testflinger
+          name: testflinger-${{ matrix.suite }}
           retention-days: 14
-          path: tests/testflinger/out/artifacts/
+          path: tests/testflinger/out/${{ matrix.suite }}/artifacts/

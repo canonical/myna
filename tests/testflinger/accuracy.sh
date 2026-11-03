@@ -1,5 +1,5 @@
 #!/bin/bash
-# The device half of the Testflinger nightly, run as root from a checkout on
+# The accuracy half of the Testflinger nightly, run as root from a checkout on
 # the lab machine, everything from latest/edge: the adapter smoke through
 # the Myna client, then the FLEURS smoke tier through each backend, gated
 # per language. Results land in out/.

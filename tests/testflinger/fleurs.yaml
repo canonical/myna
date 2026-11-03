@@ -1,6 +1,6 @@
 # The nightly accuracy gate: the FLEURS smoke tier through each backend as
 # latest/edge ships it, scored only on the languages the backend claims.
-# Gated by ceilings.yaml; run by dut.sh.
+# Gated by ceilings.yaml; run by accuracy.sh.
 manifest: out/fleurs-smoke/manifest.json
 out: out/fleurs.jsonl
 sweep_budget_seconds: 3600

@@ -491,9 +491,11 @@ ACTION ?= up
 try-desktop: ## A desktop VM running HEAD (DESKTOP=xubuntu|gnome|kde RELEASE=noble|resolute|stonking ACTION=up|update|console|reset|down|delete|status)
 	dev/try-desktop.sh --desktop $(DESKTOP) --release $(RELEASE) $(ACTION)
 
+TESTFLINGER_SUITE ?= accuracy
+
 .PHONY: testflinger
-testflinger: ## Edge snaps on a lab machine: adapter smoke + FLEURS gate, at pushed HEAD (TESTFLINGER_QUEUE=<queue>)
-	tests/testflinger/submit.sh $(TESTFLINGER_QUEUE)
+testflinger: ## Edge snaps on a lab machine at pushed HEAD (TESTFLINGER_QUEUE=<queue>, TESTFLINGER_SUITE=accuracy)
+	tests/testflinger/submit.sh $(TESTFLINGER_QUEUE) $(TESTFLINGER_SUITE)
 
 ##@ Spread (local, confined e2e; needs /dev/kvm)
 
