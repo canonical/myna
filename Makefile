@@ -494,7 +494,7 @@ try-desktop: ## A desktop VM running HEAD (DESKTOP=xubuntu|gnome|kde RELEASE=nob
 TESTFLINGER_SUITE ?= accuracy
 
 .PHONY: testflinger
-testflinger: ## Edge snaps on a lab machine at pushed HEAD (TESTFLINGER_QUEUE=<queue>, TESTFLINGER_SUITE=accuracy)
+testflinger: ## Edge snaps on a lab machine at pushed HEAD (TESTFLINGER_QUEUE=<queue>, TESTFLINGER_SUITE=accuracy|continuity)
 	tests/testflinger/submit.sh $(TESTFLINGER_QUEUE) $(TESTFLINGER_SUITE)
 
 ##@ Spread (local, confined e2e; needs /dev/kvm)

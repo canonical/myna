@@ -6,13 +6,16 @@
 # TESTFLINGER_SECRET_KEY set. A failed or interrupted run cancels the job so
 # it does not hold the machine.
 #
-# Usage: submit.sh QUEUE accuracy
+# Usage: submit.sh QUEUE accuracy|continuity
 set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 QUEUE=${1:?usage: submit.sh QUEUE SUITE}
 SUITE=${2:?usage: submit.sh QUEUE SUITE}
+# Continuity needs resolute: noble's realtime portal cannot map a snap's
+# pids, so capture there is never realtime.
 case $SUITE in
     accuracy) DISTRO=noble ;;
+    continuity) DISTRO=resolute ;;
     *) echo "unknown suite $SUITE" >&2; exit 2 ;;
 esac
 # Inside $HOME: the testflinger-cli snap cannot read /tmp.

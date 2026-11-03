@@ -21,5 +21,6 @@ test_data:
     ssh -n $D 'sudo myna/tests/testflinger/__SUITE__.sh' 2>&1 | tee artifacts/__SUITE__.log
     rc=${PIPESTATUS[0]}
     kill $HB
-    scp "$D:myna/tests/testflinger/out/*.jsonl" "$D:myna/tests/testflinger/out/*.out" artifacts/ || true
+    scp "$D:myna/tests/testflinger/out/*.jsonl" "$D:myna/tests/testflinger/out/*.out" \
+        "$D:myna/tests/testflinger/out/daemon.log" artifacts/ || true
     exit $rc

@@ -1,6 +1,7 @@
 # Nightly lab run (tests/testflinger/): the store's latest/edge snaps on real
 # hardware. `accuracy`: the adapter smoke and a per-language FLEURS accuracy
-# gate. Needs repository secrets TESTFLINGER_CLIENT_ID and
+# gate. `continuity`: dictations through the daemon that must not lose audio,
+# idle and under load. Needs repository secrets TESTFLINGER_CLIENT_ID and
 # TESTFLINGER_SECRET_KEY and the variable TESTFLINGER_QUEUE; without them the
 # jobs are skipped.
 name: Testflinger
@@ -17,8 +18,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite: [accuracy]
-    timeout-minutes: 90
+        suite: [accuracy, continuity]
+    # Both suites queue for the same machine, so one waits out the other.
+    timeout-minutes: 240
     env:
       TESTFLINGER_CLIENT_ID: ${{ secrets.TESTFLINGER_CLIENT_ID }}
       TESTFLINGER_SECRET_KEY: ${{ secrets.TESTFLINGER_SECRET_KEY }}
@@ -28,7 +30,8 @@ jobs:
       - run: make testflinger TESTFLINGER_QUEUE=${{ vars.TESTFLINGER_QUEUE }} TESTFLINGER_SUITE=${{ matrix.suite }}
       - name: Gate verdict
         if: always()
-        run: sed -n '/^gate /,$p' tests/testflinger/out/${{ matrix.suite }}/artifacts/${{ matrix.suite }}.log >> "$GITHUB_STEP_SUMMARY" || true
+        run: >-
+          sed -n '/^\(gate \|continuity: \)/,$p' tests/testflinger/out/${{ matrix.suite }}/artifacts/${{ matrix.suite }}.log >> "$GITHUB_STEP_SUMMARY" || true
       - if: always()
         uses: actions/upload-artifact@v7
         with:
