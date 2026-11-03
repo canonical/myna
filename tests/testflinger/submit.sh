@@ -24,8 +24,9 @@ trap 'testflinger-cli cancel "$JOB" || true; rm -rf "$WORK"' EXIT
 testflinger-cli poll "$JOB"
 trap 'rm -rf "$WORK"' EXIT
 mkdir -p "$HERE/out"
-testflinger-cli artifacts --filename "$HERE/out/artifacts.tgz" "$JOB" \
-    && tar -xzf "$HERE/out/artifacts.tgz" -C "$HERE/out" || true
+if testflinger-cli artifacts --filename "$HERE/out/artifacts.tgz" "$JOB"; then
+    tar -xzf "$HERE/out/artifacts.tgz" -C "$HERE/out" || true
+fi
 STATUS=$(testflinger-cli results "$JOB" | jq -r '.test_status // "none"')
 echo "test_status: $STATUS"
 [ "$STATUS" = 0 ]

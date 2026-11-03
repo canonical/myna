@@ -248,7 +248,7 @@ actions:
     cd /project/client && cargo fmt
   py-fmt: |
     cd /project/server && uv sync -q
-    uv run ruff format src tests ../dev ../tests/lib ../e2e-tests/tools
+    uv run ruff format src tests ../dev ../tests/lib ../tests/testflinger ../e2e-tests/tools
 
   # --- static gates (FR-010/FR-011) ---
   fmt-check: |
@@ -259,7 +259,7 @@ actions:
     cd /project/client && cargo deny check bans licenses
   py-lint: |
     cd /project/server && uv sync -q
-    uv run ruff check src tests ../dev ../tests/lib ../e2e-tests/tools && uv run ruff format --check src tests ../dev ../tests/lib ../e2e-tests/tools
+    uv run ruff check src tests ../dev ../tests/lib ../tests/testflinger ../e2e-tests/tools && uv run ruff format --check src tests ../dev ../tests/lib ../tests/testflinger ../e2e-tests/tools
   py-types: |
     cd /project/server && uv sync -q
     uv run mypy src/myna
@@ -268,7 +268,7 @@ actions:
     shellcheck -x dev/*.sh \
       myna-snap/dev/*.sh \
       extensions/myna-shell/test/*.sh \
-      tests/spread/*/*.sh \
+      tests/spread/*/*.sh tests/testflinger/*.sh \
       .workshop/*/hooks/* .workshop/*/bin/* \
       *-snap/scripts/* *-snap/dev/*.sh \
       *-snap/snap/hooks/* \

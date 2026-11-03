@@ -101,7 +101,7 @@ fmt-client: ## Format the Rust workspace in place (cargo fmt)
 	$(WS) fmt
 
 .PHONY: fmt-server
-fmt-server: ## Format the Python tree in place (ruff format: server, dev/, tests/lib, e2e-tests/tools)
+fmt-server: ## Format the Python tree in place (ruff format: server, dev/, tests/lib, tests/testflinger, e2e-tests/tools)
 	$(WS) py-fmt
 
 .PHONY: lint-client
