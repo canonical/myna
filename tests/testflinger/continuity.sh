@@ -51,13 +51,16 @@ myna-whisper.whisper use-model tiny --assume-yes
 snap connect myna:backend myna-whisper:provider
 
 # A machine without a microphone captures from snd-aloop instead, still
-# clocked by the kernel rather than a hypervisor.
-for _ in $(seq 20); do as_user wpctl inspect @DEFAULT_AUDIO_SOURCE@ >/dev/null 2>&1 && break; sleep 1; done
-if ! as_user wpctl inspect @DEFAULT_AUDIO_SOURCE@ >/dev/null 2>&1; then
+# clocked by the kernel rather than a hypervisor. Without one, WirePlumber
+# may name a sink as the default source, whose monitor is no microphone.
+has_mic() { as_user wpctl inspect @DEFAULT_AUDIO_SOURCE@ 2>/dev/null | grep -q 'media.class = "Audio/Source"'; }
+for _ in $(seq 20); do has_mic && break; sleep 1; done
+if ! has_mic; then
     modprobe snd-aloop
-    for _ in $(seq 20); do as_user wpctl inspect @DEFAULT_AUDIO_SOURCE@ >/dev/null 2>&1 && break; sleep 1; done
+    for _ in $(seq 20); do has_mic && break; sleep 1; done
 fi
-as_user wpctl inspect @DEFAULT_AUDIO_SOURCE@ | grep -E 'node.name|node.description'
+has_mic
+as_user wpctl inspect @DEFAULT_AUDIO_SOURCE@ | grep -E 'node.name|node.description|media.class'
 
 rc=0
 as_user python3 -I "$HERE/continuity.py" || rc=$?
