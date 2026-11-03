@@ -407,7 +407,8 @@ method that commits every word within about a second and never rewrites one.
   minute clips. The adapter fed in 100 ms pieces reproduces the harness's
   int8 transcript exactly, which pins the incremental mel and the chunking.
 
-Caption clips, real time over the wire (`dev/captions_eval`), int8, 2
+Caption clips, real time over the wire (the captions feasibility harness, not
+on main: `dev/captions_eval` on branch `captions-live`), int8, 2
 encoder threads:
 
 | clip | method | WER | commit p50/p90 | server CPU |
