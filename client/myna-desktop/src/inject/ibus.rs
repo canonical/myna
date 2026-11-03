@@ -603,6 +603,9 @@ struct Lease {
     on_fake: bool,
     /// Text or a preedit went to the daemon under this lease.
     wrote: bool,
+    /// A `Left` blip ran out: no field ever held focus, as with the fake
+    /// context focused by name.
+    fieldless: bool,
 }
 
 /// Where a target stands for its next write.
@@ -777,6 +780,7 @@ impl EngineState {
                 activated_at: None,
                 on_fake: false,
                 wrote: false,
+                fieldless: false,
             }),
             next_lease: AtomicU64::new(1),
             next_blip: AtomicU64::new(1),
@@ -797,6 +801,7 @@ impl EngineState {
             activated_at: None,
             on_fake: false,
             wrote: false,
+            fieldless: false,
         });
         id
     }
@@ -887,6 +892,7 @@ impl EngineState {
                     lease.binding,
                     lease.activated_at.map(|at| at.elapsed())
                 );
+                lease.fieldless = matches!(lease.binding, Binding::Left { .. });
                 lease.binding = Binding::Lost;
             }
             expired
@@ -1048,12 +1054,24 @@ impl EngineState {
         })
     }
 
+    /// Wait while lease `id` is `Left`, which acquiring cannot judge: a field
+    /// focused within the blip's grace binds it, else the blip ends it.
+    async fn left_settled(&self, id: u64) {
+        let mut rx = self.lease.subscribe();
+        let _ = rx
+            .wait_for(|l| l.id != id || !matches!(l.binding, Binding::Left { .. }))
+            .await;
+    }
+
     /// Whether lease `id` never got past the daemon's fake context.
     fn on_fake(&self, id: u64) -> bool {
         let lease = self.lease.borrow();
         lease.id == id
-            && matches!(lease.binding, Binding::Pending | Binding::Unfocused)
-            && lease.on_fake
+            && match lease.binding {
+                Binding::Pending | Binding::Unfocused => lease.on_fake,
+                Binding::Lost => lease.fieldless,
+                _ => false,
+            }
     }
 
     /// Yields `FocusOut` once lease `id` is no longer held.
@@ -1485,6 +1503,7 @@ impl Injector for IbusInjector {
         };
         let lease = target.lease;
 
+        self.state.left_settled(lease).await;
         if self.state.on_fake(lease) {
             myna_core::dbg_log!("inject", "acquire refused: no field took focus back");
             target.release().await;
@@ -2130,6 +2149,71 @@ mod tests {
             engine.focus_in_id(FIELD.into(), APP.into()).await;
             assert!(!state.holds(lease), "a lost lease stays lost");
         }
+    }
+
+    /// The first activation after ibus-daemon starts, with focus on a window
+    /// that has no input context (an X11 app without an IBus module): the
+    /// plain `FocusIn` turns out to be the fake context and no field follows.
+    /// That is no field, as the fake context focused by name is, not focus
+    /// that moved on.
+    #[tokio::test(start_paused = true)]
+    async fn an_unnamed_focus_that_was_the_fake_context_is_no_field() {
+        for named_fake in [true, false] {
+            let state = engine_state();
+            let lease = state.mint();
+            let engine = engine(&state);
+            engine.focus_in().await;
+            if named_fake {
+                engine.focus_in_id(FAKE.into(), "fake".into()).await;
+            } else {
+                engine.focus_out_id(FAKE.into()).await;
+            }
+            let started = tokio::time::Instant::now();
+            state.left_settled(lease).await;
+            let waited = started.elapsed();
+            assert!(
+                FOCUS_BLIP_GRACE <= waited && waited <= FOCUS_BLIP_GRACE + TICK,
+                "named fake: {named_fake}: {waited:?}"
+            );
+            assert!(state.on_fake(lease), "named fake: {named_fake}");
+        }
+    }
+
+    /// A field that takes focus within the grace binds the lease at once.
+    #[tokio::test(start_paused = true)]
+    async fn a_field_after_an_unnamed_fake_focus_settles_the_wait() {
+        let state = engine_state();
+        let lease = state.mint();
+        let engine = engine(&state);
+        engine.focus_in().await;
+        engine.focus_in_id(FAKE.into(), "fake".into()).await;
+        let settled = tokio::spawn({
+            let state = Arc::clone(&state);
+            async move { state.left_settled(lease).await }
+        });
+        tokio::time::sleep(FOCUS_BLIP_GRACE / 2).await;
+        engine.focus_in_id(FIELD.into(), APP.into()).await;
+        tokio::time::sleep(TICK).await;
+        assert!(
+            settled.is_finished(),
+            "the field's focus did not end the wait"
+        );
+        assert!(state.holds(lease));
+        assert!(!state.on_fake(lease));
+    }
+
+    /// Focus moving to another field is a loss, not a missing field.
+    #[tokio::test(start_paused = true)]
+    async fn an_unnamed_focus_lost_to_another_field_is_not_on_fake() {
+        let state = engine_state();
+        let lease = state.mint();
+        let engine = engine(&state);
+        engine.focus_in_id(FAKE.into(), "fake".into()).await;
+        engine.focus_in().await;
+        engine.focus_in_id(OTHER.into(), APP.into()).await;
+        engine.focus_in_id(FIELD.into(), APP.into()).await;
+        assert!(!state.holds(lease));
+        assert!(!state.on_fake(lease));
     }
 
     /// Once something was written, the unnamed focus was a field: focus
