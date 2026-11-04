@@ -8,7 +8,7 @@ msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-10-11 11:54+0100\n"
-"PO-Revision-Date: 2026-10-13 05:21+0000\n"
+"PO-Revision-Date: 2026-10-19 12:19+0000\n"
 "Last-Translator: Alex <aleha@users.noreply.hosted.weblate.org>\n"
 "Language-Team: Russian <https://hosted.weblate.org/projects/ubuntu-desktop-"
 "translations/myna-config/ru/>\n"
@@ -26,7 +26,7 @@ msgstr "Сведения и диагностика"
 
 #: data/diagnostics-page.blp:15 data/onboarding-welcome.blp:25
 msgid "Set up Dictation"
-msgstr "Настроить Диктовку"
+msgstr "Настройка Диктовки"
 
 #: data/diagnostics-page.blp:20 data/myna-page.blp:33 src/shortcut_ui.rs:287
 msgid "Set up"

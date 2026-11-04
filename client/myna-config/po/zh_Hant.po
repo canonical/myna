@@ -8,7 +8,7 @@ msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-10-11 11:54+0100\n"
-"PO-Revision-Date: 2026-10-15 09:00+0000\n"
+"PO-Revision-Date: 2026-10-19 12:19+0000\n"
 "Last-Translator: taijuin Lee <taijuin@users.noreply.hosted.weblate.org>\n"
 "Language-Team: Chinese (Traditional Han script) <https://hosted.weblate.org/"
 "projects/ubuntu-desktop-translations/myna-config/zh_Hant/>\n"
@@ -817,55 +817,55 @@ msgstr "無法驗證最後的連線："
 
 #: src/backend_ui.rs:3209
 msgid "Final connections could not be verified.\n"
-msgstr ""
+msgstr "無法驗證最終連線。\n"
 
 #: src/backend_ui.rs:3217
 msgid "No snapd operations completed.\n"
-msgstr ""
+msgstr "沒有任何 snapd 操作完成。\n"
 
 #: src/backend_ui.rs:3221
 msgid "Completed snapd operations:\n"
-msgstr ""
+msgstr "已完成的 snapd 操作：\n"
 
 #: src/backend_ui.rs:3250
 msgid "no model connected"
-msgstr ""
+msgstr "未連接任何模型"
 
 #: src/backend_ui.rs:3254
 msgid "connected"
-msgstr ""
+msgstr "已連接"
 
 #: src/backend_ui.rs:3264
 msgid "several models"
-msgstr ""
+msgstr "幾個模組"
 
 #: src/backend_ui.rs:4295 src/model_family.rs:35
 msgid "Best for Chinese, Japanese and Korean"
-msgstr ""
+msgstr "最適合中文、日文和韓文"
 
 #: src/backend_apply.rs:81
 msgid "selector value must be text"
-msgstr ""
+msgstr "選擇器值必須為文字"
 
 #: src/backend_apply.rs:95
 msgid "the model's settings command could not be found"
-msgstr ""
+msgstr "找不到模型的設定指令"
 
 #: src/backend_apply.rs:380
 msgid "the model's restart command could not be built"
-msgstr ""
+msgstr "無法建立模型的重新啟動指令"
 
 #: src/backend_apply.rs:479
 msgid "value must be a finite number"
-msgstr ""
+msgstr "值必須為有限數"
 
 #: src/backend_apply.rs:504
 msgid "The model's restart could not be confirmed."
-msgstr ""
+msgstr "無法確認模型是否已重新啟動。"
 
 #: src/backend_apply.rs:529
 msgid "The model did not restart."
-msgstr ""
+msgstr "模型並未重新啟動。"
 
 #: src/backend_apply.rs:551
 msgctxt "service state"
@@ -880,159 +880,159 @@ msgstr ""
 #: src/backend_apply.rs:553
 msgctxt "service state"
 msgid "failed"
-msgstr ""
+msgstr "失敗"
 
 #: src/backend_apply.rs:554
 msgctxt "service state"
 msgid "unknown"
-msgstr ""
+msgstr "未知"
 
 #: src/onboarding_ui.rs:678
 msgid "The system is busy installing software. Try again in a moment."
-msgstr ""
+msgstr "系統正在安裝軟體。請稍後再試。"
 
 #: src/onboarding_ui.rs:778
 msgid "Continue to the next onboarding step."
-msgstr ""
+msgstr "繼續進行下一個入職步驟。"
 
 #: src/onboarding_ui.rs:783
 msgid "Close Myna Settings."
-msgstr ""
+msgstr "關閉 Myna 設定。"
 
 #: src/onboarding_ui.rs:873
 msgid ""
 "The input method IBus is not installed. Install the “ibus” package, then log "
 "out and back in."
-msgstr ""
+msgstr "輸入法 IBus 尚未安裝。請安裝「ibus」軟體包，然後登出並重新登入。"
 
 #: src/onboarding_ui.rs:878
 msgid "Setup status unavailable. The log has the details."
-msgstr ""
+msgstr "無法取得設定狀態。詳細資訊請參閱日誌。"
 
 #: src/onboarding_ui.rs:993
 msgid "Setting up the input method"
-msgstr ""
+msgstr "設定輸入法"
 
 #: src/onboarding_ui.rs:1012
 msgid "Installing the Dictation app failed"
-msgstr ""
+msgstr "安裝「語音輸入」應用程式失敗"
 
 #: src/onboarding_ui.rs:1014
 msgid "Setting up the input method failed"
-msgstr ""
+msgstr "無法成功設定輸入法"
 
 #: src/onboarding_ui.rs:1062
 msgid "Log out and back in to finish setting up the input method."
-msgstr ""
+msgstr "請登出並重新登入，以完成輸入法的設定。"
 
 #. TRANSLATORS: a download size in megabytes, such as "776 MB"; the space is a no-break space.
 #: src/onboarding_ui.rs:1286
 msgid "{megabytes} MB"
-msgstr ""
+msgstr "{megabytes} MB"
 
 #: src/onboarding_ui.rs:1294
 msgid "Checking the installation"
-msgstr ""
+msgstr "檢查安裝狀況"
 
 #: src/onboarding_ui.rs:1299
 msgid "Waiting for other software changes to finish"
-msgstr ""
+msgstr "等待其他軟體變更完成"
 
 #: src/onboarding_ui.rs:1301
 msgid "Setting up speech-to-text model"
-msgstr ""
+msgstr "設定語音轉文字模型"
 
 #: src/onboarding_ui.rs:1302
 msgid "Starting dictation"
-msgstr ""
+msgstr "開始聽寫"
 
 #: src/shortcut_ui.rs:284
 msgid "Change shortcut"
-msgstr ""
+msgstr "變更快捷鍵"
 
 #: src/shortcut_ui.rs:286
 msgid "Change"
-msgstr ""
+msgstr "變更"
 
 #: src/shortcut_ui.rs:291
 msgid "Press a keyboard shortcut for dictation."
-msgstr ""
+msgstr "按下鍵盤快捷鍵以進行語音輸入。"
 
 #. TRANSLATORS: {shortcut} is a key combination, such as "Super + J".
 #: src/shortcut_ui.rs:294
 msgid "Current shortcut: {shortcut}."
-msgstr ""
+msgstr "目前快捷鍵：{shortcut}。"
 
 #: src/shortcut_ui.rs:347
 msgid "Keep the shortcut as it was."
-msgstr ""
+msgstr "請將快捷鍵維持原樣。"
 
 #: src/shortcut_ui.rs:477
 msgid "{keys} is reserved for “{action}”. Press a different shortcut."
-msgstr ""
+msgstr "{keys} 已預留給「{action}」。請按其他快捷鍵。"
 
 #: src/shortcut_ui.rs:495
 msgid ""
 "{keys} is already used for “{action}”. Replacing it removes it from there."
-msgstr ""
+msgstr "{keys} 已用於「{action}」。若將其替換，便會從該處移除它。"
 
 #: src/shortcut_ui.rs:500
 msgid "Replace Shortcut?"
-msgstr ""
+msgstr "要替換快捷鍵嗎？"
 
 #: src/shortcut_ui.rs:502
 msgid "Replace"
-msgstr ""
+msgstr "替換"
 
 #: src/shortcut_ui.rs:562
 msgid "Could not set up the shortcut"
-msgstr ""
+msgstr "無法建立快捷鍵"
 
 #: src/shortcut_ui.rs:666
 msgid "Set up a keyboard shortcut to trigger Dictation."
-msgstr ""
+msgstr "設定鍵盤快捷鍵以啟動「語音輸入」功能。"
 
 #: src/shortcut_ui.rs:672
 msgid "Myna is not running yet. The shortcut can be set up once it starts."
-msgstr ""
+msgstr "Myna 目前尚未執行。待其啟動後，即可設定該快捷鍵。"
 
 #: src/shortcut_ui.rs:680
 msgid ""
 "This desktop cannot set up the shortcut. Bind this command to a key in its "
 "settings: {command}"
-msgstr ""
+msgstr "此桌面無法建立捷徑。請在設定中將此指令綁定至某個鍵：{command}"
 
 #: src/shortcut_ui.rs:690
 msgid "Not set up"
-msgstr ""
+msgstr "尚未設定"
 
 #: src/shortcut_ui.rs:691 src/sound_preview.rs:66
 msgid "Myna is not running"
-msgstr ""
+msgstr "Myna 沒有在運行"
 
 #: src/sound_preview.rs:67
 msgid "Update Myna to preview sounds"
-msgstr ""
+msgstr "更新 Myna 以預覽音效"
 
 #: src/sound_preview.rs:68
 msgid "Finish dictating to preview sounds"
-msgstr ""
+msgstr "完成語音輸入以預覽音效"
 
 #: src/diagnostics.rs:225
 msgid "Paste the diagnostics report from your clipboard here."
-msgstr ""
+msgstr "請將剪貼簿中的診斷報告貼在此處。"
 
 #: src/diagnostics.rs:280
 msgid "The CPU clock is capped by system policy"
-msgstr ""
+msgstr "CPU 時脈受系統政策限制"
 
 #: src/diagnostics.rs:282
 msgid "limited to"
-msgstr ""
+msgstr "限於"
 
 #: src/diagnostics.rs:284 src/diagnostics.rs:362 src/diagnostics.rs:714
 msgid "of"
-msgstr ""
+msgstr "/"
 
 #: src/diagnostics.rs:288
 msgid "Dictation will be slow. A power tool has capped the CPU clock."
