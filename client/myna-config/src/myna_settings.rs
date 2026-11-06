@@ -157,21 +157,21 @@ pub fn widget_plan(metadata: &ClientSettingMetadata) -> WidgetPlan {
         },
         writable: metadata.writable(),
         placement: match metadata.key().as_str() {
-            myna_core::settings::KEY_LANGUAGE | myna_core::settings::KEY_VOCABULARY => {
-                Placement::ActiveModel
-            }
+            myna_core::settings::KEY_LANGUAGE => Placement::ActiveModel,
             _ => Placement::Dictation,
         },
     }
 }
 
 /// The Dictation group's order; any other key follows, in the adapter's order.
-const DICTATION_ORDER: [&str; 5] = [
+const DICTATION_ORDER: [&str; 6] = [
     KEY_STREAMING_MODE,
     myna_core::settings::KEY_HUD_STYLE,
     myna_core::settings::KEY_SOUNDS,
     myna_core::settings::KEY_SOUND_SET,
     myna_core::settings::KEY_SILENCE_TIMEOUT,
+    // Last: a row that opens a page of its own.
+    myna_core::settings::KEY_VOCABULARY,
 ];
 
 fn display_rank(key: &str) -> usize {

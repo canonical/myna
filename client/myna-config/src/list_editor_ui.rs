@@ -41,6 +41,7 @@ impl ListEditor {
             .activatable(true)
             .build();
         link.add_suffix(&gtk::Image::from_icon_name("go-next-symbolic"));
+        link.set_widget_name(&link_widget_name(&plan.key));
         owner.add(&link);
 
         let count = gtk::Label::builder().valign(gtk::Align::Center).build();
@@ -188,4 +189,9 @@ fn add_from_entry(editor: &Weak<ListEditor>) {
             editor.overlay.add_toast(adw::Toast::new(&error.message()));
         }
     }
+}
+
+/// Widget name of the row that opens `key`'s list.
+pub(crate) fn link_widget_name(key: &str) -> String {
+    format!("{key}-link")
 }

@@ -408,8 +408,7 @@ pub struct BackendUi {
     overlay: adw::ToastOverlay,
     myna_selector: Option<ui::MynaPage>,
     /// Groups built with General's rows and shown on the Model tab while the
-    /// active backend's family takes them: the spoken language, the
-    /// vocabulary.
+    /// active backend's family takes them: the spoken language.
     follows_model: Vec<FollowsModel>,
     /// General's settings, told what the active backend does by default so
     /// "When to transcribe" can show it.
@@ -544,19 +543,11 @@ impl FollowsModel {
             takes: myna_core::language::ModelFamily::takes_spoken_language,
         }
     }
-
-    pub(crate) fn vocabulary(group: adw::PreferencesGroup) -> Self {
-        Self {
-            group,
-            takes: myna_core::language::ModelFamily::takes_vocabulary,
-        }
-    }
 }
 
 /// General's GSettings rows that follow the connected backend.
 pub struct GeneralSettings {
     pub spoken_language: adw::PreferencesGroup,
-    pub vocabulary: adw::PreferencesGroup,
     pub controller: Rc<crate::myna_settings::MynaSettingsController>,
 }
 
@@ -609,10 +600,7 @@ impl BackendUi {
         let (follows_model, client_settings) = general_settings
             .map(|settings| {
                 (
-                    vec![
-                        FollowsModel::spoken_language(settings.spoken_language),
-                        FollowsModel::vocabulary(settings.vocabulary),
-                    ],
+                    vec![FollowsModel::spoken_language(settings.spoken_language)],
                     settings.controller,
                 )
             })
@@ -1938,7 +1926,7 @@ impl BackendUi {
         populate_backend_page(&widget, &page, self);
         if self.shown_backend().as_deref() == Some(snap_name) {
             let widget = widget.upcast::<adw::NavigationPage>();
-            // A page the user opened over this one, the vocabulary, stays open.
+            // A page the user opened over this one stays open.
             let visible = self.backend_nav.visible_page();
             let under = visible
                 .as_ref()
@@ -2727,12 +2715,6 @@ pub(crate) fn spoken_language_group() -> adw::PreferencesGroup {
             "A code such as en, fr or zh. Leave it empty to detect the language.",
         ))
         .build()
-}
-
-/// The Model tab's group for the vocabulary, which General's settings page
-/// fills with its list editor.
-pub(crate) fn vocabulary_group() -> adw::PreferencesGroup {
-    adw::PreferencesGroup::new()
 }
 
 /// Widget name of a row General builds from GSettings and the Model tab
@@ -3755,38 +3737,6 @@ mod tests {
 
             rediscover_as(&ui, WHISPER_CONNECTED_PARAKEET_INSTALLED);
             assert!(on_model_tab(&ui, &row), "missing after switching back");
-
-            rediscover_as(&ui, NEITHER_CONNECTED);
-            assert!(row.root().is_none(), "left on a page with nothing active");
-        });
-    }
-
-    #[test]
-    fn the_vocabulary_shows_on_the_model_tab_only_for_parakeet() {
-        on_gtk_thread(|| {
-            ui::register_resources();
-            let row = adw::EntryRow::builder().title("Add a word").build();
-            let group = vocabulary_group();
-            group.add(&row);
-            let TestUi { ui, view_stack } = test_ui_full(
-                discovered(PARAKEET_CONNECTED_WHISPER_INSTALLED),
-                None,
-                vec![FollowsModel::vocabulary(group)],
-            );
-            view_stack.set_visible_child_name("model");
-            let window = gtk::Window::builder().child(&view_stack).build();
-            window.present();
-            ui.sync_active_backend();
-            assert!(on_model_tab(&ui, &row), "missing with Parakeet active");
-
-            rediscover_as(&ui, WHISPER_CONNECTED_PARAKEET_INSTALLED);
-            assert!(
-                row.root().is_none(),
-                "shown with Whisper, which takes no keywords"
-            );
-
-            rediscover_as(&ui, (&["myna-parakeet", "myna-funasr"], &["myna-funasr"]));
-            assert!(row.root().is_none(), "shown with FunASR, which ignores it");
 
             rediscover_as(&ui, NEITHER_CONNECTED);
             assert!(row.root().is_none(), "left on a page with nothing active");

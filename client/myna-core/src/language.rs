@@ -45,12 +45,6 @@ impl ModelFamily {
         self == Self::Whisper
     }
 
-    /// Whether the family's backend biases recognition toward the
-    /// vocabulary; Whisper's and FunASR's take no keywords.
-    pub fn takes_vocabulary(self) -> bool {
-        self == Self::Parakeet
-    }
-
     /// The `streaming` value the family's snap installs with.
     pub fn streams_by_default(self) -> bool {
         self == Self::Parakeet
@@ -312,15 +306,6 @@ mod tests {
             .filter(|family| family.takes_spoken_language())
             .collect();
         assert_eq!(takers, [ModelFamily::Whisper]);
-    }
-
-    #[test]
-    fn only_parakeet_takes_the_vocabulary() {
-        let takers: Vec<_> = ModelFamily::ALL
-            .into_iter()
-            .filter(|family| family.takes_vocabulary())
-            .collect();
-        assert_eq!(takers, [ModelFamily::Parakeet]);
     }
 
     #[test]

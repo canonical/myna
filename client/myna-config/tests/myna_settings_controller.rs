@@ -853,3 +853,14 @@ fn removing_a_list_entry_drops_only_its_first_copy() {
     );
     assert_eq!(remove_list_entry(&owned(&["a"]), "z"), owned(&["a"]));
 }
+
+#[test]
+fn the_vocabulary_sits_with_dictation_whatever_the_model() {
+    let vocabulary = metadata(
+        "vocabulary",
+        ClientSettingValue::List(Vec::new()),
+        SettingRange::Unrestricted,
+        true,
+    );
+    assert_eq!(widget_plan(&vocabulary).placement, Placement::Dictation);
+}
