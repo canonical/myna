@@ -4,7 +4,8 @@ Read this document before evaluating a model or a change to one (new
 backend, quantisation, export, runtime or execution provider), treating
 Parakeet's window-collapse rate as a port bug, tuning ONNX Runtime CUDA
 execution, re-attempting an fp16 Parakeet export, changing Parakeet's keyword
-biasing, giving Whisper keywords, or changing the Nemotron streaming adapter
+biasing, giving Whisper or SenseVoice keywords, scoring keywords against the
+audio, or changing the Nemotron streaming adapter
 (export, quantisation, mel, the 3.5 multilingual model).
 
 Read the top-level `.kb/agents.md` file before continuing below.
@@ -325,8 +326,95 @@ them here, and large-v3 batch loops without any glossary at all in it.
   silence skip needs: any of them decoded under `_LOG_PROB_THRESHOLD` would
   have been dropped whole as silence.
 - Small was clean on this clip; one clip is not evidence it is safe.
-- Untried, and free of the prompt: Parakeet's post-correction run on
-  Whisper's word probabilities, or a bias inside the beam search.
+- Free of the prompt and measured since: Parakeet's post-correction on
+  Whisper's word probabilities works (next section). A bias inside the beam
+  search is untried.
+
+## Keyword correction after the decode (2026-11-06)
+
+Three routes that leave the decode alone, so none can loop or skip audio.
+All offline: plain `transcribe()` or the adapter's decode internals per clip,
+not the adapter's batch path; keyword sets are mined from the measured model's
+own misses, so "off" recall is low by construction. Every gate was chosen on
+the tune half (split by keyword component, as for Parakeet) and the holdout is
+reported. The scratch rig is not in the tree.
+
+### Whisper: text correction on word probabilities
+
+`KeywordBias.correct`, unchanged, on faster-whisper's words, each one token
+with its word probability (faster-whisper's mean over the word's tokens, not
+Parakeet's minimum). Needs `word_timestamps`: +0.7 to +5.3% decode time in
+batch; the streaming path already aligns. Frozen English set, gate 0.8, each
+model's shipped batch policy:
+
+| model | recall off -> on | WER off -> on | false hits | ordinary + 100-list WER, false hits |
+|---|---|---|---|---|
+| tiny int8 | 11.0 -> 33.3% | 12.36 -> 11.22 | 4/852 | 6.18 -> 6.06, 0 |
+| base fp32 | 14.7 -> 40.4% | 9.60 -> 8.31 | 2/852 | 4.79 -> 4.72, 1/8294 |
+| small fp32 | 22.3 -> 46.2% | 7.85 -> 6.63 | 1/852 | 3.30 -> 3.26, 0 |
+| large-v3-turbo int8 CPU | 41.3 -> 48.6% | 5.31 -> 4.94 | 1/852 | 2.30 -> 2.26, 0 |
+
+Parakeet's own correction without its bias, for scale: 19.0 -> 52.3%.
+
+### SenseVoice: score the keyword against the audio (CTC)
+
+No pronunciation dictionary. Every run of the greedy tokens holding n-1 to
+n+1 letters of an n-letter keyword (letters, not tokens: Korean pieces are
+multi-syllable, " 단계") is a candidate; its audio is the frames between the
+neighbouring tokens. The keyword replaces the run when its CTC
+log-likelihood there is within 3 nats per keyword letter of the run's own.
+Best margin first, no overlaps. A Hangul syllable outside the vocabulary
+(셴, 룽, 웡) is scored as each in-vocabulary syllable one jamo from it.
+The `fleurs-keywords:<locale>` tiers, shipped int8, language auto, withitn;
+holdout:
+
+| locale | recall off -> on | CER off -> on | false hits | ordinary + 100-list CER, false hits |
+|---|---|---|---|---|
+| cmn_hans_cn | 27.7 -> 80.7% | 13.62 -> 11.69 | 0/246 | 5.36 -> 5.33, 0/7839 |
+| ko_kr | 18.5 -> 75.9% | 10.92 -> 9.42 | 0/141 | 7.09 -> 7.09, 0/6160 |
+| ja_jp | 31.6 -> 84.2% | 8.73 -> 7.67 | 0/165 | 6.46 -> 6.51, 2/6718 (1 off) |
+
+- The margin must scale with keyword length. A flat 6-8 nats let a
+  three-syllable keyword replace unrelated words while one-syllable misses
+  in long keywords stayed out of reach.
+- A confidence gate on top only costs recall: the false hits it would stop
+  sit on runs the model was unsure of anyway.
+- 4 nats per letter is where ordinary false hits start (1, 2 and 6).
+- Cost, ~100 keywords, numpy, one thread: 4.5 (zh, ja) to 9.3 (ko) ms per
+  audio second. Exact pruning makes it cheap: the keyword's probability over
+  a window is at most the product of each of its tokens' summed probability
+  there, and the run's own is at least its greedy path's, so over 99.9% of
+  windows are rejected from two cumulative sums; results were identical
+  unpruned.
+- Pinyin (pypinyin) matching reached 73.9% holdout on Chinese and was
+  dropped for this. Its false hits were all rare readings of a heteronym
+  (其 as ji, 埃 as zhi), cured only by reading both sides in context, and
+  it needs a dictionary per language (jyutping for Cantonese, a morphological
+  analyser for Japanese).
+
+### Parakeet: the same scoring through TDT
+
+The decoder_joint export takes `targets` [B, U] and returns the whole
+[frames x labels] grid, so a keyword over a window is one call plus a TDT
+forward in numpy (token and duration heads; a blank moves 1+ frames).
+Candidates come from a loose spelling prefilter (one word within ~40% edits;
+several words only when they spell the keyword split, at most one edit), never
+a run already holding a keyword. Then `correct` runs as shipped. Frozen set,
+holdout:
+
+| pipeline | recall | WER | false hits | ordinary + 100-list WER, false hits |
+|---|---|---|---|---|
+| bias + correct (shipped) | 73.8% | 3.72 | 3/426 | 1.38, 2/8294 |
+| bias + acoustic 2.0/letter + correct | 85.4% | 3.18 | 5/426 | 1.38, 2/8294 |
+| acoustic + correct, no bias | 75.0% | 3.75 | 4/426 | 1.34, 1/8294 |
+
+- Without the two candidate rules WER rose: a short word beside a keyword
+  ("to", "a", "Woodley, who") costs too little to keep, and a correct
+  keyword was swapped for a listed neighbour (Morrel -> Morven).
+- The acoustic pass alone misses some of what `correct` fixes
+  (Dorriforth, portmanteau): chain them.
+- Cost 5 ms per audio second with a clip's five words, 22 ms with the
+  100-list; the joint calls per spelling are not batched yet.
 
 ## Nemotron 3.5 ASR (September evaluation)
 
