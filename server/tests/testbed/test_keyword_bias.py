@@ -7,7 +7,7 @@ import pytest
 
 np = pytest.importorskip("numpy", reason="adapter extras not installed")
 
-from myna.testbed.keyword_bias import ROOT, KeywordBias, keyword_bias
+from myna.testbed.keyword_bias import ROOT, KeywordBias, keyword_bias, keyword_corrector
 
 # As _load_vocab returns it: "▁" already a space, blank spelt as in vocab.txt.
 VOCAB = [
@@ -301,3 +301,23 @@ def test_words_spelling_more_than_a_keyword_are_left_alone():
 
 def test_a_word_with_no_letters_is_left_alone():
     assert _correct(["Siobhan"], (" 42", 0.1))[0] == [" 42"]
+
+
+def test_a_corrector_needs_no_model_vocabulary():
+    corrector = keyword_corrector(["Siobhan"])
+    assert corrector is not None
+    assert corrector.correct([" Siobhn,"], [0.0], [0.1]) == ([" Siobhan,"], [0.0])
+
+
+def test_corrections_name_the_words_each_replacement_spans():
+    corrector = keyword_corrector(["Siobhan", "PulseAudio"])
+    assert corrector is not None
+    words = [" the", " pulse", " audio.", " Siobhn"]
+    assert corrector.corrections(words, [0.99, 0.99, 0.99, 0.1]) == [
+        (1, 3, " PulseAudio."),
+        (3, 4, " Siobhan"),
+    ]
+
+
+def test_a_corrector_without_a_one_word_keyword_is_none():
+    assert keyword_corrector(["New York", " "]) is None

@@ -105,71 +105,35 @@ def _edits(a: str, b: str) -> int:
     return previous[-1]
 
 
-class KeywordBias:
-    """A session's keywords as a match automaton over token ids. States are
-    ints, `ROOT` is no match in progress; built once per session and shared by
-    every decode in it."""
+class KeywordCorrector:
+    """A session's one-word keywords by folded spelling: rewrites a decoded
+    word that is a keyword but for accents and case, words that spell one
+    together, and an unsure near miss. Needs no model vocabulary, so any
+    backend that reports word confidences can use it."""
 
-    def __init__(
-        self,
-        prefixes: list[str],
-        children: list[dict[int, int]],
-        complete: set[int],
-        bonus: NDArray[np.float64],
-        spellings: dict[str, str],
-    ) -> None:
-        self._children = children
+    def __init__(self, spellings: dict[str, str]) -> None:
         self._spellings = spellings
-        self._complete = frozenset(complete)
-        self._bonus = bonus
-        index = {prefix: state for state, prefix in enumerate(prefixes)}
-        # Longest first: the proper suffixes that are match prefixes (so they
-        # start a word, as every prefix does), down to the root.
-        self._fallback = [
-            [index[p[k:]] for k in range(1, len(p) + 1) if p[k:] in index] for p in prefixes
-        ]
-        # Filled per state as the decode visits it: most states never are.
-        self._offers: dict[int, tuple[NDArray[np.intp], NDArray[np.float64]]] = {}
 
-    def complete(self, state: int) -> bool:
-        return state in self._complete
-
-    def _offer(self, state: int) -> tuple[NDArray[np.intp], NDArray[np.float64]]:
-        """Token ids that extend a match from ``state`` (its own continuations,
-        its fallbacks', and every keyword's first piece), with their bonuses."""
-        offer = self._offers.get(state)
-        if offer is None:
-            chain = [state, *self._fallback[state]]
-            ids = np.fromiter(
-                dict.fromkeys(t for s in chain for t in self._children[s]), dtype=np.intp
-            )
-            offer = self._offers[state] = (ids, self._bonus[ids])
-        return offer
-
-    def rerank(
-        self, state: int, logits: NDArray[np.float32], token: int, *, rival: bool = False
-    ) -> int:
-        """``token`` (the decoder's non-blank argmax over ``logits``), or the
-        candidate whose boosted logit strictly beats it. A ``rival`` is never
-        ``token`` itself."""
-        ids, bonus = self._offer(state)
-        scores = logits[ids] + bonus
-        if rival:
-            scores = np.where(ids == token, -np.inf, scores)
-        best = int(np.argmax(scores))
-        return int(ids[best]) if scores[best] > logits[token] else token
-
-    def advance(self, state: int, token: int) -> tuple[int, bool]:
-        """The state after emitting ``token``, and whether it extended the
-        match in progress (rather than falling back or starting over)."""
-        child = self._children[state].get(token)
-        if child is not None:
-            return child, True
-        for fallback in self._fallback[state]:
-            child = self._children[fallback].get(token)
-            if child is not None:
-                return child, False
-        return ROOT, False
+    def corrections(
+        self, words: Sequence[str], confidences: Sequence[float]
+    ) -> list[tuple[int, int, str]]:
+        """(first word, end word, replacement) for each run of ``words`` to
+        rewrite; ``confidences`` are each word's least likely token's."""
+        out: list[tuple[int, int, str]] = []
+        i = 0
+        while i < len(words):
+            span, replaced = 1, None
+            for n in (_JOIN_WORDS, 2):
+                replaced = self._joined(list(words[i : i + n])) if i + n <= len(words) else None
+                if replaced is not None:
+                    span = n
+                    break
+            if replaced is None:
+                replaced = self._corrected(words[i], confidences[i])
+            if replaced is not None:
+                out.append((i, i + span, replaced))
+            i += span
+        return out
 
     def correct(
         self, tokens: list[str], timestamps: list[float], confidences: list[float]
@@ -179,26 +143,20 @@ class KeywordBias:
         starts = [i for i, token in enumerate(tokens) if i == 0 or token.startswith(" ")]
         bounds = list(pairwise([*starts, len(tokens)]))
         words = ["".join(tokens[a:b]) for a, b in bounds]
+        word_confidences = [min(confidences[a:b]) for a, b in bounds]
         out_tokens: list[str] = []
         out_times: list[float] = []
-        i = 0
-        while i < len(words):
-            a, b = bounds[i]
-            span, replaced = 1, None
-            for n in (_JOIN_WORDS, 2):
-                replaced = self._joined(words[i : i + n]) if i + n <= len(words) else None
-                if replaced is not None:
-                    span = n
-                    break
-            if replaced is None:
-                replaced = self._corrected(words[i], min(confidences[a:b]))
-            if replaced is None:
+        done = 0
+        for first, end, replaced in self.corrections(words, word_confidences):
+            for a, b in bounds[done:first]:
                 out_tokens += tokens[a:b]
                 out_times += timestamps[a:b]
-            else:
-                out_tokens.append(replaced)
-                out_times.append(timestamps[a])
-            i += span
+            out_tokens.append(replaced)
+            out_times.append(timestamps[bounds[first][0]])
+            done = end
+        for a, b in bounds[done:]:
+            out_tokens += tokens[a:b]
+            out_times += timestamps[a:b]
         return out_tokens, out_times
 
     def _joined(self, words: list[str]) -> str | None:
@@ -254,6 +212,73 @@ class KeywordBias:
         return best[0] if len(best) == 1 else None
 
 
+class KeywordBias(KeywordCorrector):
+    """A session's keywords as a match automaton over token ids. States are
+    ints, `ROOT` is no match in progress; built once per session and shared by
+    every decode in it."""
+
+    def __init__(
+        self,
+        prefixes: list[str],
+        children: list[dict[int, int]],
+        complete: set[int],
+        bonus: NDArray[np.float64],
+        spellings: dict[str, str],
+    ) -> None:
+        super().__init__(spellings)
+        self._children = children
+        self._complete = frozenset(complete)
+        self._bonus = bonus
+        index = {prefix: state for state, prefix in enumerate(prefixes)}
+        # Longest first: the proper suffixes that are match prefixes (so they
+        # start a word, as every prefix does), down to the root.
+        self._fallback = [
+            [index[p[k:]] for k in range(1, len(p) + 1) if p[k:] in index] for p in prefixes
+        ]
+        # Filled per state as the decode visits it: most states never are.
+        self._offers: dict[int, tuple[NDArray[np.intp], NDArray[np.float64]]] = {}
+
+    def complete(self, state: int) -> bool:
+        return state in self._complete
+
+    def _offer(self, state: int) -> tuple[NDArray[np.intp], NDArray[np.float64]]:
+        """Token ids that extend a match from ``state`` (its own continuations,
+        its fallbacks', and every keyword's first piece), with their bonuses."""
+        offer = self._offers.get(state)
+        if offer is None:
+            chain = [state, *self._fallback[state]]
+            ids = np.fromiter(
+                dict.fromkeys(t for s in chain for t in self._children[s]), dtype=np.intp
+            )
+            offer = self._offers[state] = (ids, self._bonus[ids])
+        return offer
+
+    def rerank(
+        self, state: int, logits: NDArray[np.float32], token: int, *, rival: bool = False
+    ) -> int:
+        """``token`` (the decoder's non-blank argmax over ``logits``), or the
+        candidate whose boosted logit strictly beats it. A ``rival`` is never
+        ``token`` itself."""
+        ids, bonus = self._offer(state)
+        scores = logits[ids] + bonus
+        if rival:
+            scores = np.where(ids == token, -np.inf, scores)
+        best = int(np.argmax(scores))
+        return int(ids[best]) if scores[best] > logits[token] else token
+
+    def advance(self, state: int, token: int) -> tuple[int, bool]:
+        """The state after emitting ``token``, and whether it extended the
+        match in progress (rather than falling back or starting over)."""
+        child = self._children[state].get(token)
+        if child is not None:
+            return child, True
+        for fallback in self._fallback[state]:
+            child = self._children[fallback].get(token)
+            if child is not None:
+                return child, False
+        return ROOT, False
+
+
 def keyword_bias(
     keywords: Sequence[str],
     vocab: Sequence[str],
@@ -288,9 +313,19 @@ def keyword_bias(
     if len(prefixes) == 1:
         return None
     chars = np.array([max(1, len(piece.strip())) for piece in vocab])
+    return KeywordBias(prefixes, children, complete, boost_per_char * chars, _one_word(keywords))
+
+
+def _one_word(keywords: Sequence[str]) -> dict[str, str]:
     spellings: dict[str, str] = {}
     for keyword in keywords:
         text = _text(keyword)
         if text and " " not in text:
             spellings.setdefault(_fold(text), text)
-    return KeywordBias(prefixes, children, complete, boost_per_char * chars, spellings)
+    return spellings
+
+
+def keyword_corrector(keywords: Sequence[str]) -> KeywordCorrector | None:
+    """The corrector for ``keywords``, or None when none is one word."""
+    spellings = _one_word(keywords)
+    return KeywordCorrector(spellings) if spellings else None
