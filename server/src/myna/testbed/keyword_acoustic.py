@@ -24,7 +24,7 @@ from functools import lru_cache
 import numpy as np
 from numpy.typing import NDArray
 
-from myna.testbed.keyword_bias import _edits, _fold
+from myna.testbed.keyword_bias import _fold, near_misses
 
 # Tuned on the tune halves of the three FLEURS keyword tiers: 4 is where
 # ordinary false hits start.
@@ -189,40 +189,28 @@ class CtcKeywords:
         words = list(zip(starts, [*starts[1:], len(tokens)], strict=True))
         own: dict[tuple[int, int], float] = {}
         found: list[tuple[float, int, int, str]] = []
-        for w0 in range(len(words)):
-            for count in (1, 2, 3):
-                if w0 + count > len(words):
-                    break
-                first, end = words[w0][0], words[w0 + count - 1][1]
-                while first < end and not _letters(tokens[first].piece):
-                    first += 1
-                while end > first and not _letters(tokens[end - 1].piece):
-                    end -= 1
-                if first >= end:
-                    continue
-                text = "".join(t.piece for t in tokens[first:end])
-                core = _fold(_letters(text))
-                if {_fold(_letters(w)) for w in text.split()} & self._latin.keys():
-                    continue
-                for fold, (keyword, spellings) in self._latin.items():
-                    if abs(len(fold) - len(core)) > max(2, len(fold) // 2):
-                        continue
-                    reach = max(1, round(0.4 * len(fold))) if count == 1 else 1
-                    if _edits(core, fold) > reach:
-                        continue
-                    a = tokens[first - 1].last + 1 if first else 0
-                    b = tokens[end].first - 1 if end < len(tokens) else frames - 1
-                    if b < a:
-                        continue
-                    if (first, end) not in own:
-                        labels = [t.id for t in tokens[first:end]]
-                        own[(first, end)] = ctc_log_likelihood(log_probs, a, b, labels, self._blank)
-                    score = max(
-                        ctc_log_likelihood(log_probs, a, b, seq, self._blank) for seq in spellings
-                    )
-                    margin = (score - own[(first, end)]) / len(fold)
-                    if margin > -self._latin_margin:
-                        found.append((margin, first, end, keyword))
+        texts = ["".join(t.piece for t in tokens[a:b]) for a, b in words]
+        by_keyword = {keyword: spellings for keyword, spellings in self._latin.values()}
+        for w0, w1, keyword in near_misses(texts, list(by_keyword)):
+            first, end = words[w0][0], words[w1 - 1][1]
+            while first < end and not _letters(tokens[first].piece):
+                first += 1
+            while end > first and not _letters(tokens[end - 1].piece):
+                end -= 1
+            fold, spellings = _fold(_letters(keyword)), by_keyword[keyword]
+            if first >= end:
+                continue
+            a = tokens[first - 1].last + 1 if first else 0
+            b = tokens[end].first - 1 if end < len(tokens) else frames - 1
+            if b < a:
+                continue
+            if (first, end) not in own:
+                labels = [t.id for t in tokens[first:end]]
+                own[(first, end)] = ctc_log_likelihood(log_probs, a, b, labels, self._blank)
+            score = max(ctc_log_likelihood(log_probs, a, b, seq, self._blank) for seq in spellings)
+            margin = (score - own[(first, end)]) / len(fold)
+            if margin > -self._latin_margin:
+                found.append((margin, first, end, keyword))
         return found
 
     def _han_kana_hangul(

@@ -334,3 +334,38 @@ def keyword_corrector(keywords: Sequence[str]) -> KeywordCorrector | None:
     """The corrector for ``keywords``, or None when none is one word."""
     spellings = _one_word(keywords)
     return KeywordCorrector(spellings) if spellings else None
+
+
+def _letters(text: str) -> str:
+    return "".join(ch for ch in text if ch.isalpha())
+
+
+def near_misses(words: Sequence[str], keywords: Sequence[str]) -> list[tuple[int, int, str]]:
+    """(first word, end word, keyword) for each run of one to three ``words``
+    a one-word keyword could have been heard as: one word within ~40% edits
+    of it, or words that spell it split with at most one edit (an exact split
+    is `correct`'s join). A run holding a word that already is a keyword is
+    never one. The candidates an audio score then decides, since each costs
+    a model call."""
+    folds: dict[str, str] = {}
+    for keyword in keywords:
+        text = _text(keyword)
+        fold = _fold(_letters(text))
+        if len(fold) >= 3 and " " not in text:
+            folds.setdefault(fold, text)
+    out: list[tuple[int, int, str]] = []
+    for w0 in range(len(words)):
+        for count in (1, 2, 3):
+            if w0 + count > len(words):
+                break
+            parts = [_fold(_letters(w)) for w in words[w0 : w0 + count]]
+            core = "".join(parts)
+            if not core or any(part in folds for part in parts):
+                continue
+            for fold, keyword in folds.items():
+                if fold == core or abs(len(fold) - len(core)) > max(2, len(fold) // 2):
+                    continue
+                reach = max(1, round(0.4 * len(fold))) if count == 1 else 1
+                if _edits(core, fold) <= reach:
+                    out.append((w0, w0 + count, keyword))
+    return out

@@ -101,10 +101,10 @@ from myna.testbed.keyword_bias import (
     _SPECIAL,
     ROOT,
     KeywordBias,
-    _edits,
     _fold,
     _segments,
     keyword_bias,
+    near_misses,
 )
 from myna.testbed.streaming.coverage import (
     RETRY_PADS,
@@ -811,49 +811,37 @@ class _ParakeetOnnx:
         keywords = bias.keywords
         if not keywords or not tokens:
             return tokens, timestamps, confidences
-        folds = {_fold(_letters(k)): k for k in keywords}
         frames = [round(t / FRAME_S) for t in timestamps]
         starts = [i for i, token in enumerate(tokens) if i == 0 or token.startswith(" ")]
         words = list(zip(starts, [*starts[1:], len(tokens)], strict=True))
         states: dict[int, tuple[NDArray[np.float32], NDArray[np.float32]]] = {}
         own: dict[tuple[int, int], float] = {}
         found: list[tuple[float, int, int, str]] = []
-        for w0 in range(len(words)):
-            for count in (1, 2, 3):
-                if w0 + count > len(words):
-                    break
-                first, end = words[w0][0], words[w0 + count - 1][1]
-                text = "".join(tokens[first:end])
-                core = _fold(_letters(text))
-                if not core or {_fold(_letters(w)) for w in text.split()} & folds.keys():
-                    continue
-                for fold, keyword in folds.items():
-                    if len(fold) < 3 or abs(len(fold) - len(core)) > max(2, len(fold) // 2):
-                        continue
-                    reach = max(1, round(0.4 * len(fold))) if count == 1 else 1
-                    if _edits(core, fold) > reach:
-                        continue
-                    a = min(frames[first - 1] + 1, frames[first]) if first else 0
-                    b = (frames[end] if end < len(tokens) else len(encodings)) - 1
-                    b = max(b, frames[end - 1], a)
-                    window = np.ascontiguousarray(encodings[a : b + 1].T[None])
-                    context = ids[first - 1] if first else self._blank_idx
-                    if first not in states:
-                        states[first] = self._decoder_state(
-                            [self._blank_idx, *ids[: first - 1]] if first else []
-                        )
-                    state = states[first]
-                    if (first, end) not in own:
-                        run = ids[first:end]
-                        own[(first, end)] = self._tdt_score(window, context, run, state)
-                    score = max(
-                        self._tdt_score(window, context, list(seq), state)
-                        for form in {" " + keyword, " " + keyword[0].upper() + keyword[1:]}
-                        for seq in self._spellings(form)
-                    )
-                    margin = (score - own[(first, end)]) / len(fold)
-                    if margin > -ACOUSTIC_MARGIN_PER_LETTER:
-                        found.append((margin, first, end, keyword))
+        texts = ["".join(tokens[a:b]) for a, b in words]
+        for w0, w1, keyword in near_misses(texts, keywords):
+            first, end = words[w0][0], words[w1 - 1][1]
+            fold = _fold(_letters(keyword))
+            a = min(frames[first - 1] + 1, frames[first]) if first else 0
+            b = (frames[end] if end < len(tokens) else len(encodings)) - 1
+            b = max(b, frames[end - 1], a)
+            window = np.ascontiguousarray(encodings[a : b + 1].T[None])
+            context = ids[first - 1] if first else self._blank_idx
+            if first not in states:
+                states[first] = self._decoder_state(
+                    [self._blank_idx, *ids[: first - 1]] if first else []
+                )
+            state = states[first]
+            if (first, end) not in own:
+                run = ids[first:end]
+                own[(first, end)] = self._tdt_score(window, context, run, state)
+            score = max(
+                self._tdt_score(window, context, list(seq), state)
+                for form in {" " + keyword, " " + keyword[0].upper() + keyword[1:]}
+                for seq in self._spellings(form)
+            )
+            margin = (score - own[(first, end)]) / len(fold)
+            if margin > -ACOUSTIC_MARGIN_PER_LETTER:
+                found.append((margin, first, end, keyword))
         taken = [False] * len(tokens)
         chosen: list[tuple[int, int, str]] = []
         for _, first, end, keyword in sorted(found, reverse=True):

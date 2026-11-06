@@ -7,7 +7,13 @@ import pytest
 
 np = pytest.importorskip("numpy", reason="adapter extras not installed")
 
-from myna.testbed.keyword_bias import ROOT, KeywordBias, keyword_bias, keyword_corrector
+from myna.testbed.keyword_bias import (
+    ROOT,
+    KeywordBias,
+    keyword_bias,
+    keyword_corrector,
+    near_misses,
+)
 
 # As _load_vocab returns it: "▁" already a space, blank spelt as in vocab.txt.
 VOCAB = [
@@ -321,3 +327,13 @@ def test_corrections_name_the_words_each_replacement_spans():
 
 def test_a_corrector_without_a_one_word_keyword_is_none():
     assert keyword_corrector(["New York", " "]) is None
+
+
+def test_near_misses_pair_one_word_runs_within_reach_and_split_spellings():
+    # "pulse audio" exactly is left to `correct`'s join; one edit off is not.
+    words = [" the", " Kalico", " pulse", " audios.", " Siobhan"]
+    found = near_misses(words, ["Kaliko", "PulseAudio", "Siobhan"])
+    assert (1, 2, "Kaliko") in found
+    assert (2, 4, "PulseAudio") in found
+    assert all(first != 4 for first, _, _ in found)  # already a keyword
+    assert not any(k == "Kaliko" and first == 0 for first, _, k in found)
