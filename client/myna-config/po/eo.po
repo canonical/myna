@@ -8,7 +8,7 @@ msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-10-11 11:54+0100\n"
-"PO-Revision-Date: 2026-10-17 10:38+0000\n"
+"PO-Revision-Date: 2026-11-06 19:52+0000\n"
 "Last-Translator: phlostically <phlostically@users.noreply.hosted.weblate.org>"
 "\n"
 "Language-Team: Esperanto <https://hosted.weblate.org/projects/ubuntu-desktop-"
@@ -18,7 +18,7 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=n != 1;\n"
-"X-Generator: Weblate 2026.11.dev0\n"
+"X-Generator: Weblate 2026.11.2.dev0\n"
 
 #: data/diagnostics-page.blp:5 data/diagnostics-page.blp:8 src/app.rs:1485
 msgid "About and Diagnostics"
@@ -534,15 +534,15 @@ msgstr "Neniu enigmetodo instalita"
 
 #: src/backend_ui.rs:2314
 msgid "The model kept a different value than the one you chose."
-msgstr ""
+msgstr "La modelo tenis valoron alian ol la valoron elektitan de vi."
 
 #: src/backend_ui.rs:2321
 msgid "The setting was saved, but the model did not start again."
-msgstr ""
+msgstr "La agordo konserviĝis, sed la modelo ne restartis."
 
 #: src/backend_ui.rs:2328
 msgid "The setting was changed, but it could not be read back."
-msgstr ""
+msgstr "La agordo ŝanĝiĝis sed ne estas relegebla."
 
 #: src/backend_ui.rs:2335
 msgid "The setting was changed, but reading it back was interrupted."
@@ -1089,7 +1089,7 @@ msgstr ""
 
 #: src/diagnostics.rs:345
 msgid "Other programs are saturating the CPU"
-msgstr ""
+msgstr "Aliaj programoj plenuzadas la ĉefprocesoron"
 
 #: src/diagnostics.rs:349
 msgid "Dictation will be slow. Pause the build or workload before dictating."
@@ -1316,11 +1316,11 @@ msgstr ""
 
 #: src/diagnostics.rs:808
 msgid "not set up"
-msgstr ""
+msgstr "ne agordita"
 
 #: src/diagnostics.rs:809
 msgid "turned off"
-msgstr ""
+msgstr "malŝaltita"
 
 #: src/diagnostics.rs:811
 msgid "locked by the administrator"
@@ -1494,7 +1494,7 @@ msgstr "jen nemodifebla valoro"
 
 #: src/presentation.rs:158
 msgid "Which version of this model to run."
-msgstr ""
+msgstr "La rulota versio de ĉi tiu modelo."
 
 #: src/presentation.rs:165
 msgid "The inference engine this model runs on."
@@ -1516,7 +1516,7 @@ msgstr ""
 
 #: src/presentation.rs:185
 msgid "Verbose logging"
-msgstr ""
+msgstr "Detala protokolado"
 
 #: src/presentation.rs:186
 msgid "Write additional diagnostics to the system log."
