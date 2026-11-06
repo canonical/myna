@@ -31,7 +31,7 @@ from myna.core import (
 )
 from myna.server.cli import build_adapter, build_parser
 from myna.server.lifecycle import MemoryPressureMonitor
-from myna.testbed.keyword_bias import KeywordBias, keyword_bias
+from myna.testbed.keyword_bias import KeywordBias, keyword_bias, keyword_corrector
 from myna.testbed.parakeet import (
     _COLLAPSE_RETRY_PAD_S,
     BATCH_WINDOW_CAP_S,
@@ -1137,14 +1137,20 @@ class _ScriptedJoint:
         self.width = len(_KW_VOCAB) + 2
 
     def run(self, names, feeds):
-        frame = int(feeds["encoder_outputs"][0, 0, 0])
-        logits = np.full((1, 1, 1, self.width), -50.0, dtype=np.float32)
+        # Like the export, a window of frames and a run of targets give the
+        # whole [frames x targets] grid; the scripted logits ignore the labels.
+        window = feeds["encoder_outputs"][0, 0, :].astype(int)
+        targets = feeds["targets"].shape[1]
+        logits = np.full((1, len(window), targets, self.width), -50.0, dtype=np.float32)
         logits[..., _KW_BLANK] = 0.0
-        for token, score in self.frames[frame].items():
-            logits[..., _KW[token]] = score
+        for f, frame in enumerate(window):
+            for token, score in self.frames[min(frame, len(self.frames) - 1)].items():
+                logits[0, f, :, _KW[token]] = score
         logits[..., len(_KW_VOCAB) + 1] = 1.0  # duration bin 1
-        state = feeds["input_states_1"]
-        return [logits, state, feeds["input_states_2"]]
+        states = [feeds["input_states_1"], feeds["input_states_2"]]
+        if names is None:  # every output, as a plain session.run(None, ...)
+            return [logits, feeds["target_length"], *states]
+        return [logits, *states]
 
 
 def _scripted_model(*frames):
@@ -1154,6 +1160,7 @@ def _scripted_model(*frames):
     model._vocab_size = len(_KW_VOCAB)
     model._decoder_joint = _ScriptedJoint(list(frames))
     model._joint_out_width = model._decoder_joint.width
+    model._pieces = None
     encodings = np.zeros((len(frames), 1024), dtype=np.float32)
     encodings[:, 0] = np.arange(len(frames))
     return model, encodings
@@ -1320,6 +1327,7 @@ def _random_decode(joint, frames, keywords):
 def test_a_keyword_that_never_completes_never_changes_the_transcript(seed, durations, monkeypatch):
     # The decode's own property; correcting near misses afterwards is not.
     monkeypatch.setattr(KeywordBias, "correct", lambda self, tokens, times, _p: (tokens, times))
+    monkeypatch.setattr(_ParakeetOnnx, "_toward_keywords", lambda self, enc, ids, *rest: rest[:3])
     joint = _RandomJoint(seed, durations, hot_frames=(0,) if seed % 2 else ())
     unbiased = _random_decode(joint, 24, ())
     assert unbiased[0], "sanity: the script emits tokens"
@@ -1338,6 +1346,7 @@ def test_the_random_script_does_try_the_keyword():
 
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(KeywordBias, "rerank", rerank)
+        mp.setattr(_ParakeetOnnx, "_toward_keywords", lambda self, enc, ids, *rest: rest[:3])
         for seed in range(12):
             _random_decode(_RandomJoint(seed, 3), 24, ["Siobhan"])
     assert sum(seen) >= 12
@@ -1385,3 +1394,36 @@ async def test_a_session_builds_its_keyword_bias_once(streaming):
     assert len(biases) > 1, "the session should span several decodes"
     assert isinstance(biases[0], KeywordBias)
     assert all(b is biases[0] for b in biases)
+
+
+# ─── Keywords scored against the audio after the decode ──────────────────────
+
+
+def _toward(frames, tokens, keywords):
+    model, encodings = _scripted_model(*frames)
+    ids = [_KW[t] for t in tokens]
+    timestamps = [0.08 * i for i in range(len(tokens))]
+    return model._toward_keywords(
+        encodings, ids, list(tokens), timestamps, [0.99] * len(tokens), keyword_corrector(keywords)
+    )[0]
+
+
+def test_a_sure_near_miss_the_audio_nearly_supports_becomes_the_keyword():
+    frames = [{" Si": 9.0}, {"ob": 9.0}, {"a": 9.0, "han": 8.6}]
+    assert _toward(frames, [" Si", "ob", "a"], ["Siobhan"]) == [" Siobhan"]
+
+
+def test_a_near_miss_the_audio_does_not_support_is_kept():
+    frames = [{" Si": 9.0}, {"ob": 9.0}, {"a": 9.0}]
+    assert _toward(frames, [" Si", "ob", "a"], ["Siobhan"]) == [" Si", "ob", "a"]
+
+
+def test_a_word_far_from_every_keyword_is_never_scored():
+    frames = [{" cat": 9.0, " Si": 9.0}, {"ob": 9.0}, {"han": 9.0}]
+    assert _toward(frames, [" cat"], ["Siobhan"]) == [" cat"]
+
+
+def test_a_run_already_holding_a_keyword_is_left_alone():
+    frames = [{" Si": 9.0}, {"ob": 9.0}, {"han": 9.0}, {" the": 9.0}]
+    tokens = [" Si", "ob", "han", " the"]
+    assert _toward(frames, tokens, ["Siobhan", "Siobhanthe"]) == tokens

@@ -211,3 +211,34 @@ def _runs(tokens: Sequence[CtcToken], n: int) -> list[tuple[int, int]]:
             if count >= n - 1:
                 out.append((i, j + 1))
     return out
+
+
+def tdt_log_likelihood(
+    logits: NDArray[np.float32], labels: Sequence[int], vocab_size: int, blank: int
+) -> float:
+    """log P(``labels`` | a window) under a TDT joint's [frames, labels+1,
+    vocab+durations] logits: a label at (t, u) moves t by its duration (0
+    allowed), a blank by 1 or more; every label emitted at or past the
+    window's end counts."""
+    frames = logits.shape[0]
+    tok = logits[..., :vocab_size].astype(np.float64)
+    tok -= np.logaddexp.reduce(tok, axis=-1, keepdims=True)
+    dur = logits[..., vocab_size:].astype(np.float64)
+    dur -= np.logaddexp.reduce(dur, axis=-1, keepdims=True)
+    durations = dur.shape[-1]
+    n = len(labels)
+    alpha = np.full((frames + durations, n + 1), -np.inf)
+    alpha[0, 0] = 0.0
+    for t in range(frames):
+        for u in range(n + 1):
+            here = alpha[t, u]
+            if here == -np.inf:
+                continue
+            stay = here + tok[t, u, blank]
+            for d in range(1, durations):
+                alpha[t + d, u] = np.logaddexp(alpha[t + d, u], stay + dur[t, u, d])
+            if u < n:
+                emit = here + tok[t, u, labels[u]]
+                for d in range(durations):
+                    alpha[t + d, u + 1] = np.logaddexp(alpha[t + d, u + 1], emit + dur[t, u, d])
+    return float(np.logaddexp.reduce(alpha[frames:, n]))

@@ -114,6 +114,11 @@ class KeywordCorrector:
     def __init__(self, spellings: dict[str, str]) -> None:
         self._spellings = spellings
 
+    @property
+    def keywords(self) -> tuple[str, ...]:
+        """The one-word keywords, as written."""
+        return tuple(self._spellings.values())
+
     def corrections(
         self, words: Sequence[str], confidences: Sequence[float]
     ) -> list[tuple[int, int, str]]:

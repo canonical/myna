@@ -96,7 +96,16 @@ from myna.core import (
 )
 from myna.server.lifecycle import GPU_UNAVAILABLE_MESSAGE, MemoryPressureMonitor, sample_majflt
 from myna.testbed.adapter import Candidate, runtime_versions
-from myna.testbed.keyword_bias import ROOT, KeywordBias, keyword_bias
+from myna.testbed.keyword_acoustic import tdt_log_likelihood
+from myna.testbed.keyword_bias import (
+    _SPECIAL,
+    ROOT,
+    KeywordBias,
+    _edits,
+    _fold,
+    _segments,
+    keyword_bias,
+)
 from myna.testbed.streaming.coverage import (
     RETRY_PADS,
     UNTRANSCRIBED_GAP_S,
@@ -224,6 +233,16 @@ def _require_cuda(session: object, name: str) -> None:
 # TDT frame duration: 10 ms feature window × 8 encoder subsampling.
 FRAME_S = 0.08
 MAX_TOKENS_PER_STEP = 10  # RNNT multi-token-per-frame guard (murmure parity)
+# Keywords scored against the audio (`_toward_keywords`): tuned on the
+# frozen set's tune half, 2.5 and 3 add false hits on the ordinary slice.
+ACOUSTIC_MARGIN_PER_LETTER = 2.0
+_SPELLINGS = 6
+_EDGES = re.compile(r"(\s*\W*?)(\w.*\w|\w)?(\W*)", re.DOTALL)
+
+
+def _letters(text: str) -> str:
+    return "".join(ch for ch in text if ch.isalpha())
+
 
 # Parakeet TDT 0.6B v3 is multilingual across 25 European languages,
 # auto-detected (no language input to the ONNX graph).
@@ -547,6 +566,7 @@ class _ParakeetOnnx:
         self._encoder_run_options = encoder_run_options(ort, device)
         self._vocab, self._blank_idx = _load_vocab(model_dir)
         self._bias: tuple[tuple[str, ...], KeywordBias | None] | None = None
+        self._pieces: dict[str, int] | None = None
         # Logits are vocab + TDT duration bins; the duration slice is the tail.
         self._vocab_size = len(self._vocab)
         # Static for this model (batch=1, one target, one encoder frame per
@@ -690,6 +710,7 @@ class _ParakeetOnnx:
         matcher: KeywordBias | _Unbiased = bias or _UNBIASED
         buffers = self._joint_buffers()
         tokens: list[str] = []
+        ids: list[int] = []
         timestamps: list[float] = []
         confidences: list[float] = []
         t = 0
@@ -739,6 +760,7 @@ class _ParakeetOnnx:
                             buffers.state_in[1][...] = buffers.state_out[1]
                             prev_token = token
                             tokens.append(self._vocab[token])
+                            ids.append(token)
                             timestamps.append(t * FRAME_S)
                             if bias is not None:
                                 confidences.append(_probability(vocab_logits, token))
@@ -756,6 +778,7 @@ class _ParakeetOnnx:
                     t, emitted_at_frame = rewind.t, rewind.emitted_at_frame
                     prev_token, state = rewind.prev_token, rewind.state
                     del tokens[rewind.n_tokens :], timestamps[rewind.n_tokens :]
+                    del ids[rewind.n_tokens :]
                     del confidences[rewind.n_tokens :]
                     buffers.state_in[0][...] = rewind.decoder_state[0]
                     buffers.state_in[1][...] = rewind.decoder_state[1]
@@ -763,7 +786,153 @@ class _ParakeetOnnx:
                     rewind = None
         if bias is None:
             return tokens, timestamps
+        tokens, timestamps, confidences = self._toward_keywords(
+            encodings, ids, tokens, timestamps, confidences, bias
+        )
         return bias.correct(tokens, timestamps, confidences)
+
+    def _toward_keywords(
+        self,
+        encodings: NDArray[np.float32],
+        ids: list[int],
+        tokens: list[str],
+        timestamps: list[float],
+        confidences: list[float],
+        bias: KeywordBias,
+    ) -> tuple[list[str], list[float], list[float]]:
+        """Runs of one to three words rewritten to a keyword the audio nearly
+        supports: the keyword's TDT likelihood over the run's frames within
+        `ACOUSTIC_MARGIN_PER_LETTER` nats per letter of the run's own. A
+        loose spelling filter picks the candidates, since each costs a joint
+        call: one word within ~40% edits of the keyword, or words that spell
+        it split. A run already holding a keyword is never touched. Measured
+        (.kb/model-evaluation.md): holdout recall 73.8 -> 85.4%, WER
+        3.72 -> 3.18 over the bias and `correct` alone."""
+        keywords = bias.keywords
+        if not keywords or not tokens:
+            return tokens, timestamps, confidences
+        folds = {_fold(_letters(k)): k for k in keywords}
+        frames = [round(t / FRAME_S) for t in timestamps]
+        starts = [i for i, token in enumerate(tokens) if i == 0 or token.startswith(" ")]
+        words = list(zip(starts, [*starts[1:], len(tokens)], strict=True))
+        states: dict[int, tuple[NDArray[np.float32], NDArray[np.float32]]] = {}
+        own: dict[tuple[int, int], float] = {}
+        found: list[tuple[float, int, int, str]] = []
+        for w0 in range(len(words)):
+            for count in (1, 2, 3):
+                if w0 + count > len(words):
+                    break
+                first, end = words[w0][0], words[w0 + count - 1][1]
+                text = "".join(tokens[first:end])
+                core = _fold(_letters(text))
+                if not core or {_fold(_letters(w)) for w in text.split()} & folds.keys():
+                    continue
+                for fold, keyword in folds.items():
+                    if len(fold) < 3 or abs(len(fold) - len(core)) > max(2, len(fold) // 2):
+                        continue
+                    reach = max(1, round(0.4 * len(fold))) if count == 1 else 1
+                    if _edits(core, fold) > reach:
+                        continue
+                    a = min(frames[first - 1] + 1, frames[first]) if first else 0
+                    b = (frames[end] if end < len(tokens) else len(encodings)) - 1
+                    b = max(b, frames[end - 1], a)
+                    window = np.ascontiguousarray(encodings[a : b + 1].T[None])
+                    context = ids[first - 1] if first else self._blank_idx
+                    if first not in states:
+                        states[first] = self._decoder_state(
+                            [self._blank_idx, *ids[: first - 1]] if first else []
+                        )
+                    state = states[first]
+                    if (first, end) not in own:
+                        run = ids[first:end]
+                        own[(first, end)] = self._tdt_score(window, context, run, state)
+                    score = max(
+                        self._tdt_score(window, context, list(seq), state)
+                        for form in {" " + keyword, " " + keyword[0].upper() + keyword[1:]}
+                        for seq in self._spellings(form)
+                    )
+                    margin = (score - own[(first, end)]) / len(fold)
+                    if margin > -ACOUSTIC_MARGIN_PER_LETTER:
+                        found.append((margin, first, end, keyword))
+        taken = [False] * len(tokens)
+        chosen: list[tuple[int, int, str]] = []
+        for _, first, end, keyword in sorted(found, reverse=True):
+            if any(taken[first:end]):
+                continue
+            chosen.append((first, end, keyword))
+            for x in range(first, end):
+                taken[x] = True
+        for first, end, keyword in sorted(chosen, reverse=True):
+            text = "".join(tokens[first:end])
+            match = _EDGES.fullmatch(text)
+            assert match is not None
+            if keyword.islower() and _letters(text)[:1].isupper():
+                keyword = keyword[0].upper() + keyword[1:]
+            tokens[first:end] = [match.group(1) + keyword + match.group(3)]
+            timestamps[first:end] = [timestamps[first]]
+            confidences[first:end] = [1.0]
+        return tokens, timestamps, confidences
+
+    def _decoder_state(self, prefix: list[int]) -> tuple[NDArray[np.float32], NDArray[np.float32]]:
+        """The prediction network's state after consuming ``prefix``."""
+        zero = np.zeros((2, 1, 640), dtype=np.float32)
+        if not prefix:
+            return zero, zero.copy()
+        _, _, state_1, state_2 = self._decoder_joint.run(
+            None,
+            {
+                "encoder_outputs": np.zeros((1, 1024, 1), dtype=np.float32),
+                "targets": np.array([prefix], dtype=np.int32),
+                "target_length": np.array([len(prefix)], dtype=np.int32),
+                "input_states_1": zero,
+                "input_states_2": zero.copy(),
+            },
+        )
+        return state_1, state_2
+
+    def _tdt_score(
+        self,
+        window: NDArray[np.float32],
+        context: int,
+        labels: list[int],
+        state: tuple[NDArray[np.float32], NDArray[np.float32]],
+    ) -> float:
+        """TDT log-likelihood of ``labels`` over ``window`` [1, 1024, frames],
+        after ``context``: one joint call for the whole grid."""
+        targets = [context, *labels]
+        logits = self._decoder_joint.run(
+            None,
+            {
+                "encoder_outputs": window,
+                "targets": np.array([targets], dtype=np.int32),
+                "target_length": np.array([len(targets)], dtype=np.int32),
+                "input_states_1": state[0],
+                "input_states_2": state[1],
+            },
+        )[0]
+        return tdt_log_likelihood(logits[0], labels, self._vocab_size, self._blank_idx)
+
+    def _spellings(self, word: str) -> list[tuple[int, ...]]:
+        """Up to `_SPELLINGS` tokenisations of ``word`` in this model's
+        vocabulary, fewest tokens first."""
+        if self._pieces is None:
+            self._pieces = {}
+            for token_id, piece in enumerate(self._vocab):
+                if piece and token_id != self._blank_idx and not _SPECIAL.fullmatch(piece):
+                    self._pieces.setdefault(piece, token_id)
+        by_start: dict[int, list[tuple[int, int]]] = {}
+        for i, j, token in _segments(word, self._pieces):
+            by_start.setdefault(i, []).append((j, token))
+        found: set[tuple[int, ...]] = set()
+        stack: list[tuple[int, tuple[int, ...]]] = [(0, ())]
+        while stack and len(found) < 50:
+            at, seq = stack.pop()
+            if at == len(word):
+                found.add(seq)
+                continue
+            for j, token in sorted(by_start.get(at, []), reverse=True):
+                stack.append((j, (*seq, token)))
+        return sorted(found, key=len)[:_SPELLINGS]
 
     def transcribe(
         self, samples: NDArray[np.float32], *, bias: KeywordBias | None = None

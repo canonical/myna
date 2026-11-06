@@ -8,7 +8,13 @@ import pytest
 
 np = pytest.importorskip("numpy", reason="adapter extras not installed")
 
-from myna.testbed.keyword_acoustic import CtcKeywords, CtcToken, ctc_log_likelihood, greedy
+from myna.testbed.keyword_acoustic import (
+    CtcKeywords,
+    CtcToken,
+    ctc_log_likelihood,
+    greedy,
+    tdt_log_likelihood,
+)
 
 PIECES = ["<blank>", "生", "耕", "申", "根", "签", "证", "，", "센", "서", "울", " ok"]
 ID = {p: i for i, p in enumerate(PIECES)}
@@ -113,3 +119,16 @@ def test_latin_and_one_letter_keywords_are_not_scored():
     keywords = CtcKeywords(["Kaliko", "申", "ok 申根"], encode)
     assert keywords.keywords == ()
     assert not keywords
+
+
+def test_tdt_likelihood_sums_label_and_blank_paths_over_durations():
+    # One frame, two labels (blank 0, token 1), durations {0, 1}: emit the
+    # token with duration 0 or 1; after a duration-0 emission the blank (or a
+    # second emission) must still leave the frame.
+    p_tok = np.array([0.25, 0.75])
+    p_dur = np.array([0.4, 0.6])
+    logits = np.log(np.concatenate([p_tok, p_dur]))[None, None, :].repeat(2, axis=1)
+    expected = p_tok[1] * p_dur[1] + p_tok[1] * p_dur[0] * p_tok[0] * p_dur[1]
+    assert tdt_log_likelihood(logits.astype(np.float32), [1], 2, 0) == pytest.approx(
+        np.log(expected)
+    )
