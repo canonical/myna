@@ -606,7 +606,11 @@ async def test_regions_split_at_pauses_join_without_a_space_beside_unspaced_text
 
 # --- keywords ----------------------------------------------------------------
 
-_PIECES = ["<blank>", "<unk>", "<|zh|>", "生", "耕", "申", "根", "签", "▁returned", "▁Kalico", "."]
+_PIECES = [
+    "<blank>", "<unk>", "<|zh|>", "生", "耕", "申", "根", "签", "▁returned", "▁Kalico", ".",
+    "▁Ka", "li", "co", "ko", "▁Ca",
+]  # fmt: skip
+_WORDS = {"Kaliko": ["▁Ka", "li", "ko"]}
 
 
 class _Sp:
@@ -617,6 +621,8 @@ class _Sp:
         return 1
 
     def encode(self, text):
+        if text in _WORDS:
+            return [_PIECES.index(p) for p in _WORDS[text]]
         return [_PIECES.index(ch) if ch in _PIECES else 1 for ch in text]
 
 
@@ -681,3 +687,19 @@ async def test_uncorrected_output_is_the_library_text():
     model = _CtcStub([{"<|zh|>": 0.9}, {"签": 0.9}])
     done = await _keyword_session(model, ("申根",))
     assert done.text == "签"
+
+
+async def test_a_latin_miss_too_far_for_the_text_rule_is_scored_against_the_audio():
+    # "Calico" is two edits from "Kaliko": only the audio can reach it.
+    model = _CtcStub(
+        [
+            {"▁returned": 0.9},
+            {},
+            {"▁Ca": 0.6, "▁Ka": 0.35},
+            {"li": 0.9},
+            {"co": 0.6, "ko": 0.35},
+            {".": 0.9},
+        ]
+    )
+    done = await _keyword_session(model, ("Kaliko",))
+    assert done.text == "returned Kaliko."

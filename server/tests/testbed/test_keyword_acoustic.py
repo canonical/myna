@@ -132,3 +132,57 @@ def test_tdt_likelihood_sums_label_and_blank_paths_over_durations():
     assert tdt_log_likelihood(logits.astype(np.float32), [1], 2, 0) == pytest.approx(
         np.log(expected)
     )
+
+
+# Latin keywords: whole words, spelt by ``encode_word`` with its word-start mark.
+WORD_PIECES = ["<blank>", " re", "turned", " Ka", "li", "co", "ko", ".", " cat"]
+WID = {p: i for i, p in enumerate(WORD_PIECES)}
+
+
+def encode_word(text):
+    table = {"Kaliko": (WID[" Ka"], WID["li"], WID["ko"])}
+    return table.get(text)
+
+
+def word_frames(*columns):
+    lp = np.full((len(columns), len(WORD_PIECES)), 1e-15)
+    for t, col in enumerate(columns):
+        for piece, p in col.items():
+            lp[t, WID[piece]] = p
+        lp[t, 0] = max(1e-15, 1 - sum(col.values()))
+    lp /= lp.sum(1, keepdims=True)
+    return np.log(lp).astype(np.float32)
+
+
+def word_tokens(lp):
+    return [CtcToken(i, WORD_PIECES[i], a, b) for i, a, b, _ in greedy(lp, 0)]
+
+
+def _calico(ko_share):
+    return word_frames(
+        {" re": 0.9},
+        {"turned": 0.9},
+        {" Ka": 0.9},
+        {"li": 0.9},
+        {"co": 0.6, "ko": 0.6 * ko_share},
+        {".": 0.9},
+    )
+
+
+def test_a_latin_near_miss_the_audio_nearly_supports_becomes_the_keyword():
+    lp = _calico(0.5)
+    keywords = CtcKeywords(["Kaliko"], encode, encode_word=encode_word)
+    assert keywords
+    assert keywords.corrections(word_tokens(lp), lp) == [(2, 5, "Kaliko")]
+
+
+def test_a_latin_near_miss_the_audio_does_not_support_is_kept():
+    lp = _calico(1e-15)
+    keywords = CtcKeywords(["Kaliko"], encode, encode_word=encode_word)
+    assert keywords.corrections(word_tokens(lp), lp) == []
+
+
+def test_a_latin_word_far_from_the_keyword_is_never_scored():
+    lp = word_frames({" cat": 0.9, " Ka": 0.8}, {"li": 0.5}, {"ko": 0.5})
+    keywords = CtcKeywords(["Kaliko"], encode, encode_word=encode_word)
+    assert keywords.corrections(word_tokens(lp), lp) == []

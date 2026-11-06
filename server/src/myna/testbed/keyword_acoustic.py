@@ -24,9 +24,14 @@ from functools import lru_cache
 import numpy as np
 from numpy.typing import NDArray
 
+from myna.testbed.keyword_bias import _edits, _fold
+
 # Tuned on the tune halves of the three FLEURS keyword tiers: 4 is where
 # ordinary false hits start.
 MARGIN_PER_LETTER = 3.0
+# Latin keywords, on the frozen English set's tune half with SenseVoice: 5 is
+# where ordinary false hits start (1 -> 13 of 8294).
+MARGIN_PER_LATIN_LETTER = 4.0
 
 LETTER = re.compile("[぀-ヺー-ヿ㐀-䶿一-鿿豈-﫿가-힯]")
 
@@ -108,21 +113,36 @@ class CtcKeywords:
         encode: Callable[[str], tuple[int, ...] | None],
         blank: int = 0,
         margin: float = MARGIN_PER_LETTER,
+        *,
+        encode_word: Callable[[str], tuple[int, ...] | None] | None = None,
+        latin_margin: float = MARGIN_PER_LATIN_LETTER,
     ) -> None:
         self._encode = lru_cache(maxsize=None)(encode)
         self._blank = blank
         self._margin = margin
+        self._latin_margin = latin_margin
+        cleaned = [" ".join(k.split()) for k in keywords]
         self.keywords = tuple(
             dict.fromkeys(
-                k
-                for k in (" ".join(k.split()) for k in keywords)
-                if len(k) >= 2 and all(LETTER.fullmatch(ch) for ch in k)
+                k for k in cleaned if len(k) >= 2 and all(LETTER.fullmatch(ch) for ch in k)
             )
         )
         self._spellings = {k: self._spell(k) for k in self.keywords}
+        # One-word keywords with no Han, kana or Hangul, by folded letters:
+        # scored as written and capitalised, in the model's word pieces.
+        self._latin: dict[str, tuple[str, list[tuple[int, ...]]]] = {}
+        if encode_word is not None:
+            for k in cleaned:
+                fold = _fold(_letters(k))
+                if len(fold) < 3 or " " in k or LETTER.search(k) or fold in self._latin:
+                    continue
+                forms = dict.fromkeys((k, k[0].upper() + k[1:]))
+                seqs = [seq for f in forms if (seq := encode_word(f))]
+                if seqs:
+                    self._latin[fold] = (k, seqs)
 
     def __bool__(self) -> bool:
-        return any(self._spellings.values())
+        return any(self._spellings.values()) or bool(self._latin)
 
     def _spell(self, keyword: str) -> list[tuple[int, ...]]:
         """Token sequences to score for ``keyword``: itself, or with each
@@ -143,9 +163,74 @@ class CtcKeywords:
         self, tokens: Sequence[CtcToken], log_probs: NDArray[np.float32]
     ) -> list[tuple[int, int, str]]:
         """(first token, end token, keyword) for each run to rewrite."""
+        if not tokens:
+            return []
+        found = self._han_kana_hangul(tokens, log_probs) + self._words(tokens, log_probs)
+        taken = [False] * len(tokens)
+        out: list[tuple[int, int, str]] = []
+        for _, i, end, keyword in sorted(found, reverse=True):
+            if any(taken[i:end]):
+                continue
+            out.append((i, end, keyword))
+            for x in range(i, end):
+                taken[x] = True
+        return sorted(out)
+
+    def _words(
+        self, tokens: Sequence[CtcToken], log_probs: NDArray[np.float32]
+    ) -> list[tuple[float, int, int, str]]:
+        """Runs of one to three words, a loose spelling filter picking the
+        candidates (one word within ~40% edits of a Latin keyword, several
+        only when they spell it split): (margin, first, end, keyword)."""
+        if not self._latin:
+            return []
+        frames = log_probs.shape[0]
+        starts = [i for i, t in enumerate(tokens) if i == 0 or t.piece.startswith(" ")]
+        words = list(zip(starts, [*starts[1:], len(tokens)], strict=True))
+        own: dict[tuple[int, int], float] = {}
+        found: list[tuple[float, int, int, str]] = []
+        for w0 in range(len(words)):
+            for count in (1, 2, 3):
+                if w0 + count > len(words):
+                    break
+                first, end = words[w0][0], words[w0 + count - 1][1]
+                while first < end and not _letters(tokens[first].piece):
+                    first += 1
+                while end > first and not _letters(tokens[end - 1].piece):
+                    end -= 1
+                if first >= end:
+                    continue
+                text = "".join(t.piece for t in tokens[first:end])
+                core = _fold(_letters(text))
+                if {_fold(_letters(w)) for w in text.split()} & self._latin.keys():
+                    continue
+                for fold, (keyword, spellings) in self._latin.items():
+                    if abs(len(fold) - len(core)) > max(2, len(fold) // 2):
+                        continue
+                    reach = max(1, round(0.4 * len(fold))) if count == 1 else 1
+                    if _edits(core, fold) > reach:
+                        continue
+                    a = tokens[first - 1].last + 1 if first else 0
+                    b = tokens[end].first - 1 if end < len(tokens) else frames - 1
+                    if b < a:
+                        continue
+                    if (first, end) not in own:
+                        labels = [t.id for t in tokens[first:end]]
+                        own[(first, end)] = ctc_log_likelihood(log_probs, a, b, labels, self._blank)
+                    score = max(
+                        ctc_log_likelihood(log_probs, a, b, seq, self._blank) for seq in spellings
+                    )
+                    margin = (score - own[(first, end)]) / len(fold)
+                    if margin > -self._latin_margin:
+                        found.append((margin, first, end, keyword))
+        return found
+
+    def _han_kana_hangul(
+        self, tokens: Sequence[CtcToken], log_probs: NDArray[np.float32]
+    ) -> list[tuple[float, int, int, str]]:
         frames = log_probs.shape[0]
         ids = sorted({i for seqs in self._spellings.values() for seq in seqs for i in seq})
-        if not ids or not tokens:
+        if not ids:
             return []
         column = {token: j for j, token in enumerate(ids)}
         # Exact pruning: P(keyword | a..b) is at most the product of each of
@@ -185,15 +270,11 @@ class CtcKeywords:
                 margin = (score - own[(i, end)]) / n
                 if margin > -self._margin:
                     found.append((margin, i, end, keyword))
-        taken = [False] * len(tokens)
-        out: list[tuple[int, int, str]] = []
-        for _, i, end, keyword in sorted(found, reverse=True):
-            if any(taken[i:end]):
-                continue
-            out.append((i, end, keyword))
-            for x in range(i, end):
-                taken[x] = True
-        return sorted(out)
+        return found
+
+
+def _letters(text: str) -> str:
+    return "".join(ch for ch in text if ch.isalpha())
 
 
 def _runs(tokens: Sequence[CtcToken], n: int) -> list[tuple[int, int]]:

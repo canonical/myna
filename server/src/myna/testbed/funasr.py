@@ -367,10 +367,12 @@ class FunasrAdapter:
         confidences = [peak for *_, peak in decoded]
         changed = False
         scored = self._ctc_keywords(keywords, sp, model.blank_id)
-        for first, end, keyword in reversed(
-            scored.corrections(tokens, log_probs) if scored else []
-        ):
-            space = " " if pieces[first].startswith(" ") else ""
+        spans = scored.corrections(tokens, log_probs) if scored else []
+        for first, end, keyword in reversed(spans):
+            run = "".join(pieces[first:end])
+            space = " " if run.startswith(" ") else ""
+            if keyword.islower() and run.strip()[:1].isupper():
+                keyword = keyword[0].upper() + keyword[1:]
             pieces[first:end] = [space + keyword]
             confidences[first:end] = [1.0]
             changed = True
@@ -394,7 +396,14 @@ class FunasrAdapter:
                 ids = tuple(i for i in sp.encode(text) if sp.id_to_piece(i) != "\u2581")
                 return None if not ids or unk in ids else ids
 
-            cached = (keywords, CtcKeywords(keywords, encode, blank=blank))
+            def encode_word(text: str) -> tuple[int, ...] | None:
+                ids = tuple(sp.encode(text))
+                return None if not ids or unk in ids else ids
+
+            cached = (
+                keywords,
+                CtcKeywords(keywords, encode, blank=blank, encode_word=encode_word),
+            )
             self._ctc_cache = cached
         return cached[1]
 
