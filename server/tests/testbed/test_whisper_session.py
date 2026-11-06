@@ -829,3 +829,84 @@ async def test_batch_unaligned_segments_are_timed_in_absolute_seconds():
             assert segment.start == pytest.approx(int(words[0][1:]) + 0.1)
             assert segment.end == pytest.approx(int(words[-1][1:]) + 0.6)
     assert "".join(f.text for f in finals(events)).split() == _labels(plan)
+
+
+class _CountingTokenizer:
+    def encode(self, text, add_special_tokens=True):
+        return SimpleNamespace(ids=list(range(len(text.split()))))
+
+
+def _keyword_adapter(*segments, **kwargs) -> FasterWhisperAdapter:
+    adapter = adapter_with(*segments) if not kwargs else FasterWhisperAdapter("tiny", **kwargs)
+    if kwargs:
+        adapter._model = _FakeWhisperModel(*segments)
+    adapter._model.hf_tokenizer = _CountingTokenizer()
+    return adapter
+
+
+def _calico(probability):
+    return _Segment(
+        " returned Kalico.",
+        start=0.0,
+        end=2.0,
+        words=[_Word(" returned", 0.1, 0.5, 0.95), _Word(" Kalico.", 0.6, 1.2, probability)],
+    )
+
+
+def test_whisper_advertises_keywords():
+    assert FasterWhisperAdapter("tiny").capabilities().keywords is True
+
+
+async def test_keywords_turn_on_the_alignment_pass_for_word_confidences():
+    adapter = _keyword_adapter(_Segment(" hi"))
+    await run_session(adapter, keywords=("Kaliko",))
+    assert adapter._model.calls[0]["word_timestamps"] is True
+
+
+async def test_an_unsure_near_miss_of_a_keyword_commits_as_the_keyword():
+    adapter = _keyword_adapter(_calico(0.3))
+
+    events = await run_session(adapter, audio_seconds=2.0, keywords=("Kaliko",))
+
+    assert [f.text for f in finals(events)] == ["returned Kaliko."]
+    assert events[-1].text == "returned Kaliko."
+
+
+async def test_a_confident_word_is_not_corrected_to_a_keyword():
+    adapter = _keyword_adapter(_calico(0.95))
+
+    events = await run_session(adapter, audio_seconds=2.0, keywords=("Kaliko",))
+
+    assert events[-1].text == "returned Kalico."
+
+
+async def test_a_corrected_word_keeps_the_span_of_the_words_it_replaced():
+    adapter = _keyword_adapter(
+        _Segment(
+            " pulse audio",
+            end=2.0,
+            words=[_Word(" pulse", 0.2, 0.5), _Word(" audio", 0.6, 1.1)],
+        )
+    )
+
+    events = await run_session(
+        adapter, audio_seconds=2.0, keywords=("PulseAudio",), timestamp_granularity="word"
+    )
+
+    (final,) = finals(events)
+    assert final.text == "PulseAudio"
+    assert [(s.text, s.start, s.end) for s in final.segments] == [("PulseAudio", 0.2, 1.1)]
+
+
+async def test_streaming_commits_the_corrected_keyword():
+    class _StreamingModel:
+        def transcribe(self, samples, **kwargs):
+            return (s for s in [_calico(0.3)]), None
+
+    adapter = FasterWhisperAdapter("tiny", streaming=True, stream_cadence_s=0.5)
+    adapter._model = _StreamingModel()
+
+    events = await run_session(adapter, audio_seconds=2.0, keywords=("Kaliko",))
+
+    assert "Kaliko" in events[-1].text
+    assert "Kalico" not in events[-1].text

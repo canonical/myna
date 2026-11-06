@@ -31,6 +31,7 @@ import re
 import threading
 from collections import deque
 from collections.abc import AsyncIterator
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from myna.core import (
@@ -51,6 +52,7 @@ from myna.core import (
 )
 from myna.server.lifecycle import GPU_UNAVAILABLE_MESSAGE
 from myna.testbed.adapter import Candidate, runtime_versions
+from myna.testbed.keyword_bias import KeywordCorrector, keyword_corrector
 from myna.testbed.streaming.strategies import Hypothesis, Word
 
 if TYPE_CHECKING:
@@ -245,6 +247,33 @@ def _timed_segments(
     return (Segment(start=start, end=end, text=text, score=segment.avg_logprob),)
 
 
+@dataclass(frozen=True)
+class _Aligned:
+    """The alignment a keyword correction stands in for the words it
+    replaced: what `_timed_segments` reads of a faster-whisper word."""
+
+    word: str
+    probability: float = 1.0
+
+
+def _corrected_pairs(
+    pairs: list[tuple[Word, Any]], corrector: KeywordCorrector | None
+) -> list[tuple[Word, Any]]:
+    """``pairs`` with each correction folded into one word spanning the words
+    it replaced. Needs the alignment's word probabilities, so unaligned text
+    passes through."""
+    if corrector is None or not pairs or any(a is None for _, a in pairs):
+        return pairs
+    spans = corrector.corrections([w.text for w, _ in pairs], [a.probability for _, a in pairs])
+    out: list[tuple[Word, Any]] = []
+    done = 0
+    for first, end, text in spans:
+        out += pairs[done:first]
+        out.append((Word(text, pairs[first][0].start, pairs[end - 1][0].end), _Aligned(text)))
+        done = end
+    return out + pairs[done:]
+
+
 # faster-whisper conditions each window on at most this many previous tokens
 # (``max_length // 2 - 1``); carrying them across a batch cut keeps that.
 _CONTEXT_TOKENS = 223
@@ -324,6 +353,9 @@ class FasterWhisperAdapter:
             # Whisper can translate→English, but this adapter doesn't wire
             # output_language to the translate task yet — advertise honestly.
             translation=False,
+            # Not a bias: any word list in the prompt breaks the decode
+            # (.kb/model-evaluation.md). Words are corrected after it.
+            keywords=True,
             streaming=self._streaming,
             runtime={
                 **runtime_versions(
@@ -527,13 +559,17 @@ class FasterWhisperAdapter:
         from myna.testbed.streaming.strategies import Hypothesis, LocalAgreement, Word
 
         options = stream_decode_options(config.language, config.prompt, self._stream_beam_size)
+        corrector = keyword_corrector(config.keywords)
 
         def decode(samples: NDArray[np.float32], offset: float) -> Hypothesis:
             segments, _info = self._drain(model, samples, options)
             words: list[Word] = []
             for seg in segments:
-                for w in seg.words or []:
-                    words.append(Word(text=w.word, start=w.start + offset, end=w.end + offset))
+                pairs = [
+                    (Word(text=w.word, start=w.start + offset, end=w.end + offset), w)
+                    for w in seg.words or []
+                ]
+                words.extend(w for w, _ in _corrected_pairs(pairs, corrector))
             return Hypothesis(words=words)
 
         transcript = await run_streaming_loop(
@@ -574,6 +610,9 @@ class FasterWhisperAdapter:
 
         granularity = config.timestamp_granularity
         language = config.language
+        # Correcting toward keywords reads each word's probability, which
+        # only the alignment pass produces.
+        corrector = keyword_corrector(config.keywords)
         context: deque[int] = deque(maxlen=_CONTEXT_TOKENS)
         if config.prompt is not None:
             context.extend(_prompt_tokens(model, config.prompt))
@@ -620,6 +659,7 @@ class FasterWhisperAdapter:
                         (at(text, segment.start, segment.end), None)
                         for text in _UNALIGNED_WORD.findall(segment.text)
                     ]
+                pairs = _corrected_pairs(pairs, corrector)
                 region.append((segment, pairs, origin))
                 words.extend(w for w, _ in pairs)
             if language is None:
@@ -642,7 +682,10 @@ class FasterWhisperAdapter:
             nonlocal decoded, processed
             first = round(offset * WHISPER_RATE)
             word_timestamps = (
-                granularity is not None or first < processed or ends_at_forced_cut(samples)
+                granularity is not None
+                or corrector is not None
+                or first < processed
+                or ends_at_forced_cut(samples)
             )
             end = offset + len(samples) / WHISPER_RATE
             words = decode_once(samples, offset, word_timestamps, offset, end)
@@ -688,7 +731,8 @@ class FasterWhisperAdapter:
             kept_ids = {id(w) for w in committed}
             for segment, pairs, offset in region:
                 kept = [(w, a) for w, a in pairs if id(w) in kept_ids]
-                if len(kept) == len(pairs):
+                corrected = any(isinstance(a, _Aligned) for _, a in pairs)
+                if len(kept) == len(pairs) and not corrected:
                     text = segment.text.rstrip()
                     tokens = segment.tokens
                 else:
