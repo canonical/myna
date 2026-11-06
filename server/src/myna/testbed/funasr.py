@@ -41,6 +41,8 @@ from myna.core import (
     TranscriptionProgress,
 )
 from myna.testbed.adapter import Candidate, runtime_versions
+from myna.testbed.keyword_acoustic import LETTER, CtcKeywords, CtcToken, greedy
+from myna.testbed.keyword_bias import keyword_corrector
 from myna.testbed.streaming.strategies import UNSPACED_CHARS
 
 FUNASR_RATE = 16_000
@@ -128,6 +130,7 @@ class FunasrAdapter:
         self._textnorm = textnorm
         self._model: Any | None = None
         self._model_lock = asyncio.Lock()
+        self._ctc_cache: tuple[tuple[str, ...], CtcKeywords] | None = None
 
     # ------------------------------------------------------------------
     # Adapter protocol
@@ -157,6 +160,7 @@ class FunasrAdapter:
             # woitn decodes the same model to unpunctuated, uncased text.
             punctuation=self._textnorm == "withitn",
             translation=False,
+            keywords=True,
             streaming=self.streaming,
             runtime={
                 **runtime_versions(("funasr_onnx", "funasr-onnx"), ("onnxruntime", "onnxruntime")),
@@ -267,7 +271,7 @@ class FunasrAdapter:
 
             # Batch mode (FR-004): nothing is shown until the audio ends, but
             # the decode runs over bounded regions (streaming.batch).
-            text = await self._run_batch_session(audio, emit)
+            text = await self._run_batch_session(audio, emit, config.keywords)
             # Silence decodes to control tags alone, leaving nothing to commit.
             # An empty final is not harmless: the harness counts it as a
             # committed segment and dates time_to_first_final from it. Same
@@ -283,7 +287,9 @@ class FunasrAdapter:
                 )
             )
 
-    async def _run_batch_session(self, audio: AsyncIterator[PcmChunk], emit: EventSink) -> str:
+    async def _run_batch_session(
+        self, audio: AsyncIterator[PcmChunk], emit: EventSink, keywords: tuple[str, ...] = ()
+    ) -> str:
         """Decode bounded regions and return their joined, tag-free text.
 
         SenseVoice gives no timestamps, so a region's words carry its whole
@@ -299,7 +305,7 @@ class FunasrAdapter:
 
         def decode(samples: NDArray[np.float32], offset: float) -> Hypothesis:
             nonlocal last_char
-            text = _strip_tags(self._decode(samples))
+            text = _strip_tags(self._decode(samples, keywords))
             if not text:
                 return Hypothesis()
             end = offset + len(samples) / FUNASR_RATE
@@ -319,11 +325,13 @@ class FunasrAdapter:
     # Decode
     # ------------------------------------------------------------------
 
-    def _decode(self, samples: NDArray[np.float32]) -> str:
+    def _decode(self, samples: NDArray[np.float32], keywords: tuple[str, ...] = ()) -> str:
         """Run SenseVoiceSmall(waveform) with language + textnorm. Returns
         raw model output (control tags intact — stripped by caller)."""
         model = self._model
         assert model is not None
+        if keywords:
+            return self._decode_toward(model, samples, keywords)
         result = model(
             samples,
             language=self._language,
@@ -333,6 +341,62 @@ class FunasrAdapter:
         if isinstance(result, list):
             return result[0] if result else ""
         return str(result)
+
+    def _decode_toward(
+        self, model: Any, samples: NDArray[np.float32], keywords: tuple[str, ...]
+    ) -> str:
+        """``SenseVoiceSmall.__call__``'s steps, keeping the CTC output to
+        correct toward ``keywords``: Han, kana and Hangul ones scored against
+        the audio (keyword_acoustic), the rest by Parakeet's text correction
+        on the tokens' peak probabilities. Uncorrected output is the library's
+        own text."""
+        language, textnorm = model.read_tags(self._language, self._textnorm)
+        feats, feats_len = model.extract_feat(model.load_data(samples))
+        logits, lengths = model.infer(
+            feats, feats_len, np.array(language, dtype=np.int32), np.array(textnorm, dtype=np.int32)
+        )
+        x = np.asarray(logits[0, : int(lengths[0])], dtype=np.float32)
+        log_probs = x - x.max(-1, keepdims=True)
+        log_probs -= np.log(np.exp(log_probs).sum(-1, keepdims=True))
+        sp = model.tokenizer.sp
+        decoded = greedy(log_probs, model.blank_id)
+        tokens = [
+            CtcToken(i, sp.id_to_piece(i).replace("\u2581", " "), a, b) for i, a, b, _ in decoded
+        ]
+        pieces = [t.piece for t in tokens]
+        confidences = [peak for *_, peak in decoded]
+        changed = False
+        scored = self._ctc_keywords(keywords, sp, model.blank_id)
+        for first, end, keyword in reversed(
+            scored.corrections(tokens, log_probs) if scored else []
+        ):
+            space = " " if pieces[first].startswith(" ") else ""
+            pieces[first:end] = [space + keyword]
+            confidences[first:end] = [1.0]
+            changed = True
+        corrector = keyword_corrector([k for k in keywords if not LETTER.search(k)])
+        if corrector is not None:
+            corrected, _ = corrector.correct(pieces, [0.0] * len(pieces), confidences)
+            changed = changed or corrected != pieces
+            pieces = corrected
+        if not changed:
+            return str(model.tokenizer.decode([i for i, *_ in decoded]))
+        return "".join(pieces).strip()
+
+    def _ctc_keywords(self, keywords: tuple[str, ...], sp: Any, blank: int) -> CtcKeywords:
+        """The session's keywords in this model's tokens, rebuilt only when
+        they change."""
+        cached = self._ctc_cache
+        if cached is None or cached[0] != keywords:
+            unk = sp.unk_id()
+
+            def encode(text: str) -> tuple[int, ...] | None:
+                ids = tuple(i for i in sp.encode(text) if sp.id_to_piece(i) != "\u2581")
+                return None if not ids or unk in ids else ids
+
+            cached = (keywords, CtcKeywords(keywords, encode, blank=blank))
+            self._ctc_cache = cached
+        return cached[1]
 
 
 # ------------------------------------------------------------------

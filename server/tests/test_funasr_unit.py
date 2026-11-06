@@ -17,6 +17,7 @@ import array
 import asyncio
 import sys
 import types
+from types import SimpleNamespace
 
 import pytest
 from hypothesis import assume, given
@@ -601,3 +602,82 @@ async def test_regions_split_at_pauses_join_without_a_space_beside_unspaced_text
 
     assert len(model.inputs) == 3
     assert events[-1].text == _written(_spoken(70.0, _PAUSES, say))
+
+
+# --- keywords ----------------------------------------------------------------
+
+_PIECES = ["<blank>", "<unk>", "<|zh|>", "生", "耕", "申", "根", "签", "▁returned", "▁Kalico", "."]
+
+
+class _Sp:
+    def id_to_piece(self, i):
+        return _PIECES[i]
+
+    def unk_id(self):
+        return 1
+
+    def encode(self, text):
+        return [_PIECES.index(ch) if ch in _PIECES else 1 for ch in text]
+
+
+class _CtcStub(_StubModel):
+    """A SenseVoice stand-in exposing the steps ``__call__`` takes, decoding
+    a scripted frame-by-frame probability table."""
+
+    blank_id = 0
+
+    def __init__(self, columns):
+        super().__init__(output="unused")
+        lp = np.full((len(columns), len(_PIECES)), 1e-6)
+        for t, col in enumerate(columns):
+            for piece, p in col.items():
+                lp[t, _PIECES.index(piece)] = p
+            lp[t, 0] = max(1e-6, 1 - sum(col.values()))
+        self._logits = np.log(lp / lp.sum(1, keepdims=True))[None].astype(np.float32)
+        self.tokenizer = SimpleNamespace(
+            sp=_Sp(), decode=lambda ids: "".join(_PIECES[i] for i in ids).replace("▁", " ")
+        )
+
+    def read_tags(self, language, textnorm):
+        return [0], [14]
+
+    def load_data(self, samples, fs=None):
+        return [samples]
+
+    def extract_feat(self, waveforms):
+        return np.zeros((1, 1, 1), np.float32), np.array([1])
+
+    def infer(self, feats, feats_len, language, textnorm):
+        return self._logits, np.array([self._logits.shape[1]])
+
+
+async def _keyword_session(model, keywords):
+    adapter = FunasrAdapter()
+    adapter._load_model = _stub_load(adapter, model)
+    config = SessionConfig(audio_format=FUNASR_FORMAT, keywords=keywords)
+    events = await _drive_session(adapter, config, [_pcm_seconds(0.5)])
+    return events[-1]
+
+
+def test_funasr_advertises_keywords():
+    assert FunasrAdapter().capabilities().keywords is True
+
+
+async def test_a_han_keyword_the_audio_supports_replaces_its_homophone():
+    model = _CtcStub(
+        [{"<|zh|>": 0.9}, {"生": 0.6, "申": 0.3}, {}, {"耕": 0.6, "根": 0.3}, {"签": 0.9}]
+    )
+    done = await _keyword_session(model, ("申根",))
+    assert done.text == "申根签"
+
+
+async def test_an_unsure_latin_near_miss_takes_the_keyword():
+    model = _CtcStub([{"▁returned": 0.9}, {}, {"▁Kalico": 0.45, "生": 0.3}, {".": 0.9}])
+    done = await _keyword_session(model, ("Kaliko",))
+    assert done.text == "returned Kaliko."
+
+
+async def test_uncorrected_output_is_the_library_text():
+    model = _CtcStub([{"<|zh|>": 0.9}, {"签": 0.9}])
+    done = await _keyword_session(model, ("申根",))
+    assert done.text == "签"
