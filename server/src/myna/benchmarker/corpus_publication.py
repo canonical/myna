@@ -417,6 +417,14 @@ def build_fleurs_keywords(
     to three clips, misses first; distractors are the two keywords spelled
     closest to one of the clip's words and one at random. The ordinary slice
     is 80 other clips at random.
+
+    Parakeet writes no Chinese, Japanese or Korean, so the cmn_hans_cn, ja_jp
+    and ko_kr sets were mined the same way from the shipped SenseVoice-Small
+    int8 (language auto, withitn): terms from jieba proper nouns and rare
+    nouns, fugashi proper nouns and katakana words, and Korean words glossed
+    in Latin or rare (particles stripped), hand-pruned to names and rare terms
+    and with names jieba split rejoined. Distractors there are the two closest
+    in pinyin (Chinese) or spelling, and one at random.
     """
     frozen = corpus_english.load_keyword_set(keyword_set, "locale", locale)
     clips: dict[str, dict[str, Any]] = frozen["clips"]
