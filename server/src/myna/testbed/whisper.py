@@ -52,7 +52,7 @@ from myna.core import (
 )
 from myna.server.lifecycle import GPU_UNAVAILABLE_MESSAGE
 from myna.testbed.adapter import Candidate, runtime_versions
-from myna.testbed.keyword_bias import KeywordCorrector, keyword_corrector
+from myna.testbed.keyword_bias import KeywordCorrector, keyword_corrector, near_misses
 from myna.testbed.streaming.strategies import Hypothesis, Word
 
 if TYPE_CHECKING:
@@ -272,6 +272,102 @@ def _corrected_pairs(
         out.append((Word(text, pairs[first][0].start, pairs[end - 1][0].end), _Aligned(text)))
         done = end
     return out + pairs[done:]
+
+
+# A near miss becomes the keyword when the decoder scores the text with it
+# within this many nats per keyword letter of the text as decoded. Tuned on
+# the frozen English set's tune half: past 1.0 ordinary false hits climb on
+# every model (base 5 -> 10, small 2 -> 6, turbo 0 -> 1 of 8294 at 1.5).
+WHISPER_MARGIN_PER_LETTER = 1.0
+_EDGES = re.compile(r"(\s*\W*?)(\w.*\w|\w)?(\W*)", re.DOTALL)
+
+
+def _text_log_likelihoods(
+    model: Any,
+    samples: NDArray[np.float32],
+    start: float,
+    end: float,
+    texts: list[str],
+    language: str,
+) -> list[float]:
+    """The decoder's teacher-forced log-likelihood of each of ``texts`` over
+    the audio of ``samples[start:end]`` (seconds), one encode for all."""
+    import numpy as np
+    from faster_whisper.tokenizer import Tokenizer
+
+    a = max(0, round((start - 0.3) * WHISPER_RATE))
+    b = min(len(samples), round((end + 0.3) * WHISPER_RATE), a + 30 * WHISPER_RATE)
+    features = model.feature_extractor(samples[a:b])
+    frames = features.shape[-1]
+    width = getattr(model.feature_extractor, "nb_max_frames", 3000)
+    features = np.pad(features, ((0, 0), (0, max(0, width - frames))))[:, :width]
+    encoded = model.encode(features)
+    tokenizer = Tokenizer(
+        model.hf_tokenizer, model.model.is_multilingual, task="transcribe", language=language
+    )
+    out = []
+    for text in texts:
+        (result,) = model.model.align(
+            encoded, tokenizer.sot_sequence, [tokenizer.encode(text)], frames
+        )
+        out.append(float(np.log(np.maximum(result.text_token_probs, 1e-12)).sum()))
+    return out
+
+
+def _scored_pairs(
+    model: Any,
+    samples: NDArray[np.float32],
+    segment: Any,
+    pairs: list[tuple[Word, Any]],
+    keywords: tuple[str, ...],
+    language: str | None,
+) -> list[tuple[Word, Any]]:
+    """``pairs`` with each near miss of a keyword the audio nearly supports
+    folded into the keyword: the decoder's likelihood of the segment's text
+    with it, within `WHISPER_MARGIN_PER_LETTER` nats per letter of the text
+    as decoded. Measured on base, small and turbo (.kb/model-evaluation.md):
+    holdout recall 36.6 -> 65.9%, 45.7 -> 71.3%, 50.0 -> 69.5% over the text
+    correction alone."""
+    if not keywords or not pairs or any(a is None for _, a in pairs):
+        return pairs
+    words = [w.text for w, _ in pairs]
+    candidates = []
+    for first, end, keyword in near_misses(words, keywords):
+        run = "".join(words[first:end])
+        match = _EDGES.fullmatch(run)
+        assert match is not None
+        written = keyword
+        if keyword.islower() and match.group(2) and match.group(2)[0].isupper():
+            written = keyword[0].upper() + keyword[1:]
+        candidates.append((first, end, match.group(1) + written + match.group(3), keyword))
+    if not candidates:
+        return pairs
+    texts = ["".join(words).strip()] + [
+        ("".join(words[:first]) + text + "".join(words[end:])).strip()
+        for first, end, text, _ in candidates
+    ]
+    scores = _text_log_likelihoods(
+        model, samples, segment.start, segment.end, texts, language or "en"
+    )
+    found = sorted(
+        (
+            ((score - scores[0]) / max(1, sum(ch.isalpha() for ch in keyword)), first, end, text)
+            for (first, end, text, keyword), score in zip(candidates, scores[1:], strict=True)
+        ),
+        reverse=True,
+    )
+    taken = [False] * len(pairs)
+    chosen = []
+    for margin, first, end, text in found:
+        if margin <= -WHISPER_MARGIN_PER_LETTER or any(taken[first:end]):
+            continue
+        chosen.append((first, end, text))
+        taken[first:end] = [True] * (end - first)
+    out = list(pairs)
+    for first, end, text in sorted(chosen, reverse=True):
+        word = Word(text, pairs[first][0].start, pairs[end - 1][0].end)
+        out[first:end] = [(word, _Aligned(text))]
+    return out
 
 
 # faster-whisper conditions each window on at most this many previous tokens
@@ -569,6 +665,9 @@ class FasterWhisperAdapter:
                     (Word(text=w.word, start=w.start + offset, end=w.end + offset), w)
                     for w in seg.words or []
                 ]
+                if corrector is not None:
+                    language = getattr(_info, "language", None) or _iso639_1(config.language)
+                    pairs = _scored_pairs(model, samples, seg, pairs, config.keywords, language)
                 words.extend(w for w, _ in _corrected_pairs(pairs, corrector))
             return Hypothesis(words=words)
 
@@ -659,6 +758,9 @@ class FasterWhisperAdapter:
                         (at(text, segment.start, segment.end), None)
                         for text in _UNALIGNED_WORD.findall(segment.text)
                     ]
+                if corrector is not None:
+                    spoken = language or getattr(info, "language", None)
+                    pairs = _scored_pairs(model, samples, segment, pairs, config.keywords, spoken)
                 pairs = _corrected_pairs(pairs, corrector)
                 region.append((segment, pairs, origin))
                 words.extend(w for w, _ in pairs)

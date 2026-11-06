@@ -863,7 +863,8 @@ async def test_keywords_turn_on_the_alignment_pass_for_word_confidences():
     assert adapter._model.calls[0]["word_timestamps"] is True
 
 
-async def test_an_unsure_near_miss_of_a_keyword_commits_as_the_keyword():
+async def test_an_unsure_near_miss_of_a_keyword_commits_as_the_keyword(monkeypatch):
+    _scores(monkeypatch, 0.0, -100.0)  # the audio check declines: the text rule alone
     adapter = _keyword_adapter(_calico(0.3))
 
     events = await run_session(adapter, audio_seconds=2.0, keywords=("Kaliko",))
@@ -872,7 +873,8 @@ async def test_an_unsure_near_miss_of_a_keyword_commits_as_the_keyword():
     assert events[-1].text == "returned Kaliko."
 
 
-async def test_a_confident_word_is_not_corrected_to_a_keyword():
+async def test_a_confident_word_is_not_corrected_to_a_keyword(monkeypatch):
+    _scores(monkeypatch, 0.0, -100.0)  # the audio check declines: the text rule alone
     adapter = _keyword_adapter(_calico(0.95))
 
     events = await run_session(adapter, audio_seconds=2.0, keywords=("Kaliko",))
@@ -898,7 +900,9 @@ async def test_a_corrected_word_keeps_the_span_of_the_words_it_replaced():
     assert [(s.text, s.start, s.end) for s in final.segments] == [("PulseAudio", 0.2, 1.1)]
 
 
-async def test_streaming_commits_the_corrected_keyword():
+async def test_streaming_commits_the_corrected_keyword(monkeypatch):
+    _scores(monkeypatch, 0.0, -100.0)  # the audio check declines: the text rule alone
+
     class _StreamingModel:
         def transcribe(self, samples, **kwargs):
             return (s for s in [_calico(0.3)]), None
@@ -910,3 +914,108 @@ async def test_streaming_commits_the_corrected_keyword():
 
     assert "Kaliko" in events[-1].text
     assert "Kalico" not in events[-1].text
+
+
+def _scores(monkeypatch, *values):
+    """Stub the decoder's text scoring: the decoded text, then each candidate."""
+    import myna.testbed.whisper as whisper_mod
+
+    calls = []
+
+    def fake(model, samples, start, end, texts, language):
+        calls.append(list(texts))
+        return list(values[: len(texts)])
+
+    monkeypatch.setattr(whisper_mod, "_text_log_likelihoods", fake)
+    return calls
+
+
+def _far_calico():
+    return _Segment(
+        " returned Calico.",
+        start=0.0,
+        end=2.0,
+        words=[_Word(" returned", 0.1, 0.5, 0.95), _Word(" Calico.", 0.6, 1.2, 0.95)],
+    )
+
+
+async def test_a_miss_too_far_for_the_text_rule_takes_the_keyword_the_audio_supports(
+    monkeypatch,
+):
+    calls = _scores(monkeypatch, -10.0, -10.5)
+    adapter = _keyword_adapter(_far_calico())
+
+    events = await run_session(adapter, audio_seconds=2.0, keywords=("Kaliko",))
+
+    assert events[-1].text == "returned Kaliko."
+    assert calls == [["returned Calico.", "returned Kaliko."]]
+
+
+async def test_a_keyword_the_audio_does_not_support_is_left_out(monkeypatch):
+    _scores(monkeypatch, -10.0, -40.0)
+    adapter = _keyword_adapter(_far_calico())
+
+    events = await run_session(adapter, audio_seconds=2.0, keywords=("Kaliko",))
+
+    assert events[-1].text == "returned Calico."
+
+
+async def test_no_near_miss_costs_no_scoring(monkeypatch):
+    calls = _scores(monkeypatch, 0.0)
+    adapter = _keyword_adapter(_far_calico())
+
+    await run_session(adapter, audio_seconds=2.0, keywords=("Siobhan",))
+
+    assert calls == []
+
+
+def test_text_log_likelihoods_scores_each_text_over_the_segments_audio(monkeypatch):
+    import sys
+    import types
+
+    import myna.testbed.whisper as whisper_mod
+
+    class _Tokenizer:
+        def __init__(self, hf, multilingual, task, language):
+            assert (task, language) == ("transcribe", "en")
+            self.sot_sequence = [1, 2, 3]
+
+        def encode(self, text):
+            return [len(word) for word in text.split()]
+
+    class _Features:
+        nb_max_frames = 3000
+
+        def __call__(self, audio):
+            self.seen = len(audio)
+            return np.zeros((80, len(audio) // 160), np.float32)
+
+    aligned = []
+
+    class _Model:
+        is_multilingual = True
+
+        def align(self, encoded, sot, tokens, frames):
+            aligned.append((sot, tokens, frames))
+            return [SimpleNamespace(text_token_probs=[0.5] * len(tokens[0]))]
+
+    model = SimpleNamespace(
+        feature_extractor=_Features(),
+        encode=lambda features: features.shape,
+        hf_tokenizer=None,
+        model=_Model(),
+    )
+    tokenizer_module = types.ModuleType("faster_whisper.tokenizer")
+    tokenizer_module.Tokenizer = _Tokenizer
+    monkeypatch.setitem(sys.modules, "faster_whisper", types.ModuleType("faster_whisper"))
+    monkeypatch.setitem(sys.modules, "faster_whisper.tokenizer", tokenizer_module)
+
+    samples = np.zeros(16_000 * 10, np.float32)
+    scores = whisper_mod._text_log_likelihoods(
+        model, samples, 2.0, 4.0, ["returned Calico.", "returned Kaliko"], "en"
+    )
+
+    assert model.feature_extractor.seen == round(2.6 * 16_000)  # 0.3 s either side
+    assert scores == pytest.approx([2 * np.log(0.5), 2 * np.log(0.5)])
+    assert [frames for _, _, frames in aligned] == [260, 260]
+    assert aligned[0][:2] == ([1, 2, 3], [[8, 7]])
