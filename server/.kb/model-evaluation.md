@@ -333,6 +333,23 @@ them here, and large-v3 batch loops without any glossary at all in it.
 ## Keyword correction after the decode (2026-11-06)
 
 Three routes that leave the decode alone, so none can loop or skip audio.
+All three ship (2026-11-06): Whisper's text correction, `keyword_acoustic`
+in the FunASR adapter (Latin keywords there take the text correction on
+token peaks), and `_toward_keywords` in Parakeet's. Through the real
+servers and `myna-bench`, keywords off -> on, whole sets (both halves):
+
+| server | recall | WER / CER | false hits | ordinary + 100-list WER / CER, false hits |
+|---|---|---|---|---|
+| parakeet | 19.0 -> 87.2% | 6.00 -> 2.76 | 6/852 | 1.53 -> 1.42, 2/8294 |
+| whisper base | 14.7 -> 40.4% | 9.57 -> 8.32 | 2/852 | 4.72 -> 4.76, 1/8294 |
+| funasr, English | 17.4 -> 34.6% | 8.45 -> 7.58 | 4/852 | 4.18 -> 4.03, 1/8294 |
+| funasr, cmn_hans_cn | 28.9 -> 85.9% | 17.12 -> 15.28 | 0/597 | 6.83 -> 6.92, 0 |
+| funasr, ja_jp | 29.9 -> 85.6% | 12.08 -> 10.59 | 2/414 (1 off) | 9.26 -> 9.45, 1 |
+| funasr, ko_kr | 25.4 -> 77.9% | 11.69 -> 10.56 | 0/300 | 7.41 -> 7.58, 0 |
+
+The FunASR ordinary drift is SenseVoice's own nondeterminism: two runs
+with keywords off differ on 18 of 80 Korean clips, as many as off and on.
+
 All offline: plain `transcribe()` or the adapter's decode internals per clip,
 not the adapter's batch path; keyword sets are mined from the measured model's
 own misses, so "off" recall is low by construction. Every gate was chosen on
