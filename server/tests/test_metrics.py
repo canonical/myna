@@ -348,6 +348,21 @@ def test_keyword_phrases_match_as_whole_token_runs():
     assert (score.in_reference, score.recalled, score.absent, score.false_hits) == (1, 1, 2, 0)
 
 
+def test_keyword_in_unspaced_script_matches_inside_a_run():
+    score = keyword_score(
+        "有了申根签证，你就不必", "有了生耕签证你就不必申根", ["申根", "签证你", "沧龙"]
+    )
+    assert (score.in_reference, score.recalled, score.absent, score.false_hits) == (2, 2, 1, 0)
+
+
+def test_keyword_in_hangul_matches_with_a_particle_attached():
+    score = keyword_score(
+        "비슈케크가 무정부 상태로", "비쉬케크가 무정부 상태로", ["비슈케크", "무정부상태"]
+    )
+    assert (score.in_reference, score.recalled) == (2, 1)
+    assert score.missed == ("비슈케크",)
+
+
 def test_keyword_duplicates_and_blank_entries_count_once():
     score = keyword_score("kernel", "kernel", ["kernel", "Kernel ", "", "  "])
     assert (score.in_reference, score.recalled, score.absent) == (1, 1, 0)

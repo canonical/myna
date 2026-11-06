@@ -304,7 +304,10 @@ def character_error_rate(
 class KeywordScore:
     """How a transcript treated a keyword list, against its reference.
 
-    Keywords match as whole-token runs after ``normalize``. ``recalled`` counts
+    Keywords match as whole-token runs after ``normalize``, except a keyword
+    in Han, kana or Hangul, which matches anywhere in the text with its spaces
+    removed: those scripts write words unspaced, and Korean attaches particles
+    and spaces compounds freely. ``recalled`` counts
     reference occurrences the hypothesis also has (per keyword, the smaller of
     the two counts); ``recalled_cased`` is the same with the keyword's case as
     written, since "Siobhan" and "siobhan" are different dictations.
@@ -329,10 +332,14 @@ def _occurrences(tokens: list[str], phrase: list[str]) -> int:
     return sum(1 for i in range(len(tokens) - width + 1) if tokens[i : i + width] == phrase)
 
 
+_UNSPACED_SCRIPT = re.compile("[぀-ヿ㐀-䶿一-鿿豈-﫿가-힯]")
+
+
 def keyword_score(reference: str, hypothesis: str, keywords: Sequence[str]) -> KeywordScore:
     ref = normalize(reference).split()
     hyp = normalize(hypothesis).split()
     hyp_cased = _clean(hypothesis, fold_case=False).split()
+    ref_run, hyp_run = "".join(ref), "".join(hyp)
     seen: set[str] = set()
     in_reference = recalled = recalled_cased = absent = 0
     missed: list[str] = []
@@ -342,14 +349,17 @@ def keyword_score(reference: str, hypothesis: str, keywords: Sequence[str]) -> K
         if not phrase or " ".join(phrase) in seen:
             continue
         seen.add(" ".join(phrase))
-        wanted = _occurrences(ref, phrase)
-        found = _occurrences(hyp, phrase)
+        if _UNSPACED_SCRIPT.search(keyword):
+            run = "".join(phrase)
+            wanted, found = ref_run.count(run), hyp_run.count(run)
+            cased = found
+        else:
+            wanted, found = _occurrences(ref, phrase), _occurrences(hyp, phrase)
+            cased = _occurrences(hyp_cased, _clean(keyword, fold_case=False).split())
         if wanted:
             in_reference += wanted
             recalled += min(wanted, found)
-            recalled_cased += min(
-                wanted, _occurrences(hyp_cased, _clean(keyword, fold_case=False).split())
-            )
+            recalled_cased += min(wanted, cased)
             if found < wanted:
                 missed.append(keyword.strip())
         else:
