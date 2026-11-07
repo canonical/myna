@@ -364,3 +364,9 @@ def test_edits_within_agrees_with_the_full_distance(a, b):
 @given(st.text("abc", max_size=9), st.text("abc", max_size=9), st.integers(0, 4))
 def test_edits_within_agrees_with_the_full_distance_everywhere(a, b, limit):
     assert _edits_within(a, b, limit) == (_edits(a, b) <= limit)
+
+
+def test_a_short_keyword_is_a_candidate_one_edit_away_only():
+    words = [" in", " that", " was", " mian", " Taitt"]
+    found = near_misses(words, ["mien", "Tait"])
+    assert found == [(3, 4, "mien"), (4, 5, "Tait")]

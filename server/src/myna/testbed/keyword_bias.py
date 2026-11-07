@@ -45,6 +45,10 @@ CORRECT_BELOW_CONFIDENCE = 0.8
 _CORRECT_MIN_LETTERS = 5
 _CORRECT_TWO_EDITS_LETTERS = 8
 
+# A keyword shorter than this is a candidate one edit away at most: with two,
+# "mien" and "Tait" matched "in", "was", "at" and "that" in most segments.
+_NEAR_TWO_EDITS_LETTERS = 6
+
 # The most words a keyword may be heard split into.
 _JOIN_WORDS = 3
 
@@ -366,7 +370,8 @@ def _letters(text: str) -> str:
 def near_misses(words: Sequence[str], keywords: Sequence[str]) -> list[tuple[int, int, str]]:
     """(first word, end word, keyword) for each run of one to three ``words``
     a one-word keyword could have been heard as: one word within ~40% edits
-    of it, or words that spell it split with at most one edit (an exact split
+    of it (one under six letters), or words that spell it split with at most
+    one edit (an exact split
     is `correct`'s join). A run holding a word that already is a keyword is
     never one. The candidates an audio score then decides, since each costs
     a model call."""
@@ -388,7 +393,11 @@ def near_misses(words: Sequence[str], keywords: Sequence[str]) -> list[tuple[int
             for fold, keyword in folds.items():
                 if fold == core or abs(len(fold) - len(core)) > max(2, len(fold) // 2):
                     continue
-                reach = max(1, round(0.4 * len(fold))) if count == 1 else 1
+                reach = (
+                    1
+                    if count > 1 or len(fold) < _NEAR_TWO_EDITS_LETTERS
+                    else round(0.4 * len(fold))
+                )
                 if _edits_within(core, fold, reach):
                     out.append((w0, w0 + count, keyword))
     return out
