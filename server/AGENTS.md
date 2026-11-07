@@ -27,4 +27,4 @@ The server project exposes model adapters through one session contract and also 
 - `.kb/inference-packaging.md` - Shared inference snap structure and packaging invariants.
 - `.kb/inference-snap-architecture.md` - Common inference snap control and serving paths.
 - `.kb/benchmarking.md` - Safe benchmark workflow and result interpretation.
-- `.kb/model-evaluation.md` - How to evaluate a model or a numerics change, Parakeet GPU and keyword-biasing findings, why Whisper takes no prompt keywords, keyword correction after the decode (Whisper, SenseVoice, Parakeet), and the Nemotron streaming ONNX adapter (export, parity, caption results).
+- `.kb/model-evaluation.md` - How to evaluate a model or a numerics change, Parakeet GPU and keyword-biasing findings, why Whisper takes no prompt keywords, keyword correction after the decode and how it keeps streaming and latency whole (Whisper, SenseVoice, Parakeet), and the Nemotron streaming ONNX adapter (export, parity, caption results).

@@ -332,26 +332,56 @@ them here, and large-v3 batch loops without any glossary at all in it.
 
 ## Keyword correction after the decode (2026-11-06)
 
-Three routes that leave the decode alone, so none can loop or skip audio.
-All three ship (2026-11-06): Whisper's text correction, `keyword_acoustic`
-in the FunASR adapter (Latin keywords there take the text correction on
-token peaks), and `_toward_keywords` in Parakeet's. Through the real
-servers and `myna-bench`, keywords off -> on, whole sets (both halves):
+Routes that leave the decode alone (Parakeet keeps its bias), so none can
+loop or skip audio. All ship (2026-11-07): Parakeet's `_toward_keywords`
+(TDT), FunASR's `keyword_acoustic` (CTC, every script), Whisper's
+`_audio_spans` (the decoder's teacher-forced score), each followed by
+`KeywordCorrector`. Through the real servers and `myna-bench` on an idle box,
+keywords off -> on (Parakeet: shipped code -> this), whole sets:
 
-| server | recall | WER / CER | false hits | ordinary + 100-list WER / CER, false hits |
+| server | recall | WER / CER | ordinary + 100-list WER, false hits | median finalize, 100-list / 10-list |
 |---|---|---|---|---|
-| parakeet | 19.0 -> 87.2% | 6.00 -> 2.76 | 6/852 | 1.53 -> 1.42, 2/8294 |
-| whisper base | 14.7 -> 40.4% | 9.57 -> 8.32 | 2/852 | 4.72 -> 4.76, 1/8294 |
-| funasr, English | 17.4 -> 34.6% | 8.45 -> 7.58 | 4/852 | 4.18 -> 4.03, 1/8294 |
-| funasr, cmn_hans_cn | 28.9 -> 85.9% | 17.12 -> 15.28 | 0/597 | 6.83 -> 6.92, 0 |
-| funasr, ja_jp | 29.9 -> 85.6% | 12.08 -> 10.59 | 2/414 (1 off) | 9.26 -> 9.45, 1 |
-| funasr, ko_kr | 25.4 -> 77.9% | 11.69 -> 10.56 | 0/300 | 7.41 -> 7.58, 0 |
+| parakeet, streaming (snap) | 78.0 -> 85.0% | 3.19 -> 2.87 | 1.34 = 1.34, 2/8294 = | +0.07 s / +0.0 s |
+| whisper base | 14.7 -> 65.1% | 9.57 -> 7.10 | 4.72 = 4.72, 1/8294 | +0.14 s / +0.06 s |
+| whisper small | 22.3 -> 74.0% | 7.88 -> 5.29 | 3.22 -> 3.11, 1/8294 | +0.44 s / +0.16 s |
+| whisper turbo int8 CPU | 41.3 -> 71.3% | 5.22 -> 3.90 | 2.15 -> 2.22, 0 | +0.14 s / - |
+| funasr, English | 17.4 -> 67.3% | 8.45 -> 6.15 | 4.18 -> 3.99, 2/8294 | - |
+| funasr, cmn_hans_cn | 28.9 -> 85.9% | 17.12 -> 15.28 | 6.83 -> 6.92, 0 | - |
+| funasr, ja_jp | 29.9 -> 85.6% | 12.08 -> 10.59 | 9.26 -> 9.45, 1 | - |
+| funasr, ko_kr | 25.4 -> 77.9% | 11.69 -> 10.56 | 7.41 -> 7.58, 0 | - |
 
 The FunASR ordinary drift is SenseVoice's own nondeterminism: two runs
 with keywords off differ on 18 of 80 Korean clips, as many as off and on.
 
-All offline: plain `transcribe()` or the adapter's decode internals per clip,
-not the adapter's batch path; keyword sets are mined from the measured model's
+What it took to keep streaming and latency whole:
+
+- Score only what is committed. Correcting every live pass made
+  successive passes disagree (a merge, a margin near the line), so
+  Whisper's local agreement stalled and its forced cuts mangled text:
+  ordinary WER 5.87 -> 9.55. Parakeet's partials re-decode every 2 s:
+  median finalize 0.56 -> 1.09 s, p95 2.5 -> 6.2 s with 100 words. Whisper
+  now corrects what a pass commits, once, against the full segment's text;
+  Parakeet's partials go through the loop's `display_decode`, which skips
+  the audio check.
+- Never re-encode. Whisper's scoring encoded each segment again: 262 ms
+  (base), 775 ms (small), 2580 ms (turbo, CPU) a window, more than the
+  decode on turbo. `_drain` now records which encoder output each segment
+  came from (faster-whisper yields a window's segments after encoding it).
+  Batching the `align` calls did not help on the CPU: cross-attention over
+  1500 frames dominates either way.
+- Keep the candidate filter tight. One edit only under six letters: with
+  two, "mien" and "Tait" matched "in", "was", "at" and "that" in most
+  segments. Holdout recall -2.5 points on Parakeet and Whisper base,
+  Whisper base's ordinary false hits 5 -> 1 of 8294. The banded edit
+  distance (`_edits_within`) cut the filter's own share of a Whisper decode
+  from 39% of its Python time.
+- Word alignment bought only for keyword confidences must not change the
+  coverage check: onset-only read a two-second "1717." as a hole and
+  re-decoded it twice (+4 s).
+
+The subsections below are the offline sweeps that set each constant: plain
+`transcribe()` or the adapter's decode internals per clip, not the adapter's
+batch path; keyword sets are mined from the measured model's
 own misses, so "off" recall is low by construction. Every gate was chosen on
 the tune half (split by keyword component, as for Parakeet) and the holdout is
 reported. The scratch rig is not in the tree.
@@ -372,6 +402,20 @@ model's shipped batch policy:
 | large-v3-turbo int8 CPU | 41.3 -> 48.6% | 5.31 -> 4.94 | 1/852 | 2.30 -> 2.26, 0 |
 
 Parakeet's own correction without its bias, for scale: 19.0 -> 52.3%.
+
+Then scored against the audio: CTranslate2's `align` returns teacher-forced
+token probabilities for any text, so the segment with a near miss swapped
+for the keyword is scored against the segment as decoded. 1.0 nat per
+keyword letter (1.5 adds ordinary false hits on every model). Holdout,
+text correction alone -> with the audio, at the time of the looser filter:
+base 36.6 -> 65.9%, small 45.7 -> 71.3%, turbo 50.0 -> 69.5%.
+
+### SenseVoice, Latin keywords
+
+Whole-word runs from the shared candidate filter, scored by CTC in the
+model's word pieces; 4 nats per letter (5 is where ordinary false hits
+start, 1 -> 13 of 8294). English holdout: text correction alone 36.0% ->
+62.8%, WER 7.39 -> 6.24.
 
 ### SenseVoice: score the keyword against the audio (CTC)
 
