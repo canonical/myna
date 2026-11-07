@@ -922,7 +922,7 @@ def _scores(monkeypatch, *values):
 
     calls = []
 
-    def fake(model, samples, start, end, texts, language):
+    def fake(model, samples, start, end, texts, language, window=None):
         calls.append(list(texts))
         return list(values[: len(texts)])
 
@@ -1019,3 +1019,96 @@ def test_text_log_likelihoods_scores_each_text_over_the_segments_audio(monkeypat
     assert scores == pytest.approx([2 * np.log(0.5), 2 * np.log(0.5)])
     assert [frames for _, _, frames in aligned] == [260, 260]
     assert aligned[0][:2] == ([1, 2, 3], [[8, 7]])
+
+
+async def test_streaming_agrees_on_raw_words_and_corrects_only_what_it_commits(monkeypatch):
+    calls = _scores(monkeypatch, -10.0, -10.5)
+
+    class _StreamingModel:
+        def transcribe(self, samples, **kwargs):
+            return (s for s in [_far_calico()]), SimpleNamespace(language="en")
+
+    adapter = FasterWhisperAdapter("tiny", streaming=True, stream_cadence_s=0.5)
+    adapter._model = _StreamingModel()
+
+    events = await run_session(adapter, audio_seconds=3.0, keywords=("Kaliko",))
+
+    unstable = [f.text for f in finals(events) if f.disposition is Disposition.UNSTABLE]
+    committed = [f.text for f in finals(events) if f.disposition is Disposition.COMMITTED]
+    assert any("Calico" in text for text in unstable)  # the live view is the raw pass
+    assert "".join(committed) == events[-1].text
+    assert "Kaliko" in events[-1].text and "Calico" not in events[-1].text
+    assert 1 <= len(calls) <= len(committed)  # at most once per commit, not per pass
+
+
+def test_drain_pairs_each_segment_with_the_window_it_was_decoded_from():
+    class _WindowedModel:
+        def encode(self, features):
+            return f"encoded-{features[0]}"
+
+        def transcribe(self, samples, **kwargs):
+            def segments():
+                for window in ([1], [2]):
+                    self.encode(window)
+                    yield _Segment(f" from {window[0]}a")
+                    yield _Segment(f" from {window[0]}b")
+
+            return segments(), SimpleNamespace(language="en")
+
+    adapter = FasterWhisperAdapter("tiny")
+    model = _WindowedModel()
+    windows = {}
+    segments, _ = adapter._drain(model, np.zeros(10, np.float32), {}, windows)
+
+    assert [windows[id(s)][1] for s in segments] == [
+        "encoded-1",
+        "encoded-1",
+        "encoded-2",
+        "encoded-2",
+    ]
+    model.encode([3])  # outside a drain nothing is recorded
+    assert len(windows) == 4
+
+
+def test_scoring_a_recorded_window_reencodes_nothing(monkeypatch):
+    import sys
+    import types
+
+    import myna.testbed.whisper as whisper_mod
+
+    class _Tokenizer:
+        def __init__(self, *args, **kwargs):
+            self.sot_sequence = [1]
+
+        def encode(self, text):
+            return [7]
+
+    module = types.ModuleType("faster_whisper.tokenizer")
+    module.Tokenizer = _Tokenizer
+    monkeypatch.setitem(sys.modules, "faster_whisper", types.ModuleType("faster_whisper"))
+    monkeypatch.setitem(sys.modules, "faster_whisper.tokenizer", module)
+    frames_seen = []
+
+    class _Model:
+        is_multilingual = True
+
+        def align(self, encoded, sot, tokens, frames):
+            assert encoded == "window-encoding"
+            frames_seen.append(frames)
+            return [SimpleNamespace(text_token_probs=[0.25])]
+
+    def refuse(*args):
+        raise AssertionError("re-encoded")
+
+    model = SimpleNamespace(
+        feature_extractor=refuse, encode=refuse, hf_tokenizer=None, model=_Model()
+    )
+    features = np.zeros((80, 3000), np.float32)
+    features[:, :1234] = -0.5  # content, then the encoder's zero padding
+
+    scores = whisper_mod._text_log_likelihoods(
+        model, np.zeros(1), 0.0, 1.0, ["a", "b"], "en", (features, "window-encoding")
+    )
+
+    assert scores == pytest.approx([np.log(0.25)] * 2)
+    assert frames_seen == [1234, 1234]

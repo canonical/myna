@@ -282,6 +282,27 @@ WHISPER_MARGIN_PER_LETTER = 1.0
 _EDGES = re.compile(r"(\s*\W*?)(\w.*\w|\w)?(\W*)", re.DOTALL)
 
 
+_RECORDING = threading.local()
+
+
+def _record_encodes(model: Any) -> None:
+    """Wrap ``model.encode`` once so a `_drain` can see which encoder output
+    each segment was decoded from: re-encoding it to score keywords cost more
+    than the decode on turbo (2.6 s a window on the CPU)."""
+    encode = getattr(model, "encode", None)
+    if encode is None or getattr(encode, "_myna_records", False):
+        return
+
+    def recording(features: Any, *args: Any, **kwargs: Any) -> Any:
+        out = encode(features, *args, **kwargs)
+        if getattr(_RECORDING, "active", False):
+            _RECORDING.last = (features, out)
+        return out
+
+    recording._myna_records = True  # type: ignore[attr-defined]
+    model.encode = recording
+
+
 def _text_log_likelihoods(
     model: Any,
     samples: NDArray[np.float32],
@@ -289,19 +310,28 @@ def _text_log_likelihoods(
     end: float,
     texts: list[str],
     language: str,
+    window: tuple[Any, Any] | None = None,
 ) -> list[float]:
     """The decoder's teacher-forced log-likelihood of each of ``texts`` over
-    the audio of ``samples[start:end]`` (seconds), one encode for all."""
+    ``window`` (the padded features and encoder output the segment was
+    decoded from), or else the audio of ``samples[start:end]`` (seconds),
+    encoded once for all."""
     import numpy as np
     from faster_whisper.tokenizer import Tokenizer
 
-    a = max(0, round((start - 0.3) * WHISPER_RATE))
-    b = min(len(samples), round((end + 0.3) * WHISPER_RATE), a + 30 * WHISPER_RATE)
-    features = model.feature_extractor(samples[a:b])
-    frames = features.shape[-1]
-    width = getattr(model.feature_extractor, "nb_max_frames", 3000)
-    features = np.pad(features, ((0, 0), (0, max(0, width - frames))))[:, :width]
-    encoded = model.encode(features)
+    if window is not None:
+        features, encoded = window
+        # The window is padded with exact zeros to the encoder's width.
+        content = np.flatnonzero(np.abs(np.asarray(features)).sum(axis=0))
+        frames = int(content[-1]) + 1 if len(content) else 1
+    else:
+        a = max(0, round((start - 0.3) * WHISPER_RATE))
+        b = min(len(samples), round((end + 0.3) * WHISPER_RATE), a + 30 * WHISPER_RATE)
+        features = model.feature_extractor(samples[a:b])
+        frames = features.shape[-1]
+        width = getattr(model.feature_extractor, "nb_max_frames", 3000)
+        features = np.pad(features, ((0, 0), (0, max(0, width - frames))))[:, :width]
+        encoded = model.encode(features)
     tokenizer = Tokenizer(
         model.hf_tokenizer, model.model.is_multilingual, task="transcribe", language=language
     )
@@ -321,18 +351,48 @@ def _scored_pairs(
     pairs: list[tuple[Word, Any]],
     keywords: tuple[str, ...],
     language: str | None,
+    window: tuple[Any, Any] | None = None,
 ) -> list[tuple[Word, Any]]:
     """``pairs`` with each near miss of a keyword the audio nearly supports
-    folded into the keyword: the decoder's likelihood of the segment's text
-    with it, within `WHISPER_MARGIN_PER_LETTER` nats per letter of the text
-    as decoded. Measured on base, small and turbo (.kb/model-evaluation.md):
-    holdout recall 36.6 -> 65.9%, 45.7 -> 71.3%, 50.0 -> 69.5% over the text
-    correction alone."""
+    folded into the keyword (`_audio_spans`)."""
+    spans = _audio_spans(model, samples, segment, pairs, keywords, language, window=window)
+    return _apply_spans(pairs, spans)
+
+
+def _apply_spans(
+    pairs: list[tuple[Word, Any]], spans: list[tuple[int, int, str]]
+) -> list[tuple[Word, Any]]:
+    out = list(pairs)
+    for first, end, text in sorted(spans, reverse=True):
+        word = Word(text, pairs[first][0].start, pairs[end - 1][0].end)
+        out[first:end] = [(word, _Aligned(text))]
+    return out
+
+
+def _audio_spans(
+    model: Any,
+    samples: NDArray[np.float32],
+    segment: Any,
+    pairs: list[tuple[Word, Any]],
+    keywords: tuple[str, ...],
+    language: str | None,
+    editable: range | None = None,
+    window: tuple[Any, Any] | None = None,
+) -> list[tuple[int, int, str]]:
+    """(first, end, text) for each run of ``pairs`` (inside ``editable``,
+    if given) to fold into a keyword: a near miss whose segment text, with
+    the keyword in, the decoder scores within `WHISPER_MARGIN_PER_LETTER`
+    nats per letter of the text as decoded. The whole segment is scored, so
+    the keyword is judged in its context. Measured on base, small and turbo
+    (.kb/model-evaluation.md): holdout recall 36.6 -> 65.9%, 45.7 -> 71.3%,
+    50.0 -> 69.5% over the text correction alone."""
     if not keywords or not pairs or any(a is None for _, a in pairs):
-        return pairs
+        return []
     words = [w.text for w, _ in pairs]
     candidates = []
     for first, end, keyword in near_misses(words, keywords):
+        if editable is not None and not (editable.start <= first and end <= editable.stop):
+            continue
         run = "".join(words[first:end])
         match = _EDGES.fullmatch(run)
         assert match is not None
@@ -341,13 +401,13 @@ def _scored_pairs(
             written = keyword[0].upper() + keyword[1:]
         candidates.append((first, end, match.group(1) + written + match.group(3), keyword))
     if not candidates:
-        return pairs
+        return []
     texts = ["".join(words).strip()] + [
         ("".join(words[:first]) + text + "".join(words[end:])).strip()
         for first, end, text, _ in candidates
     ]
     scores = _text_log_likelihoods(
-        model, samples, segment.start, segment.end, texts, language or "en"
+        model, samples, segment.start, segment.end, texts, language or "en", window
     )
     found = sorted(
         (
@@ -363,11 +423,7 @@ def _scored_pairs(
             continue
         chosen.append((first, end, text))
         taken[first:end] = [True] * (end - first)
-    out = list(pairs)
-    for first, end, text in sorted(chosen, reverse=True):
-        word = Word(text, pairs[first][0].start, pairs[end - 1][0].end)
-        out[first:end] = [(word, _Aligned(text))]
-    return out
+    return chosen
 
 
 # faster-whisper conditions each window on at most this many previous tokens
@@ -534,23 +590,54 @@ class FasterWhisperAdapter:
                 )
         return self._model
 
-    def _drain(self, model: Any, samples: Any, options: dict[str, Any]) -> tuple[list[Any], Any]:
+    def _drain(
+        self,
+        model: Any,
+        samples: Any,
+        options: dict[str, Any],
+        windows: dict[int, tuple[Any, Any]] | None = None,
+    ) -> tuple[list[Any], Any]:
         """Decode, reading every segment. A GPU that started can still fail a
         later decode (out of memory): this one and every later one run on the
-        CPU. One that fails there too is not the GPU's, and raises."""
+        CPU. One that fails there too is not the GPU's, and raises.
+
+        ``windows``, if given, is filled with each segment's padded features
+        and encoder output, by ``id``: faster-whisper yields a window's
+        segments after encoding it, so the last encode is theirs."""
         if self._model is not None:
             model = self._model
         on = self._serving_device
         try:
-            segments, info = model.transcribe(samples, **options)
-            return list(segments), info
+            return self._read(model, samples, options, windows)
         except Exception:
             if on != "cuda":
                 raise
             _log.exception("whisper: a decode failed on the GPU; serving on the CPU")
             model = self._serve_on_cpu()
+            return self._read(model, samples, options, windows)
+
+    @staticmethod
+    def _read(
+        model: Any,
+        samples: Any,
+        options: dict[str, Any],
+        windows: dict[int, tuple[Any, Any]] | None,
+    ) -> tuple[list[Any], Any]:
+        if windows is None:
             segments, info = model.transcribe(samples, **options)
             return list(segments), info
+        _record_encodes(model)
+        _RECORDING.active, _RECORDING.last = True, None
+        try:
+            segments, info = model.transcribe(samples, **options)
+            out = []
+            for segment in segments:
+                out.append(segment)
+                if _RECORDING.last is not None:
+                    windows[id(segment)] = _RECORDING.last
+            return out, info
+        finally:
+            _RECORDING.active, _RECORDING.last = False, None
 
     def _serve_on_cpu(self) -> Any:
         from faster_whisper import WhisperModel
@@ -656,20 +743,71 @@ class FasterWhisperAdapter:
 
         options = stream_decode_options(config.language, config.prompt, self._stream_beam_size)
         corrector = keyword_corrector(config.keywords)
+        # The live passes stay raw: a correction that differs between passes
+        # (a merge, a margin near the line) breaks their agreement and stalls
+        # the commits. The words a pass commits are corrected once, against
+        # that pass's audio and word probabilities.
+        last: dict[str, Any] = {}
 
         def decode(samples: NDArray[np.float32], offset: float) -> Hypothesis:
-            segments, _info = self._drain(model, samples, options)
+            windows: dict[int, tuple[Any, Any]] | None = {} if corrector is not None else None
+            segments, info = self._drain(model, samples, options, windows)
             words: list[Word] = []
+            regions: list[tuple[Any, list[tuple[Word, Any]]]] = []
             for seg in segments:
                 pairs = [
                     (Word(text=w.word, start=w.start + offset, end=w.end + offset), w)
                     for w in seg.words or []
                 ]
-                if corrector is not None:
-                    language = getattr(_info, "language", None) or _iso639_1(config.language)
-                    pairs = _scored_pairs(model, samples, seg, pairs, config.keywords, language)
-                words.extend(w for w, _ in _corrected_pairs(pairs, corrector))
+                regions.append((seg, pairs))
+                words.extend(w for w, _ in pairs)
+            last.update(
+                samples=samples,
+                windows=windows or {},
+                regions=regions,
+                language=getattr(info, "language", None) or _iso639_1(config.language),
+            )
             return Hypothesis(words=words)
+
+        def corrected(text: str, words: list[Word]) -> str:
+            kept = {id(w) for w in words}
+            regions = [
+                (seg, pairs, [i for i, (w, _) in enumerate(pairs) if id(w) in kept])
+                for seg, pairs in last.get("regions", [])
+            ]
+            if sum(len(mine) for _, _, mine in regions) != len(words):
+                return text  # not all from the last pass: commit them as heard
+            out: list[Word] = []
+            for seg, pairs, mine in regions:
+                if mine:
+                    lo, hi = mine[0], mine[-1] + 1
+                    spans = _audio_spans(
+                        model,
+                        last["samples"],
+                        seg,
+                        pairs,
+                        config.keywords,
+                        last["language"],
+                        editable=range(lo, hi),
+                        window=last["windows"].get(id(seg)),
+                    )
+                    part = _apply_spans(pairs[lo:hi], [(a - lo, b - lo, t) for a, b, t in spans])
+                    out.extend(w for w, _ in _corrected_pairs(part, corrector))
+            if not out:
+                return text
+            joined = "".join(w.text for w in out).rstrip()
+            return joined if text.startswith(" ") else joined.lstrip()
+
+        committed: list[str] = []
+
+        async def on_commit(text: str, words: list[Word]) -> None:
+            text = await asyncio.to_thread(corrected, text, words)
+            await emit(
+                TranscriptionFinal(
+                    text=text, disposition=Disposition.COMMITTED, segment_index=len(committed)
+                )
+            )
+            committed.append(text)
 
         transcript = await run_streaming_loop(
             audio,
@@ -678,8 +816,9 @@ class FasterWhisperAdapter:
             LocalAgreement(),
             cadence_seconds=self._stream_cadence_s,
             window_cap_seconds=self._stream_window_cap_s,
+            on_commit=on_commit if corrector is not None else None,
         )
-        await emit(TranscriptionDone(text=transcript))
+        await emit(TranscriptionDone(text="".join(committed) if corrector else transcript))
 
     async def _run_batch_session(
         self,
@@ -740,7 +879,8 @@ class FasterWhisperAdapter:
                 condition_on_previous_text=self._batch_condition_on_previous_text,
                 vad_filter=self._batch_vad_filter,
             )
-            segments, info = self._drain(model, samples, options)
+            windows: dict[int, tuple[Any, Any]] | None = {} if corrector is not None else None
+            segments, info = self._drain(model, samples, options, windows)
             region.clear()
             words: list[Word] = []
 
@@ -760,7 +900,15 @@ class FasterWhisperAdapter:
                     ]
                 if corrector is not None:
                     spoken = language or getattr(info, "language", None)
-                    pairs = _scored_pairs(model, samples, segment, pairs, config.keywords, spoken)
+                    pairs = _scored_pairs(
+                        model,
+                        samples,
+                        segment,
+                        pairs,
+                        config.keywords,
+                        spoken,
+                        (windows or {}).get(id(segment)),
+                    )
                 pairs = _corrected_pairs(pairs, corrector)
                 region.append((segment, pairs, origin))
                 words.extend(w for w, _ in pairs)
