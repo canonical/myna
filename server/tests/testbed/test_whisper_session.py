@@ -1112,3 +1112,27 @@ def test_scoring_a_recorded_window_reencodes_nothing(monkeypatch):
 
     assert scores == pytest.approx([np.log(0.25)] * 2)
     assert frames_seen == [1234, 1234]
+
+
+async def test_keyword_alignment_leaves_the_coverage_check_as_without_keywords(monkeypatch):
+    """Words aligned only for their confidences are judged as a keywordless
+    session judges its segments: one long word ("1717.", said over two
+    seconds) is not a two-second hole after its onset."""
+    import myna.testbed.streaming.coverage as coverage
+
+    seen = []
+    real = coverage.untranscribed_gap
+
+    def spy(samples, spans):
+        seen.append(list(spans))
+        return real(samples, spans)
+
+    monkeypatch.setattr(coverage, "untranscribed_gap", spy)
+    _scores(monkeypatch, 0.0, -100.0)
+    adapter = _keyword_adapter(
+        _Segment(" 1717.", start=0.0, end=2.0, words=[_Word(" 1717.", 0.1, 1.9, 0.99)])
+    )
+
+    await run_session(adapter, audio_seconds=2.0, keywords=("Kaliko",))
+
+    assert seen and all(span[0] != span[1] for spans in seen for span in spans)

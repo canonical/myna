@@ -916,27 +916,30 @@ class FasterWhisperAdapter:
                 language = info.language
             return words
 
+        # Words aligned only for keyword confidences are judged as segments
+        # are without keywords: onset-only would read one long word ("1717.")
+        # as a hole and re-decode the region twice for nothing.
+        trust_words = False
+
         def accounted(offset: float) -> list[tuple[float, float]]:
             """What the last decode accounts for, in region seconds: an
             aligned word only its onset, a segment-level time its whole span
             (see streaming.coverage)."""
             spans: list[tuple[float, float]] = []
             for _segment, pairs, _origin in region:
-                if pairs and pairs[0][1] is None:
+                if pairs and (pairs[0][1] is None or not trust_words):
                     spans.append((pairs[0][0].start - offset, pairs[-1][0].end - offset))
                 else:
                     spans.extend((w.start - offset, w.start - offset) for w, _ in pairs)
             return spans
 
         def decode(samples: NDArray[np.float32], offset: float) -> Hypothesis:
-            nonlocal decoded, processed
+            nonlocal decoded, processed, trust_words
             first = round(offset * WHISPER_RATE)
-            word_timestamps = (
-                granularity is not None
-                or corrector is not None
-                or first < processed
-                or ends_at_forced_cut(samples)
+            trust_words = (
+                granularity is not None or first < processed or ends_at_forced_cut(samples)
             )
+            word_timestamps = trust_words or corrector is not None
             end = offset + len(samples) / WHISPER_RATE
             words = decode_once(samples, offset, word_timestamps, offset, end)
             gap = untranscribed_gap(samples, accounted(offset))
