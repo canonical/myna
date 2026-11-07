@@ -370,8 +370,13 @@ async def run_streaming_loop(
     silence_cut_overlap: bool = True,
     min_utterance_seconds: float = MIN_DECODE_S,
     partial_budget: float | None = None,
+    display_decode: Callable[[NDArray[np.float32], float], Hypothesis] | None = None,
 ) -> str:
-    """``on_commit`` receives each committed text with its words instead of
+    """``display_decode``, if given, decodes the passes that only feed the
+    unstable display (a chunked strategy's partials), so a decode can skip
+    work that matters only for what is committed.
+
+    ``on_commit`` receives each committed text with its words instead of
     the wire (deferred presentation). ``silence_cut_overlap=False`` retires a
     pause cut without overlap, as murmure does: its trailing silence means no
     word straddles it, so only forced cuts keep audio to deduplicate.
@@ -391,6 +396,11 @@ async def run_streaming_loop(
     async def run_decode(samples: NDArray[np.float32], offset: float) -> Hypothesis:
         return await asyncio.get_running_loop().run_in_executor(executor, decode, samples, offset)
 
+    shown = display_decode or decode
+
+    async def run_display(samples: NDArray[np.float32], offset: float) -> Hypothesis:
+        return await asyncio.get_running_loop().run_in_executor(executor, shown, samples, offset)
+
     try:
         return await _run(
             audio,
@@ -407,6 +417,7 @@ async def run_streaming_loop(
             silence_cut_overlap=silence_cut_overlap,
             min_utterance_seconds=min_utterance_seconds,
             partial_budget=partial_budget,
+            run_display=run_display,
         )
     finally:
         executor.shutdown(wait=False)
@@ -427,6 +438,7 @@ async def _run(
     silence_cut_overlap: bool = True,
     min_utterance_seconds: float = MIN_DECODE_S,
     partial_budget: float | None = None,
+    run_display: Callable[[NDArray[np.float32], float], Awaitable[Hypothesis]] | None = None,
 ) -> str:
     # perf T03: additive, outside the commit/alignment logic below -- with
     # telemetry=None (every production call today) this is one branch per
@@ -434,11 +446,12 @@ async def _run(
     session_t0 = time.perf_counter() if telemetry is not None else 0.0
 
     async def timed_decode(samples: NDArray[np.float32], offset: float, kind: str) -> Hypothesis:
+        run = run_display if kind == "partial" and run_display is not None else run_decode
         with _frame(f"decode:{kind}"):
             if telemetry is None:
-                return await run_decode(samples, offset)
+                return await run(samples, offset)
             t0 = time.perf_counter()
-            hyp = await run_decode(samples, offset)
+            hyp = await run(samples, offset)
             telemetry.record(kind, len(samples) / RATE, time.perf_counter() - t0)
             return hyp
 

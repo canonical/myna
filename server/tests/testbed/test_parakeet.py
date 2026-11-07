@@ -68,6 +68,7 @@ class _FakeParakeetModel:
         self._text = text
         self.calls: list[int] = []  # lengths of sample arrays passed in
         self.biases: list[object] = []
+        self.displays: list[bool] = []
         # T10: run_session drives the real MemoryPressureMonitor lifecycle
         # (begin_session/observe_decode) against whatever model it holds; the
         # fake needs a real one so that path is exercised, not stubbed out.
@@ -79,9 +80,10 @@ class _FakeParakeetModel:
 
     keyword_bias = _ParakeetOnnx.keyword_bias
 
-    def transcribe_words(self, samples, bias=None) -> list[Word]:
+    def transcribe_words(self, samples, bias=None, *, display=False) -> list[Word]:
         self.calls.append(len(samples))
         self.biases.append(bias)
+        self.displays.append(display)
         return [Word(f" {w}", i, i + 1) for i, w in enumerate(self._text.split())]
 
 
@@ -1427,3 +1429,47 @@ def test_a_run_already_holding_a_keyword_is_left_alone():
     frames = [{" Si": 9.0}, {"ob": 9.0}, {"han": 9.0}, {" the": 9.0}]
     tokens = [" Si", "ob", "han", " the"]
     assert _toward(frames, tokens, ["Siobhan", "Siobhanthe"]) == tokens
+
+
+async def test_display_passes_skip_the_audio_check_and_commit_passes_run_it(monkeypatch):
+    adapter = ParakeetAdapter(streaming=True, stream_partial_cadence_s=0.25)
+    model = _FakeParakeetModel("hello world")
+    captured = {}
+
+    async def fake_loop(audio, emit, decode, strategy, **kwargs):
+        captured["decode"], captured["display"] = decode, kwargs["display_decode"]
+        return ""
+
+    monkeypatch.setattr("myna.testbed.streaming.loop.run_streaming_loop", fake_loop)
+
+    async def empty_audio():
+        for _ in ():
+            yield b""  # pragma: no cover - async iterator shape only
+
+    async def emit(_event):
+        pass
+
+    await adapter._run_streaming_session(model, empty_audio(), emit)
+    captured["display"](np.zeros(16_000, np.float32), 0.0)
+    captured["decode"](np.zeros(16_000, np.float32), 0.0)
+
+    assert model.displays == [True, False]
+
+
+def test_a_display_only_decode_skips_the_audio_check(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        _ParakeetOnnx, "_toward_keywords", lambda self, enc, ids, *rest: calls.append(1) or rest[:3]
+    )
+    model, encodings = _scripted_model({" the": 5.0}, {" cat": 5.0})
+    bias = keyword_bias(["Siobhan"], model._vocab, model._blank_idx)
+    monkeypatch.setattr(
+        model,
+        "_transcribe_guarded",
+        lambda s, b: model._decode_sequence(encodings, len(encodings), bias=b),
+    )
+
+    model.transcribe_words(np.zeros(1, np.float32), bias, display=True)
+    assert calls == []
+    model.transcribe_words(np.zeros(1, np.float32), bias)
+    assert calls == [1]

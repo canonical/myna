@@ -65,6 +65,7 @@ and for the retry that recovers most of it.
 from __future__ import annotations
 
 import asyncio
+import functools
 import logging
 import os
 import re
@@ -242,6 +243,12 @@ _EDGES = re.compile(r"(\s*\W*?)(\w.*\w|\w)?(\W*)", re.DOTALL)
 
 def _letters(text: str) -> str:
     return "".join(ch for ch in text if ch.isalpha())
+
+
+# Set for a decode that only feeds the unstable display: it skips scoring
+# keywords against the audio, which only matters for committed text and
+# costs joint calls on every partial.
+_DISPLAY_ONLY = threading.local()
 
 
 # Parakeet TDT 0.6B v3 is multilingual across 25 European languages,
@@ -689,6 +696,7 @@ class _ParakeetOnnx:
         encodings_len: int,
         *,
         bias: KeywordBias | None = None,
+        acoustic: bool = True,
     ) -> tuple[list[str], list[float]]:
         """Greedy TDT decode (murmure decode_sequence_greedy): argmax vocab
         token; on non-blank update the decoder state; the duration head skips
@@ -786,9 +794,10 @@ class _ParakeetOnnx:
                     rewind = None
         if bias is None:
             return tokens, timestamps
-        tokens, timestamps, confidences = self._toward_keywords(
-            encodings, ids, tokens, timestamps, confidences, bias
-        )
+        if acoustic and not getattr(_DISPLAY_ONLY, "on", False):
+            tokens, timestamps, confidences = self._toward_keywords(
+                encodings, ids, tokens, timestamps, confidences, bias
+            )
         return bias.correct(tokens, timestamps, confidences)
 
     def _toward_keywords(
@@ -1043,9 +1052,18 @@ class _ParakeetOnnx:
         return retry_tokens, retry_timestamps
 
     def transcribe_words(
-        self, samples: NDArray[np.float32], bias: KeywordBias | None = None
+        self,
+        samples: NDArray[np.float32],
+        bias: KeywordBias | None = None,
+        *,
+        display: bool = False,
     ) -> list[Word]:
-        tokens, timestamps = self._transcribe_guarded(samples, bias)
+        """``display`` marks a pass that only feeds the unstable display."""
+        _DISPLAY_ONLY.on = display
+        try:
+            tokens, timestamps = self._transcribe_guarded(samples, bias)
+        finally:
+            _DISPLAY_ONLY.on = False
         return _tokens_to_words(tokens, timestamps)
 
 
@@ -1318,9 +1336,11 @@ class ParakeetAdapter:
         async def emit_on_loop(event: TranscriptionProgress) -> None:
             await emit(event)
 
-        def decode(samples: NDArray[np.float32], offset: float) -> Hypothesis:
+        def decode(
+            samples: NDArray[np.float32], offset: float, *, display: bool = False
+        ) -> Hypothesis:
             majflt_before = sample_majflt()
-            words = model.transcribe_words(samples, bias)
+            words = model.transcribe_words(samples, bias, display=display)
             warning = model.pressure_monitor.observe_decode(majflt_before, sample_majflt())
             if warning is not None:
                 progress = TranscriptionProgress(
@@ -1344,5 +1364,6 @@ class ParakeetAdapter:
             overlap_seconds=STREAM_OVERLAP_S,
             partial_cadence_seconds=self._stream_partial_cadence_s or None,
             partial_tail_seconds=self._stream_partial_tail_s or None,
+            display_decode=functools.partial(decode, display=True),
         )
         await emit(TranscriptionDone(text=transcript))

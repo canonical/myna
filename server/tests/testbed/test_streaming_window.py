@@ -496,6 +496,26 @@ async def test_chunked_partials_start_at_the_decode_floor_without_a_leading_spac
 
 
 @pytest.mark.asyncio
+async def test_chunked_partials_go_to_the_display_decode_and_commits_do_not():
+    shown = _Decoder(lambda _call: [Word(" shown", 0.05, 0.15)])
+    committed = _Decoder(lambda _call: [Word(" a", 0.05, 0.15)])
+    events, _ = await _run(
+        _audio(0.9, 0.3),
+        committed,
+        SilenceCut(force_cut_seconds=600.0),
+        cap=5.0,
+        partial_cadence_seconds=0.3,
+        display_decode=shown,
+    )
+
+    assert len(shown.inputs) == 3
+    assert len(committed.inputs) == 1
+    assert _committed(events) == ["a"]
+    unstable = [e.text for e in events if isinstance(e, TranscriptionFinal)][:-1]
+    assert unstable and set(unstable) == {"shown"}
+
+
+@pytest.mark.asyncio
 async def test_an_empty_chunked_partial_reports_progress():
     events, _ = await _run(
         _audio(3.0, 1.0),
