@@ -8,7 +8,7 @@ msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-10-11 11:54+0100\n"
-"PO-Revision-Date: 2026-11-06 19:52+0000\n"
+"PO-Revision-Date: 2026-11-07 22:10+0000\n"
 "Last-Translator: phlostically <phlostically@users.noreply.hosted.weblate.org>"
 "\n"
 "Language-Team: Esperanto <https://hosted.weblate.org/projects/ubuntu-desktop-"
@@ -546,7 +546,7 @@ msgstr "La agordo ŝanĝiĝis sed ne estas relegebla."
 
 #: src/backend_ui.rs:2335
 msgid "The setting was changed, but reading it back was interrupted."
-msgstr ""
+msgstr "La agordo modifiĝis, sed relegi ĝin estis interrompite."
 
 #: src/backend_ui.rs:2353 src/backend_ui.rs:2380
 msgid "The system did not allow the change."
@@ -680,11 +680,11 @@ msgstr "Legante la agordojn de ĉi tiu modelo…"
 
 #: src/backend_ui.rs:2731
 msgid "No configuration reported"
-msgstr ""
+msgstr "Neniu agordo raportiĝis"
 
 #: src/backend_ui.rs:2733
 msgid "The model answered but reported no settings to change."
-msgstr ""
+msgstr "La modelo respondis sed raportis neniun ŝanĝotan agordon."
 
 #: src/backend_ui.rs:2743
 msgid "Some data is unavailable"
@@ -802,11 +802,11 @@ msgstr "Eraro:\n"
 
 #: src/backend_ui.rs:3173
 msgid "The change ran, but the connections do not match it."
-msgstr ""
+msgstr "La ŝanĝo efektiviĝis, sed la konekto ne kongruas kun ĝi."
 
 #: src/backend_ui.rs:3177
 msgid "The connections changed before the change could start. Try again."
-msgstr ""
+msgstr "La konekto ŝanĝiĝis antaŭ la efektiviĝo de la ŝanĝoj. Reprovu."
 
 #: src/backend_ui.rs:3181
 msgid "Discovery error:\n"
@@ -814,7 +814,7 @@ msgstr "Eraro pri trovado:\n"
 
 #: src/backend_ui.rs:3183
 msgid "The change ran, but the connections could not be read back."
-msgstr ""
+msgstr "La ŝanĝo efektiviĝis, sed ne eblas relegi la konekton."
 
 #: src/backend_ui.rs:3200
 msgid "Final connections:"
@@ -947,7 +947,7 @@ msgstr "Kontrolante instaladon"
 
 #: src/onboarding_ui.rs:1299
 msgid "Waiting for other software changes to finish"
-msgstr ""
+msgstr "Atendante la finon de aliaj programaj ŝanĝoj"
 
 #: src/onboarding_ui.rs:1301
 msgid "Setting up speech-to-text model"
@@ -1007,6 +1007,7 @@ msgstr "Starigi fulmoklavon por ekdikti."
 #: src/shortcut_ui.rs:672
 msgid "Myna is not running yet. The shortcut can be set up once it starts."
 msgstr ""
+"Myna ankoraŭ ne ruliĝas. Vi povas starigi fulmoklavon tiam, kiam ĝi ruliĝas."
 
 #: src/shortcut_ui.rs:680
 msgid ""
@@ -1036,7 +1037,7 @@ msgstr ""
 
 #: src/diagnostics.rs:280
 msgid "The CPU clock is capped by system policy"
-msgstr ""
+msgstr "Sistemaj reguloj malhelpas ŝanĝi ĉefprocesoran horloĝon"
 
 #: src/diagnostics.rs:282
 msgid "limited to"
@@ -1049,6 +1050,8 @@ msgstr "el"
 #: src/diagnostics.rs:288
 msgid "Dictation will be slow. A power tool has capped the CPU clock."
 msgstr ""
+"Diktado estos malrapida, ĉar ilaĵo malhelpas plirapidigi la ĉefprocesoran "
+"horloĝon."
 
 #: src/diagnostics.rs:298
 msgid "The power profile is set to low-power"
@@ -1063,6 +1066,8 @@ msgstr ""
 #: src/diagnostics.rs:312
 msgid "Firmware is holding the CPU at its lowest clock"
 msgstr ""
+"Mikroprogramo fiksas la rapidon de la ĉefprocesora horloĝo ĉe la plej "
+"malrapida valoro"
 
 #: src/diagnostics.rs:316
 msgid ""
@@ -1364,7 +1369,7 @@ msgstr "Ubuntu-pako"
 
 #: src/diagnostics.rs:839
 msgid "development override"
-msgstr ""
+msgstr "superrego por programevoluigado"
 
 #: src/diagnostics.rs:840
 msgid "user copy"
@@ -1532,23 +1537,25 @@ msgstr "Vojo al kruda Uniksa konektinterfaco por la transskriba servo."
 
 #: src/presentation.rs:199
 msgid "Minimum speech before pause commit (seconds)"
-msgstr ""
+msgstr "Minimuma daŭro de parolo antaŭ enmeto pro paŭzo (en sekundoj)"
 
 #: src/presentation.rs:200
 msgid "Speech required before a pause can commit a transcript chunk."
 msgstr ""
+"La daŭro de silento postulata, antaŭ ol paŭzo povas enmetigi "
+"transskribitaĵon."
 
 #: src/presentation.rs:205
 msgid "Pause length for commit (seconds)"
-msgstr ""
+msgstr "Longo de paŭzo por enmeto (en sekundoj)"
 
 #: src/presentation.rs:206
 msgid "Silence duration that commits the current transcript chunk."
-msgstr ""
+msgstr "La daŭro de silento, kiu enmetigas la aktualan transskribitaĵon."
 
 #: src/presentation.rs:211
 msgid "Maximum uncommitted audio (seconds)"
-msgstr ""
+msgstr "Maksimuma daŭro de neenmetita sono (en sekundoj)"
 
 #: src/presentation.rs:212
 msgid ""
@@ -1557,7 +1564,7 @@ msgstr ""
 
 #: src/presentation.rs:217
 msgid "Partial result interval (seconds)"
-msgstr ""
+msgstr "Intervalo de parta rezulto (en sekundoj)"
 
 #: src/presentation.rs:218
 msgid ""
@@ -1595,7 +1602,7 @@ msgstr ""
 
 #: src/presentation.rs:296
 msgid "This model provides no description for this setting."
-msgstr ""
+msgstr "La modelo ne provizas priskribon pri ĉi tiu agordo."
 
 #. TRANSLATORS: {percent} is how much of the download has arrived, a number from 0 to 100.
 #: src/ui/install_control.rs:131
