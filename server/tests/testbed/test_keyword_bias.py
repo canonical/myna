@@ -4,12 +4,16 @@ match automaton, and the re-ranking rule, over a toy vocabulary."""
 from __future__ import annotations
 
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 
 np = pytest.importorskip("numpy", reason="adapter extras not installed")
 
 from myna.testbed.keyword_bias import (
     ROOT,
     KeywordBias,
+    _edits,
+    _edits_within,
     keyword_bias,
     keyword_corrector,
     near_misses,
@@ -337,3 +341,26 @@ def test_near_misses_pair_one_word_runs_within_reach_and_split_spellings():
     assert (2, 4, "PulseAudio") in found
     assert all(first != 4 for first, _, _ in found)  # already a keyword
     assert not any(k == "Kaliko" and first == 0 for first, _, k in found)
+
+
+@pytest.mark.parametrize(
+    ("a", "b"),
+    [
+        ("calico", "kaliko"),
+        ("siobhn", "siobhan"),
+        ("pulseaudios", "pulseaudio"),
+        ("interdicted", "entered"),
+        ("", "abc"),
+        ("abc", ""),
+        ("kernel", "kennel"),
+        ("myna", "minya"),
+    ],
+)
+def test_edits_within_agrees_with_the_full_distance(a, b):
+    for limit in range(5):
+        assert _edits_within(a, b, limit) == (_edits(a, b) <= limit)
+
+
+@given(st.text("abc", max_size=9), st.text("abc", max_size=9), st.integers(0, 4))
+def test_edits_within_agrees_with_the_full_distance_everywhere(a, b, limit):
+    assert _edits_within(a, b, limit) == (_edits(a, b) <= limit)

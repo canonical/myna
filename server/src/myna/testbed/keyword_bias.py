@@ -105,6 +105,29 @@ def _edits(a: str, b: str) -> int:
     return previous[-1]
 
 
+def _edits_within(a: str, b: str, limit: int) -> bool:
+    """Whether ``a`` is at most ``limit`` edits from ``b``: the edit distance
+    restricted to the band the limit allows, stopping once a row exceeds it.
+    The candidate filter runs it for every word run against every keyword."""
+    if abs(len(a) - len(b)) > limit:
+        return False
+    big = limit + 1
+    previous = [j if j <= limit else big for j in range(len(b) + 1)]
+    for i, x in enumerate(a, 1):
+        lo, hi = max(1, i - limit), min(len(b), i + limit)
+        current = [big] * (len(b) + 1)
+        if i <= limit:
+            current[0] = i
+        for j in range(lo, hi + 1):
+            current[j] = min(
+                previous[j] + 1, current[j - 1] + 1, previous[j - 1] + (x != b[j - 1]), big
+            )
+        if min(current[max(0, lo - 1) : hi + 1]) > limit:
+            return False
+        previous = current
+    return previous[len(b)] <= limit
+
+
 class KeywordCorrector:
     """A session's one-word keywords by folded spelling: rewrites a decoded
     word that is a keyword but for accents and case, words that spell one
@@ -366,6 +389,6 @@ def near_misses(words: Sequence[str], keywords: Sequence[str]) -> list[tuple[int
                 if fold == core or abs(len(fold) - len(core)) > max(2, len(fold) // 2):
                     continue
                 reach = max(1, round(0.4 * len(fold))) if count == 1 else 1
-                if _edits(core, fold) <= reach:
+                if _edits_within(core, fold, reach):
                     out.append((w0, w0 + count, keyword))
     return out
