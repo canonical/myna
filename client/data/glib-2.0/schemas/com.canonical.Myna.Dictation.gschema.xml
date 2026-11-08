@@ -100,8 +100,9 @@
       <default>[]</default>
       <summary>Vocabulary</summary>
       <description>
-        Names and terms the model should prefer when it is unsure, such as
-        "Siobhan" or "PipeWire". Up to 100 words or short phrases.
+        Names and terms you use that speech recognition might get wrong,
+        such as a colleague's name, a product or a term from your field:
+        "Nguyen", "Kubernetes", "ibuprofen". Up to 100 words or short phrases.
       </description>
     </key>
   </schema>
