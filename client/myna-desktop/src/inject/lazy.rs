@@ -14,6 +14,7 @@
 
 use async_trait::async_trait;
 
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use super::{Activation, InjectError, Injector, Target, TextInputCapabilities};
@@ -140,12 +141,90 @@ impl Connect for IbusConnect {
     }
 }
 
+/// Use an installed input-method extension when it publishes a socket, and
+/// retain the shipped IBus engine path everywhere else. A missing provider
+/// means no extension is installed or enabled, not that dictation fails.
+pub struct AutoConnect {
+    provider_directory: PathBuf,
+}
+
+impl AutoConnect {
+    pub fn new(provider_directory: impl Into<PathBuf>) -> Self {
+        Self {
+            provider_directory: provider_directory.into(),
+        }
+    }
+
+    fn provider_sockets(&self) -> Vec<PathBuf> {
+        if let Some(socket) = super::external::configured_provider_socket() {
+            return socket.exists().then_some(socket).into_iter().collect();
+        }
+        super::external::provider_sockets(&self.provider_directory)
+    }
+}
+
+impl Default for AutoConnect {
+    fn default() -> Self {
+        Self::new(super::external::default_provider_directory())
+    }
+}
+
+#[async_trait]
+impl Connect for AutoConnect {
+    async fn connect(&mut self) -> Result<Box<dyn Injector>, InjectError> {
+        for socket in self.provider_sockets() {
+            match super::external::ExternalInjector::connect_at(socket.clone()).await {
+                Ok(injector) => {
+                    myna_core::dbg_log!(
+                        "inject",
+                        "using input-method extension at {}",
+                        socket.display()
+                    );
+                    return Ok(Box::new(injector));
+                }
+                Err(InjectError::Unavailable(why)) => {
+                    myna_core::dbg_log!(
+                        "inject",
+                        "input-method extension unavailable ({why}); trying the next provider"
+                    );
+                }
+                Err(err) => return Err(err),
+            }
+        }
+        IbusConnect.connect().await
+    }
+
+    fn capabilities(&self) -> TextInputCapabilities {
+        if self.provider_sockets().is_empty() {
+            super::ibus::CAPABILITIES
+        } else {
+            super::external::CAPABILITIES
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::inject::mock::{InjectorLog, MockInjector};
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
+
+    #[test]
+    fn automatic_backend_prefers_an_installed_extension() {
+        let dir = std::env::temp_dir().join(format!("myna-auto-connect-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let socket = dir.join("provider.sock");
+        let automatic = AutoConnect::new(&dir);
+        assert_eq!(automatic.capabilities(), super::super::ibus::CAPABILITIES);
+        let _listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
+        assert_eq!(
+            automatic.capabilities(),
+            super::super::external::CAPABILITIES
+        );
+        std::fs::remove_dir_all(dir).ok();
+    }
 
     /// A factory that fails the first `fails` connects, then hands out mocks.
     struct FlakyConnect {

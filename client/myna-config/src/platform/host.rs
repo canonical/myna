@@ -4,6 +4,7 @@
 //! entry that hosts the dictation indicator.
 
 use std::collections::HashMap;
+use std::os::unix::fs::FileTypeExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -76,6 +77,7 @@ impl<S: IbusSetup> Components for HostComponents<S> {
 
     async fn status(&self, id: &str) -> ComponentStatus {
         match id {
+            IBUS if self.host.external_input_method_active() => ComponentStatus::Active,
             IBUS => self.ibus.status(&self.host),
             HUD_HOST_AUTOSTART => self.host.hud_host_status(),
             _ => ComponentStatus::Unavailable,
@@ -87,6 +89,9 @@ impl<S: IbusSetup> Components for HostComponents<S> {
             IBUS => {}
             HUD_HOST_AUTOSTART => return self.start_hud_host().await,
             _ => return Err(ComponentError::Unknown(id.to_owned())),
+        }
+        if self.host.external_input_method_active() {
+            return Ok(());
         }
         let failed = |message: &str| Err(command_failed(S::STEP, message));
         match self.ibus.status(&self.host) {
@@ -167,6 +172,8 @@ pub struct Host {
     pub config_home: PathBuf,
     /// `$XDG_CONFIG_DIRS`, most preferred first.
     pub config_dirs: Vec<PathBuf>,
+    /// The session's `$XDG_RUNTIME_DIR`.
+    pub runtime_dir: PathBuf,
 }
 
 impl Host {
@@ -185,6 +192,7 @@ impl Host {
             home: glib::home_dir(),
             config_home: glib::user_config_dir(),
             config_dirs: glib::system_config_dirs(),
+            runtime_dir: glib::user_runtime_dir(),
         }
     }
 
@@ -192,6 +200,32 @@ impl Host {
         self.path
             .iter()
             .any(|dir| dir.join("ibus-daemon").is_file())
+    }
+
+    /// An installed input-method extension has published a live provider
+    /// socket, so dictation can commit through that framework.
+    pub fn external_input_method_active(&self) -> bool {
+        // The unconfined addon publishes under the Myna snap's runtime
+        // namespace. Settings itself is unconfined, so both spellings matter
+        // while a source checkout may use the plain runtime directory.
+        [
+            self.runtime_dir.join("myna-input-methods"),
+            self.runtime_dir
+                .join("snap.myna")
+                .join("myna-input-methods"),
+        ]
+        .iter()
+        .any(|directory| {
+            let Ok(entries) = std::fs::read_dir(directory) else {
+                return false;
+            };
+            entries.filter_map(Result::ok).any(|entry| {
+                entry.path().extension().is_some_and(|ext| ext == "sock")
+                    && entry
+                        .file_type()
+                        .is_ok_and(|file_type| file_type.is_socket())
+            })
+        })
     }
 
     /// The entry the package installed, from the most preferred directory.

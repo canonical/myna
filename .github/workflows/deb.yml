@@ -24,6 +24,7 @@ on:
       - "client/build-support/**"
       - "client/Cargo.toml"
       - "client/Cargo.lock"
+      - "input-methods/**"
       - "extensions/myna-shell/**"
       - "dev/version.sh"
       - "dev/stage-extension.sh"

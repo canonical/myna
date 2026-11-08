@@ -1,0 +1,8 @@
+[Addon]
+Name=Myna
+Comment=Commit Myna dictation into Fcitx5 input contexts
+Category=Module
+Library=myna_fcitx5
+Type=SharedLibrary
+OnDemand=False
+Version=@MYNA_FCITX5_VERSION@

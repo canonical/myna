@@ -1,0 +1,10 @@
+#!/bin/sh
+# The optional Fcitx5 addon is installed where Fcitx discovers shared-library
+# addons and where fcitx-addon reads their metadata.
+set -eu
+multiarch=$(dpkg-architecture -qDEB_HOST_MULTIARCH)
+test -f "/usr/lib/$multiarch/fcitx5/myna_fcitx5.so"
+test -f /usr/share/fcitx5/addon/myna_fcitx5.conf
+test -f /usr/share/myna/input-methods/fcitx5.input-method.json
+grep -qxF 'Library=myna_fcitx5' /usr/share/fcitx5/addon/myna_fcitx5.conf
+grep -qxF 'Type=SharedLibrary' /usr/share/fcitx5/addon/myna_fcitx5.conf

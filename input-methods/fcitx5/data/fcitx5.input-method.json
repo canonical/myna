@@ -1,0 +1,6 @@
+{
+  "id": "fcitx5",
+  "name": "Fcitx 5",
+  "protocol": 1,
+  "socket": "fcitx5.sock"
+}

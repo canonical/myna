@@ -11,7 +11,8 @@
 //!
 //! Three boundary seams, each with a mock so the controller is fully
 //! hermetic-testable (no D-Bus / IBus / display):
-//! - [`inject::Injector`] — text injection ([`inject::ibus::IbusInjector`] /
+//! - [`inject::Injector`] — text injection ([`inject::external::ExternalInjector`],
+//!   [`inject::ibus::IbusInjector`] /
 //!   [`inject::mock::MockInjector`]);
 //! - `shortcut` — activation, reusing `myna_orchestrator::Trigger`
 //!   ([`shortcut::control::ControlTrigger`]);

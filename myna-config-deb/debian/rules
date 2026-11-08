@@ -19,6 +19,7 @@ export PATH := $(RUST_BIN):$(PATH)
 endif
 
 CARGO = cargo --offline --locked
+FCITX5_BUILD = $(CURDIR)/debian/build/myna-fcitx5
 
 %:
 	dh $@
@@ -29,9 +30,12 @@ override_dh_auto_configure:
 	mkdir -p $(CARGO_HOME)
 	printf '[source.crates-io]\nreplace-with = "vendored-sources"\n\n[source.vendored-sources]\ndirectory = "%s"\n' \
 	    "$(CURDIR)/vendor" > $(CARGO_HOME)/config.toml
+	cmake -S input-methods/fcitx5 -B $(FCITX5_BUILD) -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+	    -DMYNA_FCITX5_VERSION=$(DEB_VERSION_UPSTREAM)
 
 override_dh_auto_build:
 	$(CARGO) build --release --workspace
+	cmake --build $(FCITX5_BUILD)
 
 override_dh_auto_test:
 	$(CARGO) test --release --workspace
@@ -39,6 +43,7 @@ override_dh_auto_test:
 override_dh_auto_install:
 	install -Dm755 target/release/myna-config debian/myna-config/usr/bin/myna-config
 	install -Dm755 target/release/myna-hud-host debian/myna-config/usr/libexec/myna-config/myna-hud-host
+	DESTDIR=$(CURDIR)/debian/myna-config cmake --install $(FCITX5_BUILD) --prefix /usr
 	sh myna-config/build/install-translations.sh myna-config/po debian/myna-config
 
 # dh_clean deletes *.orig, and cargo checks each vendored crate's

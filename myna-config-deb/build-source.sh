@@ -20,8 +20,8 @@ set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 root=$(cd "$here/.." && pwd)
 
-if [ -n "$(git -C "$root" status --porcelain -- client myna-config-deb extensions/myna-shell dev/stage-extension.sh dev/check-shell-version.sh)" ]; then
-    echo "warning: uncommitted changes under client/, myna-config-deb/, extensions/myna-shell/ or the dev/ staging scripts are not staged (git archive reads HEAD)" >&2
+if [ -n "$(git -C "$root" status --porcelain -- client input-methods myna-config-deb extensions/myna-shell dev/stage-extension.sh dev/check-shell-version.sh)" ]; then
+    echo "warning: uncommitted changes under client/, input-methods/, myna-config-deb/, extensions/myna-shell/ or the dev/ staging scripts are not staged (git archive reads HEAD)" >&2
 fi
 
 changelog_version=$(dpkg-parsechangelog -l "$here/debian/changelog" -S Version)
@@ -60,7 +60,7 @@ stage="$out/myna-config-$upstream"
 
 rm -rf "$out"
 mkdir -p "$stage"
-git -C "$root" archive HEAD client/Cargo.toml client/Cargo.lock client/build-support client/data client/myna-core client/myna-platform client/myna-freedesktop client/myna-config \
+git -C "$root" archive HEAD client/Cargo.toml client/Cargo.lock client/build-support client/data client/myna-core client/myna-platform client/myna-freedesktop client/myna-config input-methods \
     | tar -x -C "$stage" --strip-components=1
 # The binaries report the version build-support/version.rs finds staged here.
 echo "$upstream" > "$stage/.version"

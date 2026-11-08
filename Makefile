@@ -244,6 +244,11 @@ mutate-server: ## mutmut over the Python package, scoped by MUTATE (mutant name 
 build-client: ## Build the Rust client workspace (release, on the host)
 	cd client && cargo build --release
 
+.PHONY: build-fcitx5
+build-fcitx5: ## Build the optional Myna Fcitx5 addon
+	cmake -S input-methods/fcitx5 -B target/input-methods/fcitx5 -DMYNA_FCITX5_VERSION=$$(./dev/version.sh)
+	cmake --build target/input-methods/fcitx5
+
 # Myna Settings ships as a deb (myna-config-deb/README.md), not in the snap.
 # The staged source and the built packages land in target/deb/<series>/, the
 # series SERIES names or else debian/changelog's.

@@ -7,11 +7,16 @@ Build-Depends: debhelper-compat (= 13),
                appstream,
                blueprint-compiler (>= 0.12),
                cargo (>= 1.85),
+               cmake,
                dbus-daemon <!nocheck>,
+               g++,
                gettext,
                gir1.2-adw-1,
                gir1.2-gtk-4.0,
                libadwaita-1-dev (>= 1.5),
+               libfcitx5config-dev,
+               libfcitx5core-dev,
+               libfcitx5utils-dev,
                libglib2.0-dev,
                libgtk-4-dev (>= 4.14),
                pkgconf,
@@ -29,6 +34,7 @@ Depends: ${misc:Depends},
          snapd,
 Recommends: ibus,
             im-config,
+Suggests: fcitx5
 Description: settings and onboarding for Myna dictation
  Myna Settings is the desktop application that sets up and configures Myna,
  the local speech-to-text dictation service shipped as the myna snap. It
@@ -44,3 +50,7 @@ Description: settings and onboarding for Myna dictation
  It also ships the Myna Dictation Indicator GNOME Shell extension, which
  shows dictation status as a focus-safe overlay, and for Xfce a small
  session service that shows the same indicator while dictation is running.
+ .
+ For desktops where Fcitx5 owns the input method, it also ships the small
+ Myna Fcitx5 addon that lets dictation commit through Fcitx's focused input
+ context.

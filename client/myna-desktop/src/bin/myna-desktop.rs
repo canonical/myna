@@ -1,8 +1,8 @@
 //! `myna-desktop` — the push-to-talk dictation app (plan T21/T22).
 //!
-//! Composes activation, the IBus text injector, and an activity indicator over a
-//! live `myna-audio` PipeWire capture source and the `myna-orchestrator` session
-//! into a [`DesktopController`].
+//! Composes activation, the selected text injector, and an activity indicator
+//! over a live `myna-audio` PipeWire capture source and the
+//! `myna-orchestrator` session into a [`DesktopController`].
 //!
 //! ## Activation
 //!
@@ -50,7 +50,7 @@ use myna_desktop::indicator::dbus::DbusIndicator;
 use myna_desktop::indicator::dynamic::DynamicIndicator;
 use myna_desktop::indicator::notify::NotifyIndicator;
 use myna_desktop::indicator::readiness::{Readiness, ReadinessTee};
-use myna_desktop::inject::lazy::{IbusConnect, LazyInjector};
+use myna_desktop::inject::lazy::{AutoConnect, LazyInjector};
 use myna_desktop::inject::Injector as _;
 use myna_desktop::platform::Platform;
 use myna_desktop::shortcut::control::{default_socket_path, listen, send_toggle, ControlTrigger};
@@ -74,7 +74,8 @@ USAGE:
     myna-desktop --install-shortcut <accel>     # bind a GNOME shortcut to --toggle
 
 Focus a text field, tap the shortcut to start, speak, tap again to stop. The
-committed transcript is injected via IBus into that field.
+committed transcript is injected through an installed input-method extension
+when available, otherwise via IBus, into that field.
 
 The daemon always serves com.canonical.Myna.Dictation for the GNOME Shell extension,
 and decides streaming preedit from your mode preference, else from whether the
@@ -705,7 +706,7 @@ async fn run_controller(
     let _settings_watch = live.follow(&args, pump_bus.clone());
     let restart = Arc::new(tokio::sync::Notify::new());
 
-    let injector = LazyInjector::new(IbusConnect);
+    let injector = LazyInjector::new(AutoConnect::default());
     // Every poke reaches the text input backend at once, a held key's repeats
     // too: they keep its grab's blip open while the controller is busy.
     trigger.hear(injector.activation());

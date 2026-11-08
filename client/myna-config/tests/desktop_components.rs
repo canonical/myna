@@ -2,6 +2,7 @@
 //! config directories, and a scripted `im-config` and `ibus`.
 
 use std::collections::HashMap;
+use std::os::unix::net::UnixListener;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -90,6 +91,7 @@ impl Session {
             home: self.scratch.path("home"),
             config_home: self.scratch.path("user"),
             config_dirs: vec![self.scratch.path("system")],
+            runtime_dir: self.scratch.path("runtime"),
         }
     }
 
@@ -273,6 +275,41 @@ fn another_input_method_is_left_alone() {
     let runner = FakeCommandRunner::default();
     assert!(block_on(session.components(&runner).enable(IBUS)).is_err());
     assert!(runner.calls().is_empty());
+}
+
+#[test]
+fn a_live_input_method_extension_satisfies_the_input_method() {
+    let session = Session::ibus("input-method-extension");
+    let _socket = UnixListener::bind(
+        session
+            .scratch
+            .path("runtime/snap.myna/myna-input-methods")
+            .join("fcitx5.sock"),
+    )
+    .unwrap();
+    let runner = FakeCommandRunner::default();
+    let components: [Box<dyn Components>; 2] = [
+        Box::new(session.components(&runner)),
+        Box::new(session.kde(&runner)),
+    ];
+    for component in components {
+        assert_eq!(block_on(component.status(IBUS)), ComponentStatus::Active);
+        block_on(component.enable(IBUS)).unwrap();
+    }
+    assert!(args(&runner).is_empty(), "nothing needed setting up");
+}
+
+#[test]
+fn only_socket_files_published_by_an_extension_are_accepted() {
+    let session = Session::ibus("input-method-extension-type");
+    let provider_dir = session.scratch.path("runtime/myna-input-methods");
+    let regular = provider_dir.join("not-a-provider.sock");
+    std::fs::write(&regular, b"stale").unwrap();
+    assert!(!session.host().external_input_method_active());
+
+    std::fs::remove_file(&regular).unwrap();
+    let _socket = UnixListener::bind(provider_dir.join("provider.sock")).unwrap();
+    assert!(session.host().external_input_method_active());
 }
 
 #[test]
