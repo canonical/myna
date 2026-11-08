@@ -8,7 +8,7 @@ msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-10-11 11:54+0100\n"
-"PO-Revision-Date: 2026-10-14 12:51+0000\n"
+"PO-Revision-Date: 2026-11-09 00:51+0000\n"
 "Last-Translator: Priit Jõerüüt <jrthwlate@users.noreply.hosted.weblate.org>\n"
 "Language-Team: Estonian <https://hosted.weblate.org/projects/ubuntu-desktop-"
 "translations/myna-config/et/>\n"
@@ -17,7 +17,7 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=n != 1;\n"
-"X-Generator: Weblate 2026.11.dev0\n"
+"X-Generator: Weblate 2026.11.2.dev0\n"
 
 #: data/diagnostics-page.blp:5 data/diagnostics-page.blp:8 src/app.rs:1485
 msgid "About and Diagnostics"
@@ -29,7 +29,7 @@ msgstr ""
 
 #: data/diagnostics-page.blp:20 data/myna-page.blp:33 src/shortcut_ui.rs:287
 msgid "Set up"
-msgstr ""
+msgstr "Seadista"
 
 #: data/diagnostics-page.blp:32
 msgid "Performance warnings"
@@ -49,15 +49,15 @@ msgstr ""
 
 #: data/diagnostics-page.blp:49 src/backend_ui.rs:3114 src/backend_ui.rs:3394
 msgid "Refresh"
-msgstr ""
+msgstr "Laadi uuesti"
 
 #: data/diagnostics-page.blp:53 src/backend_ui.rs:2071 src/backend_ui.rs:2073
 msgid "Refresh diagnostics"
-msgstr ""
+msgstr "Laadi diagnostika uuesti"
 
 #: data/diagnostics-page.blp:54
 msgid "Check this computer, Myna and every model again."
-msgstr ""
+msgstr "Kontrolli seda arvutit, Mynat ja iga mudelit uuesti."
 
 #: data/diagnostics-page.blp:60
 msgid "Copy"
@@ -104,7 +104,7 @@ msgstr "Põhimenüü"
 
 #: data/main-window.blp:32 src/backend_ui.rs:2815
 msgid "General"
-msgstr ""
+msgstr "Üldine"
 
 #: data/main-window.blp:39 data/myna-page.blp:71 src/app.rs:1480
 #: src/app.rs:3154 src/app.rs:3578 src/backend_apply.rs:379
@@ -176,7 +176,7 @@ msgstr ""
 
 #: data/onboarding-shortcut.blp:51 src/shortcut_ui.rs:285
 msgid "Set up shortcut"
-msgstr ""
+msgstr "Seadista kiirklahv"
 
 #: data/onboarding-shortcut.blp:58 src/onboarding_ui.rs:1065
 msgid ""
@@ -186,7 +186,7 @@ msgstr ""
 
 #: data/onboarding-shortcut.blp:78 src/shortcut_ui.rs:322
 msgid "Press the new shortcut…"
-msgstr ""
+msgstr "Vajuta uut kiirklahvi…"
 
 #: data/onboarding-shortcut.blp:104
 msgid ""
@@ -240,50 +240,50 @@ msgstr "Valmis"
 
 #: src/app.rs:1481
 msgid "Model details appear once Myna finds your models."
-msgstr ""
+msgstr "Mudelite üksikasjad on näha, kui Myna on sinu mudelid tuvastanud."
 
 #: src/app.rs:1486
 msgid "Diagnostics appear once Myna finds your models."
-msgstr ""
+msgstr "Diagnostika kuvatakse, kui Myna on sinu mudelid tuvastanud."
 
 #: src/app.rs:3192 src/backend_ui.rs:3762 src/model_family.rs:27
 msgid "Fastest and most accurate in its 25 languages"
-msgstr ""
+msgstr "Kiireim ja täpseim tema 25 keele seas"
 
 #: src/app.rs:3196 src/backend_ui.rs:4291 src/model_family.rs:31
 msgid "Most languages, with uneven accuracy"
-msgstr ""
+msgstr "Enamus keeli, kuid ebaühtlase täpsusega"
 
 #: src/app.rs:3331 src/myna_settings.rs:105
 msgid "As you speak"
-msgstr ""
+msgstr "Nii nagu räägid"
 
 #: src/app.rs:3332 src/myna_settings.rs:106
 msgid "When you stop"
-msgstr ""
+msgstr "Kui lõpetad"
 
 #: src/app.rs:3472 src/app.rs:5729
 msgid "Preview"
-msgstr ""
+msgstr "Eelvaade"
 
 #: src/app.rs:3486 src/sound_preview.rs:69
 msgid "Could not preview sounds"
-msgstr ""
+msgstr "Helide eelvaate kuvamine ei õnnestunud"
 
 #: src/app.rs:3520 src/backend_ui.rs:721
 msgid "Changing to {model} failed"
-msgstr ""
+msgstr "„{model}“ mudeli kasutuselevõtmine ei õnnestunud"
 
 #: src/app.rs:3521 src/app.rs:4056 src/app.rs:4065 src/app.rs:4454
 #: src/app.rs:5103 src/app.rs:5109 src/backend_ui.rs:1291
 #: src/onboarding_ui.rs:556 src/ui/status_page.rs:70
 msgid "Details"
-msgstr ""
+msgstr "Üksikasjad"
 
 #. TRANSLATORS: {setting} is a setting's name on the Model tab, such as "Unload when idle (seconds)".
 #: src/app.rs:3627 src/backend_ui.rs:1688
 msgid "Changing “{setting}” failed"
-msgstr ""
+msgstr "„{setting}“ seadistuse muutmine ei õnnestunud"
 
 #: src/app.rs:3629 src/presentation.rs:178
 msgid "Unload when idle (seconds)"
@@ -300,20 +300,20 @@ msgstr "Myna käivitamine taustal ei õnnestunud"
 
 #: src/app.rs:4087 src/app.rs:4237 src/backend_ui.rs:2419
 msgid "Executable:"
-msgstr ""
+msgstr "Käivitusfail:"
 
 #: src/app.rs:4088 src/app.rs:4238 src/backend_ui.rs:2423
 msgid "Arguments:"
-msgstr ""
+msgstr "Argumendid:"
 
 #: src/app.rs:4089 src/app.rs:4239 src/backend_ui.rs:2432
 #: src/backend_ui.rs:2510 src/backend_ui.rs:3231
 msgid "Exit status:"
-msgstr ""
+msgstr "Olek töö lõpetamisel:"
 
 #: src/app.rs:4090 src/app.rs:4240 src/app.rs:4466 src/backend_ui.rs:2477
 msgid "Message:"
-msgstr ""
+msgstr "Teade:"
 
 #: src/app.rs:4156 src/onboarding_ui.rs:990
 msgid "Enabling user daemons support"
@@ -330,11 +330,11 @@ msgstr ""
 
 #: src/app.rs:4203 src/onboarding_ui.rs:992
 msgid "Installing speech-to-text model"
-msgstr ""
+msgstr "Paigaldan kõnetuvastust"
 
 #: src/app.rs:4217 src/onboarding_ui.rs:1013
 msgid "Installing the speech-to-text model failed"
-msgstr ""
+msgstr "Kõnetuvastuse paigaldamine ei õnnestunud"
 
 #: src/app.rs:4280 src/onboarding_ui.rs:994
 msgid "Enabling shell extension"
@@ -456,15 +456,15 @@ msgstr "Paigalda"
 #. TRANSLATORS: the Install button's name to assistive technology; {model} is a model family, such as "Whisper".
 #: src/backend_ui.rs:1110
 msgid "Install {model}"
-msgstr ""
+msgstr "Paigalda mudel: {model}"
 
 #: src/backend_ui.rs:1275
 msgid "Installing {model} failed"
-msgstr ""
+msgstr "„{model}“ mudeli paigaldamine ei õnnestunud"
 
 #: src/backend_ui.rs:1388 src/backend_ui.rs:1527
 msgid "Wait for the current change to finish."
-msgstr ""
+msgstr "Oota, et praegune muudatus saab lõpetatud."
 
 #: src/backend_ui.rs:1542
 msgid "Applying and restarting the model…"
@@ -477,11 +477,11 @@ msgstr ""
 
 #: src/backend_ui.rs:1727
 msgid "Could not read the installed models."
-msgstr ""
+msgstr "Paigaldatud mudelite lugemine ei õnnestunud."
 
 #: src/backend_ui.rs:1782
 msgid "No active model"
-msgstr ""
+msgstr "Aktiivset mudelit ei ole"
 
 #: src/backend_ui.rs:1783
 msgid "Choose a model on the General tab."
@@ -489,7 +489,7 @@ msgstr ""
 
 #: src/backend_ui.rs:1786
 msgid "Several models are connected"
-msgstr ""
+msgstr "Ühendatud on mitu mudelit"
 
 #: src/backend_ui.rs:1787
 msgid "Choose one model on the General tab."
@@ -497,19 +497,19 @@ msgstr ""
 
 #: src/backend_ui.rs:1993
 msgid "Diagnostics copied. Paste them into the issue."
-msgstr ""
+msgstr "Diagnostika on kopeeritud. Lisa see veakirjeldusse."
 
 #: src/backend_ui.rs:2004
 msgid "Could not open the web browser"
-msgstr ""
+msgstr "Veebibrauseri avamine ei õnnestunud"
 
 #: src/backend_ui.rs:2084
 msgid "Copy privacy-safe diagnostics"
-msgstr ""
+msgstr "Kopeeri privaatsusega arvestav diagnostika"
 
 #: src/backend_ui.rs:2095
 msgid "Diagnostics copied to clipboard"
-msgstr ""
+msgstr "Diagnostika on kopeeritud lõikelauale"
 
 #: src/backend_ui.rs:2124 src/diagnostics.rs:419
 msgid "Dictation is not installed"
@@ -517,11 +517,11 @@ msgstr ""
 
 #: src/backend_ui.rs:2125 src/diagnostics.rs:420
 msgid "No model installed"
-msgstr ""
+msgstr "Ühtegi mudelit pole paigaldatud"
 
 #: src/backend_ui.rs:2126 src/diagnostics.rs:422
 msgid "No input method installed"
-msgstr ""
+msgstr "Ühtegi sisendmeetodit pole paigaldatud"
 
 #: src/backend_ui.rs:2314
 msgid "The model kept a different value than the one you chose."
@@ -541,7 +541,7 @@ msgstr ""
 
 #: src/backend_ui.rs:2353 src/backend_ui.rs:2380
 msgid "The system did not allow the change."
-msgstr ""
+msgstr "Süsteem ei lubanud seda muudatust teha."
 
 #: src/backend_ui.rs:2360 src/backend_ui.rs:2383
 msgid "The model rejected the value."
@@ -553,23 +553,23 @@ msgstr ""
 
 #: src/backend_ui.rs:2377
 msgid "The change was interrupted after it started."
-msgstr ""
+msgstr "Muudatus katkestati peale alustamist."
 
 #: src/backend_ui.rs:2440 src/backend_ui.rs:2519 src/backend_ui.rs:3240
 msgid "Standard error:"
-msgstr ""
+msgstr "Standardviga:"
 
 #: src/backend_ui.rs:2450
 msgid "Request:"
-msgstr ""
+msgstr "Päring:"
 
 #: src/backend_ui.rs:2456
 msgid "HTTP status:"
-msgstr ""
+msgstr "HTTP olek:"
 
 #: src/backend_ui.rs:2469
 msgid "Setting:"
-msgstr ""
+msgstr "Seadistus:"
 
 #: src/backend_ui.rs:2494
 msgid "Some operations completed before the apply failed.\n"
@@ -593,19 +593,19 @@ msgstr ""
 
 #: src/backend_ui.rs:2542
 msgid "Model:"
-msgstr ""
+msgstr "Mudel:"
 
 #: src/backend_ui.rs:2548
 msgid "Services: none"
-msgstr ""
+msgstr "Teenused: puuduvad"
 
 #: src/backend_ui.rs:2550
 msgid "Services:"
-msgstr ""
+msgstr "Teenused:"
 
 #: src/backend_ui.rs:2562
 msgid "Status: unavailable"
-msgstr ""
+msgstr "Olek: pole saadaval"
 
 #: src/backend_ui.rs:2569
 msgid "Post-failure surface errors:"
@@ -613,19 +613,19 @@ msgstr ""
 
 #: src/backend_ui.rs:2600
 msgid "Language"
-msgstr ""
+msgstr "Keel"
 
 #: src/backend_ui.rs:2602
 msgid "A code such as en, fr or zh. Leave it empty to detect the language."
-msgstr ""
+msgstr "Keelekood nagu en, fr, et või zh. Keele tuvastamiseks jäta tühjaks."
 
 #: src/backend_ui.rs:2655
 msgid "Overview"
-msgstr ""
+msgstr "Ülevaade"
 
 #: src/backend_ui.rs:2665
 msgid "Connection"
-msgstr ""
+msgstr "Ühendus"
 
 #: src/backend_ui.rs:2668
 msgid "Active. Myna uses this model for dictation."
@@ -633,27 +633,27 @@ msgstr ""
 
 #: src/backend_ui.rs:2671
 msgid "Several models are connected. Only one should be active."
-msgstr ""
+msgstr "Mitu mudelit on ühendatud. Aktiivne peaks olema vaid üks neist."
 
 #: src/backend_ui.rs:2673
 msgid "Not connected to Myna."
-msgstr ""
+msgstr "Pole Mynaga ühendatud."
 
 #: src/backend_ui.rs:2679
 msgid "Active model"
-msgstr ""
+msgstr "Aktiivne mudel"
 
 #: src/backend_ui.rs:2685
 msgid "Active engine"
-msgstr ""
+msgstr "Aktiivne mootor"
 
 #: src/backend_ui.rs:2688
 msgid "None selected. Choose one below."
-msgstr ""
+msgstr "Mitte ühtegi pole valitud. Vali üks alljärgnevast."
 
 #: src/backend_ui.rs:2705 src/diagnostics.rs:641
 msgid "Services"
-msgstr ""
+msgstr "Teenused"
 
 #: src/backend_ui.rs:2707
 msgid "No service health reported"
@@ -661,11 +661,11 @@ msgstr ""
 
 #: src/backend_ui.rs:2721
 msgid "Loading"
-msgstr ""
+msgstr "Laadin"
 
 #: src/backend_ui.rs:2722
 msgid "Reading this model's settings…"
-msgstr ""
+msgstr "Loen selle mudeli seadistusi…"
 
 #: src/backend_ui.rs:2731
 msgid "No configuration reported"
@@ -677,7 +677,7 @@ msgstr ""
 
 #: src/backend_ui.rs:2743
 msgid "Some data is unavailable"
-msgstr ""
+msgstr "Osa andmeid pole saadaval"
 
 #: src/backend_ui.rs:2745
 msgid "Raw failure details are recorded on the Diagnostics page."
@@ -726,59 +726,59 @@ msgstr ""
 
 #: src/backend_ui.rs:3018
 msgid "Active"
-msgstr ""
+msgstr "Aktiivne"
 
 #: src/backend_ui.rs:3019
 msgid "Inactive"
-msgstr ""
+msgstr "Pole aktiivne"
 
 #: src/backend_ui.rs:3020
 msgid "Failed"
-msgstr ""
+msgstr "Ebaõnnestunud"
 
 #: src/backend_ui.rs:3022
 msgid "Unknown"
-msgstr ""
+msgstr "Teadmata"
 
 #: src/backend_ui.rs:3087
 msgid "Installed snaps"
-msgstr ""
+msgstr "Paigaldatud snap-paketid"
 
 #: src/backend_ui.rs:3088
 msgid "Model connections"
-msgstr ""
+msgstr "Mudeli ühendused"
 
 #: src/backend_ui.rs:3089
 msgid "Model control command"
-msgstr ""
+msgstr "Mudeli kontrollkäsk"
 
 #: src/backend_ui.rs:3090
 msgid "Model settings"
-msgstr ""
+msgstr "Mudeli seadistused"
 
 #: src/backend_ui.rs:3091
 msgid "Model status"
-msgstr ""
+msgstr "Mudeli olek"
 
 #: src/backend_ui.rs:3092
 msgid "Available models"
-msgstr ""
+msgstr "Saadaval mudelid"
 
 #: src/backend_ui.rs:3093
 msgid "Available engines"
-msgstr ""
+msgstr "Saadaval mootorid"
 
 #: src/backend_ui.rs:3099
 msgid "Persisted values could not be read."
-msgstr ""
+msgstr "Salvestatud väärtuste lugemine ei õnnestunud."
 
 #: src/backend_ui.rs:3110 src/backend_ui.rs:3398
 msgid "Applying changes…"
-msgstr ""
+msgstr "Rakendan muudatusi…"
 
 #: src/backend_ui.rs:3133
 msgid "missing"
-msgstr ""
+msgstr "puudub"
 
 #. TRANSLATORS: {key} is a setting's key, such as "streaming"; {requested} and {actual} are its values.
 #: src/backend_ui.rs:3135
@@ -787,7 +787,7 @@ msgstr ""
 
 #: src/backend_ui.rs:3163
 msgid "Error:\n"
-msgstr ""
+msgstr "Viga:\n"
 
 #: src/backend_ui.rs:3173
 msgid "The change ran, but the connections do not match it."
@@ -799,7 +799,7 @@ msgstr ""
 
 #: src/backend_ui.rs:3181
 msgid "Discovery error:\n"
-msgstr ""
+msgstr "Viga tuvastamisel:\n"
 
 #: src/backend_ui.rs:3183
 msgid "The change ran, but the connections could not be read back."
@@ -827,19 +827,19 @@ msgstr ""
 
 #: src/backend_ui.rs:3250
 msgid "no model connected"
-msgstr ""
+msgstr "ühtegi mudelit pole ühendatud"
 
 #: src/backend_ui.rs:3254
 msgid "connected"
-msgstr ""
+msgstr "ühendatud"
 
 #: src/backend_ui.rs:3264
 msgid "several models"
-msgstr ""
+msgstr "mitmed mudelid"
 
 #: src/backend_ui.rs:4295 src/model_family.rs:35
 msgid "Best for Chinese, Japanese and Korean"
-msgstr ""
+msgstr "Parim hiina, jaapani ja korea keele jaoks"
 
 #: src/backend_apply.rs:81
 msgid "selector value must be text"
@@ -868,34 +868,35 @@ msgstr ""
 #: src/backend_apply.rs:551
 msgctxt "service state"
 msgid "active"
-msgstr ""
+msgstr "aktiivne"
 
 #: src/backend_apply.rs:552
 msgctxt "service state"
 msgid "inactive"
-msgstr ""
+msgstr "pole aktiivne"
 
 #: src/backend_apply.rs:553
 msgctxt "service state"
 msgid "failed"
-msgstr ""
+msgstr "ebaõnnestunud"
 
 #: src/backend_apply.rs:554
 msgctxt "service state"
 msgid "unknown"
-msgstr ""
+msgstr "teadamata"
 
 #: src/onboarding_ui.rs:678
 msgid "The system is busy installing software. Try again in a moment."
 msgstr ""
+"Süsteem on hõivatud tarkvara paigaldamisega. Proovi uuesti hetke pärast."
 
 #: src/onboarding_ui.rs:778
 msgid "Continue to the next onboarding step."
-msgstr ""
+msgstr "Jätka järgmise sissejuhatava sammuga."
 
 #: src/onboarding_ui.rs:783
 msgid "Close Myna Settings."
-msgstr ""
+msgstr "Sulge Myna seadistused."
 
 #: src/onboarding_ui.rs:873
 msgid ""
@@ -926,19 +927,19 @@ msgstr ""
 #. TRANSLATORS: a download size in megabytes, such as "776 MB"; the space is a no-break space.
 #: src/onboarding_ui.rs:1286
 msgid "{megabytes} MB"
-msgstr ""
+msgstr "{megabytes} MB"
 
 #: src/onboarding_ui.rs:1294
 msgid "Checking the installation"
-msgstr ""
+msgstr "Kontrollin paigaldust"
 
 #: src/onboarding_ui.rs:1299
 msgid "Waiting for other software changes to finish"
-msgstr ""
+msgstr "Ootan, et muud tarkvaramuudatused saaksid lõpetatud"
 
 #: src/onboarding_ui.rs:1301
 msgid "Setting up speech-to-text model"
-msgstr ""
+msgstr "Seadistan kõnetuvastuse mudelit"
 
 #: src/onboarding_ui.rs:1302
 msgid "Starting dictation"
@@ -946,11 +947,11 @@ msgstr ""
 
 #: src/shortcut_ui.rs:284
 msgid "Change shortcut"
-msgstr ""
+msgstr "Muuda kiirklahvi"
 
 #: src/shortcut_ui.rs:286
 msgid "Change"
-msgstr ""
+msgstr "Muuda"
 
 #: src/shortcut_ui.rs:291
 msgid "Press a keyboard shortcut for dictation."
@@ -959,11 +960,11 @@ msgstr ""
 #. TRANSLATORS: {shortcut} is a key combination, such as "Super + J".
 #: src/shortcut_ui.rs:294
 msgid "Current shortcut: {shortcut}."
-msgstr ""
+msgstr "Praegune kiirklahv: {shortcut}."
 
 #: src/shortcut_ui.rs:347
 msgid "Keep the shortcut as it was."
-msgstr ""
+msgstr "Jäta kiirklahv muutmata."
 
 #: src/shortcut_ui.rs:477
 msgid "{keys} is reserved for “{action}”. Press a different shortcut."
@@ -976,15 +977,15 @@ msgstr ""
 
 #: src/shortcut_ui.rs:500
 msgid "Replace Shortcut?"
-msgstr ""
+msgstr "Kas asendad kiirklahvi?"
 
 #: src/shortcut_ui.rs:502
 msgid "Replace"
-msgstr ""
+msgstr "Asenda"
 
 #: src/shortcut_ui.rs:562
 msgid "Could not set up the shortcut"
-msgstr ""
+msgstr "Kiirklahvi seadistamine ei õnnestunud"
 
 #: src/shortcut_ui.rs:666
 msgid "Set up a keyboard shortcut to trigger Dictation."
@@ -1002,11 +1003,11 @@ msgstr ""
 
 #: src/shortcut_ui.rs:690
 msgid "Not set up"
-msgstr ""
+msgstr "Pole seadistatud"
 
 #: src/shortcut_ui.rs:691 src/sound_preview.rs:66
 msgid "Myna is not running"
-msgstr ""
+msgstr "Myna ei tööta"
 
 #: src/sound_preview.rs:67
 msgid "Update Myna to preview sounds"
@@ -1410,8 +1411,8 @@ msgstr ""
 #: src/model_family.rs:243
 msgid "{count} language"
 msgid_plural "{count} languages"
-msgstr[0] ""
-msgstr[1] ""
+msgstr[0] "{count} keel"
+msgstr[1] "{count} keelt"
 
 #. TRANSLATORS: {language} is the user's language named in that language, such as "Deutsch" or "中文", inserted as-is in the nominative. If your grammar would inflect it, rephrase, e.g. "Najlepszy dla języka: {language}".
 #: src/model_family.rs:280
