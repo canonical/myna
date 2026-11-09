@@ -8,7 +8,7 @@ msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-11-08 11:11+0000\n"
-"PO-Revision-Date: 2026-11-09 12:36+0000\n"
+"PO-Revision-Date: 2026-11-09 13:53+0000\n"
 "Last-Translator: tianhe-team <tianhe-team@users.noreply.hosted.weblate.org>\n"
 "Language-Team: Chinese (Simplified Han script) <https://hosted.weblate.org/"
 "projects/ubuntu-desktop-translations/myna-config/zh_Hans/>\n"
@@ -72,7 +72,7 @@ msgid ""
 "Copies a privacy-safe diagnostic report to the clipboard. Does not include "
 "audio, transcripts, or filesystem paths."
 msgstr ""
-"将不包含隐私信息的诊断报告复制到剪贴板。报告不含音频、转录文本或文件系统路径"
+"将不包含隐私信息的诊断报告复制到剪贴板；报告不含音频、转录文本或文件系统路径"
 "。"
 
 #: data/diagnostics-page.blp:94 src/backend_ui.rs:2231
@@ -159,7 +159,7 @@ msgid ""
 "Dictation requires some additional components, including the optimal speech-"
 "to-text model for your computer. Installation might take a few minutes."
 msgstr ""
-"听写还需要一些附加组件，包括针对当前设备优化的最佳语音识别模型。安装可能需要"
+"听写还需要一些附加组件，包括适合当前设备语言的最佳语音识别模型，安装可能需要"
 "几分钟。"
 
 #: data/onboarding-components.blp:44 src/app.rs:507 src/app.rs:4137
@@ -234,7 +234,7 @@ msgstr "正在读取已安装的设置…"
 
 #: src/app.rs:139
 msgid "translator-credits"
-msgstr "Nova Chan (陈星再)"
+msgstr "Nova Chen (陈星再)"
 
 #: src/app.rs:1146 src/onboarding_ui.rs:853
 msgid "Done"
@@ -406,7 +406,7 @@ msgstr "无法切换到该模型。"
 
 #: src/active_backend.rs:515
 msgid "The model changed while it was being switched on. Try again."
-msgstr "切换过程中模型发生了变化。请重试。"
+msgstr "切换过程中模型发生了变化，请重试。"
 
 #: src/backend_ui.rs:127 src/model_family.rs:283
 msgid "Recommended"
@@ -442,7 +442,7 @@ msgstr "无法确认是否已切换到 {model}"
 msgid ""
 "Final connections could not be verified. Switching is disabled until refresh "
 "succeeds."
-msgstr "暂时无法确认模型是否已正确连接。刷新成功后才能切换模型。"
+msgstr "暂时无法确认模型是否已正确连接，刷新成功后才能切换模型。"
 
 #: src/backend_ui.rs:833 src/diagnostics.rs:652
 msgid "No model is connected. Choose one to use for dictation."
@@ -624,7 +624,7 @@ msgstr "语言"
 
 #: src/backend_ui.rs:2715
 msgid "A code such as en, fr or zh. Leave it empty to detect the language."
-msgstr "语言代码（如 en、fr、zh）。留空可自动检测语言。"
+msgstr "语言代码（如 en、fr、zh），留空可自动检测语言。"
 
 #: src/backend_ui.rs:2768
 msgid "Overview"
@@ -938,7 +938,7 @@ msgstr "听写依赖 IBus 输入文字，但当前正在使用其他输入法。
 msgid ""
 "The input method IBus is not installed. Install the “ibus” package, then log "
 "out and back in."
-msgstr "输入法框架 IBus 未安装。请安装“ibus”软件包，然后注销并重新登录。"
+msgstr "输入法框架 IBus 未安装，请安装“ibus”软件包，然后注销并重新登录。"
 
 #: src/onboarding_ui.rs:954
 msgid "Setup status unavailable. The log has the details."
@@ -1009,7 +1009,7 @@ msgstr "“{keys}”已保留给“{action}”，请换一个快捷键。"
 #: src/shortcut_ui.rs:495
 msgid ""
 "{keys} is already used for “{action}”. Replacing it removes it from there."
-msgstr "“{keys}”已用于“{action}”。如果继续替换，它将不再用于该操作。"
+msgstr "“{keys}”已用于“{action}”，如果继续替换，它将不再用于该操作。"
 
 #: src/shortcut_ui.rs:500
 msgid "Replace Shortcut?"
@@ -1029,13 +1029,13 @@ msgstr "设置用于开始听写的快捷键。"
 
 #: src/shortcut_ui.rs:672
 msgid "Myna is not running yet. The shortcut can be set up once it starts."
-msgstr "Myna 尚未运行。启动后才能设置快捷键。"
+msgstr "Myna 尚未运行，启动后才能设置快捷键。"
 
 #: src/shortcut_ui.rs:680
 msgid ""
 "This desktop cannot set up the shortcut. Bind this command to a key in its "
 "settings: {command}"
-msgstr "当前桌面环境无法自动设置快捷键。请在系统设置中将以下命令绑定到按键：{command}"
+msgstr "当前桌面环境无法自动设置快捷键，请在系统设置中将以下命令绑定到按键：{command}"
 
 #: src/shortcut_ui.rs:690
 msgid "Not set up"
@@ -1082,8 +1082,8 @@ msgid ""
 "It costs headroom and points to an audio driver fault. Try another input in "
 "the system sound settings."
 msgstr ""
-"这会导致可用的音量范围变小，并可能说明音频驱动出了问题。请在系统声音设置中换"
-"一个输入设备试试。"
+"这会导致可用的音量范围变小，并可能说明音频驱动出了问题，请在系统声音设置中改"
+"用其他输入设备试试。"
 
 #: src/diagnostics.rs:244
 msgid "Background noise was high in the last dictation"
@@ -1093,7 +1093,7 @@ msgstr "上次听写时背景噪声较高"
 msgid ""
 "Noise this close to the voice costs words. Move away from it or use a "
 "headset microphone."
-msgstr "噪声离语音太近时，部分内容可能无法识别。请远离噪声源，或使用头戴式麦克风。"
+msgstr "噪声离语音太近时，部分内容可能无法识别，请远离噪声源或使用头戴式麦克风。"
 
 #: src/diagnostics.rs:265
 msgid "The CPU clock is capped by system policy"
@@ -1109,7 +1109,7 @@ msgstr "硬件上限为"
 
 #: src/diagnostics.rs:273
 msgid "Dictation will be slow. A power tool has capped the CPU clock."
-msgstr "听写速度会变慢，因为某个电源管理工具限制了 CPU 频率。"
+msgstr "听写运行缓慢，因为某个电源管理工具限制了 CPU 频率。"
 
 #: src/diagnostics.rs:283
 msgid "The power profile is set to low-power"
@@ -1119,7 +1119,7 @@ msgstr "当前处于低功耗模式"
 msgid ""
 "Dictation will be slow. Switch to Balanced or Performance in the system "
 "power settings."
-msgstr "听写速度会变慢。请在系统电源设置中切换到“平衡”或“性能”模式。"
+msgstr "听写运行缓慢，请在系统电源设置中切换到“平衡”或“性能”模式。"
 
 #: src/diagnostics.rs:297
 msgid "Firmware is holding the CPU at its lowest clock"
@@ -1130,7 +1130,7 @@ msgid ""
 "Dictation will be slow. Unplug the charger, wait a few seconds, and plug it "
 "back in. If that does not help, power off fully and start again."
 msgstr ""
-"听写速度会变慢。请拔下充电器，等待几秒后再重新插入。如果问题仍未解决，请完全"
+"听写运行缓慢，请尝试拔下电源，等待几秒后再重新插入。如果问题仍未改善，请完全"
 "关机后重新启动。"
 
 #: src/diagnostics.rs:310
@@ -1140,15 +1140,15 @@ msgstr "系统内存不足"
 #: src/diagnostics.rs:314
 msgid ""
 "Dictation will stutter. Close applications until the machine stops swapping."
-msgstr "听写会出现卡顿。请关闭一些应用以释放内存，直到听写不再卡顿。"
+msgstr "听写会出现卡顿，请关闭一些应用以释放内存，直到听写不再卡顿。"
 
 #: src/diagnostics.rs:320
 msgid "Disk activity is stalling the system"
-msgstr "磁盘读写繁忙，系统响应变慢"
+msgstr "磁盘读写繁忙会拖慢系统响应"
 
 #: src/diagnostics.rs:324
 msgid "Dictation will stutter. Wait for the transfer or indexing to finish."
-msgstr "听写会出现卡顿。请等待文件传输或索引完成。"
+msgstr "听写会出现卡顿，请等待文件传输或索引完成。"
 
 #: src/diagnostics.rs:330
 msgid "Other programs are saturating the CPU"
@@ -1156,7 +1156,7 @@ msgstr "其他程序占用了过多 CPU"
 
 #: src/diagnostics.rs:334
 msgid "Dictation will be slow. Pause the build or workload before dictating."
-msgstr "听写速度会变慢，请先暂停构建任务或其他高负载程序，再开始听写。"
+msgstr "听写运行缓慢，请先暂停构建任务或其他高负载程序，再开始听写。"
 
 #: src/diagnostics.rs:345 src/diagnostics.rs:710
 msgid "reached"
@@ -1334,7 +1334,7 @@ msgstr ""
 #: src/diagnostics.rs:660
 msgid ""
 "IBus is not set up, so Myna cannot type. Set up Dictation to turn it on."
-msgstr "IBus 尚未设置，Myna 无法输入文字。请重新设置听写功能以启用 IBus。"
+msgstr "IBus 尚未设置，Myna 无法输入文字，请重新设置听写功能以启用 IBus。"
 
 #: src/diagnostics.rs:671 src/diagnostics.rs:685
 msgid "(none)"
@@ -1728,8 +1728,8 @@ msgid ""
 "drops, Radio a walkie-talkie and Strings a plucked koto."
 msgstr ""
 "各提示音如下：清铃是清亮的敲击声；鸟鸣是婉转的鸟啼；轻哼是聆听时自然的哼声；"
-"木琴是明亮的上行五度音；水滴是清脆的滴水声；对讲机是简短的通话提示音；琴音是"
-"古筝式的拨弦声。"
+"木琴是明亮的上行五度音；水滴是清脆的滴水声；对讲机是简短的通话音效；琴音是古"
+"筝式的拨弦声。"
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:60
 msgid "When to transcribe"
@@ -1740,8 +1740,8 @@ msgid ""
 "As you speak shows partial text in the field while you talk; When you stop "
 "injects the whole transcript once the utterance ends."
 msgstr ""
-"“实时转写”会在你说话的同时显示部分文字；“停止后转写”则会在录音结束后插入完整"
-"转录文本。"
+"“实时转写”会在你说话的同时显示部分文字；“停止后转写”则会在录音结束后再插入完"
+"整转录文本。"
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:69
 msgid "Spoken language"
@@ -1753,8 +1753,8 @@ msgid ""
 "skips language detection and decodes in this language; a code that does not "
 "match what is spoken degrades the transcript. Empty lets the model decide."
 msgstr ""
-"近似 BCP-47 的语言代码（如 en、fr、zh），用于指定听写语言。模型会跳过语言检测"
-"并直接按该语言解码；代码与实际所说的语言不符会降低转录质量。留空则自动判断。"
+"近似 BCP-47 的语言代码（如 en、fr、zh），用于指定听写语言，模型会跳过语言检测"
+"并直接按该语言解码；代码与实际所说的语言不符会降低转录质量，留空则自动判断。"
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:80
 msgid "Indicator style"
@@ -1765,8 +1765,8 @@ msgid ""
 "All three render the same calibrated audio envelope: Default is a level bar "
 "in the accent colour, Ribbon a flowing GPU wave, VU meter a segmented meter."
 msgstr ""
-"三种样式显示相同的校准音频包络：“默认”为强调色音量条，“波形带”为动态 GPU 波形"
-"，“VU 表”为分段式仪表。"
+"三种样式都呈现相同的校准音频包络：“默认”为强调色音量条，“波形带”为动态 GPU 波"
+"形，“VU 表”为分段式仪表。"
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:91
 msgid "Stop after silence (seconds)"
@@ -1778,7 +1778,7 @@ msgid ""
 "this many seconds without speech. 0 keeps it running until the next tap. "
 "Hold-to-talk always ends with the key."
 msgstr ""
-"“点按开始”模式下，连续多少秒没有语音后会自动结束听写。设为 0 时，听写会一直进"
+"“点按开始”模式下，连续多少秒没有语音后会自动结束听写，设为 0 时，听写会一直进"
 "行到下次点按；“按住说话”模式下，松开按键即结束。"
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:101
@@ -1791,8 +1791,8 @@ msgid ""
 "colleague's name, a product or a term from your field: \"Nguyen\", "
 "\"Kubernetes\", \"ibuprofen\". Up to 100 words or short phrases."
 msgstr ""
-"语音识别可能会听错的名称和术语，例如同事姓名、产品或专业领域术语：“Nguyen”、“"
-"Kubernetes”、“ibuprofen”。最多 100 个词或短语。"
+"语音识别可能会听错的名称和术语，例如同事姓名、产品或专业领域术语：“王林”、“"
+"DeepSeek ”、“布洛芬”等，最多 100 个词或短语。"
 
 #: data/com.canonical.Myna.Config.metainfo.xml:9
 msgid "Set up and configure local dictation"
@@ -1804,7 +1804,7 @@ msgid ""
 "it. Myna Settings guides you through installing it and a speech model, then "
 "configures dictation and its speech models."
 msgstr ""
-"Myna 在本地把语音转换为文字，音频和文本都不会离开设备。Myna 设置会引导你安装 "
+"Myna 在本地把语音转换为文字，音频和文本都不会离开设备。Myna 设置会引导您安装 "
 "Myna 和语音模型，然后配置听写功能及其语音模型。"
 
 #: data/com.canonical.Myna.Config.desktop:4
