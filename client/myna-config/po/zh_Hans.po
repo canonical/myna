@@ -8,7 +8,7 @@ msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-11-08 11:11+0000\n"
-"PO-Revision-Date: 2026-11-09 14:57+0000\n"
+"PO-Revision-Date: 2026-11-09 21:08+0000\n"
 "Last-Translator: tianhe-team <tianhe-team@users.noreply.hosted.weblate.org>\n"
 "Language-Team: Chinese (Simplified Han script) <https://hosted.weblate.org/"
 "projects/ubuntu-desktop-translations/myna-config/zh_Hans/>\n"
@@ -37,7 +37,7 @@ msgstr "性能警告"
 
 #: data/diagnostics-page.blp:33
 msgid "Something on this machine can make dictation slow or inaccurate."
-msgstr "某些状况可能会影响听写速度和准确性。"
+msgstr "某些状况可能会影响听写速度和准确性"
 
 #: data/diagnostics-page.blp:38 data/main-window.blp:46
 msgid "Diagnostics"
@@ -45,7 +45,7 @@ msgstr "诊断"
 
 #: data/diagnostics-page.blp:40
 msgid "No audio, transcript, or filesystem path is ever included."
-msgstr "诊断信息不包含音频、转录文本或文件系统路径。"
+msgstr "诊断信息不包含音频、转写文本或文件路径"
 
 #: data/diagnostics-page.blp:49 src/backend_ui.rs:3227 src/backend_ui.rs:3551
 msgid "Refresh"
@@ -57,7 +57,7 @@ msgstr "刷新诊断信息"
 
 #: data/diagnostics-page.blp:54
 msgid "Check this computer, Myna and every model again."
-msgstr "重新检查计算机、Myna 和所有模型的状态。"
+msgstr "重新检查您的电脑、Myna 和所有模型的状态"
 
 #: data/diagnostics-page.blp:60
 msgid "Copy"
@@ -71,9 +71,7 @@ msgstr "复制诊断信息"
 msgid ""
 "Copies a privacy-safe diagnostic report to the clipboard. Does not include "
 "audio, transcripts, or filesystem paths."
-msgstr ""
-"将不包含隐私信息的诊断报告复制到剪贴板；报告不含音频、转录文本或文件系统路径"
-"。"
+msgstr "将不包含隐私信息的诊断报告复制到剪贴板，报告不含音频、转写文本或文件路径"
 
 #: data/diagnostics-page.blp:94 src/backend_ui.rs:2231
 msgid "Diagnostic report"
@@ -81,7 +79,7 @@ msgstr "诊断报告"
 
 #: data/diagnostics-page.blp:95
 msgid "Read-only privacy-safe diagnostic text."
-msgstr "只读诊断文本，不含隐私信息。"
+msgstr "只读诊断文本，不含隐私信息"
 
 #: data/install-control.blp:54 data/onboarding-components.blp:60
 #: src/app.rs:4109
@@ -159,8 +157,8 @@ msgid ""
 "Dictation requires some additional components, including the optimal speech-"
 "to-text model for your computer. Installation might take a few minutes."
 msgstr ""
-"听写还需要一些附加组件，包括适合当前设备语言的最佳语音识别模型，安装可能需要"
-"几分钟。"
+"听写还需要安装一些附加组件，其中包括适合您电脑的语音识别模型，安装可能需要几"
+"分钟"
 
 #: data/onboarding-components.blp:44 src/app.rs:507 src/app.rs:4137
 #: src/app.rs:4201 src/app.rs:4607
@@ -184,7 +182,7 @@ msgstr "设置快捷键"
 msgid ""
 "Log out and back in to turn on the dictation indicator (GNOME Shell "
 "extension)."
-msgstr "注销并重新登录后，听写指示器（GNOME Shell 扩展）才会启用。"
+msgstr "注销并重新登录后，听写指示器（GNOME Shell 扩展）才会启用"
 
 #: data/onboarding-shortcut.blp:78 src/shortcut_ui.rs:322
 msgid "Press the new shortcut…"
@@ -194,11 +192,11 @@ msgstr "按下新的快捷键…"
 msgid ""
 "Use Ctrl, Alt or Super with another key, or a function key. Press Escape to "
 "cancel."
-msgstr "请将 Ctrl、Alt 或 Super 键与其他按键或功能键组合使用，按 Esc 键即可取消。"
+msgstr "请将 Ctrl、Alt 或 Super 键与其他按键或功能键组合使用，按 Esc 键即可取消"
 
 #: data/onboarding-welcome.blp:34
 msgid "Dictation runs locally, with no data leaving your computer."
-msgstr "听写在本地运行，数据不会离开你的设备。"
+msgstr "听写在本地运行，数据不会离开您的电脑"
 
 #: data/onboarding-window.blp:24 src/app.rs:430 src/onboarding_ui.rs:848
 msgid "Next"
@@ -210,7 +208,7 @@ msgstr "操作失败"
 
 #: data/operation-error-dialog.blp:6
 msgid "Full details are shown below. You can copy them to share with support."
-msgstr "完整详情见下方，可复制后提供给技术支持。"
+msgstr "完整详情见下方，可复制后提供给技术支持"
 
 #: data/operation-error-dialog.blp:12
 msgid "Close"
@@ -230,11 +228,11 @@ msgstr "正在加载 Myna 设置"
 
 #: data/status-page.blp:9 src/app.rs:1443 src/app.rs:5643
 msgid "Reading the installed settings schema…"
-msgstr "正在读取已安装的设置…"
+msgstr "正在读取可用设置…"
 
 #: src/app.rs:139
 msgid "translator-credits"
-msgstr "Nova Chen (陈星再)"
+msgstr "Nova Chen（陈星再）"
 
 #: src/app.rs:1146 src/onboarding_ui.rs:853
 msgid "Done"
@@ -242,11 +240,11 @@ msgstr "完成"
 
 #: src/app.rs:1448
 msgid "Model details appear once Myna finds your models."
-msgstr "Myna 检测到模型后，将显示模型详情。"
+msgstr "Myna 检测到模型后，将显示模型详情"
 
 #: src/app.rs:1453
 msgid "Diagnostics appear once Myna finds your models."
-msgstr "Myna 检测到模型后，将显示诊断信息。"
+msgstr "Myna 检测到模型后，将显示诊断信息"
 
 #: src/app.rs:1716 src/list_editor_ui.rs:135
 msgid "{count} word or phrase"
@@ -255,7 +253,7 @@ msgstr[0] "{count} 个词或短语"
 
 #: src/app.rs:3332 src/backend_ui.rs:3912 src/model_family.rs:27
 msgid "Fastest and most accurate in its 25 languages"
-msgstr "覆盖 25 种语言，速度最快、准确率最高"
+msgstr "在其支持的 25 种语言中，速度最快、准确率最高"
 
 #: src/app.rs:3336 src/backend_ui.rs:4411 src/model_family.rs:31
 msgid "Most languages, with uneven accuracy"
@@ -299,7 +297,7 @@ msgstr "空闲多久后释放模型（秒）"
 #. TRANSLATORS: {size} is a download size, such as "4.2 GB".
 #: src/app.rs:4099 src/onboarding_ui.rs:928
 msgid "Up to {size}"
-msgstr "最大 {size}"
+msgstr "最多 {size}"
 
 #: src/app.rs:4234 src/onboarding_ui.rs:1087
 msgid "Could not let Myna run in the background"
@@ -366,15 +364,15 @@ msgstr "无法设置听写"
 
 #: src/app.rs:5472 src/onboarding_ui.rs:952
 msgid "Dictation is not set up yet. Select Next to try again."
-msgstr "听写尚未就绪。请选择“下一步”重试。"
+msgstr "听写尚未设置完成，请选择下一步重试"
 
 #: src/app.rs:5647
 msgid "No Myna Settings"
-msgstr "没有可用的设置项"
+msgstr "没有可调整的设置"
 
 #: src/app.rs:5648
 msgid "The installed schema does not declare any settings."
-msgstr "已安装的版本未提供任何设置项。"
+msgstr "当前版本未提供任何设置项"
 
 #: src/app.rs:5668
 msgid "Myna Settings Unavailable"
@@ -382,7 +380,7 @@ msgstr "Myna 设置不可用"
 
 #: src/app.rs:5669
 msgid "Myna Settings could not start."
-msgstr "Myna 设置无法启动。"
+msgstr "Myna 设置无法启动"
 
 #: src/app.rs:6125
 msgid "Could not save the setting"
@@ -394,19 +392,19 @@ msgstr "试听当前提示音"
 
 #: src/active_backend.rs:420
 msgid "The change was cancelled."
-msgstr "更改已取消。"
+msgstr "更改已取消"
 
 #: src/active_backend.rs:495
 msgid "No model is connected."
-msgstr "尚未连接模型。"
+msgstr "尚未连接模型"
 
 #: src/active_backend.rs:500
 msgid "The model is not available to switch to."
-msgstr "无法切换到该模型。"
+msgstr "无法切换到该模型"
 
 #: src/active_backend.rs:515
 msgid "The model changed while it was being switched on. Try again."
-msgstr "切换过程中模型发生了变化，请重试。"
+msgstr "切换过程中模型发生了变化，请重试"
 
 #: src/backend_ui.rs:127 src/model_family.rs:283
 msgid "Recommended"
@@ -418,12 +416,12 @@ msgstr "语言"
 
 #: src/backend_ui.rs:223
 msgid "Your language"
-msgstr "你的语言"
+msgstr "当前语言"
 
 #. TRANSLATORS: an upper bound on a download size, such as "up to 1.4 GB": it is less on a machine whose GPU cannot be used.
 #: src/backend_ui.rs:371
 msgid "up to {size}"
-msgstr "最大 {size}"
+msgstr "最多 {size}"
 
 #. TRANSLATORS: {description} says what a model is good at, such as "Most languages, with uneven accuracy", and {size} what installing it downloads, such as "198 MB" or "up to 1.4 GB". The spaces around the dot are no-break spaces, so the size never starts a line of its own.
 #: src/backend_ui.rs:377
@@ -432,7 +430,7 @@ msgstr "{description}\\u{a0}·\\u{a0}{size}"
 
 #: src/backend_ui.rs:704
 msgid "This model is no longer installed."
-msgstr "该模型已卸载。"
+msgstr "该模型已卸载"
 
 #: src/backend_ui.rs:765
 msgid "Changing to {model} could not be confirmed"
@@ -442,15 +440,15 @@ msgstr "无法确认是否已切换到 {model}"
 msgid ""
 "Final connections could not be verified. Switching is disabled until refresh "
 "succeeds."
-msgstr "暂时无法确认模型是否已正确连接，刷新成功后才能切换模型。"
+msgstr "暂时无法确认模型是否已正确连接，刷新成功后才能切换模型"
 
 #: src/backend_ui.rs:833 src/diagnostics.rs:652
 msgid "No model is connected. Choose one to use for dictation."
-msgstr "尚未连接模型。请选择一个模型用于听写。"
+msgstr "尚未连接模型，请选择一个模型用于听写"
 
 #: src/backend_ui.rs:836
 msgid "Several models are connected. Choose one to use for dictation."
-msgstr "已连接多个模型。请选择一个模型用于听写。"
+msgstr "已连接多个模型，请选择一个模型用于听写"
 
 #: src/backend_ui.rs:926
 msgid "Changing model"
@@ -471,7 +469,7 @@ msgstr "无法安装 {model}"
 
 #: src/backend_ui.rs:1458 src/backend_ui.rs:1606
 msgid "Wait for the current change to finish."
-msgstr "请等待当前更改完成。"
+msgstr "请等待当前更改完成"
 
 #: src/backend_ui.rs:1621
 msgid "Applying and restarting the model…"
@@ -484,7 +482,7 @@ msgstr "无法确认“{setting}”是否已更改"
 
 #: src/backend_ui.rs:1806
 msgid "Could not read the installed models."
-msgstr "无法读取已安装的模型。"
+msgstr "无法读取已安装的模型"
 
 #: src/backend_ui.rs:1861
 msgid "No active model"
@@ -492,7 +490,7 @@ msgstr "没有正在使用的模型"
 
 #: src/backend_ui.rs:1862
 msgid "Choose a model on the General tab."
-msgstr "请在“常规”标签页中选择一个模型。"
+msgstr "请在常规标签页中选择一个模型"
 
 #: src/backend_ui.rs:1865
 msgid "Several models are connected"
@@ -500,11 +498,11 @@ msgstr "已连接多个模型"
 
 #: src/backend_ui.rs:1866
 msgid "Choose one model on the General tab."
-msgstr "请在“常规”标签页中选择一个模型。"
+msgstr "请在常规标签页中选择一个模型"
 
 #: src/backend_ui.rs:2105
 msgid "Diagnostics copied. Paste them into the issue."
-msgstr "诊断信息已复制。请粘贴到问题报告中。"
+msgstr "诊断信息已复制，请粘贴到问题报告中"
 
 #: src/backend_ui.rs:2116
 msgid "Could not open the web browser"
@@ -532,35 +530,35 @@ msgstr "尚未设置输入法"
 
 #: src/backend_ui.rs:2427
 msgid "The model kept a different value than the one you chose."
-msgstr "模型保留的设置与你选择的不同。"
+msgstr "模型保留的设置与您选择的不同"
 
 #: src/backend_ui.rs:2434
 msgid "The setting was saved, but the model did not start again."
-msgstr "设置已保存，但模型没有重新启动。"
+msgstr "设置已保存，但模型没有重新启动"
 
 #: src/backend_ui.rs:2441
 msgid "The setting was changed, but it could not be read back."
-msgstr "设置已更改，但未能确认是否生效。"
+msgstr "设置已更改，但未能确认是否生效"
 
 #: src/backend_ui.rs:2448
 msgid "The setting was changed, but reading it back was interrupted."
-msgstr "设置已更改，但确认是否生效的过程被中断。"
+msgstr "设置已更改，但确认是否生效的过程被中断"
 
 #: src/backend_ui.rs:2466 src/backend_ui.rs:2493
 msgid "The system did not allow the change."
-msgstr "系统不允许此项更改。"
+msgstr "系统不允许此项更改"
 
 #: src/backend_ui.rs:2473 src/backend_ui.rs:2496
 msgid "The model rejected the value."
-msgstr "模型不接受这项设置。"
+msgstr "模型不接受这项设置"
 
 #: src/backend_ui.rs:2480 src/backend_ui.rs:2499 src/backend_ui.rs:3310
 msgid "The change could not be made."
-msgstr "无法完成更改。"
+msgstr "无法完成更改"
 
 #: src/backend_ui.rs:2490
 msgid "The change was interrupted after it started."
-msgstr "更改过程中断。"
+msgstr "更改过程中断"
 
 #: src/backend_ui.rs:2553 src/backend_ui.rs:2632 src/backend_ui.rs:3397
 msgid "Standard error:"
@@ -580,11 +578,11 @@ msgstr "设置："
 
 #: src/backend_ui.rs:2607
 msgid "Some operations completed before the apply failed.\n"
-msgstr "应用失败前，有些操作已经完成。\n"
+msgstr "应用失败前，有些操作已经完成\n"
 
 #: src/backend_ui.rs:2611
 msgid "No privileged operations completed.\n"
-msgstr "没有执行任何需要管理员权限的操作。\n"
+msgstr "没有执行任何需要管理员权限的操作\n"
 
 #: src/backend_ui.rs:2613
 msgid "Completed operations:\n"
@@ -624,7 +622,7 @@ msgstr "语言"
 
 #: src/backend_ui.rs:2715
 msgid "A code such as en, fr or zh. Leave it empty to detect the language."
-msgstr "语言代码（如 en、fr、zh），留空可自动检测语言。"
+msgstr "语言代码例如 en、fr 或 zh，留空可自动检测语言"
 
 #: src/backend_ui.rs:2768
 msgid "Overview"
@@ -636,15 +634,15 @@ msgstr "连接"
 
 #: src/backend_ui.rs:2781
 msgid "Active. Myna uses this model for dictation."
-msgstr "当前正在使用此模型进行听写。"
+msgstr "当前正在使用此模型进行听写"
 
 #: src/backend_ui.rs:2784
 msgid "Several models are connected. Only one should be active."
-msgstr "已连接多个模型，但只能有一个处于活动状态。"
+msgstr "已连接多个模型，但同一时间只能使用其中一个"
 
 #: src/backend_ui.rs:2786
 msgid "Not connected to Myna."
-msgstr "未连接 Myna。"
+msgstr "尚未连接到 Myna"
 
 #: src/backend_ui.rs:2792
 msgid "Active model"
@@ -656,7 +654,7 @@ msgstr "当前引擎"
 
 #: src/backend_ui.rs:2801
 msgid "None selected. Choose one below."
-msgstr "尚未选择，请从下方选择一个。"
+msgstr "尚未选择，请从下方选择一个"
 
 #: src/backend_ui.rs:2818 src/diagnostics.rs:635
 msgid "Services"
@@ -680,7 +678,7 @@ msgstr "暂无可配置的设置"
 
 #: src/backend_ui.rs:2846
 msgid "The model answered but reported no settings to change."
-msgstr "当前模型没有提供可在此处修改的设置项。"
+msgstr "当前模型没有提供可在此处修改的设置项"
 
 #: src/backend_ui.rs:2856
 msgid "Some data is unavailable"
@@ -688,7 +686,7 @@ msgstr "部分数据暂不可用"
 
 #: src/backend_ui.rs:2858
 msgid "Raw failure details are recorded on the Diagnostics page."
-msgstr "错误详情已记录在“诊断”页面。"
+msgstr "错误详情已记录在诊断页面"
 
 #: src/backend_ui.rs:2901 src/backend_ui.rs:3225 src/backend_ui.rs:3547
 msgid "Refreshing…"
@@ -708,19 +706,19 @@ msgstr "敏感信息"
 
 #: src/backend_ui.rs:2938
 msgid "Common settings for this model."
-msgstr "此模型的常用设置。"
+msgstr "此模型的常用设置"
 
 #: src/backend_ui.rs:2941
 msgid "Runtime and performance related settings."
-msgstr "运行时与性能设置。"
+msgstr "运行时与性能设置"
 
 #: src/backend_ui.rs:2944
 msgid "Advanced settings."
-msgstr "高级设置。"
+msgstr "高级设置"
 
 #: src/backend_ui.rs:2947
 msgid "Internal and sensitive values are shown for diagnostics only."
-msgstr "内部信息和敏感信息仅供诊断使用。"
+msgstr "内部信息和敏感信息仅供诊断使用"
 
 #: src/backend_ui.rs:2971
 msgid "Sensitive value (redacted)"
@@ -729,7 +727,7 @@ msgstr "敏感内容（已隐去）"
 #. TRANSLATORS: {name} is the model part or snap being downloaded, such as "model-small"; {done} and {total} are sizes such as "210.0 MB".
 #: src/backend_ui.rs:3119
 msgid "Downloading {name}: {done} of {total}"
-msgstr "正在下载 {name}：{done}/{total}"
+msgstr "正在下载 {name}：{done}，共 {total}"
 
 #: src/backend_ui.rs:3131
 msgid "Active"
@@ -777,7 +775,7 @@ msgstr "可用引擎"
 
 #: src/backend_ui.rs:3212
 msgid "Persisted values could not be read."
-msgstr "无法读取已保存的设置。"
+msgstr "无法读取已保存的设置"
 
 #: src/backend_ui.rs:3223 src/backend_ui.rs:3555
 msgid "Applying changes…"
@@ -808,7 +806,7 @@ msgstr ""
 msgid ""
 "The change could not be made, and no model is connected now. Choose one "
 "again."
-msgstr "无法完成更改，现在也没有连接任何模型。请重新选择。"
+msgstr "无法完成更改，现在也没有连接任何模型，请重新选择"
 
 #: src/backend_ui.rs:3318
 msgid "snapd is still working on:\n"
@@ -818,15 +816,15 @@ msgstr "Snap 软件服务仍在处理：\n"
 msgid ""
 "The system is still installing or updating this model or Myna. Try again "
 "once it is done."
-msgstr "Myna 或相关模型仍在安装、更新，请完成后再试。"
+msgstr "Myna 或相关模型仍在安装或更新，请等待完成后再试"
 
 #: src/backend_ui.rs:3330
 msgid "The change ran, but the connections do not match it."
-msgstr "更改已执行，但连接状态与预期不符。"
+msgstr "更改已执行，但连接状态与预期不符"
 
 #: src/backend_ui.rs:3334
 msgid "The connections changed before the change could start. Try again."
-msgstr "更改开始前，连接状态发生了变化。请重试。"
+msgstr "更改开始前，连接状态发生了变化，请重试"
 
 #: src/backend_ui.rs:3338
 msgid "Discovery error:\n"
@@ -834,7 +832,7 @@ msgstr "检测出错：\n"
 
 #: src/backend_ui.rs:3340
 msgid "The change ran, but the connections could not be read back."
-msgstr "更改已执行，但无法重新读取连接状态。"
+msgstr "更改已执行，但无法重新读取连接状态"
 
 #: src/backend_ui.rs:3357
 msgid "Final connections:"
@@ -846,11 +844,11 @@ msgstr "无法确认最终连接状态："
 
 #: src/backend_ui.rs:3366
 msgid "Final connections could not be verified.\n"
-msgstr "无法确认最终连接状态。\n"
+msgstr "无法确认最终连接状态\n"
 
 #: src/backend_ui.rs:3374
 msgid "No snapd operations completed.\n"
-msgstr "没有完成任何 Snap 软件操作。\n"
+msgstr "没有完成任何 Snap 软件操作\n"
 
 #: src/backend_ui.rs:3378
 msgid "Completed snapd operations:\n"
@@ -890,11 +888,11 @@ msgstr "请输入有效数字"
 
 #: src/backend_apply.rs:519
 msgid "The model's restart could not be confirmed."
-msgstr "无法确认模型是否已重新启动。"
+msgstr "无法确认模型是否已重新启动"
 
 #: src/backend_apply.rs:544
 msgid "The model did not restart."
-msgstr "模型未能重新启动。"
+msgstr "模型未能重新启动"
 
 #: src/backend_apply.rs:566
 msgctxt "service state"
@@ -918,31 +916,31 @@ msgstr "未知"
 
 #: src/onboarding_ui.rs:745
 msgid "The system is busy installing software. Try again in a moment."
-msgstr "系统正在安装其他软件，请稍后重试。"
+msgstr "系统正在安装其他软件，请稍后重试"
 
 #: src/onboarding_ui.rs:850
 msgid "Continue to the next onboarding step."
-msgstr "继续下一步设置。"
+msgstr "继续下一步设置"
 
 #: src/onboarding_ui.rs:855
 msgid "Close Myna Settings."
-msgstr "关闭 Myna 设置。"
+msgstr "关闭 Myna 设置"
 
 #: src/onboarding_ui.rs:945 src/diagnostics.rs:658
 msgid ""
 "Another input method is in use, and Dictation types through IBus. Choose "
 "IBus in the system settings."
-msgstr "听写依赖 IBus 输入文字，但当前正在使用其他输入法。请在系统设置中选择 IBus。"
+msgstr "听写依赖 IBus 输入文字，但当前正在使用其他输入法，请在系统设置中选择 IBus"
 
 #: src/onboarding_ui.rs:949
 msgid ""
 "The input method IBus is not installed. Install the “ibus” package, then log "
 "out and back in."
-msgstr "输入法框架 IBus 未安装，请安装“ibus”软件包，然后注销并重新登录。"
+msgstr "输入法框架 IBus 尚未安装，请安装“ibus”软件包，然后注销并重新登录"
 
 #: src/onboarding_ui.rs:954
 msgid "Setup status unavailable. The log has the details."
-msgstr "无法获取设置状态，详情请参见日志。"
+msgstr "无法获取设置状态，详情请参见日志"
 
 #: src/onboarding_ui.rs:1069
 msgid "Setting up the input method"
@@ -958,7 +956,7 @@ msgstr "无法设置输入法"
 
 #: src/onboarding_ui.rs:1140
 msgid "Log out and back in to finish setting up the input method."
-msgstr "注销并重新登录后，输入法设置才能完成。"
+msgstr "注销并重新登录后，输入法设置才能完成"
 
 #. TRANSLATORS: a download size in megabytes, such as "776 MB"; the space is a no-break space.
 #: src/onboarding_ui.rs:1372
@@ -991,25 +989,25 @@ msgstr "更改"
 
 #: src/shortcut_ui.rs:291
 msgid "Press a keyboard shortcut for dictation."
-msgstr "按下用于听写的快捷键。"
+msgstr "按下用于听写的快捷键"
 
 #. TRANSLATORS: {shortcut} is a key combination, such as "Super + J".
 #: src/shortcut_ui.rs:294
 msgid "Current shortcut: {shortcut}."
-msgstr "当前快捷键：{shortcut}。"
+msgstr "当前快捷键：{shortcut}"
 
 #: src/shortcut_ui.rs:347
 msgid "Keep the shortcut as it was."
-msgstr "保留原快捷键。"
+msgstr "保留原快捷键"
 
 #: src/shortcut_ui.rs:477
 msgid "{keys} is reserved for “{action}”. Press a different shortcut."
-msgstr "“{keys}”已保留给“{action}”，请换一个快捷键。"
+msgstr "{keys} 已保留给“{action}”，请换一个快捷键"
 
 #: src/shortcut_ui.rs:495
 msgid ""
 "{keys} is already used for “{action}”. Replacing it removes it from there."
-msgstr "“{keys}”已用于“{action}”，如果继续替换，它将不再用于该操作。"
+msgstr "{keys} 已用于“{action}”，如果继续替换，它将不再用于该操作"
 
 #: src/shortcut_ui.rs:500
 msgid "Replace Shortcut?"
@@ -1025,11 +1023,11 @@ msgstr "无法设置快捷键"
 
 #: src/shortcut_ui.rs:666
 msgid "Set up a keyboard shortcut to trigger Dictation."
-msgstr "设置用于开始听写的快捷键。"
+msgstr "设置用于开始听写的快捷键"
 
 #: src/shortcut_ui.rs:672
 msgid "Myna is not running yet. The shortcut can be set up once it starts."
-msgstr "Myna 尚未运行，启动后才能设置快捷键。"
+msgstr "Myna 尚未运行，启动后才能设置快捷键"
 
 #: src/shortcut_ui.rs:680
 msgid ""
@@ -1043,7 +1041,7 @@ msgstr "尚未设置"
 
 #: src/shortcut_ui.rs:691 src/sound_preview.rs:66
 msgid "Myna is not running"
-msgstr "Myna 未运行"
+msgstr "Myna 尚未运行"
 
 #: src/list_editor_ui.rs:79
 msgid "Add a word or phrase"
@@ -1071,7 +1069,7 @@ msgstr "结束听写后可试听提示音"
 
 #: src/diagnostics.rs:171
 msgid "Paste the diagnostics report from your clipboard here."
-msgstr "请在此粘贴剪贴板中的诊断报告。"
+msgstr "请在此粘贴剪贴板中的诊断报告"
 
 #: src/diagnostics.rs:232
 msgid "The microphone has a large DC offset"
@@ -1082,8 +1080,8 @@ msgid ""
 "It costs headroom and points to an audio driver fault. Try another input in "
 "the system sound settings."
 msgstr ""
-"这会导致可用的音量范围变小，并可能说明音频驱动出了问题，请在系统声音设置中改"
-"用其他输入设备试试。"
+"这会导致可用的音量范围变小，并可能说明音频驱动出了问题，请尝试在系统声音设置"
+"中改用其他输入设备"
 
 #: src/diagnostics.rs:244
 msgid "Background noise was high in the last dictation"
@@ -1093,7 +1091,9 @@ msgstr "上次听写时背景噪声较高"
 msgid ""
 "Noise this close to the voice costs words. Move away from it or use a "
 "headset microphone."
-msgstr "噪声离语音太近时，部分内容可能无法识别，请远离噪声源或使用头戴式麦克风。"
+msgstr ""
+"环境噪声与说话声过于接近时，部分内容可能无法识别，请远离噪声源或使用头戴式麦"
+"克风"
 
 #: src/diagnostics.rs:265
 msgid "The CPU clock is capped by system policy"
@@ -1109,7 +1109,7 @@ msgstr "硬件上限为"
 
 #: src/diagnostics.rs:273
 msgid "Dictation will be slow. A power tool has capped the CPU clock."
-msgstr "听写运行缓慢，因为某个电源管理工具限制了 CPU 频率。"
+msgstr "听写速度会变慢，因为某个电源管理工具限制了 CPU 频率"
 
 #: src/diagnostics.rs:283
 msgid "The power profile is set to low-power"
@@ -1119,7 +1119,7 @@ msgstr "当前处于低功耗模式"
 msgid ""
 "Dictation will be slow. Switch to Balanced or Performance in the system "
 "power settings."
-msgstr "听写运行缓慢，请在系统电源设置中切换到“平衡”或“性能”模式。"
+msgstr "听写速度会变慢，请在系统电源设置中切换到平衡或性能模式"
 
 #: src/diagnostics.rs:297
 msgid "Firmware is holding the CPU at its lowest clock"
@@ -1130,8 +1130,8 @@ msgid ""
 "Dictation will be slow. Unplug the charger, wait a few seconds, and plug it "
 "back in. If that does not help, power off fully and start again."
 msgstr ""
-"听写运行缓慢，请尝试拔下电源，等待几秒后再重新插入。如果问题仍未改善，请完全"
-"关机后重新启动。"
+"听写速度会变慢，请尝试拔下电源，等待几秒后再重新插入，如果问题仍未改善，请完"
+"全关机后重新启动"
 
 #: src/diagnostics.rs:310
 msgid "The system is short of memory"
@@ -1140,7 +1140,7 @@ msgstr "系统内存不足"
 #: src/diagnostics.rs:314
 msgid ""
 "Dictation will stutter. Close applications until the machine stops swapping."
-msgstr "听写会出现卡顿，请关闭一些应用以释放内存，直到听写不再卡顿。"
+msgstr "听写会出现卡顿，请关闭一些应用以释放内存，直到听写不再卡顿"
 
 #: src/diagnostics.rs:320
 msgid "Disk activity is stalling the system"
@@ -1148,7 +1148,7 @@ msgstr "磁盘读写繁忙会拖慢系统响应"
 
 #: src/diagnostics.rs:324
 msgid "Dictation will stutter. Wait for the transfer or indexing to finish."
-msgstr "听写会出现卡顿，请等待文件传输或索引完成。"
+msgstr "听写会出现卡顿，请等待文件传输或索引完成"
 
 #: src/diagnostics.rs:330
 msgid "Other programs are saturating the CPU"
@@ -1156,7 +1156,7 @@ msgstr "其他程序占用了过多 CPU"
 
 #: src/diagnostics.rs:334
 msgid "Dictation will be slow. Pause the build or workload before dictating."
-msgstr "听写运行缓慢，请先暂停构建任务或其他高负载程序，再开始听写。"
+msgstr "听写速度会变慢，请先暂停构建任务或其他高负载程序，再开始听写"
 
 #: src/diagnostics.rs:345 src/diagnostics.rs:710
 msgid "reached"
@@ -1328,13 +1328,13 @@ msgid ""
 "IBus is not installed, so Myna cannot type. Install the “ibus” package, then "
 "log out and back in."
 msgstr ""
-"IBus 输入法框架未安装，Myna 无法输入文字。请安装“ibus”软件包，然后注销并重新"
-"登录。"
+"IBus 输入法框架尚未安装，Myna 无法输入文字，请安装“ibus”软件包，然后注销并重"
+"新登录"
 
 #: src/diagnostics.rs:660
 msgid ""
 "IBus is not set up, so Myna cannot type. Set up Dictation to turn it on."
-msgstr "IBus 尚未设置，Myna 无法输入文字，请重新设置听写功能以启用 IBus。"
+msgstr "IBus 尚未设置，Myna 无法输入文字，请重新设置听写功能以启用 IBus"
 
 #: src/diagnostics.rs:671 src/diagnostics.rs:685
 msgid "(none)"
@@ -1466,19 +1466,19 @@ msgstr "其他系统副本"
 
 #: src/myna_settings.rs:77
 msgid "Type a word or phrase to add."
-msgstr "输入要添加的词或短语。"
+msgstr "输入要添加的词或短语"
 
 #: src/myna_settings.rs:78
 msgid "That word is already in the list."
-msgstr "该条目已在列表中。"
+msgstr "该条目已在列表中"
 
 #: src/myna_settings.rs:80
 msgid "A word or phrase can be at most {limit} characters long."
-msgstr "词或短语最多可包含 {limit} 个字符。"
+msgstr "词或短语最多可包含 {limit} 个字符"
 
 #: src/myna_settings.rs:84
 msgid "The list holds at most {limit} words. Remove one to add another."
-msgstr "列表最多可包含 {limit} 个词。请删除一个词后再添加。"
+msgstr "列表最多可包含 {limit} 个词，请删除一个词后再添加"
 
 #: src/myna_settings.rs:195
 msgid "Ribbon"
@@ -1544,11 +1544,11 @@ msgstr "最适合 {language}"
 #. TRANSLATORS: Shown under "Install more models" when a model not installed would transcribe the user's language better. {language} is that language named in itself, such as "Deutsch" or "中文", inserted as-is in the nominative. If your grammar would inflect it, rephrase, e.g. "Dostępny jest lepszy model dla języka: {language}".
 #: src/model_family.rs:293
 msgid "A better model for {language} is available"
-msgstr "有更适合 {language} 的模型可用"
+msgstr "有更适合 {language} 的模型可供安装"
 
 #: src/model_family.rs:296
 msgid "A recommended model is available"
-msgstr "有推荐的模型可用"
+msgstr "有推荐模型可供安装"
 
 #. TRANSLATORS: Shown under "Install more models" while a model installs. {model} is a model family, such as "Whisper", and {percent} how much of its download has arrived, a number from 0 to 100.
 #: src/model_family.rs:306
@@ -1599,11 +1599,11 @@ msgstr "此设置不可编辑"
 
 #: src/presentation.rs:158
 msgid "Which version of this model to run."
-msgstr "选择要运行的模型版本。"
+msgstr "选择要运行的模型版本"
 
 #: src/presentation.rs:165
 msgid "The inference engine this model runs on."
-msgstr "选择运行该模型的推理引擎。"
+msgstr "选择运行该模型的推理引擎"
 
 #: src/presentation.rs:171
 msgid "Streaming output"
@@ -1611,13 +1611,13 @@ msgstr "流式输出"
 
 #: src/presentation.rs:172
 msgid "Emit partial transcription results while speech is being processed."
-msgstr "在语音处理过程中持续输出部分转写结果。"
+msgstr "在语音处理过程中持续输出部分转写结果"
 
 #: src/presentation.rs:179
 msgid ""
 "Unload the inference service after this many idle seconds; zero disables the "
 "delay."
-msgstr "如果模型连续空闲达到指定秒数，就会从内存中释放；设为 0 可关闭自动释放。"
+msgstr "如果模型连续空闲达到指定秒数，就会从内存中释放；设为 0 可关闭自动释放"
 
 #: src/presentation.rs:185
 msgid "Verbose logging"
@@ -1625,7 +1625,7 @@ msgstr "详细日志记录"
 
 #: src/presentation.rs:186
 msgid "Write additional diagnostics to the system log."
-msgstr "将额外的诊断信息写入系统日志。"
+msgstr "将额外的诊断信息写入系统日志"
 
 #: src/presentation.rs:192
 msgid "Socket path"
@@ -1633,7 +1633,7 @@ msgstr "Socket 路径"
 
 #: src/presentation.rs:193
 msgid "Raw Unix socket path used by the transcription service."
-msgstr "转写服务使用的 Unix Socket 路径。"
+msgstr "转写服务使用的 Unix Socket 路径"
 
 #: src/presentation.rs:199
 msgid "Minimum speech before pause commit (seconds)"
@@ -1641,7 +1641,7 @@ msgstr "停顿时触发转写的最短语音时长（秒）"
 
 #: src/presentation.rs:200
 msgid "Speech required before a pause can commit a transcript chunk."
-msgstr "语音持续超过该时长后，停顿才会触发转写。"
+msgstr "语音持续超过该时长后，停顿才会触发转写"
 
 #: src/presentation.rs:205
 msgid "Pause length for commit (seconds)"
@@ -1649,7 +1649,7 @@ msgstr "触发转写的停顿时长（秒）"
 
 #: src/presentation.rs:206
 msgid "Silence duration that commits the current transcript chunk."
-msgstr "停顿达到该时长后，当前语音片段会被转写。"
+msgstr "停顿达到该时长后，当前语音片段会被转写"
 
 #: src/presentation.rs:211
 msgid "Maximum uncommitted audio (seconds)"
@@ -1658,7 +1658,7 @@ msgstr "单次转写的最长语音时长（秒）"
 #: src/presentation.rs:212
 msgid ""
 "Maximum speech window retained before a transcript chunk is forced to commit."
-msgstr "超过该语音时长后，即使没有停顿，也会自动转写当前片段。"
+msgstr "超过该语音时长后，即使没有停顿，也会自动转写当前片段"
 
 #: src/presentation.rs:217
 msgid "Partial result interval (seconds)"
@@ -1667,7 +1667,7 @@ msgstr "部分结果刷新间隔（秒）"
 #: src/presentation.rs:218
 msgid ""
 "Interval between unstable partial results; zero disables partial results."
-msgstr "两次临时转写结果之间的间隔；设为 0 可关闭临时结果。"
+msgstr "两次临时转写结果之间的间隔；设为 0 可关闭临时结果"
 
 #: src/presentation.rs:223
 msgid "Partial result audio window (seconds)"
@@ -1677,7 +1677,7 @@ msgstr "部分结果音频范围（秒）"
 msgid ""
 "Recent uncommitted audio used for partial results; zero uses the whole "
 "window."
-msgstr "生成临时结果时使用的最近一段语音；设为 0 则使用全部音频。"
+msgstr "生成临时结果时使用的最近一段语音；设为 0 则使用全部音频"
 
 #: src/presentation.rs:229
 msgid "Compute type"
@@ -1687,7 +1687,7 @@ msgstr "计算类型"
 msgid ""
 "Runtime numeric format override. Leave the model's own value unchanged "
 "unless required."
-msgstr "覆盖运行时数字格式。除非确有需要，否则请保留模型默认设置。"
+msgstr "覆盖运行时数字格式，除非确有需要，否则请保留模型默认设置"
 
 #: src/presentation.rs:236
 msgid "Attention context size"
@@ -1696,11 +1696,11 @@ msgstr "上下文长度"
 #: src/presentation.rs:237
 msgid ""
 "Model-specific latency and accuracy context. Empty uses the engine default."
-msgstr "控制该模型在延迟与准确率之间取舍的上下文长度；留空则使用引擎默认设置。"
+msgstr "控制该模型在延迟与准确率之间取舍的上下文长度，留空则使用引擎默认设置"
 
 #: src/presentation.rs:296
 msgid "This model provides no description for this setting."
-msgstr "该模型未提供此设置的说明。"
+msgstr "该模型未提供此设置的说明"
 
 #. TRANSLATORS: {percent} is how much of the download has arrived, a number from 0 to 100.
 #: src/ui/install_control.rs:131
@@ -1715,7 +1715,7 @@ msgstr "开始、停止和出错时播放提示音"
 msgid ""
 "Play a short sound when dictation starts listening, when it stops, and when "
 "it fails."
-msgstr "听写开始、停止或出错时播放短暂提示音。"
+msgstr "听写开始、停止或出错时播放短暂提示音"
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:50
 msgid "Sound style"
@@ -1727,9 +1727,9 @@ msgid ""
 "hums people make while listening, Marimba a rising fifth, Water falling "
 "drops, Radio a walkie-talkie and Strings a plucked koto."
 msgstr ""
-"各提示音如下：清铃是清亮的敲击声；鸟鸣是婉转的鸟啼；轻哼是聆听时自然的哼声；"
-"木琴是明亮的上行五度音；水滴是清脆的滴水声；对讲机是简短的通话音效；琴音是古"
-"筝式的拨弦声。"
+"各提示音如下：清铃是清亮的敲击声，鸟鸣是婉转的鸟啼，轻哼是聆听时自然的哼声，"
+"木琴是明亮的上行五度音，水滴是清脆的滴水声，对讲机是短促的收发提示音，琴音是"
+"古筝式的拨弦声。"
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:60
 msgid "When to transcribe"
@@ -1740,8 +1740,8 @@ msgid ""
 "As you speak shows partial text in the field while you talk; When you stop "
 "injects the whole transcript once the utterance ends."
 msgstr ""
-"“实时转写”会在你说话的同时显示部分文字；“停止后转写”则会在录音结束后再插入完"
-"整转录文本。"
+"实时转写会在您说话时显示部分文字；停止后转写会在整段语音结束后一次性输入完整"
+"转写文本"
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:69
 msgid "Spoken language"
@@ -1753,8 +1753,8 @@ msgid ""
 "skips language detection and decodes in this language; a code that does not "
 "match what is spoken degrades the transcript. Empty lets the model decide."
 msgstr ""
-"近似 BCP-47 的语言代码（如 en、fr、zh），用于指定听写语言，模型会跳过语言检测"
-"并直接按该语言解码；代码与实际所说的语言不符会降低转录质量，留空则自动判断。"
+"近似 BCP-47 的语言代码（en、fr 或 zh），用于指定听写语言，模型会跳过语言检测"
+"并直接按该语言解码；代码与实际所说的语言不符会降低转写质量，留空则自动判断"
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:80
 msgid "Indicator style"
@@ -1765,12 +1765,12 @@ msgid ""
 "All three render the same calibrated audio envelope: Default is a level bar "
 "in the accent colour, Ribbon a flowing GPU wave, VU meter a segmented meter."
 msgstr ""
-"三种样式都呈现相同的校准音频包络：“默认”为强调色音量条，“波形带”为动态 GPU 波"
-"形，“VU 表”为分段式仪表。"
+"三种样式都呈现相同的校准音频包络：默认为强调色音量条，波形带为动态 GPU 波形，"
+"VU 表为分段式仪表"
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:91
 msgid "Stop after silence (seconds)"
-msgstr "静音多久后停止（秒）"
+msgstr "没有声音后多久停止（秒）"
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:92
 msgid ""
@@ -1778,8 +1778,8 @@ msgid ""
 "this many seconds without speech. 0 keeps it running until the next tap. "
 "Hold-to-talk always ends with the key."
 msgstr ""
-"“点按开始”模式下，连续多少秒没有语音后会自动结束听写，设为 0 时，听写会一直进"
-"行到下次点按；“按住说话”模式下，松开按键即结束。"
+"点按开始模式下，连续多少秒没有语音后会自动结束听写，设为 0 时，听写会一直进行"
+"到下次点按，按住说话模式下，松开按键即结束"
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:101
 msgid "Vocabulary"
@@ -1791,8 +1791,8 @@ msgid ""
 "colleague's name, a product or a term from your field: \"Nguyen\", "
 "\"Kubernetes\", \"ibuprofen\". Up to 100 words or short phrases."
 msgstr ""
-"语音识别可能会听错的名称和术语，例如同事姓名、产品或专业领域术语：“王林”、“"
-"DeepSeek ”、“布洛芬”等，最多 100 个词或短语。"
+"语音识别可能会听错的名称和术语，例如同事姓名、产品或专业领域术语：\"王"
+"林\"、\"DeepSeek\"、\"布洛芬\"等，最多 100 个词或短语"
 
 #: data/com.canonical.Myna.Config.metainfo.xml:9
 msgid "Set up and configure local dictation"
@@ -1804,8 +1804,8 @@ msgid ""
 "it. Myna Settings guides you through installing it and a speech model, then "
 "configures dictation and its speech models."
 msgstr ""
-"Myna 在本地把语音转换为文字，音频和文本都不会离开设备。Myna 设置会引导您安装 "
-"Myna 和语音模型，然后配置听写功能及其语音模型。"
+"Myna 在本地把语音转换为文字，音频和文本都不会离开这台电脑，首次使用时，Myna "
+"设置会引导您完成应用和语音识别模型的安装，然后配置听写功能及相关模型"
 
 #: data/com.canonical.Myna.Config.desktop:4
 msgid "Dictation Settings"
@@ -1818,4 +1818,4 @@ msgstr "配置 Myna 听写功能及其语音模型"
 #. TRANSLATORS: Search terms for this application. Keep every semicolon, including the last.
 #: data/com.canonical.Myna.Config.desktop:12
 msgid "dictation;speech;transcription;voice;model;"
-msgstr "听写;语音;转写;声音;模型;"
+msgstr "听写;语音;语音输入;语音转文字;转写;声音;模型;"
