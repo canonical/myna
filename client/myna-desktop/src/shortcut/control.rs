@@ -206,9 +206,12 @@ impl Trigger for ControlTrigger {
     /// controller at the end of an utterance to swallow hotkey spam that
     /// arrived during Finalizing, so the next real tap still delivers `Press`.
     async fn discard_pending(&mut self) {
-        self.candidate = None;
-        self.later = None;
-        while self.rx.try_recv().is_ok() {}
+        let mut discarded = self.candidate.take().is_some() | self.later.take().is_some();
+        while self.rx.try_recv().is_ok() {
+            discarded = true;
+        }
+        // The rest of a held key's stream may still be on its way.
+        self.streaming |= discarded;
     }
 
     /// Force `pressed` back to `false` when an utterance ended for a reason
@@ -354,6 +357,7 @@ mod tests {
 
         trigger.discard_pending().await;
 
+        tokio::time::sleep(REPEAT_FOLLOW).await;
         toggle(&path).await;
         assert_eq!(trigger.next_edge().await, Some(TriggerEdge::Press));
         tokio::time::sleep(Duration::from_millis(20)).await;
@@ -565,6 +569,31 @@ mod tests {
         tokio::time::sleep(REPEAT_QUIET).await;
         poke.poke();
         assert_eq!(trigger.next_edge().await, Some(TriggerEdge::Release));
+    }
+
+    // The utterance ends just before the held key's last repeat.
+    #[tokio::test(start_paused = true)]
+    async fn a_repeat_just_after_the_drain_does_not_press() {
+        let mut trigger = ControlTrigger::new();
+        let poke = trigger.poke();
+
+        poke.poke();
+        assert_eq!(trigger.next_edge().await, Some(TriggerEdge::Press));
+        tokio::time::sleep(REPEAT_QUIET).await;
+        poke.poke();
+        assert_eq!(trigger.next_edge().await, Some(TriggerEdge::Release));
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        for _ in 0..3 {
+            poke.poke();
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        trigger.discard_pending().await;
+        poke.poke();
+        tokio::time::sleep(REPEAT_FOLLOW).await;
+        assert!(!has_edge(&mut trigger).await, "the last repeat pressed");
+        tokio::time::sleep(REPEAT_QUIET).await;
+        poke.poke();
+        assert_eq!(trigger.next_edge().await, Some(TriggerEdge::Press));
     }
 
     // Both channels make one stream: socket pokes repeating a D-Bus one.
