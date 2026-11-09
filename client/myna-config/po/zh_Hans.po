@@ -8,7 +8,7 @@ msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-11-08 11:11+0000\n"
-"PO-Revision-Date: 2026-11-09 13:53+0000\n"
+"PO-Revision-Date: 2026-11-09 14:57+0000\n"
 "Last-Translator: tianhe-team <tianhe-team@users.noreply.hosted.weblate.org>\n"
 "Language-Team: Chinese (Simplified Han script) <https://hosted.weblate.org/"
 "projects/ubuntu-desktop-translations/myna-config/zh_Hans/>\n"
@@ -1374,11 +1374,11 @@ msgstr "尚无听写记录"
 
 #: src/diagnostics.rs:799
 msgid "speech"
-msgstr "人声"
+msgstr "语音"
 
 #: src/diagnostics.rs:800
 msgid "no speech heard"
-msgstr "未检测到人声"
+msgstr "未检测到语音"
 
 #: src/diagnostics.rs:808
 msgid "offset"
