@@ -8,95 +8,97 @@ msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-10-13 00:41+0100\n"
-"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
-"Last-Translator: Automatically generated\n"
-"Language-Team: none\n"
+"PO-Revision-Date: 2026-11-09 21:08+0000\n"
+"Last-Translator: tianhe-team <tianhe-team@users.noreply.hosted.weblate.org>\n"
+"Language-Team: Chinese (Simplified Han script) <https://hosted.weblate.org/"
+"projects/ubuntu-desktop-translations/myna-orchestrator/zh_Hans/>\n"
 "Language: zh_Hans\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=1; plural=0;\n"
+"X-Generator: Weblate 2026.11.2.dev0\n"
 
 #: src/backend/mod.rs:79
 msgid "Model not reachable"
-msgstr ""
+msgstr "无法连接模型"
 
 #: src/backend/mod.rs:82 src/backend/share.rs:91
 msgid "Model not compatible"
-msgstr ""
+msgstr "模型不兼容"
 
 #: src/backend/mod.rs:84
 msgid "Model error"
-msgstr ""
+msgstr "模型出错"
 
 #: src/backend/mod.rs:85
 msgid "Model stopped"
-msgstr ""
+msgstr "模型已停止"
 
 #: src/backend/share.rs:83
 msgid "Model not connected"
-msgstr ""
+msgstr "尚未连接模型"
 
 #: src/backend/share.rs:86
 msgid "Model connected. Retry shortly"
-msgstr ""
+msgstr "模型已连接，请稍后重试"
 
 #: src/backend/share.rs:89
 msgid "Model not running"
-msgstr ""
+msgstr "模型未运行"
 
 #: src/backend/share.rs:92
 msgid "Several models connected"
-msgstr ""
+msgstr "已连接多个模型"
 
 #: src/failure.rs:37
 msgid "Some audio lost"
-msgstr ""
+msgstr "部分音频丢失"
 
 #: src/failure.rs:46
 msgid "Microphone unavailable"
-msgstr ""
+msgstr "麦克风不可用"
 
 #: src/failure.rs:47
 msgid "Audio system not responding"
-msgstr ""
+msgstr "音频服务无响应"
 
 #: src/failure.rs:48
 msgid "No microphone found"
-msgstr ""
+msgstr "未找到麦克风"
 
 #: src/failure.rs:49
 msgid "Microphone silent"
-msgstr ""
+msgstr "麦克风没有声音"
 
 #: src/failure.rs:50
 msgid "Microphone format unsupported"
-msgstr ""
+msgstr "不支持麦克风格式"
 
 #: src/failure.rs:51
 msgid "Audio system error"
-msgstr ""
+msgstr "音频服务出错"
 
 #: src/failure.rs:52
 msgid "System overloaded"
-msgstr ""
+msgstr "音频处理系统过载"
 
 #: src/failure.rs:58
 msgid "Transcription failed"
-msgstr ""
+msgstr "识别失败"
 
 #: src/failure.rs:63
 msgid "Model not responding"
-msgstr ""
+msgstr "模型无响应"
 
 #: src/failure.rs:68
 msgid "Model connection lost"
-msgstr ""
+msgstr "模型连接中断"
 
 #: src/failure.rs:75
 msgid "Using the CPU: GPU unavailable"
-msgstr ""
+msgstr "GPU 不可用，已改用 CPU"
 
 #: src/failure.rs:76
 msgid "Dictation is slow: low memory"
-msgstr ""
+msgstr "内存不足，听写速度较慢"
