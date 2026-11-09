@@ -28,7 +28,7 @@
 //! daemon asserts nothing while reporting green.
 
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use futures_util::{FutureExt, StreamExt};
@@ -1493,6 +1493,8 @@ async fn shell_sets_global_engine(conn: &Connection, engine: &str) -> zbus::Resu
 /// nowhere. The release hands the Shell's source back, unless the Shell's
 /// switch landed between the acquire reading the global engine and switching:
 /// then the switch displaced an engine it never learnt of, and ours stays.
+/// A switch answered after the acquire returned is a takeover, not this race:
+/// it ends the lease, so the commit is refused.
 #[tokio::test]
 async fn an_engine_taken_while_acquiring_is_claimed_back() {
     skip_unless_ibus!();
@@ -1508,9 +1510,13 @@ async fn an_engine_taken_while_acquiring_is_claimed_back() {
         let shell = async {
             tokio::time::sleep(Duration::from_millis(trial)).await;
             let _ = shell_sets_global_engine(&field.conn, PRIOR_ENGINE).await;
+            Instant::now()
         };
-        let (acquired, ()) = tokio::join!(
-            async { tokio::time::timeout(HANG_GUARD, injector.acquire()).await },
+        let ((acquired, acquire_returned), shell_answered) = tokio::join!(
+            async {
+                let acquired = tokio::time::timeout(HANG_GUARD, injector.acquire()).await;
+                (acquired, Instant::now())
+            },
             shell
         );
         let Ok(Ok(mut target)) = acquired else {
@@ -1524,8 +1530,10 @@ async fn an_engine_taken_while_acquiring_is_claimed_back() {
         target.release().await;
         let restored = injector.global_engine().await;
         eprintln!("trial {trial}: commit {committed:?}, field saw {seen:?}, then {restored:?}");
-        if committed.is_err()
-            || seen != Some(Seen::Commit("kept".into()))
+        let taken_after =
+            shell_answered > acquire_returned && matches!(committed, Err(InjectError::FocusLost));
+        let delivered = committed.is_ok() && seen == Some(Seen::Commit("kept".into()));
+        if !(delivered || taken_after)
             || !matches!(restored.as_deref(), Some(PRIOR_ENGINE | MYNA_ENGINE))
         {
             failed.push(trial);
