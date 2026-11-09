@@ -8,8 +8,8 @@ msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-10-13 00:41+0100\n"
-"PO-Revision-Date: 2026-11-09 21:08+0000\n"
-"Last-Translator: tianhe-team <tianhe-team@users.noreply.hosted.weblate.org>\n"
+"PO-Revision-Date: 2026-11-10 15:09+0000\n"
+"Last-Translator: Nova_Chen <tianhe.dev@gmail.com>\n"
 "Language-Team: Chinese (Simplified Han script) <https://hosted.weblate.org/"
 "projects/ubuntu-desktop-translations/myna-desktop/zh_Hans/>\n"
 "Language: zh_CN\n"
@@ -46,7 +46,7 @@ msgstr "🎤 听写：正在聆听"
 
 #: src/indicator/notify.rs:43
 msgid "Speak now. Press your shortcut again to stop."
-msgstr "请开始说话，再次按快捷键即可停止"
+msgstr "请开始说话，再次按下快捷键即可停止"
 
 #: src/indicator/notify.rs:46
 msgid "💬 Dictation: transcribing"
