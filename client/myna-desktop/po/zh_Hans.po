@@ -8,7 +8,7 @@ msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-10-13 00:41+0100\n"
-"PO-Revision-Date: 2026-11-09 14:50+0000\n"
+"PO-Revision-Date: 2026-11-09 21:08+0000\n"
 "Last-Translator: tianhe-team <tianhe-team@users.noreply.hosted.weblate.org>\n"
 "Language-Team: Chinese (Simplified Han script) <https://hosted.weblate.org/"
 "projects/ubuntu-desktop-translations/myna-desktop/zh_Hans/>\n"
@@ -21,7 +21,7 @@ msgstr ""
 
 #: src/indicator/mod.rs:80
 msgid "Loading model…"
-msgstr "加载模型中…"
+msgstr "正在加载模型…"
 
 #: src/indicator/mod.rs:81
 msgid "Listening"
@@ -33,7 +33,7 @@ msgstr "正在识别"
 
 #: src/indicator/mod.rs:83
 msgid "Finishing"
-msgstr "正在写入"
+msgstr "正在输入"
 
 #: src/indicator/mod.rs:87
 #, c-format
@@ -54,15 +54,15 @@ msgstr "💬 听写：正在识别"
 
 #: src/indicator/notify.rs:47
 msgid "Converting speech to text…"
-msgstr "正在将语音转换为文字…"
+msgstr "正在识别语音…"
 
 #: src/indicator/notify.rs:50
 msgid "⏳ Dictation: finishing"
-msgstr "⏳ 听写：正在写入"
+msgstr "⏳ 听写：正在输入"
 
 #: src/indicator/notify.rs:51
 msgid "Inserting the final text…"
-msgstr "正在写入最终文本…"
+msgstr "正在输入最终文本…"
 
 #: src/indicator/notify.rs:54
 msgid "⚠️ Dictation error"
@@ -70,7 +70,7 @@ msgstr "⚠️ 听写错误"
 
 #: src/controller.rs:228 src/controller.rs:918
 msgid "Focus lost"
-msgstr "输入框已失焦"
+msgstr "光标已离开文本框"
 
 #: src/controller.rs:230
 msgid "No speech detected"
@@ -82,20 +82,20 @@ msgstr "背景噪声较大"
 
 #: src/controller.rs:791
 msgid "Text field closed"
-msgstr "输入框已关闭"
+msgstr "文本框已关闭"
 
 #: src/controller.rs:916
 msgid "Password field skipped"
-msgstr "已跳过密码输入框"
+msgstr "出于安全考虑，未在密码框中输入"
 
 #: src/controller.rs:917
 msgid "No text field focused"
-msgstr "未选中文本输入框"
+msgstr "当前没有可用的文本框"
 
 #: src/controller.rs:919
 msgid "Typing unavailable"
-msgstr "无法输入"
+msgstr "当前无法输入文字"
 
 #: src/controller.rs:920
 msgid "Typing failed"
-msgstr "输入失败"
+msgstr "输入文字时出错"
