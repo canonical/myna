@@ -8,7 +8,7 @@ msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-10-11 11:54+0100\n"
-"PO-Revision-Date: 2026-11-07 22:10+0000\n"
+"PO-Revision-Date: 2026-11-10 15:09+0000\n"
 "Last-Translator: phlostically <phlostically@users.noreply.hosted.weblate.org>"
 "\n"
 "Language-Team: Esperanto <https://hosted.weblate.org/projects/ubuntu-desktop-"
@@ -330,7 +330,7 @@ msgstr "Starigante demonon de uzanto"
 
 #: src/app.rs:4179 src/onboarding_ui.rs:991
 msgid "Installing Dictation app"
-msgstr "Instalante diktilo-programon"
+msgstr "Instalante diktilo-apon"
 
 #. TRANSLATORS: {step} is what is installing, such as "Installing speech-to-text model", and {percent} how much of its download has arrived.
 #: src/app.rs:4189 src/app.rs:4252 src/app.rs:4352 src/onboarding_ui.rs:999
@@ -562,7 +562,7 @@ msgstr "Ne povis fari la ŝanĝon."
 
 #: src/backend_ui.rs:2377
 msgid "The change was interrupted after it started."
-msgstr ""
+msgstr "La modifo interrompiĝis post komenco."
 
 #: src/backend_ui.rs:2440 src/backend_ui.rs:2519 src/backend_ui.rs:3240
 msgid "Standard error:"
@@ -668,7 +668,7 @@ msgstr "Servoj"
 
 #: src/backend_ui.rs:2707
 msgid "No service health reported"
-msgstr ""
+msgstr "Sano de servoj ne raportita"
 
 #: src/backend_ui.rs:2721
 msgid "Loading"
@@ -862,7 +862,7 @@ msgstr ""
 
 #: src/backend_apply.rs:380
 msgid "the model's restart command could not be built"
-msgstr ""
+msgstr "ne eblis konstrui la restartan komandon de la modelo"
 
 #: src/backend_apply.rs:479
 msgid "value must be a finite number"
@@ -918,7 +918,7 @@ msgstr ""
 
 #: src/onboarding_ui.rs:878
 msgid "Setup status unavailable. The log has the details."
-msgstr ""
+msgstr "Stato de agordo ne estas disponebla. La protokolo enhavas la detalojn."
 
 #: src/onboarding_ui.rs:993
 msgid "Setting up the input method"
@@ -926,7 +926,7 @@ msgstr "Agordante la enigmetodon"
 
 #: src/onboarding_ui.rs:1012
 msgid "Installing the Dictation app failed"
-msgstr "Instalado de diktila programo malsukcesis"
+msgstr "Instalado de diktila apo malsukcesis"
 
 #: src/onboarding_ui.rs:1014
 msgid "Setting up the input method failed"
@@ -1014,6 +1014,8 @@ msgid ""
 "This desktop cannot set up the shortcut. Bind this command to a key in its "
 "settings: {command}"
 msgstr ""
+"Ĉi tiu labortabla medio ne povas starigi la fulmoklavon. Asignu la jenan "
+"komandon al klavo en ĝiaj agordoj: {command}"
 
 #: src/shortcut_ui.rs:690
 msgid "Not set up"
@@ -1033,7 +1035,7 @@ msgstr "Finu diktadon por antaŭaŭskulti sonojn"
 
 #: src/diagnostics.rs:225
 msgid "Paste the diagnostics report from your clipboard here."
-msgstr ""
+msgstr "Algluu la diagnozan raporton el via tondujo ĉi tien."
 
 #: src/diagnostics.rs:280
 msgid "The CPU clock is capped by system policy"
@@ -1055,13 +1057,15 @@ msgstr ""
 
 #: src/diagnostics.rs:298
 msgid "The power profile is set to low-power"
-msgstr ""
+msgstr "La energiprofilo estas aktuale energiŝpara"
 
 #: src/diagnostics.rs:302
 msgid ""
 "Dictation will be slow. Switch to Balanced or Performance in the system "
 "power settings."
 msgstr ""
+"Diktado estos malrapida. Ŝanĝu al «ekvilibra» aŭ «rendimenta» en la agordoj "
+"pri elektro en la sistemaj agordoj."
 
 #: src/diagnostics.rs:312
 msgid "Firmware is holding the CPU at its lowest clock"
@@ -1099,6 +1103,7 @@ msgstr "Aliaj programoj plenuzadas la ĉefprocesoron"
 #: src/diagnostics.rs:349
 msgid "Dictation will be slow. Pause the build or workload before dictating."
 msgstr ""
+"Diktado estos malrapida. Paŭzigu la konstruadon aŭ taskon antaŭ diktado."
 
 #: src/diagnostics.rs:360 src/diagnostics.rs:712
 msgid "reached"
@@ -1281,11 +1286,11 @@ msgstr "Avertoj"
 
 #: src/diagnostics.rs:708
 msgid "not probed"
-msgstr ""
+msgstr "ne sondita"
 
 #: src/diagnostics.rs:721
 msgid "policy allows"
-msgstr ""
+msgstr "reguloj permesas"
 
 #: src/diagnostics.rs:728
 msgid "cores in this class"
@@ -1341,7 +1346,7 @@ msgstr "alia enigmetodo estas uzata"
 
 #: src/diagnostics.rs:816
 msgid "not supported on this desktop"
-msgstr ""
+msgstr "ne subtenata por ĉi tiu labortabla medio"
 
 #: src/diagnostics.rs:818
 msgid "failed"
@@ -1503,11 +1508,11 @@ msgstr "La rulota versio de ĉi tiu modelo."
 
 #: src/presentation.rs:165
 msgid "The inference engine this model runs on."
-msgstr ""
+msgstr "La derivmotoro uzata de ĉi tiu modelo."
 
 #: src/presentation.rs:171
 msgid "Streaming output"
-msgstr ""
+msgstr "Fluaj eligoj"
 
 #: src/presentation.rs:172
 msgid "Emit partial transcription results while speech is being processed."
@@ -1570,16 +1575,19 @@ msgstr "Intervalo de parta rezulto (en sekundoj)"
 msgid ""
 "Interval between unstable partial results; zero disables partial results."
 msgstr ""
+"Intervalo inter nestabilaj partaj rezultoj; nulo malŝaltas partajn rezultojn."
 
 #: src/presentation.rs:223
 msgid "Partial result audio window (seconds)"
-msgstr ""
+msgstr "Fenestro por sonaĵo de parta rezulto (en sekundoj)"
 
 #: src/presentation.rs:224
 msgid ""
 "Recent uncommitted audio used for partial results; zero uses the whole "
 "window."
 msgstr ""
+"Ĵusa neenmetita sono uzata por partaj rezultoj; se nul, uzas la tutan "
+"fenestron."
 
 #: src/presentation.rs:229
 msgid "Compute type"
