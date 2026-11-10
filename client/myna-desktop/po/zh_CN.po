@@ -7,95 +7,95 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-02 18:07+0100\n"
-"PO-Revision-Date: 2026-10-12 18:03+0000\n"
-"Last-Translator: taijuin Lee <taijuin@users.noreply.hosted.weblate.org>\n"
-"Language-Team: Chinese (Traditional Han script) <https://hosted.weblate.org/"
-"projects/ubuntu-desktop-translations/myna-desktop/zh_Hant/>\n"
-"Language: zh_Hant\n"
+"POT-Creation-Date: 2026-10-13 00:41+0100\n"
+"PO-Revision-Date: 2026-11-09 21:08+0000\n"
+"Last-Translator: tianhe-team <tianhe-team@users.noreply.hosted.weblate.org>\n"
+"Language-Team: Chinese (Simplified Han script) <https://hosted.weblate.org/"
+"projects/ubuntu-desktop-translations/myna-desktop/zh_Hans/>\n"
+"Language: zh_CN\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=1; plural=0;\n"
-"X-Generator: Weblate 2026.11.dev0\n"
+"X-Generator: Weblate 2026.11.2.dev0\n"
 
 #: src/indicator/mod.rs:80
 msgid "Loading model…"
-msgstr "載入模型中…"
+msgstr "正在加载模型…"
 
 #: src/indicator/mod.rs:81
 msgid "Listening"
-msgstr "聆聽"
+msgstr "正在聆听"
 
 #: src/indicator/mod.rs:82
 msgid "Transcribing"
-msgstr "轉錄"
+msgstr "正在识别"
 
 #: src/indicator/mod.rs:83
 msgid "Finishing"
-msgstr "後製"
+msgstr "正在输入"
 
 #: src/indicator/mod.rs:87
 #, c-format
 msgid "Error: %s"
-msgstr "錯誤：%s"
+msgstr "错误：%s"
 
 #: src/indicator/notify.rs:42
 msgid "🎤 Dictation: listening"
-msgstr "🎤 聽寫：聆聽"
+msgstr "🎤 听写：正在聆听"
 
 #: src/indicator/notify.rs:43
 msgid "Speak now. Press your shortcut again to stop."
-msgstr "現在請說話。再次按下快捷鍵即可停止。"
+msgstr "请开始说话，再次按快捷键即可停止"
 
 #: src/indicator/notify.rs:46
 msgid "💬 Dictation: transcribing"
-msgstr "💬 聽寫：轉錄"
+msgstr "💬 听写：正在识别"
 
 #: src/indicator/notify.rs:47
 msgid "Converting speech to text…"
-msgstr "正在將語音轉換為文字……"
+msgstr "正在识别语音…"
 
 #: src/indicator/notify.rs:50
 msgid "⏳ Dictation: finishing"
-msgstr "⏳ 聽寫：後製"
+msgstr "⏳ 听写：正在输入"
 
 #: src/indicator/notify.rs:51
 msgid "Inserting the final text…"
-msgstr "插入最終文字…"
+msgstr "正在输入最终文本…"
 
 #: src/indicator/notify.rs:54
 msgid "⚠️ Dictation error"
-msgstr "⚠️ 聽寫錯誤"
+msgstr "⚠️ 听写错误"
 
-#: src/controller.rs:218 src/inject/mod.rs:53
+#: src/controller.rs:228 src/controller.rs:918
 msgid "Focus lost"
-msgstr "失去焦點"
+msgstr "光标已离开文本框"
 
-#: src/controller.rs:220
+#: src/controller.rs:230
 msgid "No speech detected"
-msgstr "未偵測到語音"
+msgstr "未识别到语音"
 
-#: src/controller.rs:222
+#: src/controller.rs:234
 msgid "Background noise is high"
-msgstr "背景噪音很大"
+msgstr "背景噪声较大"
 
-#: src/controller.rs:760
+#: src/controller.rs:791
 msgid "Text field closed"
-msgstr "文字欄位已關閉"
+msgstr "文本框已关闭"
 
-#: src/inject/mod.rs:51
+#: src/controller.rs:916
 msgid "Password field skipped"
-msgstr "跳過密碼欄位"
+msgstr "出于安全考虑，未在密码框中输入"
 
-#: src/inject/mod.rs:52
+#: src/controller.rs:917
 msgid "No text field focused"
-msgstr "沒有任何文字欄位獲得焦點"
+msgstr "当前没有可用的文本框"
 
-#: src/inject/mod.rs:54
+#: src/controller.rs:919
 msgid "Typing unavailable"
-msgstr "無法輸入文字"
+msgstr "当前无法输入文字"
 
-#: src/inject/mod.rs:55
+#: src/controller.rs:920
 msgid "Typing failed"
-msgstr "輸入失敗"
+msgstr "输入文字时出错"
