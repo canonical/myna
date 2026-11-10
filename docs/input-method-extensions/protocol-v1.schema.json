@@ -1,0 +1,250 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://canonical.com/myna/input-method-extension-protocol-v1.schema.json",
+  "title": "Myna IM extension protocol version 1 message",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/client_hello"
+    },
+    {
+      "$ref": "#/$defs/client_acquire"
+    },
+    {
+      "$ref": "#/$defs/client_activate"
+    },
+    {
+      "$ref": "#/$defs/client_commit"
+    },
+    {
+      "$ref": "#/$defs/client_preedit"
+    },
+    {
+      "$ref": "#/$defs/client_release"
+    },
+    {
+      "$ref": "#/$defs/provider_ready"
+    },
+    {
+      "$ref": "#/$defs/provider_acquired"
+    },
+    {
+      "$ref": "#/$defs/provider_ack"
+    },
+    {
+      "$ref": "#/$defs/provider_focus_lost"
+    },
+    {
+      "$ref": "#/$defs/provider_target_gone"
+    },
+    {
+      "$ref": "#/$defs/provider_secure"
+    },
+    {
+      "$ref": "#/$defs/provider_error"
+    }
+  ],
+  "$defs": {
+    "request": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "text": {
+      "type": "string",
+      "maxLength": 1048576
+    },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "preedit",
+        "surrounding_text",
+        "secure_field_detection"
+      ],
+      "properties": {
+        "preedit": {
+          "type": "boolean"
+        },
+        "surrounding_text": {
+          "type": "boolean"
+        },
+        "secure_field_detection": {
+          "type": "boolean"
+        }
+      }
+    },
+    "client_hello": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "version"],
+      "properties": {
+        "type": {
+          "const": "hello"
+        },
+        "version": {
+          "const": 1
+        }
+      }
+    },
+    "client_acquire": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "const": "acquire"
+        }
+      }
+    },
+    "client_activate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "const": "activate"
+        }
+      }
+    },
+    "client_commit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "request", "text"],
+      "properties": {
+        "type": {
+          "const": "commit"
+        },
+        "request": {
+          "$ref": "#/$defs/request"
+        },
+        "text": {
+          "$ref": "#/$defs/text"
+        }
+      }
+    },
+    "client_preedit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "request", "text"],
+      "properties": {
+        "type": {
+          "const": "preedit"
+        },
+        "request": {
+          "$ref": "#/$defs/request"
+        },
+        "text": {
+          "$ref": "#/$defs/text"
+        }
+      }
+    },
+    "client_release": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "request"],
+      "properties": {
+        "type": {
+          "const": "release"
+        },
+        "request": {
+          "$ref": "#/$defs/request"
+        }
+      }
+    },
+    "provider_ready": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "version", "capabilities"],
+      "properties": {
+        "type": {
+          "const": "ready"
+        },
+        "version": {
+          "const": 1
+        },
+        "capabilities": {
+          "$ref": "#/$defs/capabilities"
+        }
+      }
+    },
+    "provider_acquired": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "const": "acquired"
+        },
+        "before_cursor": {
+          "type": ["string", "null"],
+          "pattern": "^.$"
+        }
+      }
+    },
+    "provider_ack": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "request"],
+      "properties": {
+        "type": {
+          "const": "ack"
+        },
+        "request": {
+          "$ref": "#/$defs/request"
+        }
+      }
+    },
+    "provider_focus_lost": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "const": "focus_lost"
+        }
+      }
+    },
+    "provider_target_gone": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "const": "target_gone"
+        }
+      }
+    },
+    "provider_secure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "const": "secure"
+        }
+      }
+    },
+    "provider_error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "code", "message"],
+      "properties": {
+        "type": {
+          "const": "error"
+        },
+        "code": {
+          "enum": [
+            "no_target",
+            "secure_target",
+            "focus_lost",
+            "unavailable",
+            "protocol_error"
+          ]
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 4096
+        }
+      }
+    }
+  }
+}

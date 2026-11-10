@@ -23,7 +23,8 @@ The design initially targets Fcitx5 as a real provider. A Wayland `zwp_input_met
 
 ## Non-normative protocol sketch
 
-This sketch records the current design direction only; it is not a stable wire contract.
+This sketch records the architectural direction only; the normative version 1
+wire contract lives in `docs/input-method-extensions/`.
 
 - Each utterance uses a private Unix-domain socket connection owned by the provider.
 - Messages are newline-delimited JSON with a versioned hello and bounded payload sizes.

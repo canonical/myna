@@ -8,16 +8,18 @@
 //! `run_dictation` path over `FakeBackend` + a mock capture source, so the
 //! capture-at-press / ready-gate reuse is exercised, not re-implemented.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use async_trait::async_trait;
 use myna_audio::{AudioFormat, CaptureSource, ScriptedBackend, Step};
 use myna_core::{AudioSource, CaptureStream, SessionConfig};
 use myna_desktop::controller::{AutoStop, ChannelSink, Session, SessionRun};
 use myna_desktop::indicator::mock::MockIndicator;
 use myna_desktop::indicator::IndicatorState;
 use myna_desktop::inject::mock::{AcquireOutcome, MockInjector};
-use myna_desktop::inject::Support;
+use myna_desktop::inject::{InjectError, Injector, Support, Target, TextInputCapabilities};
 use myna_desktop::{DesktopController, DictationState, Live};
 use myna_orchestrator::{
     run_dictation, Failure, FakeBackend, OrchestratorEvent, ScriptedTrigger, SessionOutcome,
@@ -1422,6 +1424,63 @@ async fn streaming_unstable_is_preedit_only_never_committed() {
         vec!["preedit", "preedit", "commit", "preedit", "commit"]
     );
     assert_eq!(controller.state(), DictationState::Idle);
+}
+
+struct CapabilityOnAcquire {
+    inner: MockInjector,
+    acquired: Arc<AtomicBool>,
+}
+
+#[async_trait]
+impl Injector for CapabilityOnAcquire {
+    async fn acquire(&mut self) -> Result<Box<dyn Target>, InjectError> {
+        let target = self.inner.acquire().await?;
+        self.acquired.store(true, Ordering::SeqCst);
+        Ok(target)
+    }
+
+    fn capabilities(&self) -> TextInputCapabilities {
+        if self.acquired.load(Ordering::SeqCst) {
+            self.inner.capabilities()
+        } else {
+            TextInputCapabilities::COMMIT_ONLY
+        }
+    }
+}
+
+#[tokio::test]
+async fn the_first_utterance_uses_capabilities_negotiated_during_acquire() {
+    let inner = MockInjector::new().with_preedit_support();
+    let inject_log = inner.log();
+    let injector = CapabilityOnAcquire {
+        inner,
+        acquired: Arc::new(AtomicBool::new(false)),
+    };
+    let mut controller = DesktopController::builder()
+        .trigger(ScriptedTrigger::new([
+            TriggerEdge::Press,
+            TriggerEdge::Release,
+        ]))
+        .injector(injector)
+        .indicator(MockIndicator::new())
+        .session(events_session(
+            vec![
+                OrchestratorEvent::Unstable("hel".into()),
+                OrchestratorEvent::Final("hello".into()),
+                OrchestratorEvent::Done("hello".into()),
+            ],
+            SessionOutcome::Completed {
+                transcript: "hello".into(),
+            },
+        ))
+        .preedit(true)
+        .build();
+
+    controller.run().await;
+
+    let log = inject_log.lock().unwrap();
+    assert_eq!(log.preedits, vec!["hel"]);
+    assert_eq!(log.commits, vec!["hello"]);
 }
 
 #[tokio::test]

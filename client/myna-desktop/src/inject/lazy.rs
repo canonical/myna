@@ -117,7 +117,9 @@ impl Injector for LazyInjector {
     }
 
     fn capabilities(&self) -> TextInputCapabilities {
-        self.connect.capabilities()
+        self.inner
+            .as_ref()
+            .map_or_else(|| self.connect.capabilities(), |inner| inner.capabilities())
     }
 
     fn activation(&self) -> Activation {
@@ -198,6 +200,28 @@ mod tests {
         fn capabilities(&self) -> TextInputCapabilities {
             MockInjector::new().capabilities()
         }
+    }
+
+    struct NegotiatedCapabilities;
+
+    #[async_trait]
+    impl Connect for NegotiatedCapabilities {
+        async fn connect(&mut self) -> Result<Box<dyn Injector>, InjectError> {
+            Ok(Box::new(MockInjector::new().with_preedit_support()))
+        }
+
+        fn capabilities(&self) -> TextInputCapabilities {
+            TextInputCapabilities::COMMIT_ONLY
+        }
+    }
+
+    #[tokio::test]
+    async fn connected_capabilities_replace_the_conservative_factory_capabilities() {
+        let mut injector = LazyInjector::new(NegotiatedCapabilities);
+        assert!(!injector.capabilities().preedit);
+        let target = injector.acquire().await.expect("acquire");
+        assert!(injector.capabilities().preedit);
+        target.release().await;
     }
 
     /// The controller takes the handle before the acquire that connects; a

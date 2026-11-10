@@ -607,7 +607,9 @@ impl DesktopController {
         // Reborrow disjoint fields as locals so the select loop can poll the
         // trigger/focus futures and route to the target/indicator without
         // aliasing `self`.
-        let supports_preedit = capabilities.preedit;
+        // A lazy extension backend negotiates its capabilities while acquiring,
+        // so read the connected capabilities before the first transcript event.
+        let supports_preedit = self.injector.capabilities().preedit;
         let indicator = &mut self.indicator;
         let trigger = &mut self.trigger;
         let state = &mut self.state;
