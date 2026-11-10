@@ -10,7 +10,7 @@ use crate::domain::{
 use crate::ports::{
     ClientSettings, ClientSettingsCallback, ClientSettingsError, ClientSettingsSubscription,
 };
-use myna_core::settings::SCHEMA_ID;
+use myna_core::settings::{KEY_INPUT_METHOD_EXTENSION, SCHEMA_ID};
 
 #[derive(Debug)]
 pub struct GioClientSettings {
@@ -94,6 +94,9 @@ impl ClientSettings for GioClientSettings {
     fn list(&self) -> Result<Vec<ClientSettingMetadata>, ClientSettingsError> {
         let mut keys = self.schema.list_keys();
         keys.retain(|key| holds(&self.schema.key(key).value_type()));
+        // The active provider is consumed by the daemon now. Its user-facing
+        // management arrives with the extension settings surface.
+        keys.retain(|key| key != KEY_INPUT_METHOD_EXTENSION);
         keys.sort();
         keys.iter().map(|key| self.metadata(key)).collect()
     }

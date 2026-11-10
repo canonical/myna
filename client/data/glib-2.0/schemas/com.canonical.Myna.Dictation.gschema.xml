@@ -75,6 +75,15 @@
       </description>
     </key>
 
+    <key name="input-method-extension" type="s">
+      <default>''</default>
+      <summary>Active input-method extension</summary>
+      <description>
+        The explicitly selected provider id for an installed IM extension.
+        Empty keeps Myna on its built-in IBus backend.
+      </description>
+    </key>
+
     <key name="hud-style" enum="com.canonical.Myna.Dictation.HudStyle">
       <default>'bar'</default>
       <summary>Indicator style</summary>

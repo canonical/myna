@@ -50,7 +50,8 @@ use myna_desktop::indicator::dbus::DbusIndicator;
 use myna_desktop::indicator::dynamic::DynamicIndicator;
 use myna_desktop::indicator::notify::NotifyIndicator;
 use myna_desktop::indicator::readiness::{Readiness, ReadinessTee};
-use myna_desktop::inject::lazy::{IbusConnect, LazyInjector};
+use myna_desktop::inject::extension::ExtensionConnect;
+use myna_desktop::inject::lazy::{Connect, IbusConnect, LazyInjector};
 use myna_desktop::inject::Injector as _;
 use myna_desktop::platform::Platform;
 use myna_desktop::shortcut::control::{default_socket_path, listen, send_toggle, ControlTrigger};
@@ -129,6 +130,8 @@ enum Activation {
 struct Resolved {
     activation: Activation,
     language: Option<String>,
+    /// The explicitly selected IM extension provider id; empty uses IBus.
+    input_method_extension: Option<String>,
     /// The user's local dictionary (GitHub issue #1), raw as read from
     /// settings - no argv override exists for this one. Normalized only at
     /// the point a `SessionConfig` is built.
@@ -152,6 +155,7 @@ impl Resolved {
         Self {
             activation,
             language: args.language.clone().or_else(|| settings.language.clone()),
+            input_method_extension: settings.input_method_extension.clone(),
             vocabulary: settings.vocabulary.clone(),
             preedit: resolve_preedit(args.preedit, mode.effective().mode),
             mode,
@@ -705,7 +709,9 @@ async fn run_controller(
     let _settings_watch = live.follow(&args, pump_bus.clone());
     let restart = Arc::new(tokio::sync::Notify::new());
 
-    let injector = LazyInjector::new(IbusConnect);
+    let injector = LazyInjector::new_boxed(text_input_connect(
+        resolved.input_method_extension.as_deref(),
+    ));
     // Every poke reaches the text input backend at once, a held key's repeats
     // too: they keep its grab's blip open while the controller is busy.
     trigger.hear(injector.activation());
@@ -766,6 +772,15 @@ async fn run_controller(
             );
             ExitCode::FAILURE
         }
+    }
+}
+
+/// Select exactly one text-input backend. A configured IM extension is never
+/// replaced by IBus when its provider is missing or fails.
+fn text_input_connect(provider: Option<&str>) -> Box<dyn Connect> {
+    match provider {
+        Some(provider) => Box::new(ExtensionConnect::for_provider(provider)),
+        None => Box::new(IbusConnect),
     }
 }
 
@@ -1985,5 +2000,23 @@ mod tests {
     fn control_toggle_hint_asks_whether_the_daemon_is_running() {
         let hint = toggle_hint_for(Activation::Control).join(" ");
         assert!(hint.contains("--socket"), "{hint}");
+    }
+
+    #[test]
+    fn an_unset_extension_keeps_the_ibus_capabilities() {
+        assert_eq!(
+            text_input_connect(None).capabilities(),
+            IbusConnect.capabilities()
+        );
+    }
+
+    #[tokio::test]
+    async fn a_missing_selected_extension_does_not_fall_back_to_ibus() {
+        let provider = format!("missing-provider-{}", std::process::id());
+        let mut injector = LazyInjector::new_boxed(text_input_connect(Some(&provider)));
+        assert!(matches!(
+            injector.acquire().await,
+            Err(myna_desktop::inject::InjectError::Unavailable(_))
+        ));
     }
 }

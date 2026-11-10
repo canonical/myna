@@ -27,6 +27,8 @@ async-trait = { workspace = true }
 thiserror = { workspace = true }
 futures-util = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
+libc = "0.2"
 # D-Bus: the IBus engine object and the served dictation interface.
 zbus = "5"
 # Publisher-owned D-Bus status labels use the shared `myna` gettext domain.
@@ -45,4 +47,3 @@ myna-platform = { path = "../myna-platform", features = ["conformance"] }
 tokio = { workspace = true, features = ["test-util"] }
 # A fake backend that answers `capabilities.query`, for the per-press probe.
 tokio-tungstenite = { workspace = true }
-serde_json = { workspace = true }

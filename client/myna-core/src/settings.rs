@@ -36,6 +36,9 @@ pub const KEY_STREAMING_MODE: &str = "streaming-mode";
 /// The spoken language passed to the backend; empty means "backend decides".
 pub const KEY_LANGUAGE: &str = "language";
 
+/// The explicitly selected IM extension provider id; empty uses IBus.
+pub const KEY_INPUT_METHOD_EXTENSION: &str = "input-method-extension";
+
 /// The HUD indicator style: `bar` (accent level bar), `ribbon` (GPU wave) or
 /// `vumeter` (segmented bar).
 pub const KEY_HUD_STYLE: &str = "hud-style";
@@ -133,6 +136,8 @@ pub struct Settings {
     /// `None` where the key is empty - "unset" and "" are the same intent, and
     /// GSettings has no null.
     pub language: Option<String>,
+    /// The explicitly selected IM extension provider id, or `None` for IBus.
+    pub input_method_extension: Option<String>,
     /// The HUD indicator style nick (`bar` | `ribbon` | `vumeter`), or `None` when
     /// unset (the schema default applies).
     pub hud_style: Option<String>,
@@ -152,6 +157,7 @@ impl Default for Settings {
         Self {
             streaming_mode: None,
             language: None,
+            input_method_extension: None,
             hud_style: None,
             silence_timeout: DEFAULT_SILENCE_TIMEOUT_SECS,
             sounds: DEFAULT_SOUNDS,
@@ -180,6 +186,7 @@ impl Settings {
         Self {
             streaming_mode: store.streaming_mode(),
             language: store.text(KEY_LANGUAGE),
+            input_method_extension: store.text(KEY_INPUT_METHOD_EXTENSION),
             hud_style: store.text(KEY_HUD_STYLE),
             silence_timeout: store
                 .seconds(KEY_SILENCE_TIMEOUT)
@@ -514,6 +521,26 @@ mod tests {
     fn an_unset_key_is_no_choice() {
         assert_eq!(test_store().streaming_mode(), None);
         assert_eq!(Settings::default().streaming_mode, None);
+    }
+
+    /// The IM extension selection is empty until a user explicitly enables a
+    /// provider, and an empty value means the built-in IBus path.
+    #[test]
+    fn input_method_extension_is_unset_by_default_and_round_trips() {
+        let store = test_store();
+        assert_eq!(Settings::from_store(&store).input_method_extension, None);
+        assert_eq!(Settings::default().input_method_extension, None);
+
+        store
+            .settings
+            .set_string(KEY_INPUT_METHOD_EXTENSION, "fcitx5")
+            .expect("schema accepts a provider id");
+        assert_eq!(
+            Settings::from_store(&store)
+                .input_method_extension
+                .as_deref(),
+            Some("fcitx5")
+        );
     }
 
     /// Choosing the value that happens to be the schema default is still a

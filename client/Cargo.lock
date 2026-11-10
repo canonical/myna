@@ -1297,6 +1297,7 @@ dependencies = [
  "async-trait",
  "futures-util",
  "gettext-rs",
+ "libc",
  "myna-audio",
  "myna-core",
  "myna-orchestrator",

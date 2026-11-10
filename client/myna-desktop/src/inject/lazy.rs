@@ -44,8 +44,14 @@ impl LazyInjector {
     /// Wrap a connection factory. Nothing is connected until the first
     /// [`Injector::acquire`].
     pub fn new(connect: impl Connect + 'static) -> Self {
+        Self::new_boxed(Box::new(connect))
+    }
+
+    /// Wrap a runtime-selected connection factory, such as IBus or an
+    /// explicitly configured IM extension.
+    pub fn new_boxed(connect: Box<dyn Connect>) -> Self {
         Self {
-            connect: Box::new(connect),
+            connect,
             inner: None,
             activation: Arc::new(Mutex::new(Activation::none())),
         }
