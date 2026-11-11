@@ -1,0 +1,42 @@
+# Installs LXD and Workshop for canonical/launch-workshop, so a snap store
+# outage does not stop CI. api.snapcraft.io goes down for hours, and a launch
+# on a fresh runner installs five snaps from it.
+#
+# A run that reaches the store installs what it just downloaded and caches the
+# set when its revisions are new; one that cannot installs the newest cached
+# set. Either way launch-workshop then finds LXD on 6/stable and Workshop
+# installed, and never asks the store.
+name: snaps
+description: Install LXD and Workshop, from cached snaps when the store is down.
+runs:
+  using: composite
+  steps:
+    - uses: actions/cache/restore@v6
+      with:
+        path: ${{ runner.temp }}/snaps
+        key: snaps-${{ runner.arch }}-
+        restore-keys: snaps-${{ runner.arch }}-
+
+    - id: fetch
+      shell: bash
+      env:
+        SNAPS: ${{ runner.temp }}/snaps
+      run: |
+        if changed=$("$GITHUB_ACTION_PATH/snaps.sh" fetch "$SNAPS"); then
+          echo "save=$([ "$changed" = changed ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+        elif [ -f "$SNAPS/revisions" ]; then
+          echo "::warning::Snap store unreachable; installing cached snaps"
+          cat "$SNAPS/revisions"
+        else
+          echo "::error::Snap store unreachable and no cached snaps"
+          exit 1
+        fi
+        "$GITHUB_ACTION_PATH/snaps.sh" install "$SNAPS"
+
+    # The key ends in run id and attempt so dev/prune-caches.sh keeps only
+    # the newest set.
+    - if: steps.fetch.outputs.save == 'true'
+      uses: actions/cache/save@v6
+      with:
+        path: ${{ runner.temp }}/snaps
+        key: snaps-${{ runner.arch }}-${{ github.run_id }}-${{ github.run_attempt }}

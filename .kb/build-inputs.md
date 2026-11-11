@@ -29,3 +29,7 @@ The base image. Workshop takes `ubuntu@26.04` and LXD refreshes the image under 
 ## The CI apt cache
 
 A CI runner shares no layers, so every workshop launch fetches the whole apt set from snapshot.ubuntu.com, which is slow and uneven (4 to 28 minutes for the same launch) and answers the odd 500. `.github/actions/apt-cache` runs apt-cacher-ng on the runner with its cache in the Actions cache, and writes `.workshop/pins/apt-proxy`; finding that file, the pins hook switches the sources to plain http, which the proxy can cache, and routes apt through it while it answers. Without the file the sources stay https and nothing changes locally. The proxy needs the `Remap-snapshot` line in its config: an apt-cacher-ng without it fetches the http URL, follows the redirect itself and serves by-hash indexes that fail their hash check.
+
+## The CI snap cache
+
+launch-workshop installs LXD and Workshop from api.snapcraft.io, which goes down for hours. `.github/actions/snaps` installs them first: from a fresh download when the store answers, else from the newest set in the Actions cache, saved whenever a download brings new revisions. launch-workshop then skips its own installs, so the action must also do what those skip: track `6/stable` on LXD (a file install tracks no channel, and launch-workshop refreshes any other) and open the runner firewall to `workshopbr0`. Nothing else in a launch asks the store: the system SDK ships in Workshop, and the base image comes from cloud-images.ubuntu.com.

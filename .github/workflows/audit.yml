@@ -14,6 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+      - uses: ./.github/actions/snaps
       - uses: ./.github/actions/apt-cache
         with:
           workshop: myna
