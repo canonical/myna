@@ -8,7 +8,7 @@ msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-10-11 11:54+0100\n"
-"PO-Revision-Date: 2026-11-09 00:51+0000\n"
+"PO-Revision-Date: 2026-11-12 06:51+0000\n"
 "Last-Translator: Priit Jõerüüt <jrthwlate@users.noreply.hosted.weblate.org>\n"
 "Language-Team: Estonian <https://hosted.weblate.org/projects/ubuntu-desktop-"
 "translations/myna-config/et/>\n"
@@ -46,6 +46,8 @@ msgstr "Diagnostika"
 #: data/diagnostics-page.blp:40
 msgid "No audio, transcript, or filesystem path is ever included."
 msgstr ""
+"Iialgi ei kaasata ühtegi helifaili, sisu üleskirjutust ega failisüsteemi "
+"asukohta."
 
 #: data/diagnostics-page.blp:49 src/backend_ui.rs:3114 src/backend_ui.rs:3394
 msgid "Refresh"
@@ -204,7 +206,7 @@ msgstr "Järgmine"
 
 #: data/operation-error-dialog.blp:5
 msgid "Operation failed"
-msgstr ""
+msgstr "Toiming ei õnnestunud"
 
 #: data/operation-error-dialog.blp:6
 msgid "Full details are shown below. You can copy them to share with support."
@@ -326,7 +328,7 @@ msgstr ""
 #. TRANSLATORS: {step} is what is installing, such as "Installing speech-to-text model", and {percent} how much of its download has arrived.
 #: src/app.rs:4189 src/app.rs:4252 src/app.rs:4352 src/onboarding_ui.rs:999
 msgid "{step} ({percent}%)"
-msgstr ""
+msgstr "{step} ({percent}%)"
 
 #: src/app.rs:4203 src/onboarding_ui.rs:992
 msgid "Installing speech-to-text model"
@@ -363,7 +365,7 @@ msgstr ""
 
 #: src/app.rs:5244
 msgid "No Myna Settings"
-msgstr ""
+msgstr "Myna seadistusi pole"
 
 #: src/app.rs:5245
 msgid "The installed schema does not declare any settings."
@@ -395,7 +397,7 @@ msgstr "Ühtegi mudelit pole ühendatud."
 
 #: src/active_backend.rs:373
 msgid "The model is not available to switch to."
-msgstr ""
+msgstr "See mudel pole vahetamiseks saadaval."
 
 #: src/active_backend.rs:387
 msgid "The model changed while it was being switched on. Try again."
@@ -549,7 +551,7 @@ msgstr ""
 
 #: src/backend_ui.rs:2367 src/backend_ui.rs:2386 src/backend_ui.rs:3165
 msgid "The change could not be made."
-msgstr ""
+msgstr "Selle muudatuse tegemine ei õnnestunud."
 
 #: src/backend_ui.rs:2377
 msgid "The change was interrupted after it started."
@@ -581,11 +583,11 @@ msgstr ""
 
 #: src/backend_ui.rs:2500
 msgid "Completed operations:\n"
-msgstr ""
+msgstr "Lõpetatud tegevused:\n"
 
 #: src/backend_ui.rs:2526
 msgid "Failure:\n"
-msgstr ""
+msgstr "Ebaõnnestumine:\n"
 
 #: src/backend_ui.rs:2530
 msgid "Reconciliation read-back:\n"
