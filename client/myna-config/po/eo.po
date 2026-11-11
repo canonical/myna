@@ -8,7 +8,7 @@ msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-10-11 11:54+0100\n"
-"PO-Revision-Date: 2026-11-10 15:09+0000\n"
+"PO-Revision-Date: 2026-11-12 06:51+0000\n"
 "Last-Translator: phlostically <phlostically@users.noreply.hosted.weblate.org>"
 "\n"
 "Language-Team: Esperanto <https://hosted.weblate.org/projects/ubuntu-desktop-"
@@ -188,8 +188,8 @@ msgid ""
 "Log out and back in to turn on the dictation indicator (GNOME Shell "
 "extension)."
 msgstr ""
-"Adiaŭu kaj resalutu por aktivigi la dikto-indikilon, kiu estas etendaĵo de "
-"GNOME Shell."
+"Elsalutu kaj reensalutu por aktivigi la dikto-indikilon, kiu estas etendaĵo "
+"de GNOME Shell."
 
 #: data/onboarding-shortcut.blp:78 src/shortcut_ui.rs:322
 msgid "Press the new shortcut…"
@@ -510,7 +510,7 @@ msgstr "Diagnozoj kopiiĝis. Algluu ilin en cimraporton."
 
 #: src/backend_ui.rs:2004
 msgid "Could not open the web browser"
-msgstr "Ne povis lanĉi TTT-legilon"
+msgstr "Ne povis lanĉi retumilon"
 
 #: src/backend_ui.rs:2084
 msgid "Copy privacy-safe diagnostics"
@@ -582,7 +582,7 @@ msgstr "Agordo:"
 
 #: src/backend_ui.rs:2494
 msgid "Some operations completed before the apply failed.\n"
-msgstr ""
+msgstr "Kelkaj operacioj finiĝis antaŭ ol la efektiviĝo malsukcesis.\n"
 
 #: src/backend_ui.rs:2498
 msgid "No privileged operations completed.\n"
@@ -598,7 +598,7 @@ msgstr "Malsukceso:\n"
 
 #: src/backend_ui.rs:2530
 msgid "Reconciliation read-back:\n"
-msgstr ""
+msgstr "Rekontrola relego:\n"
 
 #: src/backend_ui.rs:2542
 msgid "Model:"
@@ -692,7 +692,7 @@ msgstr "Kelkaj datenoj ne estas haveblaj"
 
 #: src/backend_ui.rs:2745
 msgid "Raw failure details are recorded on the Diagnostics page."
-msgstr ""
+msgstr "Krudaj detaloj pri malsukceso registriĝas sur la paĝo Diagnozoj."
 
 #: src/backend_ui.rs:2788 src/backend_ui.rs:3112 src/backend_ui.rs:3390
 msgid "Refreshing…"
@@ -781,7 +781,7 @@ msgstr "Haveblaj moduloj"
 
 #: src/backend_ui.rs:3099
 msgid "Persisted values could not be read."
-msgstr ""
+msgstr "Malsukcesis legi persistigitajn valorojn."
 
 #: src/backend_ui.rs:3110 src/backend_ui.rs:3398
 msgid "Applying changes…"
@@ -854,11 +854,11 @@ msgstr "Plej bona por la ĉina, la japana, kaj la korea"
 
 #: src/backend_apply.rs:81
 msgid "selector value must be text"
-msgstr ""
+msgstr "valoro de elektilo devas esti teksto"
 
 #: src/backend_apply.rs:95
 msgid "the model's settings command could not be found"
-msgstr ""
+msgstr "ne troviĝis la agorda komando de la modelo"
 
 #: src/backend_apply.rs:380
 msgid "the model's restart command could not be built"
@@ -913,8 +913,8 @@ msgid ""
 "The input method IBus is not installed. Install the “ibus” package, then log "
 "out and back in."
 msgstr ""
-"La enigmetodo IBus ne estas instalita. Instalu la pakon «ibus», adiaŭu, kaj "
-"resalutu."
+"La enigmetodo IBus ne estas instalita. Instalu la pakon «ibus», elsalutu, "
+"kaj reensalutu."
 
 #: src/onboarding_ui.rs:878
 msgid "Setup status unavailable. The log has the details."
@@ -934,7 +934,7 @@ msgstr "Starigo de la enigmetodo malsukcesis"
 
 #: src/onboarding_ui.rs:1062
 msgid "Log out and back in to finish setting up the input method."
-msgstr "Adiaŭu kaj resalutu por fini starigi la enigmetodon."
+msgstr "Elsalutu kaj reensalutu por fini starigi la enigmetodon."
 
 #. TRANSLATORS: a download size in megabytes, such as "776 MB"; the space is a no-break space.
 #: src/onboarding_ui.rs:1286
@@ -1087,6 +1087,8 @@ msgstr "En la sistemo mankas memoro"
 msgid ""
 "Dictation will stutter. Close applications until the machine stops swapping."
 msgstr ""
+"Diktado estos balbutema. Fermu tiom da aplikaĵoj, kiom necesas por ĉesigi la "
+"uzadon de permutospaco."
 
 #: src/diagnostics.rs:335
 msgid "Disk activity is stalling the system"
@@ -1094,7 +1096,7 @@ msgstr "Diska aktiveco malrapidigas la sistemon"
 
 #: src/diagnostics.rs:339
 msgid "Dictation will stutter. Wait for the transfer or indexing to finish."
-msgstr ""
+msgstr "Diktado estos balbutema. Atendu la finon de la transsendo aŭ indeksado."
 
 #: src/diagnostics.rs:345
 msgid "Other programs are saturating the CPU"
@@ -1274,7 +1276,7 @@ msgid ""
 "log out and back in."
 msgstr ""
 "IBus ne estas instalita; tial Myna ne povas tajpi. Instalu la pakon «ibus», "
-"adiaŭu, kaj resalutu."
+"elsalutu, kaj reensalutu."
 
 #: src/diagnostics.rs:673 src/diagnostics.rs:687
 msgid "(none)"
@@ -1314,7 +1316,7 @@ msgstr "enigmetodo"
 
 #: src/diagnostics.rs:797
 msgid "Indicator host"
-msgstr ""
+msgstr "Gastiganto de indikilo"
 
 #: src/diagnostics.rs:803
 msgid "active"
@@ -1322,7 +1324,7 @@ msgstr "aktiva"
 
 #: src/diagnostics.rs:805
 msgid "set up, starts at the next login"
-msgstr ""
+msgstr "agordita, lanĉiĝos dum la sekva ensaluto"
 
 #: src/diagnostics.rs:808
 msgid "not set up"
@@ -1358,11 +1360,11 @@ msgstr "gnome-shell ne respondis"
 
 #: src/diagnostics.rs:831
 msgid "installed since login, starts at the next one"
-msgstr "instalita post saluto, efektivigota je la sekva saluto"
+msgstr "instalita post ensaluto, efektivigota je la sekva ensaluto"
 
 #: src/diagnostics.rs:834
 msgid "installed since login, not enabled"
-msgstr "instalita post saluto, ne efektivigita"
+msgstr "instalita post ensaluto, ne efektivigita"
 
 #: src/diagnostics.rs:837
 msgid "myna-config package"
@@ -1402,7 +1404,7 @@ msgstr "Birdo"
 
 #: src/myna_settings.rs:111
 msgid "Chime"
-msgstr "Sonoreto"
+msgstr "Sonorileto"
 
 #: src/myna_settings.rs:112
 msgid "Voice"
@@ -1516,7 +1518,7 @@ msgstr "Fluaj eligoj"
 
 #: src/presentation.rs:172
 msgid "Emit partial transcription results while speech is being processed."
-msgstr ""
+msgstr "Sendi partajn transskribajn rezultojn dum la parolaĵo estas traktata."
 
 #: src/presentation.rs:179
 msgid ""
@@ -1530,7 +1532,7 @@ msgstr "Detala protokolado"
 
 #: src/presentation.rs:186
 msgid "Write additional diagnostics to the system log."
-msgstr ""
+msgstr "Skribi pliajn diagnozojn sur la sisteman protokolon."
 
 #: src/presentation.rs:192
 msgid "Socket path"
@@ -1625,7 +1627,7 @@ msgstr "Sonoj je komenco, ĉeso, eraro"
 msgid ""
 "Play a short sound when dictation starts listening, when it stops, and when "
 "it fails."
-msgstr ""
+msgstr "Ludi mallongan sonon, kiam diktado komenciĝas, finiĝas, aŭ malsukcesas."
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:50
 msgid "Sound style"
@@ -1637,6 +1639,10 @@ msgid ""
 "hums people make while listening, Marimba a rising fifth, Water falling "
 "drops, Radio a walkie-talkie and Strings a plucked koto."
 msgstr ""
+"La ludota sono: Sonorileto estas frapita tabuleto, Birdo estas fajfaj pepoj, "
+"Voĉo estas homa zumo dum aŭskultado, Marimbo estas altiĝanta kvinto, Akvo "
+"estas falantaj gutoj, Radioaparato estas portebla radioaparato, Kordoj estas "
+"plukita kotoo."
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:60
 msgid "When to transcribe"
