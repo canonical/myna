@@ -8,8 +8,8 @@ msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-10-11 11:54+0100\n"
-"PO-Revision-Date: 2026-10-19 12:19+0000\n"
-"Last-Translator: \"B. A.\" <benjensky@users.noreply.hosted.weblate.org>\n"
+"PO-Revision-Date: 2026-11-12 06:51+0000\n"
+"Last-Translator: \"David D.\" <dadu042@users.noreply.hosted.weblate.org>\n"
 "Language-Team: French <https://hosted.weblate.org/projects/ubuntu-desktop-"
 "translations/myna-config/fr/>\n"
 "Language: fr\n"
@@ -17,7 +17,7 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=n > 1;\n"
-"X-Generator: Weblate 2026.11.dev0\n"
+"X-Generator: Weblate 2026.11.2.dev0\n"
 
 #: data/diagnostics-page.blp:5 data/diagnostics-page.blp:8 src/app.rs:1485
 msgid "About and Diagnostics"
@@ -926,7 +926,6 @@ msgid "The model's restart could not be confirmed."
 msgstr "Le redémarrage du modèle n'a pas pu être confirmé."
 
 #: src/backend_apply.rs:529
-#, fuzzy
 msgid "The model did not restart."
 msgstr "Le modèle n'a pas redémarré."
 
@@ -943,19 +942,16 @@ msgid "inactive"
 msgstr "inactif/inactive"
 
 #: src/backend_apply.rs:553
-#, fuzzy
 msgctxt "service state"
 msgid "failed"
-msgstr "échec"
+msgstr "échoué"
 
 #: src/backend_apply.rs:554
-#, fuzzy
 msgctxt "service state"
 msgid "unknown"
 msgstr "inconnu(e)"
 
 #: src/onboarding_ui.rs:678
-#, fuzzy
 msgid "The system is busy installing software. Try again in a moment."
 msgstr ""
 "Le système est occupé à installer le logiciel. Essayez à nouveau plus tard."
@@ -965,9 +961,8 @@ msgid "Continue to the next onboarding step."
 msgstr ""
 
 #: src/onboarding_ui.rs:783
-#, fuzzy
 msgid "Close Myna Settings."
-msgstr "Fermer les paramètres de Myna."
+msgstr "Fermer paramètres Myna."
 
 #: src/onboarding_ui.rs:873
 #, fuzzy
@@ -984,22 +979,18 @@ msgid "Setup status unavailable. The log has the details."
 msgstr "État de configuration indisponible. Le journal contient les détails."
 
 #: src/onboarding_ui.rs:993
-#, fuzzy
 msgid "Setting up the input method"
 msgstr "Configuration de la méthode d'entrée"
 
 #: src/onboarding_ui.rs:1012
-#, fuzzy
 msgid "Installing the Dictation app failed"
-msgstr "Échec de l'installation de l'application de Dictée"
+msgstr "Échec de l'installation de l'app de Dictée"
 
 #: src/onboarding_ui.rs:1014
-#, fuzzy
 msgid "Setting up the input method failed"
 msgstr "Échec de la configuration de la méthode d'entrée"
 
 #: src/onboarding_ui.rs:1062
-#, fuzzy
 msgid "Log out and back in to finish setting up the input method."
 msgstr ""
 "Déconnectez-vous et reconnectez-vous pour terminer le réglage de la méthode "
@@ -1021,7 +1012,6 @@ msgid "Waiting for other software changes to finish"
 msgstr "D'autres changements logiciels sont nécessaires avant de terminer"
 
 #: src/onboarding_ui.rs:1301
-#, fuzzy
 msgid "Setting up speech-to-text model"
 msgstr "Mise en place du modèle voix-vers-texte"
 
@@ -1031,9 +1021,8 @@ msgid "Starting dictation"
 msgstr "Début de dictée"
 
 #: src/shortcut_ui.rs:284
-#, fuzzy
 msgid "Change shortcut"
-msgstr "Modifier le raccourci"
+msgstr "Modifier raccourci"
 
 #: src/shortcut_ui.rs:286
 msgid "Change"
@@ -1071,12 +1060,10 @@ msgstr ""
 "affectation."
 
 #: src/shortcut_ui.rs:500
-#, fuzzy
 msgid "Replace Shortcut?"
-msgstr "Remplacer le raccourci ?"
+msgstr "Remplacer raccourci ?"
 
 #: src/shortcut_ui.rs:502
-#, fuzzy
 msgid "Replace"
 msgstr "Remplacer"
 
@@ -1104,22 +1091,18 @@ msgid ""
 msgstr ""
 
 #: src/shortcut_ui.rs:690
-#, fuzzy
 msgid "Not set up"
-msgstr "Pas encore défini"
+msgstr "Pas défini"
 
 #: src/shortcut_ui.rs:691 src/sound_preview.rs:66
-#, fuzzy
 msgid "Myna is not running"
 msgstr "Myne ne s'exécute pas"
 
 #: src/sound_preview.rs:67
-#, fuzzy
 msgid "Update Myna to preview sounds"
-msgstr "Mettre Myna à jour pour pré-entendre les sons"
+msgstr "Mettre à jour Myna pour pré-entendre les sons"
 
 #: src/sound_preview.rs:68
-#, fuzzy
 msgid "Finish dictating to preview sounds"
 msgstr "Terminer la dictée pour pré-entendre les sons"
 
@@ -1134,22 +1117,18 @@ msgid "The CPU clock is capped by system policy"
 msgstr "L'horloge CPU est plafonnée par la stratégie du système"
 
 #: src/diagnostics.rs:282
-#, fuzzy
 msgid "limited to"
 msgstr "limité(e) à"
 
 #: src/diagnostics.rs:284 src/diagnostics.rs:362 src/diagnostics.rs:714
 msgid "of"
-msgstr ""
+msgstr "de"
 
 #: src/diagnostics.rs:288
-#, fuzzy
 msgid "Dictation will be slow. A power tool has capped the CPU clock."
-msgstr ""
-"La dictée sera lente. Un processus d'alimentation a plafonné l'horloge CPU."
+msgstr "La dictée sera lente. Un outil d'alimentation a plafonné l'horloge CPU."
 
 #: src/diagnostics.rs:298
-#, fuzzy
 msgid "The power profile is set to low-power"
 msgstr "Le profil d'énergie est fixé à faible alimentation"
 
@@ -1161,17 +1140,20 @@ msgstr ""
 
 #: src/diagnostics.rs:312
 msgid "Firmware is holding the CPU at its lowest clock"
-msgstr ""
+msgstr "Le micrologiciel maintient le processeur à son horloge la plus basse"
 
 #: src/diagnostics.rs:316
 msgid ""
 "Dictation will be slow. Unplug the charger, wait a few seconds, and plug it "
 "back in. If that does not help, power off fully and start again."
 msgstr ""
+"La dictée sera lente. Débranchez le chargeur, attendez quelques secondes, "
+"puis rebranchez-le. Si cela ne fonctionne pas, éteignez complètement et "
+"redémarrez."
 
 #: src/diagnostics.rs:325
 msgid "The system is short of memory"
-msgstr ""
+msgstr "Le système manque de mémoire"
 
 #: src/diagnostics.rs:329
 msgid ""
@@ -1180,23 +1162,26 @@ msgstr ""
 
 #: src/diagnostics.rs:335
 msgid "Disk activity is stalling the system"
-msgstr ""
+msgstr "L’activité du disque bloque le système"
 
 #: src/diagnostics.rs:339
 msgid "Dictation will stutter. Wait for the transfer or indexing to finish."
 msgstr ""
+"La dictée va bégayer. Attendez que le transfert ou l’indexation se termine."
 
 #: src/diagnostics.rs:345
 msgid "Other programs are saturating the CPU"
-msgstr ""
+msgstr "D’autres programmes saturent le processeur"
 
 #: src/diagnostics.rs:349
 msgid "Dictation will be slow. Pause the build or workload before dictating."
 msgstr ""
+"La dictée sera lente. Mettez en pause le build ou la charge de travail avant "
+"de dicter."
 
 #: src/diagnostics.rs:360 src/diagnostics.rs:712
 msgid "reached"
-msgstr ""
+msgstr "atteint(e)"
 
 #: src/diagnostics.rs:372
 msgid "of the last 10 s stalled"
@@ -1204,27 +1189,27 @@ msgstr ""
 
 #: src/diagnostics.rs:421
 msgid "No model connected"
-msgstr ""
+msgstr "Aucun modèle connecté"
 
 #: src/diagnostics.rs:423
 msgid "Ready"
-msgstr ""
+msgstr "Prêt"
 
 #: src/diagnostics.rs:424
 msgid "Installation status unavailable"
-msgstr ""
+msgstr "Statut d’installation indisponible"
 
 #: src/diagnostics.rs:431
 msgid "Connected"
-msgstr ""
+msgstr "Connecté"
 
 #: src/diagnostics.rs:432
 msgid "Multiple connections"
-msgstr ""
+msgstr "Connexions multiples"
 
 #: src/diagnostics.rs:433
 msgid "Not connected"
-msgstr ""
+msgstr "Non connecté(e)"
 
 #: src/diagnostics.rs:447
 msgid "Onboarding"
@@ -1301,7 +1286,7 @@ msgstr ""
 
 #: src/diagnostics.rs:547
 msgid "(not measured yet)"
-msgstr ""
+msgstr "(pas encore mesuré)"
 
 #: src/diagnostics.rs:552
 msgid "Daemon"
@@ -1309,27 +1294,27 @@ msgstr ""
 
 #: src/diagnostics.rs:560 src/diagnostics.rs:581 src/diagnostics.rs:590
 msgid "Version"
-msgstr ""
+msgstr "Version"
 
 #: src/diagnostics.rs:570
 msgid "Audio"
-msgstr ""
+msgstr "Audio"
 
 #: src/diagnostics.rs:576
 msgid "Last error"
-msgstr ""
+msgstr "Dernière erreur"
 
 #: src/diagnostics.rs:584
 msgid "Process"
-msgstr ""
+msgstr "Processus"
 
 #: src/diagnostics.rs:585 src/diagnostics.rs:807
 msgid "not running"
-msgstr ""
+msgstr "ne tourne pas"
 
 #: src/diagnostics.rs:591 src/diagnostics.rs:819 src/diagnostics.rs:828
 msgid "not installed"
-msgstr ""
+msgstr "pas installé(e)"
 
 #: src/diagnostics.rs:597
 msgid "Shell extension"
@@ -1337,23 +1322,23 @@ msgstr ""
 
 #: src/diagnostics.rs:610
 msgid "Models"
-msgstr ""
+msgstr "Modèles"
 
 #: src/diagnostics.rs:614
 msgid "(none discovered)"
-msgstr ""
+msgstr "(aucun découvert)"
 
 #: src/diagnostics.rs:629 src/presentation.rs:164
 msgid "Engine"
-msgstr ""
+msgstr "Moteur"
 
 #: src/diagnostics.rs:633
 msgid "none selected"
-msgstr ""
+msgstr "aucun sélectionné"
 
 #: src/diagnostics.rs:655
 msgid "Problems"
-msgstr ""
+msgstr "Problèmes"
 
 #: src/diagnostics.rs:661
 msgid ""
@@ -1363,11 +1348,11 @@ msgstr ""
 
 #: src/diagnostics.rs:673 src/diagnostics.rs:687
 msgid "(none)"
-msgstr ""
+msgstr "(aucun)"
 
 #: src/diagnostics.rs:683
 msgid "Warnings"
-msgstr ""
+msgstr "Avertissements"
 
 #: src/diagnostics.rs:708
 msgid "not probed"
@@ -1387,7 +1372,7 @@ msgstr ""
 
 #: src/diagnostics.rs:736 src/diagnostics.rs:741
 msgid "battery"
-msgstr ""
+msgstr "batterie"
 
 #: src/diagnostics.rs:790
 msgid "chunks dropped this session"
@@ -1419,27 +1404,27 @@ msgstr ""
 
 #: src/diagnostics.rs:811
 msgid "locked by the administrator"
-msgstr ""
+msgstr "verrouillé par l’administrateur"
 
 #: src/diagnostics.rs:813
 msgid "hidden by another copy"
-msgstr ""
+msgstr "caché par une autre copie"
 
 #: src/diagnostics.rs:815
 msgid "another input method is in use"
-msgstr ""
+msgstr "un autre procédé d’entrée est utilisé"
 
 #: src/diagnostics.rs:816
 msgid "not supported on this desktop"
-msgstr ""
+msgstr "pas pris en charge sur ce bureau"
 
 #: src/diagnostics.rs:818
 msgid "failed"
-msgstr ""
+msgstr "échoué(e)"
 
 #: src/diagnostics.rs:827
 msgid "gnome-shell did not answer"
-msgstr ""
+msgstr "gnome-shell n’a pas répondu"
 
 #: src/diagnostics.rs:831
 msgid "installed since login, starts at the next one"
@@ -1471,7 +1456,7 @@ msgstr ""
 
 #: src/myna_settings.rs:107
 msgid "Ribbon"
-msgstr ""
+msgstr "Ruban"
 
 #: src/myna_settings.rs:108
 msgid "VU meter"
@@ -1483,15 +1468,15 @@ msgstr ""
 
 #: src/myna_settings.rs:110
 msgid "Bird"
-msgstr ""
+msgstr "Oiseau"
 
 #: src/myna_settings.rs:111
 msgid "Chime"
-msgstr ""
+msgstr "Carillon"
 
 #: src/myna_settings.rs:112
 msgid "Voice"
-msgstr ""
+msgstr "Voix"
 
 #: src/myna_settings.rs:113
 msgid "Marimba"
@@ -1499,11 +1484,11 @@ msgstr ""
 
 #: src/myna_settings.rs:114
 msgid "Water"
-msgstr ""
+msgstr "Eau"
 
 #: src/myna_settings.rs:115
 msgid "Radio"
-msgstr ""
+msgstr "Radio"
 
 #: src/myna_settings.rs:116
 msgid "Strings"
@@ -1513,7 +1498,7 @@ msgstr ""
 #: src/model_family.rs:224
 msgctxt "language list"
 msgid ", "
-msgstr ""
+msgstr ", "
 
 #. TRANSLATORS: {languages} is a short list of language names, {count} how many more there are.
 #: src/model_family.rs:234
@@ -1552,7 +1537,7 @@ msgstr "Installation de {model} …"
 
 #: src/presentation.rs:47
 msgid "value is invalid"
-msgstr ""
+msgstr "valeur invalide"
 
 #: src/presentation.rs:48
 msgid "value must be true or false"
@@ -1560,32 +1545,32 @@ msgstr ""
 
 #: src/presentation.rs:49
 msgid "value must be a number"
-msgstr ""
+msgstr "valeur doit être un nombre"
 
 #: src/presentation.rs:50
 msgid "value must be text"
-msgstr ""
+msgstr "valeur doit être du texte"
 
 #: src/presentation.rs:51
 msgid "value must be a positive number"
-msgstr ""
+msgstr "valeur doit être un nombre positif"
 
 #: src/presentation.rs:52
 msgid "value must be zero or a positive number"
-msgstr ""
+msgstr "valeur doit être zéro ou un nombre positif"
 
 #: src/presentation.rs:53
 msgid "value must be a non-negative whole number"
-msgstr ""
+msgstr "valeur doit être un nombre entier non négatif"
 
 #. TRANSLATORS: {choices} lists the allowed values, such as "cpu, cuda".
 #: src/presentation.rs:56
 msgid "value must be one of {choices}"
-msgstr ""
+msgstr "valeur doit être l’un de {choix}"
 
 #: src/presentation.rs:59
 msgid "this value cannot be edited"
-msgstr ""
+msgstr "cette valeur ne peut pas être modifiée"
 
 #: src/presentation.rs:158
 msgid "Which version of this model to run."
@@ -1602,12 +1587,16 @@ msgstr ""
 #: src/presentation.rs:172
 msgid "Emit partial transcription results while speech is being processed."
 msgstr ""
+"Émettre des résultats de transcription partielle pendant le traitement de la "
+"parole."
 
 #: src/presentation.rs:179
 msgid ""
 "Unload the inference service after this many idle seconds; zero disables the "
 "delay."
 msgstr ""
+"Décharger le service d’inférence après ce nombre de secondes d’inactivité ; "
+"zero désactive le délai."
 
 #: src/presentation.rs:185
 msgid "Verbose logging"
@@ -1635,7 +1624,7 @@ msgstr ""
 
 #: src/presentation.rs:205
 msgid "Pause length for commit (seconds)"
-msgstr ""
+msgstr "Durée de pause pour validation (secondes)"
 
 #: src/presentation.rs:206
 msgid "Silence duration that commits the current transcript chunk."
@@ -1652,16 +1641,18 @@ msgstr ""
 
 #: src/presentation.rs:217
 msgid "Partial result interval (seconds)"
-msgstr ""
+msgstr "Intervalle de résultat partiel (secondes)"
 
 #: src/presentation.rs:218
 msgid ""
 "Interval between unstable partial results; zero disables partial results."
 msgstr ""
+"Intervalle entre des résultats partiels instables ; zéro désactive les "
+"résultats partiels."
 
 #: src/presentation.rs:223
 msgid "Partial result audio window (seconds)"
-msgstr ""
+msgstr "Fenêtre audio du résultat partiel (secondes)"
 
 #: src/presentation.rs:224
 msgid ""
@@ -1681,31 +1672,35 @@ msgstr ""
 
 #: src/presentation.rs:236
 msgid "Attention context size"
-msgstr ""
+msgstr "Taille du contexte d’attention"
 
 #: src/presentation.rs:237
 msgid ""
 "Model-specific latency and accuracy context. Empty uses the engine default."
 msgstr ""
+"Contexte de latence et de précision spécifique au modèle. Vide utilise la "
+"valeur par défaut du moteur."
 
 #: src/presentation.rs:296
 msgid "This model provides no description for this setting."
-msgstr ""
+msgstr "Ce modèle ne fournit aucune description pour ce paramètre."
 
 #. TRANSLATORS: {percent} is how much of the download has arrived, a number from 0 to 100.
 #: src/ui/install_control.rs:131
 msgid "Installing {percent}%"
-msgstr ""
+msgstr "Installation {percent} %"
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:41
 msgid "Sounds on start, stop and error"
-msgstr ""
+msgstr "Sons au démarrage, arrêt et erreur"
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:42
 msgid ""
 "Play a short sound when dictation starts listening, when it stops, and when "
 "it fails."
 msgstr ""
+"Jouer un son court lorsque la dictée commence à écouter, lorsqu’elle "
+"s’arrête et lorsqu’elle échoue."
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:50
 msgid "Sound style"
@@ -1720,13 +1715,16 @@ msgstr ""
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:60
 msgid "When to transcribe"
-msgstr ""
+msgstr "Quand transcrire"
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:61
 msgid ""
 "As you speak shows partial text in the field while you talk; When you stop "
 "injects the whole transcript once the utterance ends."
 msgstr ""
+"Pendant que vous parlez, affiche un texte partiel dans le champ pendant que "
+"vous parlez ; lorsque vous arrêtez, injecte la transcription entière une "
+"fois l’énoncé terminé."
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:69
 msgid "Spoken language"
@@ -1741,17 +1739,20 @@ msgstr ""
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:80
 msgid "Indicator style"
-msgstr ""
+msgstr "Style d’indicateur"
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:81
 msgid ""
 "All three render the same calibrated audio envelope: Default is a level bar "
 "in the accent colour, Ribbon a flowing GPU wave, VU meter a segmented meter."
 msgstr ""
+"Tous les trois restituent la même enveloppe audio calibrée : par défaut, une "
+"barre de niveau dans la couleur d’accentuation, un ruban avec une onde GPU "
+"fluide, un vumètre segmenté."
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:91
 msgid "Stop after silence (seconds)"
-msgstr ""
+msgstr "Arrêt après silence (secondes)"
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:92
 msgid ""
@@ -1762,7 +1763,7 @@ msgstr ""
 
 #: data/com.canonical.Myna.Config.metainfo.xml:9
 msgid "Set up and configure local dictation"
-msgstr ""
+msgstr "Configurer et paramétrer la dictée locale"
 
 #: data/com.canonical.Myna.Config.metainfo.xml:14
 msgid ""
