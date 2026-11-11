@@ -8,7 +8,7 @@ msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-09-16 21:37+0100\n"
-"PO-Revision-Date: 2026-10-15 09:00+0000\n"
+"PO-Revision-Date: 2026-11-12 06:51+0000\n"
 "Last-Translator: Peter Vančo <peva@users.noreply.hosted.weblate.org>\n"
 "Language-Team: Slovak <https://hosted.weblate.org/projects/ubuntu-desktop-"
 "translations/myna-desktop/sk/>\n"
@@ -17,7 +17,7 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=3; plural=((n==1) ? 0 : (n>=2 && n<=4) ? 1 : 2);\n"
-"X-Generator: Weblate 2026.11.dev0\n"
+"X-Generator: Weblate 2026.11.2.dev0\n"
 
 #: src/indicator/mod.rs:84
 msgid "Loading model…"
@@ -25,15 +25,15 @@ msgstr "Načítava sa model…"
 
 #: src/indicator/mod.rs:85
 msgid "Listening"
-msgstr "Počúvam"
+msgstr "Počúvanie"
 
 #: src/indicator/mod.rs:86
 msgid "Transcribing"
-msgstr "Prepisujem"
+msgstr "Prepisovanie"
 
 #: src/indicator/mod.rs:87
 msgid "Finishing"
-msgstr "Dokončujem"
+msgstr "Dokončovanie"
 
 #: src/indicator/mod.rs:91
 #, c-format
@@ -42,7 +42,7 @@ msgstr "Chyba: %s"
 
 #: src/indicator/notify.rs:60
 msgid "🎤 Dictation: listening"
-msgstr "🎤 Diktovanie: počúvam"
+msgstr "🎤 Diktovanie: počúvanie"
 
 #: src/indicator/notify.rs:61
 msgid "Speak now — tap your shortcut again to stop."
@@ -50,19 +50,19 @@ msgstr "Hovorte teraz — na zastavenie znova stlačte skratku."
 
 #: src/indicator/notify.rs:64
 msgid "💬 Dictation: transcribing"
-msgstr "💬 Diktovanie: prepisujem"
+msgstr "💬 Diktovanie: prepisovanie"
 
 #: src/indicator/notify.rs:65
 msgid "Converting speech to text…"
-msgstr "Prevádzam reč na text…"
+msgstr "Prebieha prevod reči na text…"
 
 #: src/indicator/notify.rs:68
 msgid "⏳ Dictation: finishing"
-msgstr "⏳ Diktovanie: dokončujem"
+msgstr "⏳ Diktovanie: dokončovanie"
 
 #: src/indicator/notify.rs:69
 msgid "Inserting the final text…"
-msgstr "Vkladám výsledný text…"
+msgstr "Vkladá sa výsledný text…"
 
 #: src/indicator/notify.rs:72
 msgid "⚠️ Dictation error"
@@ -70,15 +70,15 @@ msgstr "⚠️ Chyba diktovania"
 
 #: src/controller.rs:209 src/controller.rs:832 src/inject/mod.rs:61
 msgid "Focus lost"
-msgstr "Stratené zameranie"
+msgstr "Strata zamerania"
 
 #: src/controller.rs:211
 msgid "No speech detected"
-msgstr "Nezistená žiadna reč"
+msgstr "Nebola rozpoznaná žiadna reč"
 
 #: src/controller.rs:213
 msgid "Background noise is high"
-msgstr "Okolitý hluk je príliš vysoký"
+msgstr "Hluk v pozadí je vysoký"
 
 #: src/controller.rs:763
 msgid "Dictation target closed"
