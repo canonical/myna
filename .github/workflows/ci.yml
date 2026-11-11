@@ -38,6 +38,8 @@ jobs:
           - { workshop: myna-shell, gate: test-extension }
     name: ${{ matrix.gate }}
     runs-on: ubuntu-latest
+    # A launch takes 4 to 37 minutes; a hung one ran into GitHub's 6 h cap.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v6
       - uses: ./.github/actions/apt-cache
@@ -48,9 +50,12 @@ jobs:
         with:
           workshop: ${{ matrix.workshop }}
           cache: ${{ matrix.cache }}
-      # Where the launch's time went, task by task (the action prints none).
+      # Where the launch's time went, task by task (the action prints none),
+      # and what the apt cache was doing if it stalled.
       - if: always()
-        run: workshop tasks || true
+        run: |
+          workshop tasks || true
+          tail -n 40 "$RUNNER_TEMP"/apt-cacher-ng/log/apt-cacher.{err,log} || true
       - run: make ${{ matrix.gate }}
 
   # Static GNOME extension review with shexli. This deliberately does not use
@@ -59,6 +64,7 @@ jobs:
   # under test/ are not part of the shipped bundle and are excluded.
   extension-review:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
 
@@ -79,6 +85,7 @@ jobs:
   # someone else's upload.
   extension-next:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     continue-on-error: true
     steps:
       - uses: actions/checkout@v6
@@ -94,6 +101,7 @@ jobs:
   # locally through `make coverage`.
   coverage:
     runs-on: ubuntu-latest
+    timeout-minutes: 75
     steps:
       # fetch-depth: 0 — patch-cov needs the merge base.
       - uses: actions/checkout@v6
@@ -122,9 +130,12 @@ jobs:
           cache: |
             rust:cargo-registry
             venv:uv-cache
-      # Where the launch's time went, task by task (the action prints none).
+      # Where the launch's time went, task by task (the action prints none),
+      # and what the apt cache was doing if it stalled.
       - if: always()
-        run: workshop tasks || true
+        run: |
+          workshop tasks || true
+          tail -n 40 "$RUNNER_TEMP"/apt-cacher-ng/log/apt-cacher.{err,log} || true
 
       # The `myna` workshop's half of `make test` runs here instrumented, then
       # the blocking patch gate (FR-008: 80% of changed coverable lines, 5-line
