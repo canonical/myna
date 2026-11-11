@@ -11,9 +11,15 @@ set -euo pipefail
 cmd=$1
 dir=$2
 
+# A degraded store answers some requests just past snapd's own timeout.
 download() {
-    timeout 120 snap download --target-directory="$new" --basename="$1" \
-        ${2:+--channel="$2"} "$1" </dev/null >/dev/null
+    local try
+    for try in 1 2 3 4; do
+        timeout 120 snap download --target-directory="$new" --basename="$1" \
+            ${2:+--channel="$2"} "$1" </dev/null >/dev/null && return
+        [ "$try" -lt 4 ] && sleep 10
+    done
+    return 1
 }
 
 case $cmd in
