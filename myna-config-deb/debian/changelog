@@ -1,3 +1,21 @@
+myna-config (0.3.2-0ubuntu1) tenacious; urgency=medium
+
+  * Vocabulary now works with every model: Whisper and FunASR join
+    Parakeet, each correction checked against the audio first. The word
+    list moved to Myna Settings' General tab (#1).
+  * Parakeet is faster again: a 0.3.1 bug re-ran its decode when the
+    vocabulary was empty.
+  * Diagnostics shows the last dictation's signal-to-noise ratio, and
+    the background-noise warning uses it instead of loudness.
+  * Holding the dictation key no longer starts a second dictation right
+    after the first one ends.
+  * In an app Myna cannot type into, such as the VSCodium snap, Myna
+    says "No text field focused" instead of starting and stopping (#91).
+  * Setting up Myna retries once when the Snap Store times out.
+  * New Swedish, Hungarian and Simplified Chinese translations.
+
+ -- Charles <charles05@canonical.com>  Thu, 12 Nov 2026 09:23:55 +0000
+
 myna-config (0.3.1-0ubuntu1) tenacious; urgency=medium
 
   * Teach Myna your words: add names and terms to the vocabulary in
