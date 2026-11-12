@@ -27,5 +27,17 @@ done < <(awk '/^components:/ {c = 1; next} c && /^[^ #]/ {c = 0}
               c && /^  [a-z0-9-]+:/ {sub(/:.*/, ""); print $1}' "$yaml")
 
 cd "$snap_dir"
+log=$(mktemp)
+trap 'rm -f "$log"' EXIT
 set -x
-snapcraft upload --release "$channel" "${args[@]}"
+snapcraft upload --release "$channel" "${args[@]}" 2>&1 | tee "$log"
+set +x
+
+# snapcraft exits 0 and says "released" even when the store's review
+# failed; the last Status line is the store's verdict. On "ready to
+# release!" snapcraft releases the revision itself.
+status=$(grep -a '^Status: ' "$log" | tail -n 1)
+if [[ $status != "Status: released" && $status != "Status: ready to release!" ]]; then
+    echo "publish-snap: the store did not release $name: ${status:-no status}" >&2
+    exit 1
+fi
