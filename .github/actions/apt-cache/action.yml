@@ -6,7 +6,8 @@
 # finds .workshop/pins/apt-proxy, which this action writes.
 #
 # The snapshot is immutable, so cached files never go stale; apt checks each
-# against the snapshot's signed index all the same.
+# against the snapshot's signed index all the same. Its indexes are marked
+# static, so a cache hit survives a snapshot.ubuntu.com outage.
 name: apt cache
 description: Run apt-cacher-ng for the workshop launch, its cache kept across runs.
 inputs:
@@ -40,6 +41,7 @@ runs:
         Port: 3142
         BindAddress: 0.0.0.0
         Remap-snapshot: http://snapshot.ubuntu.com/ubuntu ; https://snapshot.ubuntu.com/ubuntu
+        SPfilePatternEx: /[0-9]{8}T[0-9]{6}Z/dists/
         EOF
         /usr/sbin/apt-cacher-ng -c "$conf" ForeGround=1 > "$RUNNER_TEMP/apt-cacher-ng/run.log" 2>&1 &
         for _ in $(seq 50); do
