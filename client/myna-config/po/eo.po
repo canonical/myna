@@ -8,7 +8,7 @@ msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-10-11 11:54+0100\n"
-"PO-Revision-Date: 2026-11-12 06:51+0000\n"
+"PO-Revision-Date: 2026-11-13 23:51+0000\n"
 "Last-Translator: phlostically <phlostically@users.noreply.hosted.weblate.org>"
 "\n"
 "Language-Team: Esperanto <https://hosted.weblate.org/projects/ubuntu-desktop-"
@@ -18,7 +18,7 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=n != 1;\n"
-"X-Generator: Weblate 2026.11.2.dev0\n"
+"X-Generator: Weblate 2026.12.dev0\n"
 
 #: data/diagnostics-page.blp:5 data/diagnostics-page.blp:8 src/app.rs:1485
 msgid "About and Diagnostics"
@@ -205,7 +205,7 @@ msgstr ""
 
 #: data/onboarding-welcome.blp:34
 msgid "Dictation runs locally, with no data leaving your computer."
-msgstr "Diktado okazas loke; neniom da datenoj sendiĝas ekster vian komputilon."
+msgstr "Diktado okazas loke; neniom da datumoj sendiĝas ekster vian komputilon."
 
 #: data/onboarding-window.blp:24 src/app.rs:414 src/onboarding_ui.rs:776
 msgid "Next"
@@ -445,6 +445,8 @@ msgid ""
 "Final connections could not be verified. Switching is disabled until refresh "
 "succeeds."
 msgstr ""
+"Malsukcesis konfirmi finajn konektojn. Ŝanĝado estas malebligita ĝis reŝargo "
+"sukcesos."
 
 #: src/backend_ui.rs:791 src/diagnostics.rs:658
 msgid "No model is connected. Choose one to use for dictation."
@@ -688,7 +690,7 @@ msgstr "La modelo respondis sed raportis neniun ŝanĝotan agordon."
 
 #: src/backend_ui.rs:2743
 msgid "Some data is unavailable"
-msgstr "Kelkaj datenoj ne estas haveblaj"
+msgstr "Kelkaj datumoj ne estas haveblaj"
 
 #: src/backend_ui.rs:2745
 msgid "Raw failure details are recorded on the Diagnostics page."
@@ -1078,6 +1080,8 @@ msgid ""
 "Dictation will be slow. Unplug the charger, wait a few seconds, and plug it "
 "back in. If that does not help, power off fully and start again."
 msgstr ""
+"Diktado estos malrapida. Malkonektu la ŝargilon. atendu kelkajn sekundojn, "
+"kaj rekonektu la ŝargilon. Se tio ne helpas, restartigu la sistemon."
 
 #: src/diagnostics.rs:325
 msgid "The system is short of memory"
@@ -1308,7 +1312,7 @@ msgstr "baterio"
 
 #: src/diagnostics.rs:790
 msgid "chunks dropped this session"
-msgstr ""
+msgstr "transskribaj pecoj forlasitaj dum la aktuala seanco"
 
 #: src/diagnostics.rs:796
 msgid "Input method"
@@ -1396,7 +1400,7 @@ msgstr "VU-mezurilo"
 
 #: src/myna_settings.rs:109
 msgid "Default"
-msgstr "Apriora"
+msgstr "Defaŭlta"
 
 #: src/myna_settings.rs:110
 msgid "Bird"
@@ -1525,6 +1529,8 @@ msgid ""
 "Unload the inference service after this many idle seconds; zero disables the "
 "delay."
 msgstr ""
+"Malŝargi la derivmotoran servon post tiom da senokupeco en sekundoj; nulo "
+"tujigas la malŝargon."
 
 #: src/presentation.rs:185
 msgid "Verbose logging"
@@ -1568,6 +1574,8 @@ msgstr "Maksimuma daŭro de neenmetita sono (en sekundoj)"
 msgid ""
 "Maximum speech window retained before a transcript chunk is forced to commit."
 msgstr ""
+"Maksimuma fenestro de parolaĵo retenata antaŭ deviga enmeto de "
+"transskribitaĵo."
 
 #: src/presentation.rs:217
 msgid "Partial result interval (seconds)"
@@ -1600,6 +1608,8 @@ msgid ""
 "Runtime numeric format override. Leave the model's own value unchanged "
 "unless required."
 msgstr ""
+"Rultempa superrego pri aranĝo de nombroj. Lasu neŝanĝita la propran valoron "
+"de la modelo, krom se io postulas tion."
 
 #: src/presentation.rs:236
 msgid "Attention context size"
@@ -1609,6 +1619,8 @@ msgstr "Grando de atentokunteksto"
 msgid ""
 "Model-specific latency and accuracy context. Empty uses the engine default."
 msgstr ""
+"Modelo-specifa kunteksto pri respondotempo kaj precizeco. Se malplena, tio "
+"implicas la defaŭlton."
 
 #: src/presentation.rs:296
 msgid "This model provides no description for this setting."
@@ -1653,6 +1665,8 @@ msgid ""
 "As you speak shows partial text in the field while you talk; When you stop "
 "injects the whole transcript once the utterance ends."
 msgstr ""
+"Dum vi parolos, montri partan tekston en la kampo. Kiam vi finos paroli, "
+"enmeti la plenan transskribitaĵon."
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:69
 msgid "Spoken language"
@@ -1678,6 +1692,9 @@ msgid ""
 "All three render the same calibrated audio envelope: Default is a level bar "
 "in the accent colour, Ribbon a flowing GPU wave, VU meter a segmented meter."
 msgstr ""
+"Ĉiuj tri montras la saman kalibritan sonan ondformon kiel la jenon: «Defaŭlta"
+"», nivelbreton en la akcenta koloro; «Rubando», fluantan grafikprocesoran "
+"ondon; «VU-mezurilo», segmentan mezurilon."
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:91
 msgid "Stop after silence (seconds)"
@@ -1689,6 +1706,10 @@ msgid ""
 "this many seconds without speech. 0 keeps it running until the next tap. "
 "Hold-to-talk always ends with the key."
 msgstr ""
+"Se aktivigo per frapeto estas ŝaltita, aŭtomate fini la diktan seancon post "
+"tiom da sekundoj sen parolo. Nulo igas la diktoservon ruliĝi ĝis sekva "
+"frapeto. Por «premu por komenci kaj fini», la diktado ĉiam finiĝas post "
+"malpremo de klavo."
 
 #: data/com.canonical.Myna.Config.metainfo.xml:9
 msgid "Set up and configure local dictation"
