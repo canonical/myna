@@ -8,7 +8,7 @@ msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-10-11 11:54+0100\n"
-"PO-Revision-Date: 2026-11-12 06:51+0000\n"
+"PO-Revision-Date: 2026-11-13 23:51+0000\n"
 "Last-Translator: \"David D.\" <dadu042@users.noreply.hosted.weblate.org>\n"
 "Language-Team: French <https://hosted.weblate.org/projects/ubuntu-desktop-"
 "translations/myna-config/fr/>\n"
@@ -17,7 +17,7 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=n > 1;\n"
-"X-Generator: Weblate 2026.11.2.dev0\n"
+"X-Generator: Weblate 2026.12.dev0\n"
 
 #: data/diagnostics-page.blp:5 data/diagnostics-page.blp:8 src/app.rs:1485
 msgid "About and Diagnostics"
@@ -600,12 +600,9 @@ msgid "Setting:"
 msgstr "Paramètre :"
 
 #: src/backend_ui.rs:2494
-#, fuzzy
 msgid "Some operations completed before the apply failed.\n"
 msgstr ""
-"Certaines des opérations ont été effectuées avant que l'application n'ait "
-"échoué.\n"
-".\n"
+"Certaines des opérations ont été effectuées avant que l'app n'ait échouée.\n"
 
 #: src/backend_ui.rs:2498
 #, fuzzy
@@ -705,9 +702,8 @@ msgid "Reading this model's settings…"
 msgstr "Lecture des paramètres de ce modèle …"
 
 #: src/backend_ui.rs:2731
-#, fuzzy
 msgid "No configuration reported"
-msgstr "Aucun signalement de configuration"
+msgstr "Aucune configuration signalée"
 
 #: src/backend_ui.rs:2733
 msgid "The model answered but reported no settings to change."
@@ -736,7 +732,7 @@ msgstr "Avancé"
 
 #: src/backend_ui.rs:2818
 msgid "Sensitive"
-msgstr ""
+msgstr "Sensible"
 
 #: src/backend_ui.rs:2825
 msgid "Common settings for this model."
@@ -788,7 +784,7 @@ msgstr "Snaps installés"
 
 #: src/backend_ui.rs:3088
 msgid "Model connections"
-msgstr ""
+msgstr "Connexions du modèle"
 
 #: src/backend_ui.rs:3089
 #, fuzzy
@@ -812,7 +808,6 @@ msgid "Available engines"
 msgstr "Moteurs disponibles"
 
 #: src/backend_ui.rs:3099
-#, fuzzy
 msgid "Persisted values could not be read."
 msgstr "Les valeurs persistantes n'ont pas pu être lues."
 
@@ -821,7 +816,6 @@ msgid "Applying changes…"
 msgstr "Application des modifications …"
 
 #: src/backend_ui.rs:3133
-#, fuzzy
 msgid "missing"
 msgstr "manquant(e)"
 
@@ -836,29 +830,26 @@ msgid "Error:\n"
 msgstr "Erreur :\n"
 
 #: src/backend_ui.rs:3173
-#, fuzzy
 msgid "The change ran, but the connections do not match it."
 msgstr ""
-"Le changement a abouti, mais les connexions ne s'hamonisent pas avec lui."
+"La modification a été effectuée, mais les connexions ne correspondent pas."
 
 #: src/backend_ui.rs:3177
-#, fuzzy
 msgid "The connections changed before the change could start. Try again."
 msgstr ""
-"Les connexions ont changé avant que la modification n'ait pu aboutir. "
-"Essayez à nouveau."
+"Les connexions ont changé avant que le changement ne puisse commencer. "
+"Réessayer."
 
 #: src/backend_ui.rs:3181
 msgid "Discovery error:\n"
-msgstr ""
+msgstr "Erreur de découverte :\n"
 
 #: src/backend_ui.rs:3183
-#, fuzzy
 msgid "The change ran, but the connections could not be read back."
-msgstr "Le changement a abouti, mais les connexions n'ont pas pu être lues."
+msgstr ""
+"Le changement a été effectué, mais les connexions n’ont pas pu être relues."
 
 #: src/backend_ui.rs:3200
-#, fuzzy
 msgid "Final connections:"
 msgstr "Connexions finales :"
 
@@ -881,7 +872,6 @@ msgid "Completed snapd operations:\n"
 msgstr "Opérations snapd ayant abouti :\n"
 
 #: src/backend_ui.rs:3250
-#, fuzzy
 msgid "no model connected"
 msgstr "aucun modèle connecté"
 
@@ -891,17 +881,14 @@ msgid "connected"
 msgstr "connecté"
 
 #: src/backend_ui.rs:3264
-#, fuzzy
 msgid "several models"
 msgstr "plusieurs modèles"
 
 #: src/backend_ui.rs:4295 src/model_family.rs:35
-#, fuzzy
 msgid "Best for Chinese, Japanese and Korean"
-msgstr "Meilleur pour le chinois, le japonais et le coréen"
+msgstr "Meilleur pour chinois, japonais et coréen"
 
 #: src/backend_apply.rs:81
-#, fuzzy
 msgid "selector value must be text"
 msgstr "la valeur du sélecteur doit être du texte"
 
@@ -1436,11 +1423,11 @@ msgstr ""
 
 #: src/diagnostics.rs:837
 msgid "myna-config package"
-msgstr ""
+msgstr "paquet myna-config"
 
 #: src/diagnostics.rs:838
 msgid "Ubuntu package"
-msgstr ""
+msgstr "Paquet Ubuntu"
 
 #: src/diagnostics.rs:839
 msgid "development override"
@@ -1448,11 +1435,11 @@ msgstr ""
 
 #: src/diagnostics.rs:840
 msgid "user copy"
-msgstr ""
+msgstr "copie utilisateur"
 
 #: src/diagnostics.rs:841
 msgid "other system copy"
-msgstr ""
+msgstr "autre copie système"
 
 #: src/myna_settings.rs:107
 msgid "Ribbon"
