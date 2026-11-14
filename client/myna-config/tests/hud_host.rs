@@ -342,7 +342,7 @@ fn a_hud_that_crashes_is_started_again() {
 fn exit_78_ends_it_for_the_session() {
     let rig = Rig::new("cannot-host", "exit 78", "3000");
     rig.daemon_up();
-    rig.wait_for("start", |log| Rig::count(log, "start") == 1);
+    rig.wait_for("unregister", |log| Rig::count(log, "unregister") == 1);
     rig.daemon_down();
     rig.daemon_up();
     rig.settle();
