@@ -8,7 +8,7 @@ msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-10-11 11:54+0100\n"
-"PO-Revision-Date: 2026-11-13 23:51+0000\n"
+"PO-Revision-Date: 2026-11-15 11:16+0000\n"
 "Last-Translator: \"David D.\" <dadu042@users.noreply.hosted.weblate.org>\n"
 "Language-Team: French <https://hosted.weblate.org/projects/ubuntu-desktop-"
 "translations/myna-config/fr/>\n"
@@ -903,12 +903,10 @@ msgid "the model's restart command could not be built"
 msgstr "la commande de redémarrage du modèle n'a pu pas être compilée"
 
 #: src/backend_apply.rs:479
-#, fuzzy
 msgid "value must be a finite number"
-msgstr "la valeur doit être un nombre fini"
+msgstr "valeur doit être un nombre fini"
 
 #: src/backend_apply.rs:504
-#, fuzzy
 msgid "The model's restart could not be confirmed."
 msgstr "Le redémarrage du modèle n'a pas pu être confirmé."
 
@@ -1065,17 +1063,18 @@ msgid "Set up a keyboard shortcut to trigger Dictation."
 msgstr "Définir un raccourci clavier pour déclencher la Dictée."
 
 #: src/shortcut_ui.rs:672
-#, fuzzy
 msgid "Myna is not running yet. The shortcut can be set up once it starts."
 msgstr ""
-"Myna ne s'exécute pas encore. Le raccourci ne peut être installé qu'une fois "
-"qu'elle aura démarré."
+"Myna ne s'exécute pas encore. Le raccourci ne peut être configuré qu'une "
+"fois démarré."
 
 #: src/shortcut_ui.rs:680
 msgid ""
 "This desktop cannot set up the shortcut. Bind this command to a key in its "
 "settings: {command}"
 msgstr ""
+"Ce bureau ne peut pas configurer le raccourci. Associez cette commande à une "
+"touche dans ses paramètres : {command}"
 
 #: src/shortcut_ui.rs:690
 msgid "Not set up"
@@ -1094,14 +1093,12 @@ msgid "Finish dictating to preview sounds"
 msgstr "Terminer la dictée pour pré-entendre les sons"
 
 #: src/diagnostics.rs:225
-#, fuzzy
 msgid "Paste the diagnostics report from your clipboard here."
-msgstr "Collez ici le rapport de diagnostic à partir de votre presse-papiers."
+msgstr "Collez ici le rapport de diagnostics à partir de votre presse-papiers."
 
 #: src/diagnostics.rs:280
-#, fuzzy
 msgid "The CPU clock is capped by system policy"
-msgstr "L'horloge CPU est plafonnée par la stratégie du système"
+msgstr "L'horloge CPU est plafonnée par la politique du système"
 
 #: src/diagnostics.rs:282
 msgid "limited to"
@@ -1204,7 +1201,7 @@ msgstr ""
 
 #: src/diagnostics.rs:454
 msgid "System"
-msgstr ""
+msgstr "Système"
 
 #: src/diagnostics.rs:458
 msgid "OS"
@@ -1220,7 +1217,7 @@ msgstr ""
 
 #: src/diagnostics.rs:481
 msgid "Machine"
-msgstr ""
+msgstr "Machine"
 
 #: src/diagnostics.rs:485 src/diagnostics.rs:500
 msgid "CPU"
@@ -1228,7 +1225,7 @@ msgstr ""
 
 #: src/diagnostics.rs:486 src/diagnostics.rs:563 src/diagnostics.rs:648
 msgid "Memory"
-msgstr ""
+msgstr "Mémoire"
 
 #: src/diagnostics.rs:490 src/diagnostics.rs:495
 msgid "GPU"
@@ -1236,31 +1233,31 @@ msgstr ""
 
 #: src/diagnostics.rs:491 src/diagnostics.rs:856
 msgid "none"
-msgstr ""
+msgstr "aucun(e)"
 
 #: src/diagnostics.rs:501
 msgid "(no model answered show-machine)"
-msgstr ""
+msgstr "(aucun modèle n’a répondu au questionnaire)"
 
 #: src/diagnostics.rs:506
 msgid "Performance"
-msgstr ""
+msgstr "Performance"
 
 #: src/diagnostics.rs:513 src/diagnostics.rs:520 src/diagnostics.rs:546
 msgid "Clock"
-msgstr ""
+msgstr "Horloge"
 
 #: src/diagnostics.rs:514
 msgid "(no cpufreq information)"
-msgstr ""
+msgstr "(aucune information de fréq cpu)"
 
 #: src/diagnostics.rs:525
 msgid "Profile"
-msgstr ""
+msgstr "Profil"
 
 #: src/diagnostics.rs:528
 msgid "Power"
-msgstr ""
+msgstr "Alimentation"
 
 #: src/diagnostics.rs:533
 msgid "Pressure"
@@ -1343,11 +1340,11 @@ msgstr "Avertissements"
 
 #: src/diagnostics.rs:708
 msgid "not probed"
-msgstr ""
+msgstr "insondé"
 
 #: src/diagnostics.rs:721
 msgid "policy allows"
-msgstr ""
+msgstr "politique permet"
 
 #: src/diagnostics.rs:728
 msgid "cores in this class"
@@ -1490,7 +1487,7 @@ msgstr ", "
 #. TRANSLATORS: {languages} is a short list of language names, {count} how many more there are.
 #: src/model_family.rs:234
 msgid "{languages} +{count}"
-msgstr ""
+msgstr "{languages} +{count}"
 
 #: src/model_family.rs:243
 msgid "{count} language"
