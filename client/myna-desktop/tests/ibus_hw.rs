@@ -1031,6 +1031,37 @@ async fn the_first_activation_on_a_fresh_daemon_reaches_the_field() {
     assert_eq!(field.next().await, Seen::Commit(" words".into()));
 }
 
+/// Same first-activation X11 key-grab path, against a password field held past
+/// `CONTENT_TYPE_GRACE`: `acquire` must still wait for the field's own
+/// `ContentType` after the grab releases and refuse it at `acquire`.
+#[tokio::test]
+async fn the_first_activation_on_a_fresh_daemon_refuses_a_password_field() {
+    skip_unless_ibus!();
+    let _serial = exclusive().await;
+    let daemon = FreshDaemon::start().await;
+    let field = Field::open_at(&daemon.address, "myna-ibus-hw", 0, 0).await;
+    field.focus_out().await;
+    let address = daemon.address.as_str().try_into().expect("address");
+    let mut injector = IbusInjector::connect_to(address)
+        .await
+        .expect("connect to the fresh daemon");
+
+    let release = async {
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        field.ic_call(IC_IFACE, "FocusIn", &()).await;
+        // Toolkits write ContentType asynchronously right after FocusIn
+        // (well within CONTENT_TYPE_GRACE = 50 ms).
+        tokio::time::sleep(Duration::from_millis(5)).await;
+        field.set_content_type(PURPOSE_PASSWORD, 0).await;
+    };
+    let (acquired, ()) = tokio::join!(injector.acquire(), release);
+    assert!(
+        matches!(acquired, Err(InjectError::SecureField)),
+        "expected SecureField refusal at acquire, got {acquired:?}"
+    );
+    field.close().await;
+}
+
 /// A start key held past the grace: the grab keeps the fake context focused
 /// until it is released, and its repeats, signalled while the injector
 /// acquires, keep the acquire waiting for the field.

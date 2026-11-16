@@ -28,8 +28,8 @@
 use std::collections::HashMap;
 use std::os::unix::ffi::OsStringExt;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -139,13 +139,13 @@ fn empty_attach() -> HashMap<String, Value<'static>> {
     HashMap::new()
 }
 
-/// `IBusAttrList` → `(sa{sv}av)` with no attributes (plain text).
-fn ibus_attr_list() -> Value<'static> {
+/// `IBusAttrList` → `(sa{sv}av)`.
+fn ibus_attr_list(attrs: Vec<Value<'static>>) -> Value<'static> {
     Value::from(
         StructureBuilder::new()
             .add_field("IBusAttrList".to_string())
             .add_field(empty_attach())
-            .add_field(Vec::<Value>::new())
+            .add_field(attrs)
             .build()
             .expect("IBusAttrList structure"),
     )
@@ -163,15 +163,7 @@ fn variant_wrap(v: Value<'static>) -> Value<'static> {
 
 /// `IBusText` → `(sa{sv}sv)`: the committed string with an empty attribute list.
 fn ibus_text(text: &str) -> Value<'static> {
-    Value::from(
-        StructureBuilder::new()
-            .add_field("IBusText".to_string())
-            .add_field(empty_attach())
-            .add_field(text.to_string())
-            .append_field(variant_wrap(ibus_attr_list())) // `v`
-            .build()
-            .expect("IBusText structure"),
-    )
+    ibus_preedit_text(text, false)
 }
 
 // IBusAttrType / IBusAttrPreedit constants for the preedit attribute.
@@ -182,44 +174,32 @@ fn ibus_text(text: &str) -> Value<'static> {
 const ATTR_TYPE_HINT: u32 = 4;
 const ATTR_PREEDIT_WHOLE: u32 = 1;
 
-/// `IBusAttrList` carrying one whole-preedit hint spanning `[0, end)`.
-fn ibus_preedit_attr_list(end: u32) -> Value<'static> {
-    let whole = Value::from(
-        StructureBuilder::new()
-            .add_field("IBusAttribute".to_string())
-            .add_field(empty_attach())
-            .add_field(ATTR_TYPE_HINT)
-            .add_field(ATTR_PREEDIT_WHOLE)
-            .add_field(0u32) // start index (chars)
-            .add_field(end) // end index (chars)
-            .build()
-            .expect("IBusAttribute structure"),
-    );
-    Value::from(
-        StructureBuilder::new()
-            .add_field("IBusAttrList".to_string())
-            .add_field(empty_attach())
-            .add_field(vec![whole]) // attributes (av)
-            .build()
-            .expect("IBusAttrList structure"),
-    )
-}
-
 /// `IBusText` for preedit: the volatile hypothesis marked as composing over its
 /// whole length, leaving the client to choose the visual treatment. Without
 /// `hint` the attribute list is empty, the path libibus handles safely.
 fn ibus_preedit_text(text: &str, hint: bool) -> Value<'static> {
     let attrs = if hint {
-        ibus_preedit_attr_list(text.chars().count() as u32)
+        let end = text.chars().count() as u32;
+        vec![Value::from(
+            StructureBuilder::new()
+                .add_field("IBusAttribute".to_string())
+                .add_field(empty_attach())
+                .add_field(ATTR_TYPE_HINT)
+                .add_field(ATTR_PREEDIT_WHOLE)
+                .add_field(0u32)
+                .add_field(end)
+                .build()
+                .expect("IBusAttribute structure"),
+        )]
     } else {
-        ibus_attr_list()
+        Vec::new()
     };
     Value::from(
         StructureBuilder::new()
             .add_field("IBusText".to_string())
             .add_field(empty_attach())
             .add_field(text.to_string())
-            .append_field(variant_wrap(attrs)) // `v`
+            .append_field(variant_wrap(ibus_attr_list(attrs)))
             .build()
             .expect("IBusText structure"),
     )
@@ -281,25 +261,17 @@ fn ibus_component() -> Value<'static> {
 /// the real home's (`$SNAP_REAL_HOME`) config dir is appended, since the
 /// snap-private `$HOME` never contains the daemon's address file.
 fn candidate_dirs(env: &dyn Fn(&str) -> Option<String>) -> Vec<PathBuf> {
-    let mut dirs: Vec<PathBuf> = Vec::new();
-    let mut push_unique = |d: PathBuf| {
-        if !dirs.contains(&d) {
-            dirs.push(d);
-        }
-    };
-    if let Some(xdg) = env("XDG_CONFIG_HOME") {
-        if !xdg.is_empty() {
-            push_unique(PathBuf::from(xdg).join("ibus/bus"));
-        }
-    }
-    if let Some(home) = env("HOME") {
-        if !home.is_empty() {
-            push_unique(PathBuf::from(home).join(".config/ibus/bus"));
-        }
-    }
-    if let Some(real) = env("SNAP_REAL_HOME") {
-        if !real.is_empty() {
-            push_unique(PathBuf::from(real).join(".config/ibus/bus"));
+    let mut dirs = Vec::new();
+    for (var, sub) in [
+        ("XDG_CONFIG_HOME", "ibus/bus"),
+        ("HOME", ".config/ibus/bus"),
+        ("SNAP_REAL_HOME", ".config/ibus/bus"),
+    ] {
+        if let Some(base) = env(var).filter(|s| !s.is_empty()) {
+            let dir = PathBuf::from(base).join(sub);
+            if !dirs.contains(&dir) {
+                dirs.push(dir);
+            }
         }
     }
     dirs
@@ -513,8 +485,6 @@ struct Context<'a> {
 }
 
 impl Context<'_> {
-    /// Whether this is the daemon's own placeholder context, which no
-    /// application ever writes into.
     fn is_fake(self) -> bool {
         self.client == FAKE_CLIENT
     }
@@ -529,39 +499,37 @@ enum FocusChange<'a> {
     Out(Option<&'a str>),
 }
 
+/// Whether the daemon's `fake` context grabbed focus while acquiring.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Fake {
+    None,
+    Held,
+    Released(tokio::time::Instant),
+}
+
 /// The input context a lease may write to.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Binding {
-    /// Minted before the engine switch; no focus yet. The previous release's
-    /// restore may still be delivering focus calls, which are not this
-    /// lease's (see [`Lease::focus`]).
-    Pending,
-    /// Focused through plain `FocusIn`, as a daemon that has not read
-    /// `FocusId` yet does. ibus 1.5.34 re-sends that focus as `FocusInId`
-    /// with no `FocusOut` between, which names the context; 1.5.29 names
-    /// nothing until focus moves.
-    Unnamed,
-    /// An unnamed focus turned out to be the daemon's fake context, or left
-    /// before anything was written, as the fake context does when a key grab
-    /// ends. The next field focused within [`FOCUS_BLIP_GRACE`] binds the
-    /// lease, as it would a pending one; writes are held until then.
+    /// Minted before the engine switch; ignores the prior release's restore.
+    Pending(Fake),
+    /// Focused through plain `FocusIn`, before the daemon read `FocusId`.
+    Unnamed { wrote: bool },
+    /// An unnamed focus turned out to be `fake` or left before any write.
     Left { blip: u64 },
-    /// Focused on this input context.
-    Context(String),
-    /// Focus left `path`. Unless an activation comes within
-    /// [`ACTIVATION_WINDOW`] (`activated`) and focus is back on `path` within
-    /// [`FOCUS_BLIP_GRACE`] of the `FocusOut` or of the last activation, a
-    /// held key's repeats included (`back`), it is a loss. Writes are held until the
-    /// activation and wait after it. `blip` tells this absence from a later
-    /// one.
+    /// Focused on `path` (`client` is the daemon's client name).
+    Context { path: String, client: String },
+    /// Focus left `path`; rides out an activation blip back to `path` (`back`
+    /// holds the returning client name when `FocusInId` precedes activation).
     Away {
         path: String,
         blip: u64,
         activated: bool,
-        back: bool,
+        back: Option<String>,
     },
     /// No focus arrived while acquiring, so any focus call ends the lease.
     Unfocused,
+    /// Never got past the daemon's `fake` context: no editable target focused.
+    NoField,
     /// Focus left, a newer lease was minted, or the target was released.
     Lost,
 }
@@ -570,18 +538,12 @@ enum Binding {
 /// its own standing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Retired {
-    /// Still held: this target owned the field until now.
     Held,
-    /// Focus had already left it.
     Lost,
-    /// A newer lease replaced it; that lease's target owns the engine now.
     Superseded,
 }
 
 impl Retired {
-    /// Whether this target hands back the displaced input method. A superseded
-    /// one must not: the lease that replaced it carries that responsibility
-    /// now, so switching here takes the engine from a live utterance.
     fn restores(self) -> bool {
         self != Retired::Superseded
     }
@@ -592,92 +554,130 @@ impl Retired {
 struct Lease {
     id: u64,
     binding: Binding,
-    /// The character before the cursor in the focused field, as its latest
-    /// surrounding text says. `None` until the field sends one, and at its
-    /// start.
+    content_type: ContentType,
     before_cursor: Option<char>,
-    /// When the user last used Myna's activation while this lease was held.
     activated_at: Option<tokio::time::Instant>,
-    /// Pending, with the daemon's fake context focused: a key grab holds focus
-    /// off every field until the key is released.
-    on_fake: bool,
-    /// Text or a preedit went to the daemon under this lease.
-    wrote: bool,
-    /// A `Left` blip ran out: no field ever held focus, as with the fake
-    /// context focused by name.
-    fieldless: bool,
 }
 
 /// Where a target stands for its next write.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Standing {
-    /// Write now.
     Held,
-    /// Focus is away with no activation yet: hold the write.
     Unsure,
-    /// The right to write is gone.
     Lost,
 }
 
 impl Lease {
-    fn held_by(&self, id: u64) -> bool {
-        self.id == id && self.binding != Binding::Lost
+    fn new(id: u64, binding: Binding) -> Self {
+        Self {
+            id,
+            binding,
+            content_type: ContentType::default(),
+            before_cursor: None,
+            activated_at: None,
+        }
     }
 
-    /// Only focus staying on, first naming, or within a blip coming back to
-    /// the bound context keeps it.
-    ///
-    /// A `Pending` lease ignores the two calls our own restore delivers - a
-    /// `FocusOut`, then focus on the daemon's fake context - because nothing
-    /// orders the object server's dispatch of them against the next `mint`.
-    /// Neither can name this lease's field: the daemon sends no `FocusOut`
-    /// before the first `FocusIn` on a newly activated engine, and the fake
-    /// context is never a field. Once focused, focus anywhere else ends the
-    /// lease, and a `FocusOut` sends it `Away`, where the fake context passes
-    /// the same way.
+    fn held_by(&self, id: u64) -> bool {
+        self.id == id && !matches!(self.binding, Binding::Lost | Binding::NoField)
+    }
+
+    fn client(&self) -> Option<&str> {
+        match &self.binding {
+            Binding::Context { client, .. } => Some(client),
+            _ => None,
+        }
+    }
+
+    fn pending_deadline(
+        &self,
+        id: u64,
+        started: tokio::time::Instant,
+    ) -> Option<tokio::time::Instant> {
+        if self.id != id {
+            return None;
+        }
+        match self.binding {
+            Binding::Pending(Fake::None) => Some(started + FOCUS_WAIT),
+            Binding::Pending(Fake::Held) => {
+                let last = self.activated_at.map_or(started, |at| at.max(started));
+                Some(last + FOCUS_BLIP_GRACE)
+            }
+            Binding::Pending(Fake::Released(at)) => Some(at + FOCUS_WAIT),
+            _ => None,
+        }
+    }
+
+    /// Advance binding on a daemon focus call. A `Pending` lease ignores the
+    /// `FocusOut` and `fake` `FocusInId` our own prior restore may still be
+    /// delivering; once bound, focus anywhere else ends the lease unless it is
+    /// an activation blip returning to the same context.
     fn focus(&mut self, change: FocusChange<'_>, blip: u64) {
         let recent = self
             .activated_at
             .is_some_and(|at| at.elapsed() <= ACTIVATION_WINDOW);
         let next = match (&mut self.binding, change) {
-            (Binding::Pending, FocusChange::Out(_)) => {
-                self.on_fake = false;
+            (Binding::Pending(fake), FocusChange::Out(_)) => {
+                if *fake != Fake::None {
+                    *fake = Fake::Released(tokio::time::Instant::now());
+                }
                 return;
             }
-            (Binding::Pending, FocusChange::In(Some(ctx))) if ctx.is_fake() => {
-                self.on_fake = true;
+            (Binding::Pending(fake), FocusChange::In(Some(ctx))) if ctx.is_fake() => {
+                *fake = Fake::Held;
                 return;
             }
             (Binding::Away { back, .. }, FocusChange::Out(_)) => {
-                *back = false;
+                *back = None;
                 return;
             }
-            (Binding::Away { .. }, FocusChange::In(Some(ctx))) if ctx.is_fake() => return,
-            (Binding::Pending, FocusChange::In(None)) => Binding::Unnamed,
-            (Binding::Unnamed, FocusChange::Out(_)) if !self.wrote => Binding::Left { blip },
-            // Written to, so a field: named now, it leaves as a named one does.
-            (Binding::Unnamed, FocusChange::Out(Some(path))) => Binding::Away {
+            (Binding::Away { .. } | Binding::Left { .. }, FocusChange::In(Some(ctx)))
+                if ctx.is_fake() =>
+            {
+                return;
+            }
+            (Binding::Left { .. }, FocusChange::Out(_)) => return,
+            (Binding::Pending(_) | Binding::Left { .. }, FocusChange::In(None)) => {
+                Binding::Unnamed { wrote: false }
+            }
+            (
+                Binding::Unnamed { wrote: false },
+                FocusChange::Out(_)
+                | FocusChange::In(Some(Context {
+                    client: FAKE_CLIENT,
+                    ..
+                })),
+            ) => {
+                self.content_type = ContentType::default();
+                Binding::Left { blip }
+            }
+            (Binding::Unnamed { .. }, FocusChange::Out(Some(path))) => Binding::Away {
                 path: path.to_owned(),
                 blip,
                 activated: recent,
-                back: false,
+                back: None,
             },
-            (Binding::Unnamed, FocusChange::In(Some(ctx))) if ctx.is_fake() && !self.wrote => {
-                Binding::Left { blip }
-            }
-            (Binding::Left { .. }, FocusChange::Out(_)) => return,
-            (Binding::Left { .. }, FocusChange::In(Some(ctx))) if ctx.is_fake() => return,
-            (Binding::Left { .. }, FocusChange::In(None)) => Binding::Unnamed,
             (
-                Binding::Pending | Binding::Unnamed | Binding::Left { .. },
+                Binding::Pending(_) | Binding::Unnamed { .. } | Binding::Left { .. },
                 FocusChange::In(Some(ctx)),
-            ) if !ctx.is_fake() => Binding::Context(ctx.path.to_owned()),
-            (Binding::Context(path), FocusChange::In(Some(ctx))) if *path == ctx.path => return,
-            (Binding::Context(path), FocusChange::Out(_)) => Binding::Away {
+            ) if !ctx.is_fake() => {
+                self.activated_at = None;
+                Binding::Context {
+                    path: ctx.path.to_owned(),
+                    client: ctx.client.to_owned(),
+                }
+            }
+            (Binding::Context { path, client }, FocusChange::In(Some(ctx)))
+                if *path == ctx.path =>
+            {
+                client.clone_from(&ctx.client.to_owned());
+                return;
+            }
+            (Binding::Context { path, .. }, FocusChange::Out(_)) => Binding::Away {
                 path: std::mem::take(path),
                 blip,
                 activated: recent,
-                back: false,
+                back: None,
             },
             (
                 Binding::Away {
@@ -689,17 +689,19 @@ impl Lease {
                 FocusChange::In(Some(ctx)),
             ) if *path == ctx.path => {
                 if !*activated {
-                    *back = true;
+                    *back = Some(ctx.client.to_owned());
                     return;
                 }
-                Binding::Context(std::mem::take(path))
+                Binding::Context {
+                    path: std::mem::take(path),
+                    client: ctx.client.to_owned(),
+                }
             }
             _ => Binding::Lost,
         };
         self.binding = next;
     }
 
-    /// The user used Myna's activation: a blip under way is one.
     fn activated(&mut self) {
         self.activated_at = Some(tokio::time::Instant::now());
         if let Binding::Away {
@@ -710,8 +712,11 @@ impl Lease {
         } = &mut self.binding
         {
             *activated = true;
-            if *back {
-                self.binding = Binding::Context(std::mem::take(path));
+            if let Some(client) = back.take() {
+                self.binding = Binding::Context {
+                    path: std::mem::take(path),
+                    client,
+                };
             }
         }
     }
@@ -741,8 +746,6 @@ impl Lease {
 /// Shared engine state: the daemon's focus calls and `ContentType` writes land
 /// on the object; this state relays them to the injector and its targets.
 struct EngineState {
-    /// Latest `ContentType` the daemon wrote (default until one arrives).
-    content_type: watch::Sender<ContentType>,
     /// The current lease. A `watch` retains it, so a wait or focus stream that
     /// starts late still observes a change: the daemon focuses the engine
     /// *during* the `SetGlobalEngine` round trip, before `acquire` waits.
@@ -759,50 +762,25 @@ struct EngineState {
     /// hands it back. It is the connection's, not one utterance's: a target
     /// that supersedes another finds `myna-stt` global and must not take that
     /// for the user's engine.
-    displaced: watch::Sender<Option<String>>,
-    /// Whether the last field focused by name is GNOME Shell's, whose preedit
-    /// carries no attributes ([`SHELL_CLIENT`]). Focus on any other field ends
-    /// the lease, so this is the client of the field a lease writes to.
-    shell_focused: AtomicBool,
-    /// Whether the last field focused by name is an XIM client's, whose
-    /// commits are split ([`XIM_COMMIT_UNITS`]).
-    xim_focused: AtomicBool,
+    displaced: Mutex<Option<String>>,
 }
 
 impl EngineState {
     fn new() -> Self {
         Self {
-            content_type: watch::Sender::new(ContentType::default()),
-            lease: watch::Sender::new(Lease {
-                id: 0,
-                binding: Binding::Lost,
-                before_cursor: None,
-                activated_at: None,
-                on_fake: false,
-                wrote: false,
-                fieldless: false,
-            }),
+            lease: watch::Sender::new(Lease::new(0, Binding::Lost)),
             next_lease: AtomicU64::new(1),
             next_blip: AtomicU64::new(1),
             runtime: tokio::runtime::Handle::try_current().ok(),
-            displaced: watch::Sender::new(None),
-            shell_focused: AtomicBool::new(false),
-            xim_focused: AtomicBool::new(false),
+            displaced: Mutex::new(None),
         }
     }
 
     /// Mint the lease for the next target, ending any earlier one.
     fn mint(&self) -> u64 {
         let id = self.next_lease.fetch_add(1, Ordering::Relaxed);
-        self.lease.send_replace(Lease {
-            id,
-            binding: Binding::Pending,
-            before_cursor: None,
-            activated_at: None,
-            on_fake: false,
-            wrote: false,
-            fieldless: false,
-        });
+        self.lease
+            .send_replace(Lease::new(id, Binding::Pending(Fake::None)));
         id
     }
 
@@ -811,15 +789,6 @@ impl EngineState {
     }
 
     fn focus(self: &Arc<Self>, change: FocusChange<'_>) {
-        match change {
-            FocusChange::In(Some(ctx)) if !ctx.is_fake() => {
-                self.shell_focused
-                    .store(ctx.client == SHELL_CLIENT, Ordering::Relaxed);
-                self.xim_focused
-                    .store(ctx.client == XIM_CLIENT, Ordering::Relaxed);
-            }
-            _ => {}
-        }
         let blip = self.next_blip.fetch_add(1, Ordering::Relaxed);
         let mut began = false;
         self.lease.send_modify(|lease| {
@@ -892,8 +861,11 @@ impl EngineState {
                     lease.binding,
                     lease.activated_at.map(|at| at.elapsed())
                 );
-                lease.fieldless = matches!(lease.binding, Binding::Left { .. });
-                lease.binding = Binding::Lost;
+                lease.binding = if matches!(lease.binding, Binding::Left { .. }) {
+                    Binding::NoField
+                } else {
+                    Binding::Lost
+                };
             }
             expired
         });
@@ -902,28 +874,20 @@ impl EngineState {
     /// Lease `id` put text or a preedit in front of the daemon.
     fn wrote(&self, id: u64) {
         self.lease.send_if_modified(|lease| {
-            if lease.held_by(id) {
-                lease.wrote = true;
+            if lease.id == id {
+                if let Binding::Unnamed { wrote } = &mut lease.binding {
+                    *wrote = true;
+                }
             }
             false
         });
     }
 
-    /// The user's activation continues, whichever lease is current.
-    fn activated_current(&self) {
+    /// The user used Myna's activation while lease `id` (or any current lease
+    /// when `None`) is held.
+    fn activated(&self, id: Option<u64>) {
         self.lease.send_if_modified(|lease| {
-            let held = lease.binding != Binding::Lost;
-            if held {
-                lease.activated();
-            }
-            held
-        });
-    }
-
-    /// The user used Myna's activation while lease `id` is held.
-    fn activated(&self, id: u64) {
-        self.lease.send_if_modified(|lease| {
-            let held = lease.held_by(id);
+            let held = lease.held_by(id.unwrap_or(lease.id));
             if held {
                 lease.activated();
             }
@@ -954,7 +918,10 @@ impl EngineState {
     /// anything earlier belongs to a field no lease writes to.
     fn surrounding(&self, before_cursor: Option<char>) {
         self.lease.send_if_modified(|lease| {
-            if matches!(lease.binding, Binding::Unnamed | Binding::Context(_)) {
+            if matches!(
+                lease.binding,
+                Binding::Unnamed { .. } | Binding::Context { .. }
+            ) {
                 lease.before_cursor = before_cursor;
             }
             false
@@ -974,7 +941,7 @@ impl EngineState {
             if lease.id != id {
                 return false;
             }
-            let held = lease.binding != Binding::Lost;
+            let held = lease.held_by(id);
             retired = if held { Retired::Held } else { Retired::Lost };
             lease.binding = Binding::Lost;
             held
@@ -995,7 +962,7 @@ impl EngineState {
             }
             held
         });
-        self.displaced.send_replace(None);
+        *self.displaced.lock().unwrap_or_else(|e| e.into_inner()) = None;
     }
 
     /// Record the engine an activation displaces, `current` being what
@@ -1003,75 +970,89 @@ impl EngineState {
     /// activation is still standing: what it displaced is what the user is
     /// owed, so it is kept. `myna-stt` is never something to restore.
     fn displace(&self, current: Option<String>) {
-        self.displaced.send_if_modified(|displaced| match current {
-            Some(name) if !name.is_empty() && name != ENGINE_NAME => {
-                *displaced = Some(name);
-                true
-            }
-            _ => false,
-        });
+        if let Some(name) = current.filter(|n| !n.is_empty() && n != ENGINE_NAME) {
+            *self.displaced.lock().unwrap_or_else(|e| e.into_inner()) = Some(name);
+        }
     }
 
     /// The engine a retiring target hands back, consuming the responsibility
     /// so no later release switches again. A superseded target takes nothing:
     /// the lease that displaced it in turn owes the restore.
     fn reclaim(&self, retired: Retired) -> Option<String> {
-        if !retired.restores() {
-            return None;
-        }
-        self.displaced.send_replace(None)
+        retired
+            .restores()
+            .then(|| {
+                self.displaced
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .take()
+            })
+            .flatten()
     }
 
     /// Whether the daemon focused the engine for lease `id`, waiting up to
     /// `FOCUS_WAIT`, or on the fake context up to `FOCUS_BLIP_GRACE` from the
-    /// start or the last activation. If it did not, the lease becomes
-    /// `Unfocused`.
+    /// start or the last activation.
     async fn focus_arrived(&self, id: u64) -> bool {
         let mut rx = self.lease.subscribe();
-        let arrived = |l: &Lease| l.id != id || l.binding != Binding::Pending;
         let started = tokio::time::Instant::now();
-        let _ = tokio::time::timeout(FOCUS_WAIT, rx.wait_for(arrived)).await;
-        // A key grab, as starting by key makes on X11, keeps the field's focus
-        // until the key is released, and a held key repeats until then.
-        while self.on_fake(id) {
-            let last = self
-                .lease
-                .borrow()
-                .activated_at
-                .map_or(started, |at| at.max(started));
-            let deadline = last + FOCUS_BLIP_GRACE;
+        loop {
+            let Some(deadline) = rx.borrow().pending_deadline(id, started) else {
+                break;
+            };
             if tokio::time::Instant::now() >= deadline {
                 break;
             }
-            let _ = tokio::time::timeout_at(deadline, rx.wait_for(arrived)).await;
+            let _ = tokio::time::timeout_at(
+                deadline,
+                rx.wait_for(|l| l.pending_deadline(id, started) != Some(deadline)),
+            )
+            .await;
         }
-        !self.lease.send_if_modified(|lease| {
-            let pending = lease.id == id && lease.binding == Binding::Pending;
-            if pending {
-                lease.binding = Binding::Unfocused;
+        let mut settled = false;
+        self.lease.send_if_modified(|lease| {
+            if lease.id != id {
+                return false;
             }
-            pending
-        })
+            match lease.binding {
+                Binding::Pending(Fake::Held) => {
+                    lease.binding = Binding::NoField;
+                    true
+                }
+                Binding::Pending(_) => {
+                    lease.binding = Binding::Unfocused;
+                    true
+                }
+                _ => {
+                    settled = true;
+                    false
+                }
+            }
+        });
+        settled
     }
 
-    /// Wait while lease `id` is `Left`, which acquiring cannot judge: a field
-    /// focused within the blip's grace binds it, else the blip ends it.
-    async fn left_settled(&self, id: u64) {
+    /// Wait while lease `id` is `Left`: a field focused within the blip's
+    /// grace binds it (and owes `CONTENT_TYPE_GRACE`), else the blip ends it.
+    async fn left_settled(&self, id: u64) -> bool {
+        if !matches!(self.lease.borrow().binding, Binding::Left { .. }) {
+            return false;
+        }
         let mut rx = self.lease.subscribe();
         let _ = rx
             .wait_for(|l| l.id != id || !matches!(l.binding, Binding::Left { .. }))
             .await;
+        self.holds(id)
     }
 
     /// Whether lease `id` never got past the daemon's fake context.
     fn on_fake(&self, id: u64) -> bool {
         let lease = self.lease.borrow();
         lease.id == id
-            && match lease.binding {
-                Binding::Pending | Binding::Unfocused => lease.on_fake,
-                Binding::Lost => lease.fieldless,
-                _ => false,
-            }
+            && matches!(
+                lease.binding,
+                Binding::Pending(Fake::Held) | Binding::NoField
+            )
     }
 
     /// Yields `FocusOut` once lease `id` is no longer held.
@@ -1084,20 +1065,28 @@ impl EngineState {
         .boxed()
     }
 
+    fn set_content_type(&self, content_type: ContentType) {
+        self.lease.send_if_modified(|lease| {
+            lease.content_type = content_type;
+            false
+        });
+    }
+
     fn content_type(&self) -> ContentType {
-        *self.content_type.borrow()
+        self.lease.borrow().content_type
     }
 
     /// Whether preedit may carry the WHOLE hint to the focused field.
     fn preedit_hint(&self) -> bool {
-        !self.shell_focused.load(Ordering::Relaxed)
+        self.lease
+            .borrow()
+            .client()
+            .is_some_and(|c| c != SHELL_CLIENT && !c.is_empty())
     }
 
     /// The most UTF-16 units one commit to the focused field may carry.
     fn commit_limit(&self) -> Option<usize> {
-        self.xim_focused
-            .load(Ordering::Relaxed)
-            .then_some(XIM_COMMIT_UNITS)
+        (self.lease.borrow().client() == Some(XIM_CLIENT)).then_some(XIM_COMMIT_UNITS)
     }
 }
 
@@ -1132,7 +1121,7 @@ fn commit_pieces(text: &str, limit: usize) -> Vec<&str> {
 /// current, the one being acquired included.
 fn activation_for(state: &Arc<EngineState>) -> Activation {
     let state = Arc::clone(state);
-    Activation::new(move || state.activated_current())
+    Activation::new(move || state.activated(None))
 }
 
 /// The `org.freedesktop.IBus.Engine` object the daemon drives. Most callbacks
@@ -1212,7 +1201,7 @@ impl EngineObject {
                 ""
             }
         );
-        self.state.content_type.send_replace(content_type);
+        self.state.set_content_type(content_type);
     }
 
     /// Keys pass straight through — we synthesize no input (commit-only, FR-015).
@@ -1346,14 +1335,9 @@ impl IbusInjector {
         Ok(Self { conn, state })
     }
 
-    /// Read the currently active global engine's name (to restore later).
-    async fn global_engine_name(&self) -> Option<String> {
-        global_engine_of(&self.conn).await.ok().flatten()
-    }
-
-    /// The active global engine's name (read-only; for tests/diagnostics).
+    /// The active global engine's name.
     pub async fn global_engine(&self) -> Option<String> {
-        self.global_engine_name().await
+        global_engine_of(&self.conn).await.ok().flatten()
     }
 }
 
@@ -1370,11 +1354,7 @@ impl IbusInjector {
     /// Make our engine global under a new lease, recording `displaced` as the
     /// engine to restore once that succeeds, and wait for the daemon to focus
     /// it. Whether the focus came is the second value.
-    async fn switch(
-        &self,
-        displaced: Option<String>,
-    ) -> Result<(Box<IbusTarget>, bool), InjectError> {
-        self.state.content_type.send_replace(ContentType::default());
+    async fn switch(&self, displaced: Option<String>) -> Result<(u64, bool), InjectError> {
         // Before the switch, which focuses the engine before it returns.
         let lease = self.state.mint();
         if let Err(err) = call(&self.conn, "SetGlobalEngine", &(ENGINE_NAME,)).await {
@@ -1382,36 +1362,38 @@ impl IbusInjector {
             return Err(err);
         }
         self.state.displace(displaced);
-        let target = Box::new(IbusTarget {
-            conn: self.conn.clone(),
-            state: self.state.clone(),
-            lease,
-            preedit_active: false,
-            held: Vec::new(),
-            held_preedit: None,
-        });
-
         // The daemon writes ContentType after FocusIn to a newly activated
         // engine, so wait for focus and give the write a grace to land.
         let focus_received = self.state.focus_arrived(lease).await;
         if focus_received {
             tokio::time::sleep(CONTENT_TYPE_GRACE).await;
         }
-        Ok((target, focus_received))
+        Ok((lease, focus_received))
     }
 
-    /// The global engine once it is no longer `before`, or after
-    /// `FOCUS_WAIT`. The daemon cancels a switch as soon as a newer one
-    /// arrives, but names the newer one's engine only once that is done.
-    async fn switched_since(&self, before: Option<&str>) -> Option<String> {
-        let deadline = tokio::time::Instant::now() + FOCUS_WAIT;
-        loop {
-            let now = self.global_engine_name().await;
-            if now.as_deref() != before || tokio::time::Instant::now() >= deadline {
-                return now;
-            }
-            tokio::time::sleep(SWITCH_POLL).await;
+    async fn rollback(&self, lease: u64) {
+        let retired = self.state.retire(lease);
+        if let Some(displaced) = self.state.reclaim(retired) {
+            let _ = call(&self.conn, "SetGlobalEngine", &(displaced,)).await;
         }
+    }
+}
+
+/// The global engine once it is no longer `before`, or after `FOCUS_WAIT`.
+/// The daemon cancels a switch as soon as a newer one arrives, and names the
+/// newer engine only once its switch finishes.
+async fn switched_since<F, Fut>(before: Option<&str>, mut read: F) -> Option<String>
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = Option<String>>,
+{
+    let deadline = tokio::time::Instant::now() + FOCUS_WAIT;
+    loop {
+        let now = read().await;
+        if now.as_deref() != before || tokio::time::Instant::now() >= deadline {
+            return now;
+        }
+        tokio::time::sleep(SWITCH_POLL).await;
     }
 }
 
@@ -1455,36 +1437,36 @@ impl Injector for IbusInjector {
     /// can only restore an input method the connection was able to read.
     async fn acquire(&mut self) -> Result<Box<dyn Target>, InjectError> {
         // Read before the switch; recorded once it has succeeded.
-        let before = self.global_engine_name().await;
+        let before = self.global_engine().await;
 
         call(&self.conn, "RegisterComponent", &(ibus_component(),)).await?;
         let mut displaced = before.clone();
         let mut switch = 1;
-        let (target, focus_received) = loop {
+        let (lease, focus_received) = loop {
             // The switch answering is no proof it stuck: an engine made global
             // just after it, by the Shell or the user, wins without failing it.
             let (taker, error) = match self.switch(displaced.clone()).await {
-                Ok((target, focus_received)) => match global_engine_of(&self.conn).await {
-                    Ok(Some(name)) if name == ENGINE_NAME => break (target, focus_received),
-                    Ok(now) if reclaims(switch, Switched::Answered, now.as_deref()) => {
-                        self.state.taken(target.lease);
+                Ok((lease, focus_received)) => match global_engine_of(&self.conn).await {
+                    Ok(Some(name)) if name == ENGINE_NAME => break (lease, focus_received),
+                    Ok(now) => {
+                        self.state.taken(lease);
+                        if !reclaims(switch, Switched::Answered, now.as_deref()) {
+                            myna_core::dbg_log!(
+                                "inject",
+                                "acquire refused: the global engine is {now:?}"
+                            );
+                            self.state.retire(lease);
+                            return Err(InjectError::FocusLost);
+                        }
                         (now, None)
                     }
-                    Ok(now) => {
-                        myna_core::dbg_log!(
-                            "inject",
-                            "acquire refused: the global engine is {now:?}"
-                        );
-                        target.release().await;
-                        return Err(InjectError::FocusLost);
-                    }
                     Err(err) => {
-                        target.release().await;
+                        self.rollback(lease).await;
                         return Err(err);
                     }
                 },
                 Err(err) => {
-                    let now = self.switched_since(before.as_deref()).await;
+                    let now = switched_since(before.as_deref(), || self.global_engine()).await;
                     let failed = Switched::Failed {
                         before: before.as_deref(),
                     };
@@ -1501,31 +1483,40 @@ impl Injector for IbusInjector {
             displaced = taker;
             switch += 1;
         };
-        let lease = target.lease;
 
-        self.state.left_settled(lease).await;
-        if self.state.on_fake(lease) {
-            myna_core::dbg_log!("inject", "acquire refused: no field took focus back");
-            target.release().await;
-            return Err(InjectError::NoTarget);
-        }
-        if !self.state.holds(lease) {
-            myna_core::dbg_log!("inject", "acquire refused: focus moved while acquiring");
-            target.release().await;
-            return Err(InjectError::FocusLost);
+        if self.state.left_settled(lease).await {
+            tokio::time::sleep(CONTENT_TYPE_GRACE).await;
         }
         let content_type = self.state.content_type();
-        if content_type.is_secure() {
+        let refusal = if self.state.on_fake(lease) {
+            myna_core::dbg_log!("inject", "acquire refused: no field took focus back");
+            Some(InjectError::NoTarget)
+        } else if !self.state.holds(lease) {
+            myna_core::dbg_log!("inject", "acquire refused: focus moved while acquiring");
+            Some(InjectError::FocusLost)
+        } else if content_type.is_secure() {
             myna_core::dbg_log!("inject", "acquire refused: secure field {content_type:?}");
-            target.release().await;
-            return Err(InjectError::SecureField);
+            Some(InjectError::SecureField)
+        } else {
+            None
+        };
+        if let Some(err) = refusal {
+            self.rollback(lease).await;
+            return Err(err);
         }
 
         myna_core::dbg_log!(
             "inject",
             "acquire ok: focus_received={focus_received} {content_type:?}"
         );
-        Ok(target)
+        Ok(Box::new(IbusTarget {
+            conn: self.conn.clone(),
+            state: self.state.clone(),
+            lease,
+            preedit_active: false,
+            held: Vec::new(),
+            held_preedit: None,
+        }))
     }
 
     fn capabilities(&self) -> TextInputCapabilities {
@@ -1580,9 +1571,7 @@ impl IbusTarget {
             let _ = self.emit("HidePreeditText", &()).await;
         }
     }
-}
 
-impl IbusTarget {
     /// Whether another engine took the global one from us, which ends the
     /// lease. An engine the daemon cannot name is taken as still ours.
     async fn taken(&mut self) -> Result<bool, InjectError> {
@@ -1593,31 +1582,10 @@ impl IbusTarget {
                     "IBus global engine is now {name:?}: ours was taken"
                 );
                 self.state.taken(self.lease);
-                self.held.clear();
-                self.held_preedit = None;
                 Ok(true)
             }
             _ => Ok(false),
         }
-    }
-
-    /// Where this target stands for a write, holding `text` while that is
-    /// unsure. Emitted while focus is away, it would reach the fake context.
-    async fn standing(&mut self, held: Option<&str>, preedit: bool) -> Standing {
-        let standing = self.state.standing(self.lease, false).await;
-        match standing {
-            Standing::Unsure if preedit => self.held_preedit = held.map(str::to_owned),
-            Standing::Unsure => {
-                self.held.extend(held.map(str::to_owned));
-                self.held_preedit = None;
-            }
-            Standing::Lost => {
-                self.held.clear();
-                self.held_preedit = None;
-            }
-            Standing::Held => {}
-        }
-        standing
     }
 
     /// Write what a blip held, now that focus is back.
@@ -1710,11 +1678,19 @@ impl Target for IbusTarget {
         // Before anything is held: held text would otherwise wait out a focus
         // blip that never ends.
         if self.taken().await? {
+            self.held.clear();
+            self.held_preedit = None;
             return Err(InjectError::FocusLost);
         }
-        match self.standing(Some(text), false).await {
-            Standing::Unsure => return Ok(()),
+        match self.state.standing(self.lease, false).await {
+            Standing::Unsure => {
+                self.held.push(text.to_owned());
+                self.held_preedit = None;
+                return Ok(());
+            }
             Standing::Lost => {
+                self.held.clear();
+                self.held_preedit = None;
                 myna_core::dbg_log!("inject", "commit REFUSED: focus lost");
                 return Err(InjectError::FocusLost);
             }
@@ -1725,17 +1701,18 @@ impl Target for IbusTarget {
     }
 
     async fn set_preedit(&mut self, text: &str) {
-        match self.standing(Some(text), true).await {
-            Standing::Held => {}
-            Standing::Unsure | Standing::Lost => return,
-        }
-        if self.flush().await.is_ok() {
-            self.show_preedit(text).await;
+        match self.state.standing(self.lease, false).await {
+            Standing::Unsure => self.held_preedit = Some(text.to_owned()),
+            Standing::Held if !self.held.is_empty() => {
+                self.held_preedit = Some(text.to_owned());
+            }
+            Standing::Held => self.show_preedit(text).await,
+            Standing::Lost => self.held_preedit = None,
         }
     }
 
     fn activated(&self) {
-        self.state.activated(self.lease);
+        self.state.activated(Some(self.lease));
     }
 
     fn char_before_cursor(&self) -> Option<char> {
@@ -1746,13 +1723,13 @@ impl Target for IbusTarget {
         self.state.loss(self.lease)
     }
 
-    /// Clears the preedit and restores the input method the engine switch
-    /// displaced, unless a newer lease superseded this one.
+    /// Clears the preedit and restores the displaced input method unless a
+    /// newer lease superseded this one.
     async fn release(mut self: Box<Self>) {
-        // An engine taken is owed nothing, neither held text nor a restore.
-        let _ = self.taken().await;
-        // A blip under way decides whether what it held lands.
-        if self.state.standing(self.lease, true).await == Standing::Held {
+        let taken = self.taken().await;
+        if matches!(taken, Ok(false))
+            && self.state.standing(self.lease, true).await == Standing::Held
+        {
             let _ = self.flush().await;
         }
         // Retired first: the restore focuses our engine out.
@@ -1862,40 +1839,48 @@ mod tests {
         state.focus(FocusChange::In(Some(Context { path, client })));
     }
 
-    /// #18: GNOME Shell's field gets no preedit hint, any other field does,
-    /// and the daemon's fake context or an unnamed focus changes neither.
+    /// #18: GNOME Shell's field and any unnamed field get no preedit hint
+    /// (safe default while `FocusInId` has not named `gnome-shell` yet);
+    /// named non-Shell fields do, and quirks never bleed across leases.
     #[test]
     fn preedit_hint_follows_the_focused_client() {
         let state = engine_state();
-        assert!(state.preedit_hint(), "no field named yet");
-        focus_in(&state, "/org/freedesktop/IBus/InputContext_2", SHELL_CLIENT);
-        assert!(!state.preedit_hint());
-        focus_in(&state, "/org/freedesktop/IBus/InputContext_1", FAKE_CLIENT);
-        state.focus(FocusChange::In(None));
-        state.focus(FocusChange::Out(None));
-        assert!(!state.preedit_hint(), "still GNOME Shell's field");
-        focus_in(&state, "/org/freedesktop/IBus/InputContext_3", "gtk3-im");
+        let _lease = state.mint();
+        assert!(
+            !state.preedit_hint(),
+            "unnamed/unknown client must take the safe no-attr path (#18)"
+        );
+        focus_in(&state, "/org/freedesktop/IBus/InputContext_2", "gtk3-im");
         assert!(state.preedit_hint());
+        let _next = state.mint();
+        state.focus(FocusChange::In(None));
+        assert!(
+            !state.preedit_hint(),
+            "prior lease's client must not bleed into an unnamed lease"
+        );
+        focus_in(&state, "/org/freedesktop/IBus/InputContext_3", SHELL_CLIENT);
+        assert!(!state.preedit_hint());
     }
 
-    /// #73: only an XIM client's commits are split, and the daemon's fake
-    /// context or an unnamed focus changes nothing.
+    /// #73: only a lease bound to an XIM client splits commits; a later
+    /// unnamed or unfocused lease does not inherit XIM splitting (mutter#5087).
     #[test]
     fn commit_limit_follows_the_focused_client() {
         let state = engine_state();
+        let _first = state.mint();
         assert_eq!(state.commit_limit(), None, "no field named yet");
         focus_in(&state, "/org/freedesktop/IBus/InputContext_2", XIM_CLIENT);
         assert_eq!(state.commit_limit(), Some(XIM_COMMIT_UNITS));
         focus_in(&state, "/org/freedesktop/IBus/InputContext_1", FAKE_CLIENT);
+        assert_eq!(state.commit_limit(), None, "lost lease has no XIM limit");
+
+        let _second = state.mint();
         state.focus(FocusChange::In(None));
-        state.focus(FocusChange::Out(None));
         assert_eq!(
             state.commit_limit(),
-            Some(XIM_COMMIT_UNITS),
-            "still the XIM field"
+            None,
+            "prior XIM lease must not bleed into an unnamed lease"
         );
-        focus_in(&state, "/org/freedesktop/IBus/InputContext_3", SHELL_CLIENT);
-        assert_eq!(state.commit_limit(), None);
     }
 
     #[test]
@@ -2331,7 +2316,7 @@ mod tests {
         state.wrote(lease);
 
         grab(&engine).await;
-        state.activated(lease);
+        state.activated(Some(lease));
         tokio::time::sleep(EDGE_AFTER).await;
         engine.focus_out_id(FAKE.into()).await;
         engine.focus_in_id(FIELD.into(), APP.into()).await;
@@ -2530,6 +2515,23 @@ mod tests {
         assert!(!reclaims(2, fresh, SHELL));
     }
 
+    #[tokio::test(start_paused = true)]
+    async fn switched_since_polls_until_the_taker_lands_or_times_out() {
+        let mut answers = Vec::from([None, None, Some(USER_ENGINE.to_owned())]).into_iter();
+        let started = tokio::time::Instant::now();
+        let landed = switched_since(None, || std::future::ready(answers.next().flatten())).await;
+        assert_eq!(landed.as_deref(), Some(USER_ENGINE));
+        assert_eq!(started.elapsed(), SWITCH_POLL * 2);
+
+        let started = tokio::time::Instant::now();
+        let unchanged = switched_since(Some(USER_ENGINE), || {
+            std::future::ready(Some(USER_ENGINE.into()))
+        })
+        .await;
+        assert_eq!(unchanged.as_deref(), Some(USER_ENGINE));
+        assert!(started.elapsed() >= FOCUS_WAIT);
+    }
+
     const APP: &str = "gtk4-im:mousepad";
     /// When the key's command reaches the daemon after its grab's FocusOut.
     const EDGE_AFTER: Duration = Duration::from_millis(20);
@@ -2569,7 +2571,7 @@ mod tests {
     async fn repeats_keep_a_blip_open_past_the_grace() {
         let (state, engine, lease) = focused().await;
         grab(&engine).await;
-        state.activated(lease);
+        state.activated(Some(lease));
         let held = tokio::time::Instant::now();
         while held.elapsed() < 3 * FOCUS_BLIP_GRACE {
             tokio::time::sleep(REPEAT).await;
@@ -2578,7 +2580,7 @@ mod tests {
                 "lost {:?} into the hold",
                 held.elapsed()
             );
-            state.activated(lease);
+            state.activated(Some(lease));
         }
         ungrab(&engine).await;
         assert!(state.holds(lease));
@@ -2590,10 +2592,10 @@ mod tests {
     async fn a_blip_ends_a_grace_after_the_last_repeat() {
         let (state, engine, lease) = focused().await;
         grab(&engine).await;
-        state.activated(lease);
+        state.activated(Some(lease));
         for _ in 0..30 {
             tokio::time::sleep(REPEAT).await;
-            state.activated(lease);
+            state.activated(Some(lease));
         }
         tokio::time::sleep(FOCUS_BLIP_GRACE - TICK).await;
         assert!(
@@ -2619,9 +2621,9 @@ mod tests {
             if released_first {
                 ungrab(&engine).await;
                 assert_eq!(standing_now(&state, lease), Some(Standing::Unsure));
-                state.activated(lease);
+                state.activated(Some(lease));
             } else {
-                state.activated(lease);
+                state.activated(Some(lease));
                 assert_eq!(standing_now(&state, lease), None, "writes wait");
                 ungrab(&engine).await;
             }
@@ -2636,7 +2638,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn an_activation_just_before_the_focus_out_counts() {
         let (state, engine, lease) = focused().await;
-        state.activated(lease);
+        state.activated(Some(lease));
         tokio::time::sleep(ACTIVATION_WINDOW - TICK).await;
         grab(&engine).await;
         ungrab(&engine).await;
@@ -2659,7 +2661,7 @@ mod tests {
         tokio::time::sleep(TICK * 2).await;
         assert!(!state.holds(lease));
 
-        state.activated(lease);
+        state.activated(Some(lease));
         assert!(!state.holds(lease), "a late activation revived it");
     }
 
@@ -2667,7 +2669,7 @@ mod tests {
     async fn focus_away_past_the_grace_ends_the_lease_even_after_an_activation() {
         let (state, engine, lease) = focused().await;
         grab(&engine).await;
-        state.activated(lease);
+        state.activated(Some(lease));
         tokio::time::sleep(FOCUS_BLIP_GRACE - TICK).await;
         assert!(state.holds(lease), "ended before the grace ran out");
         tokio::time::sleep(TICK * 2).await;
@@ -2691,7 +2693,7 @@ mod tests {
                 let (state, engine, lease) = focused().await;
                 grab(&engine).await;
                 if activated {
-                    state.activated(lease);
+                    state.activated(Some(lease));
                 }
                 state.focus(other);
                 assert!(!state.holds(lease), "{other:?}, activated: {activated}");
@@ -2706,7 +2708,7 @@ mod tests {
         grab(&engine).await;
         ungrab(&engine).await;
         grab(&engine).await;
-        state.activated(lease);
+        state.activated(Some(lease));
         assert_eq!(standing_now(&state, lease), None, "writes wait");
         ungrab(&engine).await;
         assert_eq!(standing_now(&state, lease), Some(Standing::Held));
@@ -2718,11 +2720,11 @@ mod tests {
         let (state, engine, lease) = focused().await;
         let half = FOCUS_BLIP_GRACE / 2;
         grab(&engine).await;
-        state.activated(lease);
+        state.activated(Some(lease));
         tokio::time::sleep(half).await;
         ungrab(&engine).await;
         grab(&engine).await;
-        state.activated(lease);
+        state.activated(Some(lease));
         tokio::time::sleep(half + TICK).await;
         assert!(
             state.holds(lease),
@@ -2743,7 +2745,7 @@ mod tests {
                 "an unsure write must not wait: the loop has the Toggle to read"
             );
             assert!(state.standing(lease, true).now_or_never().is_none());
-            state.activated(lease);
+            state.activated(Some(lease));
             let waiting = tokio::spawn({
                 let state = Arc::clone(&state);
                 async move { state.standing(lease, false).await }
@@ -2772,7 +2774,7 @@ mod tests {
         let newer = state.mint();
         engine.focus_in_id(FIELD.into(), APP.into()).await;
         grab(&engine).await;
-        state.activated(older);
+        state.activated(Some(older));
         assert_eq!(
             state.standing(older, true).now_or_never(),
             Some(Standing::Lost)
@@ -2786,7 +2788,7 @@ mod tests {
         state.surrounding(Some('a'));
         grab(&engine).await;
         state.surrounding(Some('z'));
-        state.activated(lease);
+        state.activated(Some(lease));
         ungrab(&engine).await;
         assert_eq!(state.before_cursor(lease), Some('a'));
     }
@@ -2809,6 +2811,50 @@ mod tests {
         assert!(arrived.await.unwrap(), "the field's focus was missed");
         assert!(state.holds(lease));
         assert_eq!(standing_now(&state, lease), Some(Standing::Held));
+    }
+
+    /// Releasing the start key just before `FOCUS_WAIT` sends `FocusOutId(fake)`
+    /// ahead of `FOCUS_WAIT` and `FocusInId(field)` ~6 ms later (past
+    /// `FOCUS_WAIT`). That transition is the field arriving, not `Unfocused`.
+    #[tokio::test(start_paused = true)]
+    async fn a_start_key_released_just_before_the_focus_wait_still_binds_the_field() {
+        let state = engine_state();
+        let lease = state.mint();
+        let engine = engine(&state);
+        engine.focus_in_id(FAKE.into(), "fake".into()).await;
+        let arrived = tokio::spawn({
+            let state = Arc::clone(&state);
+            async move { state.focus_arrived(lease).await }
+        });
+        tokio::time::sleep(FOCUS_WAIT - Duration::from_millis(3)).await;
+        engine.focus_out_id(FAKE.into()).await;
+        tokio::time::sleep(Duration::from_millis(6)).await;
+        engine.focus_in_id(FIELD.into(), APP.into()).await;
+        assert!(arrived.await.unwrap(), "ungrab in flight became Unfocused");
+        assert!(state.holds(lease), "the field's own FocusInId killed it");
+    }
+
+    /// Start-key repeats during `acquire` keep the grab wait open, and are
+    /// consumed once the field binds: an unactivated focus hop right after
+    /// acquiring is still a focus loss.
+    #[tokio::test(start_paused = true)]
+    async fn start_key_repeats_do_not_excuse_a_focus_move_after_acquiring() {
+        let state = engine_state();
+        let lease = state.mint();
+        let engine = engine(&state);
+        engine.focus_in_id(FAKE.into(), "fake".into()).await;
+        activation_for(&state).signal();
+        ungrab(&engine).await;
+        assert!(state.holds(lease));
+
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        grab(&engine).await;
+        ungrab(&engine).await;
+        tokio::time::sleep(ACTIVATION_WINDOW + TICK).await;
+        assert!(
+            !state.holds(lease),
+            "start-key activation excused a post-acquire focus hop"
+        );
     }
 
     /// A start key held for longer than the grace: its repeats, signalled
@@ -2899,7 +2945,7 @@ mod tests {
             client: APP,
         };
         state.focus(FocusChange::In(Some(field)));
-        state.activated(lease);
+        state.activated(Some(lease));
         state.focus(FocusChange::Out(None));
         assert!(!state.holds(lease));
     }
