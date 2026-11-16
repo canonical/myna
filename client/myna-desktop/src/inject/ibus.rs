@@ -1723,15 +1723,22 @@ impl Target for IbusTarget {
         self.state.loss(self.lease)
     }
 
-    /// Clears the preedit and restores the displaced input method unless a
-    /// newer lease superseded this one.
-    async fn release(mut self: Box<Self>) {
+    /// Flushes any commit held for a blip, clears the preedit, and restores
+    /// the displaced input method unless a newer lease superseded this one.
+    async fn release(mut self: Box<Self>) -> Result<(), InjectError> {
         let taken = self.taken().await;
-        if matches!(taken, Ok(false))
-            && self.state.standing(self.lease, true).await == Standing::Held
-        {
-            let _ = self.flush().await;
-        }
+        let result = if self.held.is_empty() {
+            Ok(())
+        } else {
+            match taken {
+                Err(err) => Err(err),
+                Ok(false) if self.state.standing(self.lease, true).await == Standing::Held => {
+                    self.held_preedit = None;
+                    self.flush().await
+                }
+                Ok(_) => Err(InjectError::FocusLost),
+            }
+        };
         // Retired first: the restore focuses our engine out.
         let retired = self.state.retire(self.lease);
         if std::mem::take(&mut self.preedit_active) && retired == Retired::Held {
@@ -1743,6 +1750,7 @@ impl Target for IbusTarget {
             }
             None => myna_core::dbg_log!("inject", "release: nothing to restore ({retired:?})"),
         }
+        result
     }
 }
 

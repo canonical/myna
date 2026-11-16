@@ -452,7 +452,7 @@ async fn mock_target_release_restores_once() {
     use myna_desktop::inject::Injector;
     let mut injector = MockInjector::new();
     let log = injector.log();
-    injector.acquire().await.unwrap().release().await;
+    injector.acquire().await.unwrap().release().await.unwrap();
     assert_eq!(
         log.lock().unwrap().releases,
         1,

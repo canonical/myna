@@ -36,6 +36,7 @@ enum Flaw {
     KeepsPreeditOnRelease,
     BlipIsALoss,
     BlipIsNeverALoss,
+    SilentlyDropsHeldCommit,
     GraceIgnoresActivation,
 }
 
@@ -131,6 +132,10 @@ impl Injector for Reference {
 impl Target for RefTarget {
     async fn commit(&mut self, text: &str) -> Result<(), InjectError> {
         if !self.may_write() {
+            let desk = self.desk.borrow();
+            if self.flaw == Flaw::SilentlyDropsHeldCommit && desk.lease == self.id && desk.focused {
+                return Ok(());
+            }
             return Err(InjectError::FocusLost);
         }
         let detects = self.capabilities.secure_field_detection == Support::Supported;
@@ -194,7 +199,7 @@ impl Target for RefTarget {
         }
     }
 
-    async fn release(self: Box<Self>) {
+    async fn release(self: Box<Self>) -> Result<(), InjectError> {
         let flaw = self.flaw;
         let owned = self.owned();
         self.desk.send_modify(|desk| {
@@ -208,6 +213,7 @@ impl Target for RefTarget {
                 desk.broken = true;
             }
         });
+        Ok(())
     }
 }
 
@@ -472,6 +478,12 @@ rejects!(
 rejects!(
     a_blip_always_ridden_out,
     Flaw::BlipIsNeverALoss,
+    FULL,
+    "a_focus_blip_without_an_activation_is_a_loss"
+);
+rejects!(
+    a_held_commit_silently_dropped_at_release,
+    Flaw::SilentlyDropsHeldCommit,
     FULL,
     "a_focus_blip_without_an_activation_is_a_loss"
 );

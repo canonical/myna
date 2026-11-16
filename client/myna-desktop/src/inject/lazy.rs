@@ -299,7 +299,8 @@ mod tests {
             .await
             .expect("first press connects")
             .release()
-            .await;
+            .await
+            .expect("release");
 
         // IBus restarts under the held connection.
         injector.inner = Some(Box::new(Stale));
@@ -356,7 +357,13 @@ mod tests {
     #[tokio::test]
     async fn a_live_connection_is_reused() {
         let (mut injector, attempts) = flaky(0);
-        injector.acquire().await.expect("acquire").release().await;
+        injector
+            .acquire()
+            .await
+            .expect("acquire")
+            .release()
+            .await
+            .expect("release");
         injector.acquire().await.expect("acquire");
         assert_eq!(attempts.load(Ordering::SeqCst), 1);
     }

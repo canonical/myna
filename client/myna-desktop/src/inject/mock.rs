@@ -405,7 +405,7 @@ impl Target for MockTarget {
         .boxed()
     }
 
-    async fn release(self: Box<Self>) {
+    async fn release(self: Box<Self>) -> Result<(), InjectError> {
         self.log.lock().unwrap().releases += 1;
         if self.owned() {
             self.field.shown.lock().unwrap().preedit.clear();
@@ -413,5 +413,6 @@ impl Target for MockTarget {
                 lease.lost.get_or_insert(FocusEvent::FocusOut);
             });
         }
+        Ok(())
     }
 }

@@ -175,9 +175,12 @@ pub trait Target: Send + fmt::Debug {
     /// as is focus that does not come back.
     fn activated(&self) {}
 
-    /// Give up the field: clear what it shows and hand the desktop back
-    /// whatever acquiring took.
-    async fn release(self: Box<Self>);
+    /// Give up the field: finish any write held for an unresolved blip, clear
+    /// what the field shows, and hand the desktop back whatever acquiring
+    /// took. Returns `Err` when text held for a blip could not be delivered
+    /// (for instance `Err(FocusLost)` when the blip turned out to be a loss);
+    /// the desktop is restored either way.
+    async fn release(self: Box<Self>) -> Result<(), InjectError>;
 }
 
 #[cfg(test)]
@@ -226,7 +229,9 @@ mod tests {
             Box::pin(futures_util::stream::pending())
         }
 
-        async fn release(self: Box<Self>) {}
+        async fn release(self: Box<Self>) -> Result<(), InjectError> {
+            Ok(())
+        }
     }
 
     #[test]

@@ -157,7 +157,7 @@ async fn commits_reach_a_plain_field(fixture: &mut dyn Fixture) -> bool {
     if let Some(view) = &view {
         assert!(view.text.contains("hello"), "{CHECK}: field shows {view:?}");
     }
-    target.release().await;
+    target.release().await.expect(CHECK);
     view.is_some()
 }
 
@@ -184,7 +184,7 @@ async fn no_commit_after_focus_loss(fixture: &mut dyn Fixture) -> bool {
             "{CHECK}: field shows {view:?}"
         );
     }
-    target.release().await;
+    let _ = target.release().await;
     view.is_some()
 }
 
@@ -194,7 +194,7 @@ async fn late_focus_streams_still_report_the_loss(fixture: &mut dyn Fixture) {
     let target = acquire(injector.as_mut(), CHECK).await;
     field.lose_focus().await;
     expect_loss(target.as_ref(), CHECK).await;
-    target.release().await;
+    let _ = target.release().await;
 }
 
 async fn a_focused_target_reports_nothing(fixture: &mut dyn Fixture) {
@@ -204,7 +204,7 @@ async fn a_focused_target_reports_nothing(fixture: &mut dyn Fixture) {
     let mut events = target.focus_events();
     let early = tokio::time::timeout(QUIET, events.next()).await;
     assert!(early.is_err(), "{CHECK}: reported {early:?} while focused");
-    target.release().await;
+    target.release().await.expect(CHECK);
 }
 
 async fn a_newer_target_supersedes_the_older(fixture: &mut dyn Fixture) -> bool {
@@ -218,7 +218,7 @@ async fn a_newer_target_supersedes_the_older(fixture: &mut dyn Fixture) -> bool 
         "{CHECK}: the superseded target wrote: {refused:?}"
     );
     expect_loss(older.as_ref(), CHECK).await;
-    older.release().await;
+    let _ = older.release().await;
     if let Err(err) = newer.commit("new").await {
         panic!("{CHECK}: releasing the older target broke the newer: {err}");
     }
@@ -229,7 +229,7 @@ async fn a_newer_target_supersedes_the_older(fixture: &mut dyn Fixture) -> bool 
             "{CHECK}: field shows {view:?}"
         );
     }
-    newer.release().await;
+    newer.release().await.expect(CHECK);
     view.is_some()
 }
 
@@ -239,13 +239,13 @@ async fn release_after_focus_loss_then_reacquire(fixture: &mut dyn Fixture) {
     let target = acquire(injector.as_mut(), CHECK).await;
     field.lose_focus().await;
     expect_loss(target.as_ref(), CHECK).await;
-    target.release().await;
+    let _ = target.release().await;
     field.focus().await;
     let mut again = acquire(injector.as_mut(), CHECK).await;
     if let Err(err) = again.commit("again").await {
         panic!("{CHECK}: a reacquired target cannot write: {err}");
     }
-    again.release().await;
+    again.release().await.expect(CHECK);
 }
 
 async fn a_focus_blip_with_an_activation_is_not_a_loss(fixture: &mut dyn Fixture) -> bool {
@@ -264,7 +264,7 @@ async fn a_focus_blip_with_an_activation_is_not_a_loss(fixture: &mut dyn Fixture
     }
     let early = tokio::time::timeout(QUIET, events.next()).await;
     assert!(early.is_err(), "{CHECK}: reported {early:?} for a blip");
-    target.release().await;
+    target.release().await.expect(CHECK);
     view.is_some()
 }
 
@@ -297,12 +297,14 @@ async fn a_blip_kept_alive_by_continued_activation_is_not_a_loss(
         early.is_err(),
         "{CHECK}: reported {early:?} for a held blip"
     );
-    target.release().await;
+    target.release().await.expect(CHECK);
     view.is_some()
 }
 
 /// Without an activation a blip may be a move to another field that shares
 /// the context, as an application with one context per window makes it.
+/// A commit held while deciding must be reported as `FocusLost` on either
+/// `commit` or `release`, never silently dropped.
 async fn a_focus_blip_without_an_activation_is_a_loss(fixture: &mut dyn Fixture) -> bool {
     const CHECK: &str = "a_focus_blip_without_an_activation_is_a_loss";
     let (mut injector, mut field) = fixture.setup(FieldKind::Plain).await;
@@ -320,10 +322,10 @@ async fn a_focus_blip_without_an_activation_is_a_loss(fixture: &mut dyn Fixture)
         Ok(None) => panic!("{CHECK}: the focus stream ended without an event"),
         Err(_) => panic!("{CHECK}: no focus event within {FOCUS_EVENT_LIMIT:?}"),
     }
-    let refused = target.commit("stray").await;
+    let released = target.release().await;
     assert!(
-        matches!(refused, Err(InjectError::FocusLost)),
-        "{CHECK}: commit after the loss gave {refused:?}"
+        matches!(held.and(released), Err(InjectError::FocusLost)),
+        "{CHECK}: held commit was dropped without reporting FocusLost"
     );
     let view = field.observe().await;
     if let Some(view) = &view {
@@ -332,7 +334,6 @@ async fn a_focus_blip_without_an_activation_is_a_loss(fixture: &mut dyn Fixture)
             "{CHECK}: field shows {view:?}"
         );
     }
-    target.release().await;
     view.is_some()
 }
 
@@ -349,7 +350,7 @@ async fn secure_fields_are_refused(fixture: &mut dyn Fixture) -> bool {
                 "{CHECK}: commit into a secure field gave {refused:?}"
             );
             target.set_preedit("secret").await;
-            target.release().await;
+            let _ = target.release().await;
         }
         Err(err) => panic!("{CHECK}: acquire failed for another reason: {err}"),
     }
@@ -399,7 +400,7 @@ async fn a_field_turning_secure_is_refused(fixture: &mut dyn Fixture) -> bool {
             "{CHECK}: field shows {view:?}"
         );
     }
-    target.release().await;
+    let _ = target.release().await;
     view.is_some()
 }
 
@@ -412,7 +413,7 @@ async fn release_clears_the_preedit(fixture: &mut dyn Fixture) -> bool {
     if let Some(view) = &before {
         assert_eq!(view.preedit, "draft", "{CHECK}: field shows {view:?}");
     }
-    target.release().await;
+    target.release().await.expect(CHECK);
     let after = field.observe().await;
     if let Some(view) = &after {
         assert!(view.preedit.is_empty(), "{CHECK}: field shows {view:?}");
@@ -439,7 +440,7 @@ async fn commit_clears_the_preedit(fixture: &mut dyn Fixture) -> bool {
             "{CHECK}: field shows {view:?}"
         );
     }
-    target.release().await;
+    target.release().await.expect(CHECK);
     after.is_some()
 }
 
@@ -457,7 +458,7 @@ async fn no_preedit_after_focus_loss(fixture: &mut dyn Fixture) -> bool {
             "{CHECK}: field shows {view:?}"
         );
     }
-    target.release().await;
+    let _ = target.release().await;
     view.is_some()
 }
 
@@ -470,6 +471,6 @@ async fn preedit_without_support_is_inert(fixture: &mut dyn Fixture) -> bool {
     if let Some(view) = &view {
         assert!(view.preedit.is_empty(), "{CHECK}: field shows {view:?}");
     }
-    target.release().await;
+    target.release().await.expect(CHECK);
     view.is_some()
 }

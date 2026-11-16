@@ -641,7 +641,7 @@ async fn session(purpose: u32, hints: u32) -> (Field, IbusInjector) {
         .await
         .expect("connect to IBus daemon");
     if let Ok(target) = injector.acquire().await {
-        target.release().await;
+        let _ = target.release().await;
     }
     assert_eq!(global_engine().await.as_deref(), Some(PRIOR_ENGINE));
     field.forget_delivered();
@@ -718,7 +718,7 @@ async fn ordinary_field_receives_preedit_and_commit() {
     target.set_preedit("").await;
     field.expect_only_sentinel(target.as_mut()).await;
 
-    target.release().await;
+    let _ = target.release().await;
     assert_eq!(
         global_engine().await.as_deref(),
         Some(PRIOR_ENGINE),
@@ -755,7 +755,7 @@ async fn the_engine_leaves_the_keyboard_layout_to_the_user() {
     };
     assert_eq!(desc.fields().get(2), Some(&Value::from(MYNA_ENGINE)));
     assert_eq!(desc.fields().get(9), Some(&Value::from("default")));
-    target.release().await;
+    let _ = target.release().await;
 }
 
 fn long_text() -> String {
@@ -790,7 +790,7 @@ async fn a_long_commit_reaches_an_xim_field_in_pieces() {
     assert!(pieces.iter().all(|p| p.ends_with(' ')), "{pieces:?}");
     field.expect_only_sentinel(target.as_mut()).await;
 
-    target.release().await;
+    let _ = target.release().await;
     field.close().await;
 }
 
@@ -808,7 +808,7 @@ async fn a_long_commit_reaches_any_other_field_whole() {
     assert_eq!(field.next().await, Seen::Commit(text));
     field.expect_only_sentinel(target.as_mut()).await;
 
-    target.release().await;
+    let _ = target.release().await;
     field.close().await;
 }
 
@@ -834,7 +834,8 @@ async fn the_field_reports_the_text_before_its_cursor() {
         .await
         .expect("acquire an ordinary field")
         .release()
-        .await;
+        .await
+        .expect("release");
     field.forget_delivered();
     let target = injector.acquire().await.expect("acquire it again");
     assert_eq!(target.char_before_cursor(), None, "the field has not said");
@@ -859,7 +860,7 @@ async fn the_field_reports_the_text_before_its_cursor() {
     }
     assert_eq!(before, Some('.'));
 
-    target.release().await;
+    let _ = target.release().await;
     field.close().await;
 }
 
@@ -877,7 +878,7 @@ async fn focus_leaving_the_field_ends_the_session() {
         .expect("a focus event within the hang guard");
     assert_eq!(event, Some(FocusEvent::FocusOut));
 
-    target.release().await;
+    let _ = target.release().await;
     field.close().await;
 }
 
@@ -927,7 +928,7 @@ async fn a_focus_blip_around_an_activation_is_not_a_loss() {
         "the blip was reported as a focus loss"
     );
 
-    target.release().await;
+    let _ = target.release().await;
     field.close().await;
 }
 
@@ -1026,7 +1027,7 @@ async fn the_first_activation_on_a_fresh_daemon_reaches_the_field() {
         events.next().now_or_never().is_none(),
         "the key's release was reported as a focus loss"
     );
-    target.release().await;
+    let _ = target.release().await;
     assert_eq!(field.next().await, Seen::Commit("first".into()));
     assert_eq!(field.next().await, Seen::Commit(" words".into()));
 }
@@ -1083,7 +1084,7 @@ async fn a_start_key_held_past_the_grace_still_reaches_the_field() {
     let (acquired, ()) = tokio::join!(injector.acquire(), hold);
     let mut target = acquired.expect("acquire with the key held");
     target.commit("held").await.expect("commit after the hold");
-    target.release().await;
+    let _ = target.release().await;
     assert_eq!(field.next().await, Seen::Commit("held".into()));
     field.close().await;
 }
@@ -1102,8 +1103,87 @@ async fn text_held_through_a_blip_lands_at_release() {
     target.activated();
     tokio::time::sleep(BLIP).await;
     field.ic_call(IC_IFACE, "FocusIn", &()).await;
-    target.release().await;
+    target.release().await.expect("held text lands at release");
     assert_eq!(field.next().await, Seen::Commit("held".into()));
+    field.close().await;
+}
+
+/// Focus leaves without an activation during `Finalizing` (past the `Release`
+/// edge's `ACTIVATION_WINDOW`) right before `Final` + `Done` arrive. `commit`
+/// holds the text while `Unsure`, the session completes before `focus_events`
+/// fires, and `release` resolves the blip as a loss: the indicator must report
+/// "Focus lost", never `Hidden`.
+#[tokio::test]
+async fn focus_lost_right_before_completion_reports_focus_lost_not_hidden() {
+    skip_unless_ibus!();
+    let _serial = exclusive().await;
+    let (mut field, injector) = session(0, 0).await;
+    let focus_field = field.conn.clone();
+    let ic = field.ic.clone();
+    let indicator = myna_desktop::indicator::mock::MockIndicator::new();
+    let states = indicator.log();
+
+    let session = move |tx: tokio::sync::mpsc::Sender<myna_orchestrator::OrchestratorEvent>| {
+        let _ = tx.try_send(myna_orchestrator::OrchestratorEvent::Ready);
+        let stop = myna_orchestrator::StopHandle::default();
+        let stop2 = stop.clone();
+        let focus_field = focus_field.clone();
+        let ic = ic.clone();
+        let run: myna_desktop::SessionRun = Box::pin(async move {
+            while !stop2.is_stopped() {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+            // Past ACTIVATION_WINDOW (500 ms) from the Release edge, as a
+            // batch decode is, then the user Alt-Tabs away right before Done.
+            tokio::time::sleep(Duration::from_millis(550)).await;
+            focus_field
+                .call_method(Some(IBUS_SERVICE), &ic, Some(IC_IFACE), "FocusOut", &())
+                .await
+                .expect("FocusOut");
+            tokio::time::sleep(EDGE_AFTER).await;
+            let _ = tx
+                .send(myna_orchestrator::OrchestratorEvent::Final(
+                    "hello world".into(),
+                ))
+                .await;
+            let _ = tx
+                .send(myna_orchestrator::OrchestratorEvent::Done(
+                    "hello world".into(),
+                ))
+                .await;
+            Ok(myna_orchestrator::SessionOutcome::Completed {
+                transcript: "hello world".into(),
+            })
+        });
+        (run, stop)
+    };
+
+    let mut controller = myna_desktop::DesktopController::builder()
+        .trigger(myna_orchestrator::ScriptedTrigger::new([
+            myna_desktop::TriggerEdge::Press,
+            myna_desktop::TriggerEdge::Release,
+        ]))
+        .injector(injector)
+        .indicator(indicator)
+        .session(session)
+        .build();
+    controller.run().await;
+
+    let seen = states.lock().unwrap().clone();
+    assert!(
+        !seen.contains(&myna_desktop::IndicatorState::Hidden),
+        "must never claim a clean insertion (Hidden) when held text was lost: {seen:?}"
+    );
+    assert_eq!(
+        seen.last(),
+        Some(&myna_desktop::IndicatorState::recoverable("Focus lost")),
+        "expected Focus lost notice, got {seen:?}"
+    );
+    assert_eq!(
+        field.next_within(Duration::from_millis(50)).await,
+        None,
+        "dropped text must never reach the field"
+    );
     field.close().await;
 }
 
@@ -1179,7 +1259,7 @@ async fn releasing_a_superseded_target_leaves_the_live_engine_alone() {
         .await
         .expect("acquire it again, superseding the first lease");
 
-    superseded.release().await;
+    let _ = superseded.release().await;
     assert_eq!(
         global_engine().await.as_deref(),
         Some(MYNA_ENGINE),
@@ -1188,7 +1268,7 @@ async fn releasing_a_superseded_target_leaves_the_live_engine_alone() {
     live.commit("still ours").await.expect("commit while live");
     assert_eq!(field.next().await, Seen::Commit("still ours".into()));
 
-    live.release().await;
+    live.release().await.expect("release");
     assert_eq!(
         global_engine().await.as_deref(),
         Some(PRIOR_ENGINE),
@@ -1209,7 +1289,7 @@ async fn release_clears_a_live_preedit_and_sends_nothing_without_one() {
     target.set_preedit("unstable").await;
     assert_eq!(field.next().await, Seen::Preedit("unstable".into(), true));
 
-    target.release().await;
+    let _ = target.release().await;
     assert_eq!(
         field.next().await,
         Seen::HidePreedit,
@@ -1316,7 +1396,7 @@ async fn sentinel_via_fresh_acquire(
     earlier: Option<Box<dyn Target>>,
 ) -> Seen {
     if let Some(earlier) = earlier {
-        earlier.release().await;
+        let _ = earlier.release().await;
     }
     let mut target = injector
         .acquire()
@@ -1324,7 +1404,7 @@ async fn sentinel_via_fresh_acquire(
         .expect("reacquire for the sentinel");
     target.commit(SENTINEL).await.expect("commit the sentinel");
     let seen = field.next().await;
-    target.release().await;
+    let _ = target.release().await;
     seen
 }
 
@@ -1342,7 +1422,7 @@ async fn password_field_is_refused_at_acquire() {
         .expect("acquire the field once ordinary");
     field.expect_only_sentinel(target.as_mut()).await;
 
-    target.release().await;
+    let _ = target.release().await;
     field.close().await;
 }
 
@@ -1375,7 +1455,7 @@ async fn field_turning_secure_mid_session_gets_no_text() {
         "commit never accepted the field after it turned ordinary"
     );
 
-    target.release().await;
+    let _ = target.release().await;
     field.close().await;
 }
 
@@ -1399,7 +1479,7 @@ async fn private_field_is_not_refused() {
     target.commit("hello").await.expect("commit hello");
     assert_eq!(field.next().await, Seen::Commit("hello".into()));
 
-    target.release().await;
+    let _ = target.release().await;
     field.close().await;
 }
 
@@ -1473,7 +1553,7 @@ async fn ibus_preedit_visual_probe() {
     eprintln!(">>> committing 'probe: committed.' — preedit must clear");
     target.commit("probe: committed.").await.expect("commit");
     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-    target.release().await;
+    let _ = target.release().await;
     eprintln!("probe done — was the preedit visible and underlined?");
 }
 
@@ -1494,7 +1574,13 @@ async fn the_first_acquire_on_a_fresh_daemon_is_answered() {
             .await
             .expect("connect to the fresh daemon");
         match tokio::time::timeout(HANG_GUARD, injector.acquire()).await {
-            Ok(acquired) => acquired.expect("acquire a plain field").release().await,
+            Ok(acquired) => {
+                acquired
+                    .expect("acquire a plain field")
+                    .release()
+                    .await
+                    .expect("release");
+            }
             Err(_) => hung += 1,
         }
         field.close().await;
@@ -1558,7 +1644,7 @@ async fn an_engine_taken_while_acquiring_is_claimed_back() {
         };
         let committed = target.commit("kept").await;
         let seen = field.next_within(NOTICE).await;
-        target.release().await;
+        let _ = target.release().await;
         let restored = injector.global_engine().await;
         eprintln!("trial {trial}: commit {committed:?}, field saw {seen:?}, then {restored:?}");
         let taken_after =
@@ -1616,8 +1702,49 @@ async fn an_engine_taken_once_while_acquiring_is_claimed_back_and_restored() {
     let mut target = acquired.expect("claimed back");
     target.commit("kept").await.expect("commit");
     assert_eq!(field.next().await, Seen::Commit("kept".into()));
-    target.release().await;
+    target.release().await.expect("release");
     assert_eq!(global_engine().await.as_deref(), Some(PICKED_ENGINE));
+    field.close().await;
+}
+
+/// `set_preedit` returns `()`, so it must never flush `self.held` and discard
+/// a commit failure: if the field turned secure during the blip, `release`
+/// still surfaces `Err(SecureField)`.
+#[tokio::test]
+async fn a_preedit_after_a_blip_does_not_swallow_a_held_commits_refusal() {
+    skip_unless_ibus!();
+    let _serial = exclusive().await;
+    let (mut field, mut injector) = session(0, 0).await;
+    let mut target = injector.acquire().await.expect("acquire an ordinary field");
+
+    field.focus_out().await;
+    tokio::time::sleep(EDGE_AFTER).await;
+    target.commit("held").await.expect("held");
+    target.activated();
+    field.ic_call(IC_IFACE, "FocusIn", &()).await;
+    tokio::time::sleep(EDGE_AFTER).await;
+    // Focus is back with "held" still queued: preedit waits behind it rather
+    // than rendering ahead of uncommitted text or flushing and dropping errors.
+    target.set_preedit("draft").await;
+    assert_eq!(
+        field.next_within(Duration::from_millis(50)).await,
+        None,
+        "preedit must wait behind held commits"
+    );
+    field.set_content_type(PURPOSE_PASSWORD, 0).await;
+    tokio::time::sleep(Duration::from_millis(60)).await;
+    target.set_preedit("draft2").await;
+
+    let released = target.release().await;
+    assert!(
+        matches!(released, Err(InjectError::SecureField)),
+        "set_preedit swallowed the held commit's refusal: {released:?}"
+    );
+    assert_eq!(
+        field.next_within(Duration::from_millis(50)).await,
+        None,
+        "nothing may reach the secure field"
+    );
     field.close().await;
 }
 
@@ -1661,7 +1788,7 @@ async fn the_injector_outlives_the_daemons_broadcasts() {
         .await
         .expect("acquire answered")
         .expect("acquire");
-    target.release().await;
+    let _ = target.release().await;
     field.close().await;
 }
 
@@ -1694,7 +1821,7 @@ async fn an_input_source_picked_mid_dictation_ends_it_and_is_kept() {
         Some(Some(FocusEvent::FocusOut)),
         "the refusal ends the dictation"
     );
-    target.release().await;
+    let _ = target.release().await;
     assert_eq!(
         global_engine().await.as_deref(),
         Some(PICKED_ENGINE),
