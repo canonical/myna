@@ -22,3 +22,8 @@ targets:
     channel: latest/edge
     components: [model-sensevoice]
     languages: [en, zh, ja, ko]
+  - snap: myna-indicconformer
+    channel: latest/edge
+    components: [model-indicconformer-hi]
+    models: [indicconformer-hi]
+    languages: [hi]

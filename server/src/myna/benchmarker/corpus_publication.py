@@ -84,6 +84,7 @@ SMOKE_LOCALES = (
     "cmn_hans_cn",
     "ja_jp",
     "ko_kr",
+    "hi_in",
 )
 SMOKE_CLIPS = 10
 # A whole split decodes for a minute or more; say so now and then.

@@ -8,10 +8,10 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 mkdir -p "$HERE/out"
 cd "$HERE/out"
 
-# `myna-bench download-corpus --preset fleurs-smoke`, published once: 33 MB
-# instead of the 3.5 GB of per-language archives it is cut from.
+# `myna-bench download-corpus --preset fleurs-smoke`, published once: 27 MB
+# instead of the 4.3 GB of per-language archives it is cut from.
 TIER=https://github.com/canonical/myna/releases/download/fleurs-smoke-v1/fleurs-smoke.tar.gz
-TIER_SHA256=f1e1cbb8133de23e41497a683cbc0ff43de6c78d21e65d60cdae03abf04695bb
+TIER_SHA256=c95c566d9e36ec9f98b61a88b8b8c6dda72fd32cad5910db58f870fa913f7a7b
 curl -fsSL "$TIER" -o fleurs-smoke.tar.gz
 echo "$TIER_SHA256  fleurs-smoke.tar.gz" | sha256sum -c
 tar -xzf fleurs-smoke.tar.gz

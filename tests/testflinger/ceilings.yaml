@@ -5,3 +5,4 @@
 myna-parakeet: {en: 25, de: 25, fr: 25, es: 25, it: 25, ru: 25}
 myna-whisper: {en: 25, de: 25, fr: 25, es: 25, it: 25, ru: 25, zh: 20, ja: 20, ko: 20}
 myna-funasr: {en: 25, zh: 20, ja: 20, ko: 20}
+myna-indicconformer: {hi: 25}
