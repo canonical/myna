@@ -1,0 +1,27 @@
+#!/bin/bash -eu
+
+tag="snap.$SNAP_INSTANCE_NAME.hook.post-refresh"
+
+# Stdout and stderr also go to the journal, through pipes: redirecting to
+# >(...) opens /dev/fd/N with O_CREAT, which AppArmor logs as a denial.
+if [ -z "${MYNA_HOOK_LOGGED:-}" ]; then
+    set -o pipefail
+    { MYNA_HOOK_LOGGED=1 "$0" "$@" 2>&1 1>&3 3>&- | logger --stderr --priority error --tag="$tag"; } 3>&1 \
+        | logger --stderr --tag="$tag"
+    exit
+fi
+
+# Unconditional: revisions from before the provider share carry the old socket
+# path in package scope, which a presence check would keep.
+modelctl set --package ws.unix-socket="$SNAP_COMMON/share/provider/myna.sock"
+
+# Refresh the active engine: apply configuration changes and, if the active
+# engine has been removed, auto-select another (needs hardware info).
+if snapctl is-connected hardware-observe; then
+    modelctl use-engine --fix --assume-yes --verbose
+elif lscpu -V &> /dev/null; then
+    echo "Able to access hardware info without hardware-observe interface connection: assuming dev mode installation."
+    modelctl use-engine --fix --assume-yes --verbose
+else
+    echo "hardware-observe interface not connected. Skip fixing the active engine."
+fi

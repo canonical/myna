@@ -70,6 +70,10 @@ nemotron-snap/components/model-*/
 nemotron-snap/wheels/
 nemotron-snap/*.snap
 nemotron-snap/*.comp
+indicconformer-snap/components/model-*/
+indicconformer-snap/wheels/
+indicconformer-snap/*.snap
+indicconformer-snap/*.comp
 # FunASR model staged by dev/fetch_funasr_model.py (default --target)
 funasr_model/
 # mutation testing scratch (cargo-mutants, mutmut)

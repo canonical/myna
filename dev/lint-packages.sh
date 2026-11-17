@@ -27,6 +27,7 @@ SNAP_DIRS=(
     parakeet-snap
     funasr-snap
     nemotron-snap
+    indicconformer-snap
 )
 
 failed=0

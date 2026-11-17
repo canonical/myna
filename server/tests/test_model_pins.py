@@ -48,6 +48,9 @@ PINNED = {
     # Nemotron's are exported too, two checkpoints: each pinned to a commit.
     "nemotron-snap/dev/download-models.sh": r"^\s+\[[\w.]+\]=nvidia/[\w.-]+@[0-9a-f]{40}$",
     "dev/nemotron/export_nemotron_onnx.py": r'^\s+revision="[0-9a-f]{40}",$',
+    # AI4Bharat's object store has no revisions: the checkpoint's bytes are
+    # the pin, in the export tool and the staging script alike.
+    "indicconformer-snap/dev/download-models.sh": r"^sha256=[0-9a-f]{64}$",
 }
 
 
@@ -175,3 +178,38 @@ def test_nemotron_pins_agree() -> None:
     staged = dict(re.findall(r"^\s+\[([\w.]+)\]=(\S+@[0-9a-f]{40})$", script, re.M))
     exported = {key: f"{repo}@{rev}" for key, (repo, rev, _sha) in _nemotron_checkpoints().items()}
     assert staged == exported
+
+
+def _indicconformer_checkpoints() -> dict[str, tuple[str, str]]:
+    return dict(
+        (key, (url, sha256))
+        for key, url, sha256 in re.findall(
+            r'"(\w+)": Checkpoint\(\s*url=f?"([^"]+)",\s*sha256="([^"]*)"',
+            _text("dev/indicconformer/export_indicconformer_onnx.py"),
+        )
+    )
+
+
+def test_indicconformer_export_verifies_every_checkpoint() -> None:
+    checkpoints = _indicconformer_checkpoints()
+    assert checkpoints, "dev/indicconformer/export_indicconformer_onnx.py names no Checkpoint"
+    for key, (_url, sha256) in checkpoints.items():
+        assert re.fullmatch(r"[0-9a-f]{64}", sha256), f"{key}: no sha256 for the checkpoint"
+
+
+def test_indicconformer_pins_agree() -> None:
+    """The component's stamp names the checkpoint and recipe the export tool
+    writes, or the staging script would re-export forever, or stage graphs
+    made from another checkpoint."""
+    tool = _text("dev/indicconformer/export_indicconformer_onnx.py")
+    script = _text("indicconformer-snap/dev/download-models.sh")
+    recipe = re.search(r"^RECIPE = ([0-9]+)$", tool, re.M)
+    model = re.search(r"^model=(\w+)$", script, re.M)
+    url = re.search(r"^url=(\S+)$", script, re.M)
+    sha256 = re.search(r"^sha256=([0-9a-f]{64})$", script, re.M)
+    assert recipe and model and url and sha256
+    assert re.search(rf"^recipe={recipe.group(1)}$", script, re.M)
+    base = re.search(r'^BASE = "([^"]+)"$', tool, re.M)
+    assert base
+    tool_url, tool_sha = _indicconformer_checkpoints()[model.group(1)]
+    assert (tool_url.replace("{BASE}", base.group(1)), tool_sha) == (url.group(1), sha256.group(1))

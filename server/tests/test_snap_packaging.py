@@ -46,6 +46,7 @@ INFERENCE_SNAPS = {
     "parakeet-snap": "myna-parakeet",
     "funasr-snap": "myna-funasr",
     "nemotron-snap": "myna-nemotron",
+    "indicconformer-snap": "myna-indicconformer",
 }
 
 # The inference-snaps-cli (modelctl) release every snap must pin. One version
@@ -811,7 +812,7 @@ ORT_PINNING_SNAPS: set[str] = set()
 # this set needs process-control adding to its snap. nemotron's 2 is a
 # budget as much as a measurement: captions run for hours beside everything
 # else, and 4 threads spun for 4.6x the CPU at the same latency.
-THREAD_CAPPED_ADAPTERS = {"parakeet.py", "funasr.py", "nemotron.py"}
+THREAD_CAPPED_ADAPTERS = {"parakeet.py", "funasr.py", "nemotron.py", "indicconformer.py"}
 
 
 def test_pinning_daemons_plug_process_control(snap) -> None:

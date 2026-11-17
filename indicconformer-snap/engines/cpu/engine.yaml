@@ -1,0 +1,20 @@
+name: cpu
+summary: IndicConformer int8 via onnxruntime on CPU
+description: |
+  Runs AI4Bharat's IndicConformer (int8 ONNX, CTC head) with onnxruntime on
+  amd64/arm64 CPUs over the Myna Unix-socket session API.
+vendor: Canonical Ltd
+
+devices:
+  anyof:
+    - type: cpu
+      architecture: amd64
+    - type: cpu
+      architecture: arm64
+
+runtime: onnxruntime-cpu
+
+model:
+  default: indicconformer-hi
+  options:
+    - indicconformer-hi

@@ -1,0 +1,15 @@
+name: indicconformer-hi
+description: IndicConformer large (Hindi) - hybrid RNN-T/CTC Conformer, int8 ONNX
+model-card-url: https://github.com/AI4Bharat/IndicConformerASR
+quantization: int8
+capabilities:
+  - realtime-transcription
+disk-size: 200M
+# Weights shipped as a snap component, cut out of AI4Bharat's checkpoint and
+# exported by dev/indicconformer/export_indicconformer_onnx.py. modelctl
+# installs it on use-model; the server loads from MODEL_DIR, so no network
+# access is needed.
+components:
+  - model-indicconformer-hi
+environment:
+  - MODEL_DIR=$SNAP_COMPONENTS/model-indicconformer-hi

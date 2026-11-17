@@ -73,6 +73,7 @@ exclude:
     - parakeet-snap
     - funasr-snap
     - nemotron-snap
+    - indicconformer-snap
     - fake-snap/stage
     - fake-snap/prime
     - fake-snap/parts

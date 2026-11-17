@@ -1,0 +1,24 @@
+Third-party notices for the myna-indicconformer snap
+====================================================
+
+Model components
+----------------
+
+model-indicconformer-hi: an int8 ONNX export, made by Myna's
+dev/indicconformer/export_indicconformer_onnx.py, of the Hindi vocabulary
+and heads of AI4Bharat's IndicConformer large multilingual checkpoint
+(https://objectstore.e2enetworks.net/indicconformer/models/indicconformer_stt_hi_hybrid_rnnt_large.nemo,
+sha256 7cad1308751a56aed1fda1f30c9078077b1906a2e04454f92128d327561d9008;
+listed by https://github.com/AI4Bharat/IndicConformerASR).
+Copyright (c) 2024 AI4Bharat, licensed under the MIT License, which ships
+beside the weights as LICENSE in the component.
+
+Runtimes
+--------
+
+onnxruntime is MIT licensed; its wheel's own license file is installed
+alongside it.
+
+The server code in this snap is part of Myna and is licensed under the GNU
+Affero General Public License, version 3 or later; see LICENSE next to this
+file.
