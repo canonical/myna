@@ -188,7 +188,7 @@ jobs:
       fail-fast: false
       matrix:
         arch: [amd64, arm64]
-        snap: [myna, parakeet, whisper, funasr, nemotron]
+        snap: [myna, parakeet, whisper, funasr, nemotron, indicconformer]
     name: publish (${{ matrix.snap }}, ${{ matrix.arch }})
     # publish-snap.sh names the .snap after this runner's architecture.
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
