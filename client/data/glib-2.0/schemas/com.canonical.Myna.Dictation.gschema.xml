@@ -36,6 +36,15 @@
   </enum>
 
   <schema id="com.canonical.Myna.Dictation" path="/com/canonical/myna/dictation/">
+    <key name="processing" type="b">
+      <default>false</default>
+      <summary>Tidy up dictated text</summary>
+      <description>
+        Show the text next to the cursor while you speak, and type it once,
+        tidied up, when you stop.
+      </description>
+    </key>
+
     <key name="sounds" type="b">
       <default>true</default>
       <summary>Sounds on start, stop and error</summary>

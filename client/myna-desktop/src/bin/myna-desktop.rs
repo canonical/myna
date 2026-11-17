@@ -46,6 +46,7 @@ use myna_core::{AudioFormat, SessionConfig};
 use myna_desktop::controller::{ChannelSink, SessionRun};
 use myna_desktop::dbus::serve::{ServeError, ZbusBus};
 use myna_desktop::dbus::{DictationService, PropertyValue, SharedBus};
+use myna_desktop::draft::{BusDraftView, CommitPolicy};
 use myna_desktop::indicator::dbus::DbusIndicator;
 use myna_desktop::indicator::dynamic::DynamicIndicator;
 use myna_desktop::indicator::notify::NotifyIndicator;
@@ -53,6 +54,7 @@ use myna_desktop::indicator::readiness::{Readiness, ReadinessTee};
 use myna_desktop::inject::lazy::{IbusConnect, LazyInjector};
 use myna_desktop::inject::Injector as _;
 use myna_desktop::platform::Platform;
+use myna_desktop::process::pipeline::{Check, Pipeline, Request, SocketModels, Step};
 use myna_desktop::shortcut::control::{default_socket_path, listen, send_toggle, ControlTrigger};
 use myna_desktop::sound::{
     player::{Player, Previewer},
@@ -138,6 +140,7 @@ struct Resolved {
     auto_stop: AutoStop,
     sounds: bool,
     sound_set: SoundSet,
+    commit: CommitPolicy,
 }
 
 impl Resolved {
@@ -158,8 +161,30 @@ impl Resolved {
             auto_stop: resolve_auto_stop(activation, settings.silence_timeout),
             sounds: settings.sounds,
             sound_set: settings.sound_set,
+            commit: resolve_commit(settings.processing),
         }
     }
+}
+
+/// Processing may still change text, so it holds the dictation back and
+/// types it once. Without it text is typed as it arrives.
+fn resolve_commit(processing: bool) -> CommitPolicy {
+    if processing {
+        CommitPolicy::AtEnd
+    } else {
+        CommitPolicy::Streaming
+    }
+}
+
+/// Where the text models are reached: `MYNA_TEXT_MODELS`, or a socket in
+/// the runtime directory.
+fn text_models_socket() -> PathBuf {
+    std::env::var_os("MYNA_TEXT_MODELS")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            let runtime = std::env::var_os("XDG_RUNTIME_DIR").unwrap_or_else(|| "/tmp".into());
+            PathBuf::from(runtime).join("myna-text-models.sock")
+        })
 }
 
 /// What the transcription mode resolves from. They arrive separately - the
@@ -215,6 +240,8 @@ struct LiveSettings {
     /// Read at every stats tick of a running session, so a changed timeout
     /// applies to the session in progress.
     auto_stop: Live<AutoStop>,
+    /// Read at each press.
+    commit: Live<CommitPolicy>,
     sounds: Live<bool>,
     /// Shared with the [`Player`], which reads it at every cue.
     sound_set: Live<SoundSet>,
@@ -229,6 +256,7 @@ impl LiveSettings {
             language: Live::new(resolved.language.clone()),
             vocabulary: Live::new(resolved.vocabulary.clone()),
             auto_stop: Live::new(resolved.auto_stop),
+            commit: Live::new(resolved.commit),
             sounds: Live::new(resolved.sounds),
             sound_set,
             // The schema default until the first read in `follow`; a machine
@@ -353,6 +381,14 @@ impl LiveSettings {
                 resolved.auto_stop.silence
             );
             self.auto_stop.set(resolved.auto_stop);
+        }
+        if self.commit.get() != resolved.commit {
+            myna_core::info_log!(
+                "settings",
+                "commit -> {:?} (live, from the next press)",
+                resolved.commit
+            );
+            self.commit.set(resolved.commit);
         }
         if self.sounds.get() != resolved.sounds {
             myna_core::info_log!("settings", "sounds -> {} (live)", resolved.sounds);
@@ -720,7 +756,19 @@ async fn run_controller(
             restart.clone(),
         ))
         .preedit(live.preedit.clone())
-        .auto_stop(live.auto_stop.clone());
+        .auto_stop(live.auto_stop.clone())
+        .commit(live.commit.clone())
+        .processor(Pipeline::new(
+            vec![Step::Ask {
+                request: Request::cleanup(None),
+                check: Check::NoNewWords,
+            }],
+            SocketModels::new(text_models_socket()),
+        ));
+    let builder = match &pump_bus {
+        Some(bus) => builder.draft(BusDraftView::new(bus.clone())),
+        None => builder,
+    };
 
     let mut controller = match resolved.activation {
         // Debug only, and the one trigger whose end is a real user intent:
@@ -1501,6 +1549,21 @@ mod tests {
         backend_streams: Option<bool>,
     ) -> Resolved {
         Resolved::new(args, settings, backend_streams)
+    }
+
+    #[test]
+    fn processing_holds_the_dictation_for_one_commit() {
+        let a = Args::default();
+        assert_eq!(resolved(&a, &unset()).commit, CommitPolicy::Streaming);
+        let on = myna_core::Settings {
+            processing: true,
+            ..unset()
+        };
+        assert_eq!(resolved(&a, &on).commit, CommitPolicy::AtEnd);
+
+        let live = LiveSettings::new(&resolved(&a, &unset()), Live::new(SoundSet::default()));
+        live.apply(&resolved(&a, &on), "test");
+        assert_eq!(live.commit.get(), CommitPolicy::AtEnd);
     }
 
     #[test]

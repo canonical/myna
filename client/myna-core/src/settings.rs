@@ -57,6 +57,9 @@ pub const KEY_SOUNDS: &str = "sounds";
 /// installed gets.
 pub const DEFAULT_SOUNDS: bool = true;
 
+/// Whether dictated text is held in a draft and processed before it is typed.
+pub const KEY_PROCESSING: &str = "processing";
+
 /// Which set of cues the daemon plays.
 pub const KEY_SOUND_SET: &str = "sound-set";
 
@@ -140,6 +143,8 @@ pub struct Settings {
     pub silence_timeout: u32,
     /// Whether a session's start, stop and failure are heard as well as seen.
     pub sounds: bool,
+    /// Whether text is held in a draft and processed before it is typed.
+    pub processing: bool,
     /// Which cues are heard.
     pub sound_set: SoundSet,
     /// The user's local dictionary, raw (unnormalized) as stored.
@@ -155,6 +160,7 @@ impl Default for Settings {
             hud_style: None,
             silence_timeout: DEFAULT_SILENCE_TIMEOUT_SECS,
             sounds: DEFAULT_SOUNDS,
+            processing: false,
             sound_set: SoundSet::default(),
             vocabulary: Vec::new(),
         }
@@ -185,6 +191,7 @@ impl Settings {
                 .seconds(KEY_SILENCE_TIMEOUT)
                 .unwrap_or(default.silence_timeout),
             sounds: store.flag(KEY_SOUNDS).unwrap_or(default.sounds),
+            processing: store.flag(KEY_PROCESSING).unwrap_or(default.processing),
             sound_set: store
                 .text(KEY_SOUND_SET)
                 .as_deref()
@@ -572,6 +579,10 @@ mod tests {
         assert!(!Settings::from_store(&store).sounds);
         assert!(store.settings.set_boolean(KEY_SOUNDS, true).is_ok());
         assert!(Settings::from_store(&store).sounds);
+
+        assert!(!Settings::from_store(&store).processing);
+        assert!(store.settings.set_boolean(KEY_PROCESSING, true).is_ok());
+        assert!(Settings::from_store(&store).processing);
     }
 
     /// The chime is heard out of the box, with or without a schema, and a set
