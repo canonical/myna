@@ -34,6 +34,9 @@ pub fn model_family(snap_name: &str) -> ModelFamily {
             "FunASR",
             gettextrs::gettext("Best for Chinese, Japanese and Korean"),
         ),
+        Some(Family::IndicConformer) => {
+            known("IndicConformer", gettextrs::gettext("Best for Hindi"))
+        }
         None => ModelFamily {
             name: title_from_snap(snap_name),
             description: None,
@@ -419,25 +422,35 @@ mod tests {
     fn the_known_families_not_installed_can_be_installed_recommended_first() {
         assert_eq!(
             installable_families(&installed(&["myna-parakeet"]), None),
-            [Family::Whisper, Family::FunAsr]
+            [Family::Whisper, Family::FunAsr, Family::IndicConformer]
         );
         assert_eq!(
             installable_families(&installed(&["myna-parakeet"]), Some(Family::FunAsr)),
-            [Family::FunAsr, Family::Whisper]
+            [Family::FunAsr, Family::Whisper, Family::IndicConformer]
         );
         assert_eq!(
             installable_families(&installed(&["myna-whisper"]), Some(Family::Whisper)),
-            [Family::Parakeet, Family::FunAsr],
+            [Family::Parakeet, Family::FunAsr, Family::IndicConformer],
             "an installed recommendation is not offered again"
         );
         assert_eq!(
             installable_families(&installed(&["myna-fake-backend"]), None),
-            [Family::Parakeet, Family::Whisper, Family::FunAsr],
+            [
+                Family::Parakeet,
+                Family::Whisper,
+                Family::FunAsr,
+                Family::IndicConformer
+            ],
             "a backend of no known family takes no family's place"
         );
         assert_eq!(
             installable_families(
-                &installed(&["myna-funasr", "myna-whisper", "myna-parakeet"]),
+                &installed(&[
+                    "myna-funasr",
+                    "myna-whisper",
+                    "myna-parakeet",
+                    "myna-indicconformer"
+                ]),
                 Some(Family::Parakeet)
             ),
             []

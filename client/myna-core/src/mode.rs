@@ -126,8 +126,9 @@ mod tests {
     }
 
     #[test]
-    fn only_parakeet_streams_out_of_the_box() {
+    fn parakeet_and_indicconformer_stream_out_of_the_box() {
         assert!(streams_by_default("myna-parakeet"));
+        assert!(streams_by_default("myna-indicconformer"));
         assert!(!streams_by_default("myna-whisper"));
         assert!(!streams_by_default("myna-funasr"));
         assert!(!streams_by_default("myna-fake-backend"));

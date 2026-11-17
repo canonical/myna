@@ -9,17 +9,24 @@ pub enum ModelFamily {
     Parakeet,
     Whisper,
     FunAsr,
+    IndicConformer,
 }
 
 impl ModelFamily {
     /// Every family, in the order Settings lists them.
-    pub const ALL: [ModelFamily; 3] = [Self::Parakeet, Self::Whisper, Self::FunAsr];
+    pub const ALL: [ModelFamily; 4] = [
+        Self::Parakeet,
+        Self::Whisper,
+        Self::FunAsr,
+        Self::IndicConformer,
+    ];
 
     pub fn snap_name(self) -> &'static str {
         match self {
             Self::Parakeet => "myna-parakeet",
             Self::FunAsr => "myna-funasr",
             Self::Whisper => "myna-whisper",
+            Self::IndicConformer => "myna-indicconformer",
         }
     }
 
@@ -36,6 +43,7 @@ impl ModelFamily {
             Self::Parakeet => PARAKEET_LANGUAGES,
             Self::Whisper => WHISPER_LANGUAGES,
             Self::FunAsr => FUNASR_LANGUAGES,
+            Self::IndicConformer => INDICCONFORMER_LANGUAGES,
         }
     }
 
@@ -47,7 +55,7 @@ impl ModelFamily {
 
     /// The `streaming` value the family's snap installs with.
     pub fn streams_by_default(self) -> bool {
-        self == Self::Parakeet
+        matches!(self, Self::Parakeet | Self::IndicConformer)
     }
 }
 
@@ -59,6 +67,9 @@ const PARAKEET_LANGUAGES: &[&str] = &[
 
 /// SenseVoice-Small, the model myna-funasr ships.
 const FUNASR_LANGUAGES: &[&str] = &["zh", "en", "yue", "ja", "ko"];
+
+/// The languages myna-indicconformer has a model component for.
+const INDICCONFORMER_LANGUAGES: &[&str] = &["hi"];
 
 /// Whisper's 99 languages in its tokenizer's order, which follows the
 /// training data. Whisper's own code for Javanese is `jw`; this is ISO `jv`.
@@ -224,12 +235,15 @@ const fn measured(language: &'static str, family: ModelFamily, error_rate: f32) 
     }
 }
 
-use ModelFamily::{FunAsr, Parakeet, Whisper};
+use ModelFamily::{FunAsr, IndicConformer, Parakeet, Whisper};
 
 /// Parakeet: nvidia/parakeet-tdt-0.6b-v3 card, FLEURS WER, its full language
 /// list. FunASR: SenseVoice-Small against Whisper-small, Common Voice, from
-/// the SenseVoice paper (arXiv 2407.04051) table 6. Whisper covers every
-/// other language unmeasured.
+/// the SenseVoice paper (arXiv 2407.04051) table 6. Hindi: Myna's own runs
+/// on the whole FLEURS hi_in test split, IndicConformer as myna-indicconformer
+/// ships it against myna-whisper's large-v3-turbo, its most accurate model
+/// (server/.kb/model-evaluation.md). Whisper covers every other language
+/// unmeasured.
 const TABLE: &[Measured] = &[
     measured("bg", Parakeet, 12.64),
     measured("cs", Parakeet, 11.01),
@@ -266,6 +280,8 @@ const TABLE: &[Measured] = &[
     measured("ko", Whisper, 10.48),
     measured("yue", Whisper, 38.97),
     measured("zh", Whisper, 19.60),
+    measured("hi", IndicConformer, 12.02),
+    measured("hi", Whisper, 31.47),
 ];
 
 /// The family to recommend for `preferred` languages, most preferred first,
@@ -340,9 +356,20 @@ mod tests {
 
     #[test]
     fn a_language_no_card_measures_falls_back_to_whisper() {
-        for locale in ["sr_RS", "cy_GB", "ar_EG.UTF-8", "hi_IN", "tr_TR", "xx"] {
+        for locale in ["sr_RS", "cy_GB", "ar_EG.UTF-8", "tr_TR", "xx"] {
             assert_eq!(recommend(&[locale]), Whisper, "{locale}");
         }
+    }
+
+    #[test]
+    fn hindi_goes_to_indicconformer_and_to_whisper_without_it() {
+        assert_eq!(recommend(&["hi_IN"]), IndicConformer);
+        assert_eq!(recommend(&["hi_IN.UTF-8", "en_IN"]), IndicConformer);
+        assert_eq!(
+            recommend_among(&["hi_IN"], &[Parakeet, Whisper]),
+            Some(Whisper)
+        );
+        assert_eq!(recommend_among(&["en_IN"], &[IndicConformer]), None);
     }
 
     #[test]
@@ -426,7 +453,8 @@ mod tests {
         assert_eq!(Parakeet.languages().len(), 25);
         assert_eq!(FunAsr.languages().len(), 5);
         assert_eq!(Whisper.languages().len(), 99);
-        for family in [Parakeet, FunAsr] {
+        assert_eq!(IndicConformer.languages(), ["hi"]);
+        for family in [Parakeet, FunAsr, IndicConformer] {
             let mut measured: Vec<&str> = TABLE
                 .iter()
                 .filter(|entry| entry.family == family)
@@ -513,5 +541,6 @@ mod tests {
         assert_eq!(Parakeet.snap_name(), "myna-parakeet");
         assert_eq!(FunAsr.snap_name(), "myna-funasr");
         assert_eq!(Whisper.snap_name(), "myna-whisper");
+        assert_eq!(IndicConformer.snap_name(), "myna-indicconformer");
     }
 }

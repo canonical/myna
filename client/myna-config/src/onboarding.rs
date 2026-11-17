@@ -347,6 +347,10 @@ const WHISPER_SMALL_BYTES: u64 = 483_966_976;
 const WHISPER_CUDA_BYTES: u64 = 795_668_480;
 const FUNASR_SNAP_BYTES: u64 = 70_057_984;
 const SENSEVOICE_BYTES: u64 = 239_083_520;
+// IndicConformer as packed from main on 2026-11-17, before its first store
+// release: re-read these from the store once edge carries it.
+const INDICCONFORMER_SNAP_BYTES: u64 = 45_510_656;
+const INDICCONFORMER_HI_BYTES: u64 = 172_711_936;
 
 /// The family recommended for `preferred` languages, most preferred first,
 /// sized for the machine.
@@ -383,7 +387,7 @@ pub fn seed_spoken_language(
 /// `family`, sized for the engine its install hook will pick: with an
 /// NVIDIA GPU, Parakeet fetches the CUDA runtime and the fp32 model instead
 /// of int8, and Whisper its CUDA runtime and the small model instead of base.
-/// FunASR has one CPU engine.
+/// FunASR and IndicConformer have one CPU engine.
 pub fn family_offer(family: ModelFamily, nvidia_gpu: bool) -> ModelOffer {
     let (snap, cpu, gpu) = match family {
         ModelFamily::Parakeet => (
@@ -397,6 +401,7 @@ pub fn family_offer(family: ModelFamily, nvidia_gpu: bool) -> ModelOffer {
             Some(WHISPER_CUDA_BYTES + WHISPER_SMALL_BYTES),
         ),
         ModelFamily::FunAsr => (FUNASR_SNAP_BYTES, SENSEVOICE_BYTES, None),
+        ModelFamily::IndicConformer => (INDICCONFORMER_SNAP_BYTES, INDICCONFORMER_HI_BYTES, None),
     };
     let gpu = gpu.filter(|_| nvidia_gpu);
     ModelOffer {
@@ -1490,13 +1495,15 @@ mod tests {
     fn whisper_is_told_the_language_it_was_installed_for() {
         let spoken =
             |preferred: &[&str]| spoken_language(&model_offer(preferred, false), preferred);
-        assert_eq!(spoken(&["hi_IN"]).as_deref(), Some("hi"));
+        assert_eq!(spoken(&["bn_IN"]).as_deref(), Some("bn"));
         assert_eq!(spoken(&["cy_GB", "en"]).as_deref(), Some("cy"));
         // glibc's Norwegian Bokmål is Whisper's "no".
         assert_eq!(spoken(&["nb_NO"]).as_deref(), Some("no"));
-        // Parakeet and FunASR detect the language themselves.
+        // Parakeet and FunASR detect the language themselves, and an
+        // IndicConformer model serves only its own.
         assert_eq!(spoken(&["en_US"]), None);
         assert_eq!(spoken(&["zh_CN"]), None);
+        assert_eq!(spoken(&["hi_IN"]), None);
         // Whisper is the fallback for a language it cannot transcribe either.
         assert_eq!(model_offer(&["xh_ZA"], false).family, ModelFamily::Whisper);
         assert_eq!(spoken(&["xh_ZA"]), None);
@@ -1580,6 +1587,10 @@ mod tests {
             offered(Session(&["zh_CN.UTF-8", "zh_CN", "zh", "C"], None)),
             ModelFamily::FunAsr
         );
+        assert_eq!(
+            offered(Session(&["hi_IN.UTF-8", "hi_IN", "hi", "C"], None)),
+            ModelFamily::IndicConformer
+        );
         // LANG=C with no account language is English.
         assert_eq!(offered(Session(&["C"], None)), ModelFamily::Parakeet);
         assert_eq!(
@@ -1593,6 +1604,7 @@ mod tests {
         for (preferred, snap) in [
             ("en_US", "myna-parakeet"),
             ("zh_CN", "myna-funasr"),
+            ("hi_IN", "myna-indicconformer"),
             ("cy_GB", "myna-whisper"),
         ] {
             let offer = model_offer(&[preferred], false);
@@ -1630,6 +1642,11 @@ mod tests {
             sizes(ModelFamily::FunAsr),
             ((309_141_504, false), (309_141_504, false)),
             "FunASR runs on the CPU alone"
+        );
+        assert_eq!(
+            sizes(ModelFamily::IndicConformer),
+            ((218_222_592, false), (218_222_592, false)),
+            "IndicConformer runs on the CPU alone"
         );
     }
 

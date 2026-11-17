@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-08 11:11+0000\n"
+"POT-Creation-Date: 2026-11-17 20:42+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -253,7 +253,7 @@ msgstr[1] ""
 msgid "Fastest and most accurate in its 25 languages"
 msgstr ""
 
-#: src/app.rs:3336 src/backend_ui.rs:4411 src/model_family.rs:31
+#: src/app.rs:3336 src/backend_ui.rs:4420 src/model_family.rs:31
 msgid "Most languages, with uneven accuracy"
 msgstr ""
 
@@ -404,7 +404,7 @@ msgstr ""
 msgid "The model changed while it was being switched on. Try again."
 msgstr ""
 
-#: src/backend_ui.rs:127 src/model_family.rs:283
+#: src/backend_ui.rs:127 src/model_family.rs:286
 msgid "Recommended"
 msgstr ""
 
@@ -862,8 +862,12 @@ msgstr ""
 msgid "several models"
 msgstr ""
 
-#: src/backend_ui.rs:4415 src/model_family.rs:35
+#: src/backend_ui.rs:4424 src/model_family.rs:35
 msgid "Best for Chinese, Japanese and Korean"
+msgstr ""
+
+#: src/backend_ui.rs:4428 src/model_family.rs:38
+msgid "Best for Hindi"
 msgstr ""
 
 #: src/backend_apply.rs:81
@@ -1509,43 +1513,43 @@ msgid "Strings"
 msgstr ""
 
 #. TRANSLATORS: separates language names in a list, as in "English, Deutsch".
-#: src/model_family.rs:224
+#: src/model_family.rs:227
 msgctxt "language list"
 msgid ", "
 msgstr ""
 
 #. TRANSLATORS: {languages} is a short list of language names, {count} how many more there are.
-#: src/model_family.rs:234
+#: src/model_family.rs:237
 msgid "{languages} +{count}"
 msgstr ""
 
-#: src/model_family.rs:243
+#: src/model_family.rs:246
 msgid "{count} language"
 msgid_plural "{count} languages"
 msgstr[0] ""
 msgstr[1] ""
 
 #. TRANSLATORS: {language} is the user's language named in that language, such as "Deutsch" or "中文", inserted as-is in the nominative. If your grammar would inflect it, rephrase, e.g. "Najlepszy dla języka: {language}".
-#: src/model_family.rs:280
+#: src/model_family.rs:283
 msgid "Best for {language}"
 msgstr ""
 
 #. TRANSLATORS: Shown under "Install more models" when a model not installed would transcribe the user's language better. {language} is that language named in itself, such as "Deutsch" or "中文", inserted as-is in the nominative. If your grammar would inflect it, rephrase, e.g. "Dostępny jest lepszy model dla języka: {language}".
-#: src/model_family.rs:293
+#: src/model_family.rs:296
 msgid "A better model for {language} is available"
 msgstr ""
 
-#: src/model_family.rs:296
+#: src/model_family.rs:299
 msgid "A recommended model is available"
 msgstr ""
 
 #. TRANSLATORS: Shown under "Install more models" while a model installs. {model} is a model family, such as "Whisper", and {percent} how much of its download has arrived, a number from 0 to 100.
-#: src/model_family.rs:306
+#: src/model_family.rs:309
 msgid "Installing {model} {percent}%"
 msgstr ""
 
 #. TRANSLATORS: Shown under "Install more models" while a model installs. {model} is a model family, such as "Whisper".
-#: src/model_family.rs:309
+#: src/model_family.rs:312
 msgid "Installing {model}…"
 msgstr ""
 

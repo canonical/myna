@@ -272,7 +272,7 @@ fn the_onboarding_wizard_walks_when_its_buttons_are_activated() {
         "onboarding-optional: an unavailable extension holds nothing",
         "onboarding-language: nothing offered before the language is read",
         "onboarding-language: a Chinese desktop installs and connects FunASR",
-        "onboarding-language: a Hindi desktop installs Whisper and sets it to Hindi",
+        "onboarding-language: a Bengali desktop installs Whisper and sets it to Bengali",
         "onboarding-poll: found without focus",
         "onboarding-status: the download shown",
         "onboarding-snapd: waits for the install to finish",

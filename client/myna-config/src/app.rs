@@ -4901,7 +4901,7 @@ fn probe_language(application: &adw::Application) -> Result<(), String> {
         Rc::new(machine.clone()),
         ProbeExtensions::new(ComponentStatus::Unavailable),
         Some(store.clone() as Rc<dyn crate::ports::ClientSettings>),
-        || vec!["hi_IN".to_owned()],
+        || vec!["bn_IN".to_owned()],
         crate::onboarding_ui::Opener::FirstRun,
     );
     ui.set_poll_interval(PROBE_POLL);
@@ -4913,7 +4913,7 @@ fn probe_language(application: &adw::Application) -> Result<(), String> {
     let page = components_page(&window).ok_or("the component step shows no component page")?;
     let button = page.install_button();
     if !until(&|| button.is_sensitive()) {
-        return Err("a Hindi desktop's step never offers its model".to_owned());
+        return Err("a Bengali desktop's step never offers its model".to_owned());
     }
     button.emit_clicked();
     let reached = || {
@@ -4930,15 +4930,15 @@ fn probe_language(application: &adw::Application) -> Result<(), String> {
             .map(|plan| plan.connect)
             .collect::<Vec<_>>()
             != [Some("myna-whisper")]
-        || *store.language.borrow() != Some("hi".to_owned())
+        || *store.language.borrow() != Some("bn".to_owned())
     {
         return Err(format!(
-            "a Hindi desktop set up {:?}, spoken language {:?}",
+            "a Bengali desktop set up {:?}, spoken language {:?}",
             machine.set_up_plans(),
             store.language.borrow()
         ));
     }
-    println!("onboarding-language: a Hindi desktop installs Whisper and sets it to Hindi");
+    println!("onboarding-language: a Bengali desktop installs Whisper and sets it to Bengali");
     window.close();
     settle_gtk();
     Ok(())

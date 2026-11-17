@@ -4283,7 +4283,12 @@ mod tests {
     }
 
     const PARAKEET_CONNECTED_EVERY_FAMILY_INSTALLED: Wiring = (
-        &["myna-parakeet", "myna-whisper", "myna-funasr"],
+        &[
+            "myna-parakeet",
+            "myna-whisper",
+            "myna-funasr",
+            "myna-indicconformer",
+        ],
         &["myna-parakeet"],
     );
 
@@ -4314,7 +4319,10 @@ mod tests {
                     .iter()
                     .map(|row| (row.title().to_string(), shown_pill(row)))
                     .collect::<Vec<_>>(),
-                [("FunASR".to_owned(), Some("Best for 中文".to_owned()))],
+                [
+                    ("FunASR".to_owned(), Some("Best for 中文".to_owned())),
+                    ("IndicConformer".to_owned(), None)
+                ],
                 "the dialog keeps the pill on the best family"
             );
             let with_funasr = general_ui(PARAKEET_CONNECTED_FUNASR_INSTALLED);
@@ -4398,6 +4406,7 @@ mod tests {
                         None,
                         Some("日本語, English +97".to_owned())
                     ),
+                    ("IndicConformer".to_owned(), None, Some("हिन्दी".to_owned())),
                 ]
             );
         });
@@ -4414,12 +4423,17 @@ mod tests {
                 "{}\u{a0}·\u{a0}309\u{a0}MB",
                 gettextrs::gettext("Best for Chinese, Japanese and Korean")
             );
+            let indicconformer = format!(
+                "{}\u{a0}·\u{a0}218\u{a0}MB",
+                gettextrs::gettext("Best for Hindi")
+            );
             let ui = general_ui(PARAKEET_CONNECTED);
             assert_eq!(
                 offered(&ui.install_models()),
                 [
                     ("Whisper".to_owned(), whisper.clone(), false),
                     ("FunASR".to_owned(), funasr.clone(), false),
+                    ("IndicConformer".to_owned(), indicconformer.clone(), false),
                 ],
                 "no pill before the language is known"
             );
@@ -4429,7 +4443,18 @@ mod tests {
                 [
                     ("FunASR".to_owned(), funasr.clone(), true),
                     ("Whisper".to_owned(), whisper.clone(), false),
+                    ("IndicConformer".to_owned(), indicconformer.clone(), false),
                 ]
+            );
+            ui.set_preferred_languages(vec!["hi_IN".to_owned()]);
+            assert_eq!(
+                offered(&ui.install_models()),
+                [
+                    ("IndicConformer".to_owned(), indicconformer.clone(), true),
+                    ("Whisper".to_owned(), whisper.clone(), false),
+                    ("FunASR".to_owned(), funasr.clone(), false),
+                ],
+                "Hindi puts the pill on IndicConformer"
             );
             ui.set_preferred_languages(vec!["en_US".to_owned()]);
             assert_eq!(
@@ -4437,6 +4462,7 @@ mod tests {
                 [
                     ("Whisper".to_owned(), whisper, false),
                     ("FunASR".to_owned(), funasr, false),
+                    ("IndicConformer".to_owned(), indicconformer, false),
                 ],
                 "the installed Parakeet keeps the pill on the General tab"
             );
@@ -4456,7 +4482,7 @@ mod tests {
                 .emit_clicked();
             let dialogs = opened();
             assert_eq!(dialogs.len(), 1);
-            assert_eq!(offered(&dialogs[0]).len(), 2);
+            assert_eq!(offered(&dialogs[0]).len(), 3);
             dialogs[0].force_close();
             window.destroy();
         });
@@ -5250,14 +5276,22 @@ mod tests {
             let (ui, snapd, dialog, window) = installing_ui();
             assert_eq!(
                 offer_states(&dialog),
-                states(&[("Whisper", "Install"), ("FunASR", "Install")])
+                states(&[
+                    ("Whisper", "Install"),
+                    ("FunASR", "Install"),
+                    ("IndicConformer", "Install")
+                ])
             );
             snapd.downloading.set(Some(42));
             click_install(&dialog, "Whisper");
             settle(|| offer_states(&dialog)[0].1 == "Installing 42%");
             assert_eq!(
                 offer_states(&dialog),
-                states(&[("Whisper", "Installing 42%"), ("FunASR", "[Install]")]),
+                states(&[
+                    ("Whisper", "Installing 42%"),
+                    ("FunASR", "[Install]"),
+                    ("IndicConformer", "[Install]")
+                ]),
                 "one install at a time"
             );
             assert_eq!(install_hint(&ui).as_deref(), Some("Installing Whisper 42%"));
@@ -5267,7 +5301,11 @@ mod tests {
             settle(|| offer_states(&dialog)[0].1 == "Installed");
             assert_eq!(
                 offer_states(&dialog),
-                states(&[("Whisper", "Installed"), ("FunASR", "Install")])
+                states(&[
+                    ("Whisper", "Installed"),
+                    ("FunASR", "Install"),
+                    ("IndicConformer", "Install")
+                ])
             );
             assert_eq!(model_titles(&ui), ["Parakeet", "Whisper"]);
             assert_eq!(install_hint(&ui), None);
@@ -5289,7 +5327,11 @@ mod tests {
             settle(|| ui.model_installs.borrow().is_empty());
             assert_eq!(
                 offer_states(&dialog),
-                states(&[("Whisper", "Install"), ("FunASR", "Install")])
+                states(&[
+                    ("Whisper", "Install"),
+                    ("FunASR", "Install"),
+                    ("IndicConformer", "Install")
+                ])
             );
             assert!(toasts(&ui).is_empty());
             dialog.force_close();
@@ -5313,7 +5355,11 @@ mod tests {
             assert_eq!(toasts(&ui), ["Installing FunASR failed", "Details"]);
             assert_eq!(
                 offer_states(&dialog),
-                states(&[("Whisper", "Install"), ("FunASR", "Install")])
+                states(&[
+                    ("Whisper", "Install"),
+                    ("FunASR", "Install"),
+                    ("IndicConformer", "Install")
+                ])
             );
             dialog.force_close();
             window.destroy();
@@ -5464,7 +5510,10 @@ mod tests {
                     .map(|(title, ..)| title)
                     .collect::<Vec<_>>()
             };
-            assert_eq!(offered_titles(&dialog), ["Whisper", "FunASR"]);
+            assert_eq!(
+                offered_titles(&dialog),
+                ["Whisper", "FunASR", "IndicConformer"]
+            );
 
             *repository.machine.borrow_mut() = PARAKEET_CONNECTED_WHISPER_INSTALLED;
             ui.rediscover_on_focus(after_the_interval());
@@ -5482,6 +5531,7 @@ mod tests {
                 [
                     ("Whisper".to_owned(), "Installed".to_owned()),
                     ("FunASR".to_owned(), "Install".to_owned()),
+                    ("IndicConformer".to_owned(), "Install".to_owned()),
                 ],
                 "an installed family stays, saying so"
             );
@@ -5490,12 +5540,13 @@ mod tests {
             ui.rediscover_on_focus(
                 after_the_interval() + crate::backend_controller::FOCUS_REDISCOVERY_INTERVAL,
             );
-            settle(|| model_titles(&ui).len() == 3);
+            settle(|| model_titles(&ui).len() == 4);
             assert_eq!(
                 offer_states(&dialog),
                 [
                     ("Whisper".to_owned(), "Installed".to_owned()),
                     ("FunASR".to_owned(), "Installed".to_owned()),
+                    ("IndicConformer".to_owned(), "Installed".to_owned()),
                 ]
             );
             assert_eq!(
@@ -5532,11 +5583,12 @@ mod tests {
             ui.rediscover_on_focus(
                 after_the_interval() + crate::backend_controller::FOCUS_REDISCOVERY_INTERVAL,
             );
-            settle(|| model_titles(&ui).len() == 3);
+            settle(|| model_titles(&ui).len() == 4);
             assert_eq!(
                 recommended_rows(&ui),
                 [
                     ("FunASR".to_owned(), true),
+                    ("IndicConformer".to_owned(), false),
                     ("Parakeet".to_owned(), false),
                     ("Whisper".to_owned(), false),
                 ]
