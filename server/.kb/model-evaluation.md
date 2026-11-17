@@ -635,6 +635,13 @@ v2, Ryzen AI 7 350 laptop, ORT 1.27, OpenBLAS one thread:
 | large | int8 | CTC | 12.00% | 4.85% | 0.016 | 185 MB |
 | 600m | NeMo fp32 | RNN-T | 12.27% | - | - | - |
 | 600m | int8 | CTC | 12.61% | 4.85% | 0.021 | 840 MB |
+| Whisper large-v3 | CT2 int8, beam 5, `hi` | - | 27.08% | 10.12% | 0.83 (16 threads, chug) | - |
+
+Whisper reproduces the contributor's 27.51% / 9.93%. Through `myna-bench
+bench` against `myna-server` (batch, 418 clips) the large CTC row reads
+12.02% [10.99, 13.04], median finalize 0.33 s; the installed snap, strict
+confinement, streaming at real time, first 40 clips: 11.98%, finalize 0.46 s,
+no denials.
 
 The large model ships, int8, CTC head: the heads score within noise of each
 other and CTC decodes in a third less time; 600m is no better on Hindi in
