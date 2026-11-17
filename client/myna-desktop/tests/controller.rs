@@ -2139,3 +2139,188 @@ async fn a_warning_an_empty_utterance_could_not_show_waits_for_the_next() {
         "{states:?}"
     );
 }
+
+// ── Held text: commit policies, processing and the draft view ───────────────
+
+use myna_desktop::draft::{CommitPolicy, DraftView};
+use myna_desktop::process::Processor;
+
+/// Records every draft shown, as (stable, tail).
+#[derive(Clone, Default)]
+struct Drafts(Arc<Mutex<Vec<(String, String)>>>);
+
+#[async_trait::async_trait]
+impl DraftView for Drafts {
+    async fn show(&mut self, stable: &str, tail: &str) {
+        self.0.lock().unwrap().push((stable.into(), tail.into()));
+    }
+}
+
+struct Shout;
+
+#[async_trait::async_trait]
+impl Processor for Shout {
+    async fn process(&mut self, text: String) -> String {
+        text.to_uppercase()
+    }
+}
+
+fn held(
+    policy: CommitPolicy,
+    injector: MockInjector,
+    session: impl myna_desktop::SessionFactory + 'static,
+) -> (myna_desktop::controller::DesktopControllerBuilder, Drafts) {
+    let drafts = Drafts::default();
+    let builder = DesktopController::builder()
+        .trigger(ScriptedTrigger::new([
+            TriggerEdge::Press,
+            TriggerEdge::Release,
+        ]))
+        .injector(injector)
+        .indicator(MockIndicator::new())
+        .session(session)
+        .preedit(true)
+        .commit(policy)
+        .draft(drafts.clone());
+    (builder, drafts)
+}
+
+fn completed(transcript: &str) -> SessionOutcome {
+    SessionOutcome::Completed {
+        transcript: transcript.into(),
+    }
+}
+
+#[tokio::test]
+async fn at_end_holds_everything_for_one_commit_and_shows_it_as_a_draft() {
+    let injector = MockInjector::new().with_preedit_support();
+    let inject_log = injector.log();
+    let (builder, drafts) = held(
+        CommitPolicy::AtEnd,
+        injector,
+        events_session(
+            vec![
+                OrchestratorEvent::Final("hello".into()),
+                OrchestratorEvent::Unstable("wor".into()),
+                OrchestratorEvent::Final("world".into()),
+                OrchestratorEvent::Done("hello world".into()),
+            ],
+            completed("hello world"),
+        ),
+    );
+    builder.build().run().await;
+
+    let log = inject_log.lock().unwrap();
+    assert_eq!(log.commits, vec!["hello world"]);
+    assert!(
+        log.preedits.is_empty(),
+        "held text is not drawn in the field"
+    );
+    let pair = |s: &str, t: &str| (s.to_string(), t.to_string());
+    assert_eq!(
+        *drafts.0.lock().unwrap(),
+        vec![
+            pair("hello", ""),
+            pair("hello", "wor"),
+            pair("hello world", ""),
+            pair("hello world", ""),
+            pair("", ""),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn horizon_commits_settled_sentences_while_the_user_speaks() {
+    let injector = MockInjector::new();
+    let inject_log = injector.log();
+    let (builder, _) = held(
+        CommitPolicy::Horizon { sentences: 0 },
+        injector,
+        events_session(
+            vec![
+                OrchestratorEvent::Final("One.".into()),
+                OrchestratorEvent::Transcribing,
+                OrchestratorEvent::Final("Two.".into()),
+                OrchestratorEvent::Transcribing,
+                OrchestratorEvent::Final("Three".into()),
+                OrchestratorEvent::Done("One. Two. Three".into()),
+            ],
+            completed("One. Two. Three"),
+        ),
+    );
+    builder.build().run().await;
+
+    assert_eq!(
+        inject_log.lock().unwrap().commits,
+        vec!["One.", " Two.", " Three"]
+    );
+}
+
+#[tokio::test]
+async fn held_text_is_processed_on_its_way_to_the_field() {
+    let injector = MockInjector::new();
+    let inject_log = injector.log();
+    let (builder, drafts) = held(
+        CommitPolicy::AtEnd,
+        injector,
+        events_session(
+            vec![
+                OrchestratorEvent::Final("hello".into()),
+                OrchestratorEvent::Final("world".into()),
+            ],
+            completed("hello world"),
+        ),
+    );
+    builder.processor(Shout).build().run().await;
+
+    assert_eq!(inject_log.lock().unwrap().commits, vec!["HELLO WORLD"]);
+    assert!(
+        drafts.0.lock().unwrap().iter().all(|(s, _)| s != "HELLO"),
+        "the draft shows what was heard"
+    );
+}
+
+#[tokio::test]
+async fn held_text_is_written_when_the_session_fails_after_hearing_it() {
+    let injector = MockInjector::new();
+    let inject_log = injector.log();
+    let (builder, _) = held(
+        CommitPolicy::AtEnd,
+        injector,
+        events_session(
+            vec![OrchestratorEvent::Final("hello".into())],
+            SessionOutcome::Failed {
+                code: "capture_failed".into(),
+                failure: Failure::new("Some audio lost", "mic unplugged"),
+            },
+        ),
+    );
+    builder.build().run().await;
+
+    assert_eq!(inject_log.lock().unwrap().commits, vec!["hello"]);
+}
+
+#[tokio::test]
+async fn held_text_is_discarded_and_its_draft_hidden_when_focus_is_lost() {
+    let injector = MockInjector::new();
+    let inject_log = injector.log();
+    let mut focus = Some(injector.field());
+    let session = move |tx: mpsc::Sender<OrchestratorEvent>| {
+        let focus = focus.take().expect("single-use session");
+        let run: SessionRun = Box::pin(async move {
+            let _ = tx.send(OrchestratorEvent::Final("hello".into())).await;
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            focus.lose_focus(myna_desktop::FocusEvent::FocusOut);
+            Ok(completed("hello"))
+        });
+        (run, StopHandle::default())
+    };
+    let (builder, drafts) = held(CommitPolicy::AtEnd, injector, session);
+    builder.build().run().await;
+
+    assert_eq!(inject_log.lock().unwrap().attempts(), 0);
+    assert_eq!(
+        drafts.0.lock().unwrap().last(),
+        Some(&(String::new(), String::new()))
+    );
+}
