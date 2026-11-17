@@ -8,7 +8,9 @@
 // application's window as a focus-safe overlay (host.js — spawn, adopt,
 // dock-type, position, supervise).
 //
-// It deliberately does NOT touch the dictation state: the renderer reads it
+// The one thing it draws itself is the draft of a dictation whose text is
+// held back from the field (draft.js): only the Shell knows where the text
+// caret is. It does NOT touch the dictation state: the renderer reads it
 // directly. Fallback suppression uses `com.canonical.Myna.Dictation`
 // `RegisterClient`/`NameOwnerChanged` pruning instead. disable() tears the
 // host down with no leaks (XH7); re-enable re-establishes cleanly.
@@ -19,6 +21,7 @@ import Meta from 'gi://Meta';
 
 import {DictationProxy} from './dictationProxy.js';
 import {watchDashToDockStruts} from './dockStrutsConsumer.js';
+import {DictationDraft} from './draft.js';
 import {OverlayHost} from './host.js';
 import {chooseMonitorIndex} from './place.js';
 
@@ -41,37 +44,46 @@ export default class MynaShellExtension extends Extension {
             console.log(`[myna-shell] ${msg}`)});
         this._proxy.start();
 
+        // The monitor the user is working on: the focused window's, NOT
+        // the primary one. Dictated text lands in the focused window, so
+        // the pill has to be on the same screen the user is typing into;
+        // on a laptop-plus-external setup the primary monitor is usually
+        // the one they are not looking at.
+        const resolveTargetMonitor = () => chooseMonitorIndex({
+            focusMonitor: global.display.focus_window?.get_monitor() ?? -1,
+            pointerMonitor: global.display.get_current_monitor?.() ?? -1,
+            primaryIndex: Main.layoutManager.primaryIndex,
+            monitorCount: Main.layoutManager.monitors.length,
+        });
+        // That monitor's work area, so the pill sits beside the
+        // panel/dock rather than under them (place.js owns the maths).
+        const getWorkAreaForMonitor = index => {
+            if (index < 0)
+                return null;
+            // getWorkAreaForMonitor returns a Meta.Rectangle BOXED
+            // struct: its fields are GObject properties, so object
+            // spread ({...workArea}) copies nothing from it. Normalize to
+            // a plain object here so the host's placement math (which
+            // spreads the work area) sees real values.
+            const rect = Main.layoutManager.getWorkAreaForMonitor(index);
+            return {
+                x: rect.x,
+                y: rect.y,
+                width: rect.width,
+                height: rect.height,
+            };
+        };
+
+        this._draft = new DictationDraft({
+            proxy: this._proxy,
+            getWorkArea: () => getWorkAreaForMonitor(resolveTargetMonitor()),
+        });
+        this._draft.enable();
+
         this._host = new OverlayHost({
             proxy: this._proxy,
-            // The monitor the user is working on: the focused window's, NOT
-            // the primary one. Dictated text lands in the focused window, so
-            // the pill has to be on the same screen the user is typing into;
-            // on a laptop-plus-external setup the primary monitor is usually
-            // the one they are not looking at.
-            resolveTargetMonitor: () => chooseMonitorIndex({
-                focusMonitor: global.display.focus_window?.get_monitor() ?? -1,
-                pointerMonitor: global.display.get_current_monitor?.() ?? -1,
-                primaryIndex: Main.layoutManager.primaryIndex,
-                monitorCount: Main.layoutManager.monitors.length,
-            }),
-            // That monitor's work area, so the pill sits beside the
-            // panel/dock rather than under them (place.js owns the maths).
-            getWorkAreaForMonitor: index => {
-                if (index < 0)
-                    return null;
-                // getWorkAreaForMonitor returns a Meta.Rectangle BOXED
-                // struct: its fields are GObject properties, so object
-                // spread ({...workArea}) copies nothing from it. Normalize to
-                // a plain object here so the host's placement math (which
-                // spreads the work area) sees real values.
-                const rect = Main.layoutManager.getWorkAreaForMonitor(index);
-                return {
-                    x: rect.x,
-                    y: rect.y,
-                    width: rect.width,
-                    height: rect.height,
-                };
-            },
+            resolveTargetMonitor,
+            getWorkAreaForMonitor,
             // An overlay dock (dash-to-dock auto-hide) claims no strut, so it
             // does not shrink the work area; its reserved extent lets the
             // host raise the pill above where the dock would slide out. Keyed
@@ -107,6 +119,8 @@ export default class MynaShellExtension extends Extension {
         this._dockMonitors = null;
         this._host.disable();
         this._host = null;
+        this._draft?.disable();
+        this._draft = null;
         this._proxy?.stop();
         this._proxy = null;
     }

@@ -1,8 +1,8 @@
 //! The real `zbus`-backed [`Bus`]: serves `com.canonical.Myna.Dictation` at
 //! `/com/canonical/Myna/Dictation` on the session bus (feature 004, contract
 //! dbus-interface.md §Bus topology). State, level and the HUD's presentation
-//! style only — the property shapes are `s`/`d`, so no transcript-bearing
-//! value can cross (C3).
+//! style, plus `DraftText` and `DraftTail`: the only transcript-bearing
+//! values, empty unless the user turned processing on (C3).
 //!
 //! Name lifecycle: requested at [`ZbusBus::serve`], released when the
 //! connection drops at shutdown (P13/P14; the gated round-trip suite proves
