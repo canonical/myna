@@ -42,6 +42,13 @@ template $MainWindow: Adw.ApplicationWindow {
         }
 
         Adw.ViewStackPage {
+          name: "processing";
+          title: _("Processing");
+          icon-name: "document-edit-symbolic";
+          child: Adw.NavigationView processing_nav {};
+        }
+
+        Adw.ViewStackPage {
           name: "diagnostics";
           title: _("Diagnostics");
           icon-name: "dialog-information-symbolic";

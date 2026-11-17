@@ -1292,6 +1292,7 @@ fn template_probe() -> glib::ExitCode {
         window.view_stack(),
         window.general_nav(),
         window.backend_nav(),
+        window.processing_nav(),
         window.diagnostics_nav(),
     );
     println!("MainWindow");
@@ -1437,6 +1438,10 @@ fn build_settings_window(application: &adw::Application) {
     let diagnostics_nav = window.diagnostics_nav();
     let view_stack = window.view_stack();
     let overlay = window.overlay();
+    let processing = processing_group();
+    window
+        .processing_nav()
+        .replace(&[processing_page(&processing)]);
 
     general_nav.replace(&[status_page(
         &gettextrs::gettext("Loading Myna Settings"),
@@ -1472,6 +1477,8 @@ fn build_settings_window(application: &adw::Application) {
         diagnostics_page,
         #[weak]
         window,
+        #[strong]
+        processing,
         move || {
             let (myna_page, general_settings) = match GioClientSettings::open() {
                 Ok(settings) => {
@@ -1479,8 +1486,13 @@ fn build_settings_window(application: &adw::Application) {
                     let controller =
                         MynaSettingsController::load(Rc::new(settings) as Rc<dyn ClientSettings>);
                     let spoken_language = crate::backend_ui::spoken_language_group();
-                    let page =
-                        build_myna_page(controller.clone(), writer, &overlay, &spoken_language);
+                    let page = build_myna_page(
+                        controller.clone(),
+                        writer,
+                        &overlay,
+                        &spoken_language,
+                        &processing,
+                    );
                     let general = crate::backend_ui::GeneralSettings {
                         spoken_language,
                         controller,
@@ -1604,7 +1616,14 @@ fn typing_probe() -> glib::ExitCode {
     };
     // The only text row is the spoken language, which the Model tab shows.
     let model_settings = adw::PreferencesGroup::new();
-    let _page = ready_page(controller.clone(), writer, rows, &overlay, &model_settings);
+    let _page = ready_page(
+        controller.clone(),
+        writer,
+        rows,
+        &overlay,
+        &model_settings,
+        &adw::PreferencesGroup::new(),
+    );
     overlay.set_child(Some(&model_settings));
     let window = adw::Window::builder().content(&overlay).build();
     window.present();
@@ -1703,7 +1722,14 @@ fn vocabulary_probe() -> glib::ExitCode {
     // General shows one row for the list, whatever the model, which opens it
     // on a page of its own over General's navigation.
     let model_settings = adw::PreferencesGroup::new();
-    let root = ready_page(controller, writer, rows, &overlay, &model_settings);
+    let root = ready_page(
+        controller,
+        writer,
+        rows,
+        &overlay,
+        &model_settings,
+        &adw::PreferencesGroup::new(),
+    );
     let navigation = adw::NavigationView::new();
     navigation.add(&root);
     overlay.set_child(Some(&navigation));
@@ -2188,6 +2214,7 @@ fn shortcut_unsupported_probe() -> glib::ExitCode {
         rows,
         &overlay,
         &adw::PreferencesGroup::new(),
+        &adw::PreferencesGroup::new(),
     );
     let Ok(myna) = page.clone().downcast::<ui::MynaPage>() else {
         eprintln!("the settings page is not the Myna page");
@@ -2257,6 +2284,7 @@ fn shortcut_probe() -> glib::ExitCode {
         writer,
         rows,
         &overlay,
+        &adw::PreferencesGroup::new(),
         &adw::PreferencesGroup::new(),
     );
     let Ok(myna) = page.clone().downcast::<ui::MynaPage>() else {
@@ -3208,6 +3236,7 @@ fn backends_probe() -> glib::ExitCode {
         PersistenceWriter::spawn(GioClientSettings::open),
         &overlay,
         &spoken_language,
+        &adw::PreferencesGroup::new(),
     );
     general_nav.replace(std::slice::from_ref(&myna_page));
     window.present();
@@ -5630,12 +5659,14 @@ fn close_dialog(window: &impl IsA<adw::ApplicationWindow>, dialog: &impl IsA<adw
 }
 
 /// Rows placed with the active model go into `model_settings`, which the
-/// Model tab shows.
+/// Model tab shows, and processing rows into `processing`, which its own tab
+/// shows.
 fn build_myna_page(
     controller: Rc<MynaSettingsController>,
     writer: PersistenceWriter,
     overlay: &adw::ToastOverlay,
     model_settings: &adw::PreferencesGroup,
+    processing: &adw::PreferencesGroup,
 ) -> adw::NavigationPage {
     match controller.state() {
         PageState::Loading => status_page(
@@ -5649,8 +5680,33 @@ fn build_myna_page(
             "edit-clear-all-symbolic",
         ),
         PageState::Error(message) => error_page(&message),
-        PageState::Ready(rows) => ready_page(controller, writer, rows, overlay, model_settings),
+        PageState::Ready(rows) => ready_page(
+            controller,
+            writer,
+            rows,
+            overlay,
+            model_settings,
+            processing,
+        ),
     }
+}
+
+/// The group the Processing tab shows; General's builder adds its rows.
+fn processing_group() -> adw::PreferencesGroup {
+    adw::PreferencesGroup::builder()
+        .description(gettextrs::gettext(
+            "Myna can work on what you said before typing it. This is experimental.",
+        ))
+        .build()
+}
+
+fn processing_page(group: &adw::PreferencesGroup) -> adw::NavigationPage {
+    let preferences = adw::PreferencesPage::new();
+    preferences.add(group);
+    adw::NavigationPage::builder()
+        .title(gettextrs::gettext("Processing"))
+        .child(&preferences)
+        .build()
 }
 
 fn status_page(title: &str, description: &str, icon: &str) -> adw::NavigationPage {
@@ -5811,6 +5867,7 @@ fn ready_page(
     rows: Vec<SettingRow>,
     overlay: &adw::ToastOverlay,
     model_settings: &adw::PreferencesGroup,
+    processing: &adw::PreferencesGroup,
 ) -> adw::NavigationPage {
     let page = ui::MynaPage::new();
     crate::shortcut_ui::ShortcutControl::attach(
@@ -5842,6 +5899,7 @@ fn ready_page(
         let group = match plan.placement {
             Placement::Dictation => &dictation,
             Placement::ActiveModel => model_settings,
+            Placement::Processing => processing,
         };
         let widget_name = (plan.placement == Placement::ActiveModel)
             .then(|| crate::backend_ui::client_setting_widget_name(&plan.key));

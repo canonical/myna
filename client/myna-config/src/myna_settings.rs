@@ -31,6 +31,8 @@ pub enum Placement {
     Dictation,
     /// The Model tab, and only while the active backend takes the setting.
     ActiveModel,
+    /// The Processing tab.
+    Processing,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -158,6 +160,7 @@ pub fn widget_plan(metadata: &ClientSettingMetadata) -> WidgetPlan {
         writable: metadata.writable(),
         placement: match metadata.key().as_str() {
             myna_core::settings::KEY_LANGUAGE => Placement::ActiveModel,
+            myna_core::settings::KEY_PROCESSING => Placement::Processing,
             _ => Placement::Dictation,
         },
     }

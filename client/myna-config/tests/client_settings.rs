@@ -9,7 +9,7 @@ use gio::glib;
 use myna_config::adapters::client_settings::GioClientSettings;
 use myna_config::domain::{ClientSettingValue, SettingRange};
 use myna_config::myna_settings::{
-    widget_plan, MynaSettingsController, PersistenceWriter, WidgetKind,
+    widget_plan, MynaSettingsController, PersistenceWriter, Placement, WidgetKind,
 };
 use myna_config::ports::{ClientSettings, ClientSettingsError};
 
@@ -469,7 +469,7 @@ fn headless_widget_smoke_covers_every_real_schema_key() {
 
     let plans: Vec<_> = adapter.list().unwrap().iter().map(widget_plan).collect();
 
-    assert_eq!(plans.len(), 7);
+    assert_eq!(plans.len(), 8);
     assert!(plans.iter().any(|plan| plan.kind == WidgetKind::Choice));
     let vocabulary = plans
         .iter()
@@ -489,10 +489,16 @@ fn headless_widget_smoke_covers_every_real_schema_key() {
     );
     let switch = plans
         .iter()
-        .find(|plan| plan.kind == WidgetKind::Switch)
-        .expect("sounds is a boolean");
-    assert_eq!(switch.key, "sounds");
+        .find(|plan| plan.key == "sounds")
+        .expect("sounds is listed");
+    assert_eq!(switch.kind, WidgetKind::Switch);
     assert_eq!(switch.title, "Sounds on start, stop and error");
+    let processing = plans
+        .iter()
+        .find(|plan| plan.key == "processing")
+        .expect("processing is listed");
+    assert_eq!(processing.kind, WidgetKind::Switch);
+    assert_eq!(processing.placement, Placement::Processing);
     assert!(plans.iter().any(|plan| plan.kind == WidgetKind::Text));
     let number = plans
         .iter()
