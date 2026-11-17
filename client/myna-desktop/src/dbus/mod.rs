@@ -141,6 +141,11 @@ impl FakeBus {
             .collect()
     }
 
+    /// Every property set, in order.
+    pub fn sets(&self) -> Vec<(String, PropertyValue)> {
+        self.inner.lock().expect("fake bus poisoned").sets.clone()
+    }
+
     /// The latest value set for `name`, if any.
     pub fn property(&self, name: &str) -> Option<PropertyValue> {
         self.inner

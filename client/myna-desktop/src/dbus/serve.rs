@@ -77,6 +77,9 @@ struct ServedState {
     last_error_detail: String,
     /// When it happened, in microseconds since the epoch; 0 for never.
     last_error_time: i64,
+    /// Held text and the guess after it; empty unless text is being held.
+    draft_text: String,
+    draft_tail: String,
 }
 
 impl ServedState {
@@ -312,6 +315,29 @@ impl DictationObject {
     #[zbus(property)]
     async fn input_snr(&self) -> f64 {
         self.served.lock().expect("served state poisoned").input_snr
+    }
+
+    /// `DraftText`: text heard in this dictation and not yet written to the
+    /// field. Empty unless the user turned processing on; the one place
+    /// transcript content crosses this bus.
+    #[zbus(property)]
+    async fn draft_text(&self) -> String {
+        self.served
+            .lock()
+            .expect("served state poisoned")
+            .draft_text
+            .clone()
+    }
+
+    /// `DraftTail`: the recogniser's current guess at what follows
+    /// `DraftText`.
+    #[zbus(property)]
+    async fn draft_tail(&self) -> String {
+        self.served
+            .lock()
+            .expect("served state poisoned")
+            .draft_tail
+            .clone()
     }
 
     #[zbus(property)]
@@ -607,6 +633,8 @@ impl Bus for ZbusBus {
                         served.last_error_detail = s.clone()
                     }
                     ("LastErrorTime", PropertyValue::I64(v)) => served.last_error_time = *v,
+                    ("DraftText", PropertyValue::Str(s)) => served.draft_text = s.clone(),
+                    ("DraftTail", PropertyValue::Str(s)) => served.draft_tail = s.clone(),
                     _ => {
                         myna_core::dbg_log!("dbus", "ignoring unknown property set: {name}");
                         return Ok(());
@@ -635,6 +663,8 @@ impl Bus for ZbusBus {
                 "LastError" => iface.last_error_changed(emitter).await,
                 "LastErrorDetail" => iface.last_error_detail_changed(emitter).await,
                 "LastErrorTime" => iface.last_error_time_changed(emitter).await,
+                "DraftText" => iface.draft_text_changed(emitter).await,
+                "DraftTail" => iface.draft_tail_changed(emitter).await,
                 _ => Ok(()),
             }
         }

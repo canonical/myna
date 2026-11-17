@@ -7,6 +7,8 @@
 
 use async_trait::async_trait;
 
+use crate::dbus::{PropertyValue, SharedBus};
+
 /// When heard text may be written into the field.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum CommitPolicy {
@@ -74,9 +76,66 @@ impl DraftView for NoDraftView {
     async fn show(&mut self, _stable: &str, _tail: &str) {}
 }
 
+/// Publishes the draft as the `DraftText` and `DraftTail` bus properties,
+/// for whichever desktop component draws it.
+pub struct BusDraftView {
+    bus: SharedBus,
+    shown: (String, String),
+}
+
+impl BusDraftView {
+    pub fn new(bus: SharedBus) -> Self {
+        Self {
+            bus,
+            shown: Default::default(),
+        }
+    }
+}
+
+#[async_trait]
+impl DraftView for BusDraftView {
+    async fn show(&mut self, stable: &str, tail: &str) {
+        let mut bus = self.bus.lock().await;
+        // The tail first: a reader that redraws on `DraftText` then sees the
+        // pair that belongs together.
+        if self.shown.1 != tail {
+            self.shown.1 = tail.to_string();
+            bus.set_property("DraftTail", PropertyValue::Str(tail.to_string()))
+                .await;
+        }
+        if self.shown.0 != stable {
+            self.shown.0 = stable.to_string();
+            bus.set_property("DraftText", PropertyValue::Str(stable.to_string()))
+                .await;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dbus::FakeBus;
+    use std::sync::Arc;
+
+    #[tokio::test]
+    async fn the_bus_view_publishes_only_what_changed() {
+        let bus = FakeBus::new();
+        let shared: SharedBus = Arc::new(tokio::sync::Mutex::new(bus.clone()));
+        let mut view = BusDraftView::new(shared);
+        view.show("hello", "wor").await;
+        view.show("hello", "wor").await;
+        view.show("hello world", "").await;
+        let str = |s: &str| PropertyValue::Str(s.to_string());
+        assert_eq!(
+            bus.sets(),
+            vec![
+                ("DraftTail".to_string(), str("wor")),
+                ("DraftText".to_string(), str("hello")),
+                ("DraftTail".to_string(), str("")),
+                ("DraftText".to_string(), str("hello world")),
+            ]
+        );
+    }
 
     #[test]
     fn streaming_commits_everything_at_once() {
