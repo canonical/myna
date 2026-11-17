@@ -8,7 +8,7 @@ msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-10-11 11:54+0100\n"
-"PO-Revision-Date: 2026-10-17 21:19+0000\n"
+"PO-Revision-Date: 2026-11-13 23:51+0000\n"
 "Last-Translator: Nicat <nijat@users.noreply.hosted.weblate.org>\n"
 "Language-Team: Azerbaijani <https://hosted.weblate.org/projects/ubuntu-"
 "desktop-translations/myna-config/az/>\n"
@@ -17,7 +17,7 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=n != 1;\n"
-"X-Generator: Weblate 2026.11.dev0\n"
+"X-Generator: Weblate 2026.12.dev0\n"
 
 #: data/diagnostics-page.blp:5 data/diagnostics-page.blp:8 src/app.rs:1485
 msgid "About and Diagnostics"
@@ -57,7 +57,7 @@ msgstr "Diaqnostikanı təzələ"
 
 #: data/diagnostics-page.blp:54
 msgid "Check this computer, Myna and every model again."
-msgstr ""
+msgstr "Bu kompüteri, Myna-nı və digər bütün modelləri yenidən yoxla."
 
 #: data/diagnostics-page.blp:60
 msgid "Copy"
@@ -132,11 +132,11 @@ msgstr "Klaviatura qısayolu"
 
 #: data/myna-page.blp:15
 msgid "Press to start and stop"
-msgstr ""
+msgstr "Başlamaq və dayanmaq üçün basın"
 
 #: data/myna-page.blp:47 src/shortcut_ui.rs:324
 msgid "Press a shortcut…"
-msgstr ""
+msgstr "Qısayola basın…"
 
 #: data/myna-page.blp:57 data/onboarding-shortcut.blp:134
 #: src/shortcut_ui.rs:501

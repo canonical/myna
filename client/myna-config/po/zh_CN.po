@@ -8,7 +8,7 @@ msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-11-08 11:11+0000\n"
-"PO-Revision-Date: 2026-11-10 15:09+0000\n"
+"PO-Revision-Date: 2026-11-15 11:16+0000\n"
 "Last-Translator: Nova_Chen <tianhe.dev@gmail.com>\n"
 "Language-Team: Chinese (Simplified Han script) <https://hosted.weblate.org/"
 "projects/ubuntu-desktop-translations/myna-config/zh_Hans/>\n"
@@ -17,7 +17,7 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=1; plural=0;\n"
-"X-Generator: Weblate 2026.11.2.dev0\n"
+"X-Generator: Weblate 2026.12.dev0\n"
 
 #: data/diagnostics-page.blp:5 data/diagnostics-page.blp:8 src/app.rs:1452
 msgid "About and Diagnostics"
@@ -132,7 +132,7 @@ msgstr "键盘快捷键"
 
 #: data/myna-page.blp:15
 msgid "Press to start and stop"
-msgstr "按一次开始，再按一次停止"
+msgstr "按下以开始或停止"
 
 #: data/myna-page.blp:47 src/shortcut_ui.rs:324
 msgid "Press a shortcut…"
