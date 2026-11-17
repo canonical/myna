@@ -8,7 +8,7 @@ msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-10-11 11:54+0100\n"
-"PO-Revision-Date: 2026-11-12 06:51+0000\n"
+"PO-Revision-Date: 2026-11-17 14:47+0000\n"
 "Last-Translator: Peter Vančo <peva@users.noreply.hosted.weblate.org>\n"
 "Language-Team: Slovak <https://hosted.weblate.org/projects/ubuntu-desktop-"
 "translations/myna-config/sk/>\n"
@@ -17,7 +17,7 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=3; plural=((n==1) ? 0 : (n>=2 && n<=4) ? 1 : 2);\n"
-"X-Generator: Weblate 2026.11.2.dev0\n"
+"X-Generator: Weblate 2026.12.dev0\n"
 
 #: data/diagnostics-page.blp:5 data/diagnostics-page.blp:8 src/app.rs:1485
 msgid "About and Diagnostics"
@@ -47,9 +47,7 @@ msgstr "Diagnostika"
 
 #: data/diagnostics-page.blp:40
 msgid "No audio, transcript, or filesystem path is ever included."
-msgstr ""
-"Nikdy sa v nej neuvádzajú zvukové záznamy, prepisy ani cesty v súborovom "
-"systéme."
+msgstr "Neobsahuje zvukové záznamy, prepisy ani cesty v súborovom systéme."
 
 #: data/diagnostics-page.blp:49 src/backend_ui.rs:3114 src/backend_ui.rs:3394
 msgid "Refresh"
@@ -85,7 +83,7 @@ msgstr "Diagnostická správa"
 
 #: data/diagnostics-page.blp:95
 msgid "Read-only privacy-safe diagnostic text."
-msgstr "Diagnostický text chrániaci súkromie určený iba na čítanie."
+msgstr "Diagnostický text bez citlivých údajov určený iba na čítanie."
 
 #: data/install-control.blp:54 data/onboarding-components.blp:60
 #: src/app.rs:3931
@@ -265,7 +263,7 @@ msgstr "Najrýchlejší a najpresnejší v 25 jazykoch"
 
 #: src/app.rs:3196 src/backend_ui.rs:4291 src/model_family.rs:31
 msgid "Most languages, with uneven accuracy"
-msgstr "Podporuje najviac jazykov, no presnosť sa líši"
+msgstr "Najviac jazykov, s rôznou presnosťou"
 
 #: src/app.rs:3331 src/myna_settings.rs:105
 msgid "As you speak"
@@ -524,7 +522,7 @@ msgstr "Nepodarilo sa otvoriť webový prehliadač"
 
 #: src/backend_ui.rs:2084
 msgid "Copy privacy-safe diagnostics"
-msgstr "Kopírovať diagnostiku chrániacu súkromie"
+msgstr "Kopírovať diagnostiku bez citlivých údajov"
 
 #: src/backend_ui.rs:2095
 msgid "Diagnostics copied to clipboard"
@@ -658,7 +656,7 @@ msgstr "Je pripojených viacero modelov. Aktívny by mal byť iba jeden."
 
 #: src/backend_ui.rs:2673
 msgid "Not connected to Myna."
-msgstr "Nie je pripojené k Myne."
+msgstr "Nie je pripojený k Myne."
 
 #: src/backend_ui.rs:2679
 msgid "Active model"
@@ -734,7 +732,7 @@ msgstr "Pokročilé nastavenia."
 
 #: src/backend_ui.rs:2834
 msgid "Internal and sensitive values are shown for diagnostics only."
-msgstr "Interné a citlivé hodnoty sú zobrazené len pre diagnostické účely."
+msgstr "Interné a citlivé hodnoty sú zobrazené len na diagnostické účely."
 
 #: src/backend_ui.rs:2858
 msgid "Sensitive value (redacted)"
@@ -916,7 +914,7 @@ msgstr "Pokračujte na ďalší krok úvodného nastavenia."
 
 #: src/onboarding_ui.rs:783
 msgid "Close Myna Settings."
-msgstr "Zavrieť nastavenia Myny."
+msgstr "Zavrieť Nastavenia Myny."
 
 #: src/onboarding_ui.rs:873
 msgid ""
@@ -1124,7 +1122,7 @@ msgstr "dosiahnuté"
 
 #: src/diagnostics.rs:372
 msgid "of the last 10 s stalled"
-msgstr "za posledných 10 s zadržiavané"
+msgstr "z posledných 10 s pozastavené"
 
 #: src/diagnostics.rs:421
 msgid "No model connected"
@@ -1160,7 +1158,7 @@ msgstr "Systém"
 
 #: src/diagnostics.rs:458
 msgid "OS"
-msgstr "OS"
+msgstr "Operačný systém"
 
 #: src/diagnostics.rs:462
 msgid "kernel"
@@ -1184,7 +1182,7 @@ msgstr "Pamäť"
 
 #: src/diagnostics.rs:490 src/diagnostics.rs:495
 msgid "GPU"
-msgstr "GPU"
+msgstr "Grafická karta"
 
 #: src/diagnostics.rs:491 src/diagnostics.rs:856
 msgid "none"
@@ -1192,7 +1190,7 @@ msgstr "žiadne"
 
 #: src/diagnostics.rs:501
 msgid "(no model answered show-machine)"
-msgstr "(žiaden model neodpovedal na show-machine)"
+msgstr "(žiadny model neodpovedal na show-machine)"
 
 #: src/diagnostics.rs:506
 msgid "Performance"
@@ -1221,7 +1219,7 @@ msgstr "Záťaž"
 #. TRANSLATORS: {cpu}, {memory} and {io} are shares such as "0.03%"; cpu, memory and io are kernel resource names, keep them.
 #: src/diagnostics.rs:536
 msgid "cpu {cpu}, memory {memory}, io {io} of the last 10 s stalled"
-msgstr "cpu {cpu}, memory {memory}, io {io} za posledných 10 s zadržiavané"
+msgstr "cpu {cpu}, memory {memory}, io {io} z posledných 10 s pozastavené"
 
 #: src/diagnostics.rs:547
 msgid "(not measured yet)"
@@ -1241,7 +1239,7 @@ msgstr "Zvuk"
 
 #: src/diagnostics.rs:576
 msgid "Last error"
-msgstr "Posledná chyba"
+msgstr "Posledné chyby"
 
 #: src/diagnostics.rs:584
 msgid "Process"
@@ -1317,7 +1315,7 @@ msgstr "batéria"
 
 #: src/diagnostics.rs:790
 msgid "chunks dropped this session"
-msgstr "počet zahodených častí v tejto relácii"
+msgstr "zahodených častí v tejto relácii"
 
 #: src/diagnostics.rs:796
 msgid "Input method"
@@ -1381,7 +1379,7 @@ msgstr "balík myna-config"
 
 #: src/diagnostics.rs:838
 msgid "Ubuntu package"
-msgstr "Balík Ubuntu"
+msgstr "balík Ubuntu"
 
 #: src/diagnostics.rs:839
 msgid "development override"
@@ -1561,7 +1559,7 @@ msgstr "Minimálne trvanie reči pred potvrdením časti prepisu odmlkou (sekund
 #: src/presentation.rs:200
 msgid "Speech required before a pause can commit a transcript chunk."
 msgstr ""
-"Minimálne trvanie reči potrebné pred tým, než môže odmlka potvrdiť časť "
+"Minimálne trvanie reči potrebné na to, aby odmlka mohla potvrdiť časť "
 "prepisu."
 
 #: src/presentation.rs:205
@@ -1631,7 +1629,7 @@ msgstr ""
 
 #: src/presentation.rs:296
 msgid "This model provides no description for this setting."
-msgstr "Tento model neposkytuje popis pre toto nastavenie."
+msgstr "Tento model neposkytuje popis tohto nastavenia."
 
 #. TRANSLATORS: {percent} is how much of the download has arrived, a number from 0 to 100.
 #: src/ui/install_control.rs:131
@@ -1662,7 +1660,7 @@ msgid ""
 msgstr ""
 "Aké zvuky sa prehrávajú: Zvonček je úder do tyče, Vták je pískavé "
 "čvirikanie, Hlas je hmkanie, aké ľudia vydávajú pri počúvaní, Marimba je "
-"stúpajúca kvinta, Voda sú padajúce kvapky, Rádio je vysielačka a Struny je "
+"stúpajúca kvinta, Voda sú padajúce kvapky, Rádio je vysielačka a Struny sú "
 "brnkanie na koto."
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:60
@@ -1741,7 +1739,7 @@ msgstr "Nastavenia diktovania"
 
 #: data/com.canonical.Myna.Config.desktop:5
 msgid "Configure Myna dictation and its speech models"
-msgstr "Konfigurujte diktovanie Myny a jej modely na rozpoznávanie reči"
+msgstr "Konfigurovať diktovanie Myny a jej modely na rozpoznávanie reči"
 
 #. TRANSLATORS: Search terms for this application. Keep every semicolon, including the last.
 #: data/com.canonical.Myna.Config.desktop:12
