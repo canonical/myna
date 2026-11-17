@@ -5,6 +5,8 @@
 
 use async_trait::async_trait;
 
+pub mod pipeline;
+
 /// Turns heard text into the text to type.
 #[async_trait]
 pub trait Processor: Send {
