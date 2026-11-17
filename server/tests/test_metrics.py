@@ -35,6 +35,16 @@ def test_normalize_folds_typographic_apostrophes_inside_words():
     assert normalize("Lʼaccident") == "l'accident"  # modifier letter apostrophe
 
 
+def test_normalize_keeps_combining_vowel_signs():
+    # Devanagari matras and the virama are marks, not word characters to
+    # Python's \w: dropping them split every Hindi word into consonants.
+    assert normalize("विचारों को स्वीकार किया।") == "विचारों को स्वीकार किया"
+
+
+def test_wer_counts_a_changed_vowel_sign():
+    assert word_error_rate("विचारों", "विचार").substitutions == 1
+
+
 def test_wer_zero_between_typographic_and_ascii_apostrophe():
     er = word_error_rate("L’accident", "L'accident")
     assert er.rate == 0.0

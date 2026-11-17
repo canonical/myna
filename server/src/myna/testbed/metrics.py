@@ -13,7 +13,9 @@ and documented so results are reproducible:
     punctuation handling, so a reference written with a curly quote (FLEURS
     French elisions use U+2019) scores against an ASCII hypothesis as the
     same word.
-  - Drop punctuation — anything that is not a word character or whitespace.
+  - Drop punctuation — anything that is not a word character, a combining
+    mark or whitespace. Marks are not ``\\w`` to Python, and dropping them
+    split every Hindi word into its consonants (vowel signs, virama).
     Apostrophes inside words are kept so "don't" stays one token.
   - Collapse all whitespace runs to single spaces; strip ends.
 
@@ -47,14 +49,15 @@ from functools import cache
 from myna.testbed.whisper_normalizers import BasicTextNormalizer, EnglishTextNormalizer
 
 # Bump whenever `normalize` changes in a way that can move a WER/CER score.
-NORMALIZER_VERSION = 1
+NORMALIZER_VERSION = 2
 
 # The openai/whisper release the vendored normalisers are pinned to.
 SECONDARY_NORMALIZER_VERSION = "whisper-v20250625"
 
 Normalizer = Callable[[str], str]
 
-# Keep word chars, whitespace, and intra-word apostrophes; drop the rest.
+# Keep word chars, whitespace, and intra-word apostrophes; drop the rest
+# except combining marks (``_mark_or_space``).
 _PUNCT = re.compile(r"[^\w\s']", flags=re.UNICODE)
 _APOSTROPHE_EDGES = re.compile(r"(?<!\w)'|'(?!\w)")
 _WS = re.compile(r"\s+")
@@ -67,12 +70,17 @@ _WS = re.compile(r"\s+")
 _TYPOGRAPHIC_APOSTROPHES = str.maketrans({"’": "'", "‘": "'", "ʼ": "'"})
 
 
+def _mark_or_space(match: re.Match[str]) -> str:
+    char = match.group()
+    return char if unicodedata.category(char).startswith("M") else " "
+
+
 def _clean(text: str, *, fold_case: bool) -> str:
     text = unicodedata.normalize("NFKC", text)
     if fold_case:
         text = text.casefold()
     text = text.translate(_TYPOGRAPHIC_APOSTROPHES)
-    text = _PUNCT.sub(" ", text)
+    text = _PUNCT.sub(_mark_or_space, text)
     text = _APOSTROPHE_EDGES.sub(" ", text)  # leading/trailing quotes, not don't
     return _WS.sub(" ", text).strip()
 
