@@ -378,6 +378,25 @@ def test_cmd_preset_fetches_both_fleurs_files_at_the_pinned_revision(tmp_path, f
     assert len(load_manifest(out / "manifest.json")) == 3
 
 
+def test_cmd_preset_builds_a_one_locale_smoke_tier_from_that_locale_alone(
+    tmp_path, fetched, monkeypatch
+):
+    monkeypatch.setattr(corpus_publication, "SMOKE_CLIPS", 2)
+    cache = tmp_path / "cache"
+    (cache / "fleurs" / "hi_in").mkdir(parents=True)
+    fleurs_files(cache / "fleurs" / "hi_in")
+    out = tmp_path / "hi"
+
+    cmd_preset(Args("fleurs-smoke:hi_in", cache, out))
+
+    assert [dest for _url, dest in fetched] == [
+        cache / "fleurs" / "hi_in" / "test.tsv",
+        cache / "fleurs" / "hi_in" / "test.tar.gz",
+    ]
+    clips = load_manifest(out / "manifest.json")
+    assert [(c.language, c.category) for c in clips] == [("hi", "hi_in")] * 2
+
+
 def test_cmd_preset_reuses_a_built_corpus_without_decoding_again(
     tmp_path, fetched, monkeypatch, capsys
 ):
@@ -477,6 +496,7 @@ def test_the_module_names_every_preset_it_accepts():
         "librispeech-test-other",
         "fleurs-test:<lang>",
         "fleurs-smoke",
+        "fleurs-smoke:<lang>",
         "fleurs-keywords:<lang>",
     )
 
@@ -486,6 +506,24 @@ def test_the_module_names_every_preset_it_accepts():
 
 def test_the_smoke_preset_is_parsed():
     assert parse_preset("fleurs-smoke").dataset == "fleurs-smoke"
+    assert parse_preset("fleurs-smoke").locale is None
+
+
+def test_a_one_locale_smoke_preset_is_parsed():
+    preset = parse_preset("fleurs-smoke:hi_in")
+    assert (preset.dataset, preset.locale, preset.slug) == (
+        "fleurs-smoke",
+        "hi_in",
+        "fleurs-smoke-hi_in",
+    )
+
+
+def test_a_one_locale_smoke_tier_names_its_preset(tmp_path):
+    (tmp_path / "hi_in").mkdir()
+    sources = {"hi_in": fleurs_files(tmp_path / "hi_in")}
+    out = build_fleurs_smoke(tmp_path / "out", sources, preset="fleurs-smoke:hi_in")
+    manifest = json.loads(out.read_text())
+    assert (manifest["preset"], manifest["language"]) == ("fleurs-smoke:hi_in", "hi_in")
 
 
 def test_the_smoke_tier_takes_the_first_listed_clips_of_each_locale(tmp_path, monkeypatch):

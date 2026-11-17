@@ -4,11 +4,14 @@
     myna-bench download-corpus --preset librispeech-test-other
     myna-bench download-corpus --preset fleurs-test:fr_fr
     myna-bench download-corpus --preset fleurs-smoke
+    myna-bench download-corpus --preset fleurs-smoke:hi_in
     myna-bench download-corpus --preset fleurs-keywords:es_419
 
 ``fleurs-smoke`` is the exception, and no publication number: a few clips of
 each language Myna's backends claim, in one manifest, for a nightly accuracy
-gate that has to fail on a broken language rather than measure one.
+gate that has to fail on a broken language rather than measure one;
+``fleurs-smoke:<lang>`` is the same few clips of one locale, for a backend
+that serves languages the shared tier does not carry.
 ``fleurs-keywords:<lang>`` is the other: the keyword tier outside English, a
 frozen keyword set (``keywords-fleurs-<lang>.json``) over that locale's test
 split, with an ordinary slice to count false hits on.
@@ -56,6 +59,7 @@ PRESETS = (
     "librispeech-test-other",
     "fleurs-test:<lang>",
     "fleurs-smoke",
+    "fleurs-smoke:<lang>",
     "fleurs-keywords:<lang>",
 )
 
@@ -105,6 +109,8 @@ def parse_preset(name: str) -> Preset:
     if name == "fleurs-smoke":
         return Preset(name, "fleurs-smoke", "test", None)
     prefix, _, locale = name.partition(":")
+    if prefix == "fleurs-smoke" and _FLEURS_LOCALE.fullmatch(locale):
+        return Preset(name, "fleurs-smoke", "test", locale)
     if prefix == "fleurs-test" and _FLEURS_LOCALE.fullmatch(locale):
         return Preset(name, "fleurs", "test", locale)
     if prefix == "fleurs-keywords" and _FLEURS_LOCALE.fullmatch(locale):
@@ -360,7 +366,11 @@ def build_fleurs(
 
 
 def build_fleurs_smoke(
-    out: Path, sources: dict[str, tuple[Path, Path]], *, manifest_name: str = "manifest.json"
+    out: Path,
+    sources: dict[str, tuple[Path, Path]],
+    *,
+    manifest_name: str = "manifest.json",
+    preset: str = "fleurs-smoke",
 ) -> Path:
     """The first ``SMOKE_CLIPS`` clips of each locale in ``sources``
     ({locale: (test.tsv, test.tar.gz)}), filed under their locale."""
@@ -373,10 +383,10 @@ def build_fleurs_smoke(
         digests[f"{locale}/test.tsv"] = sha256_file(tsv_path)
         digests[f"{locale}/audio/test.tar.gz"] = sha256_file(tar_path)
     header = {
-        "preset": "fleurs-smoke",
+        "preset": preset,
         "dataset": "fleurs",
         "split": "test",
-        "language": "multilingual",
+        "language": next(iter(sources)) if len(sources) == 1 else "multilingual",
         "license": LICENSE,
         "source": f"https://huggingface.co/datasets/{FLEURS_REPO}",
         "source_sha256": digests,
@@ -384,7 +394,7 @@ def build_fleurs_smoke(
         "citation": _FLEURS_CITATION,
     }
     title = f"Smoke corpus: the first {SMOKE_CLIPS} FLEURS test clips of {', '.join(sources)}"
-    return _write(out, manifest_name, header, entries, _fleurs_notice(title, "fleurs-smoke"))
+    return _write(out, manifest_name, header, entries, _fleurs_notice(title, preset))
 
 
 # The keyword tier's stress list: this many of the set's keywords, the first
@@ -549,6 +559,11 @@ def cmd_preset(args: argparse.Namespace) -> None:
     elif preset.locale is None:
         sources = {locale: _fetch_fleurs(cache, locale) for locale in SMOKE_LOCALES}
         manifest = build_fleurs_smoke(out, sources, manifest_name=args.manifest_name)
+    elif preset.dataset == "fleurs-smoke":
+        sources = {preset.locale: _fetch_fleurs(cache, preset.locale)}
+        manifest = build_fleurs_smoke(
+            out, sources, manifest_name=args.manifest_name, preset=preset.name
+        )
     elif preset.dataset == "fleurs-keywords":
         keyword_set = keyword_set_path(preset.locale)
         if not keyword_set.is_file():
