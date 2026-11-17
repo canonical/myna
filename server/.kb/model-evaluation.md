@@ -650,3 +650,21 @@ taken with OpenBLAS spinning and are inflated. Encoder threads, large CTC
 int8: 1 = RTF 0.047, 2 = 0.026, 4 = 0.016, 8 = 0.014 (0.11 CPU-s/s); 4
 ships.
 
+`myna-bench run` on chug (Ryzen 9 7950X3D, RTX 3050 8 GB), full FLEURS hi_in,
+the IndicConformer snap built from this branch against myna-whisper from
+latest/edge, which chose its nvidia-gpu engine (performance governor; every
+row `ok`):
+
+| row | WER | CER | RTFx | finalize p50 / p95 |
+|---|---|---|---|---|
+| indicconformer-hi, cpu, batch | 12.02% | 4.84% | 66.4 | 0.15 / 0.34 s |
+| indicconformer-hi, cpu, streaming | 12.41% | 5.16% | 16.5 | 0.56 / 1.70 s |
+| whisper large-v3-turbo, gpu, batch | 31.47% | 11.89% | 15.5 | 0.70 / 1.01 s |
+| whisper large-v3-turbo, gpu, streaming | 33.48% | 12.80% | 1.8 | 5.88 / 13.75 s |
+| whisper small, gpu, batch | 57.35% | 25.70% | 17.6 | 0.53 / 1.76 s |
+| whisper small, gpu, streaming | 92.48% | 57.05% | 0.9 | 10.70 / 28.57 s |
+
+What a Hindi user gets today is the Whisper rows: IndicConformer on a CPU
+has under half large-v3-turbo-on-a-GPU's error and a fraction of its
+latency, and streaming costs it 0.4 WER points.
+
