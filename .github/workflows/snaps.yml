@@ -34,7 +34,7 @@ jobs:
       fail-fast: false
       matrix:
         arch: [amd64, arm64]
-        snap: [myna, parakeet, whisper, funasr, nemotron]
+        snap: [myna, parakeet, whisper, funasr, nemotron, indicconformer]
         include:
           - snap: myna
             name: myna
@@ -60,6 +60,14 @@ jobs:
             fetch: cd nemotron-snap && ./dev/download-models.sh
             model: nemotron-en
             component: model-nemotron-en
+          # Cut out of AI4Bharat's checkpoint and exported the same way. Hindi
+          # only, so it smokes on Hindi FLEURS clips, not English ones.
+          - snap: indicconformer
+            name: myna-indicconformer
+            fetch: cd indicconformer-snap && ./dev/download-models.sh
+            model: indicconformer-hi
+            component: model-indicconformer-hi
+            smoke: fleurs-smoke:hi_in
     name: build (${{ matrix.snap }}, ${{ matrix.arch }})
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     timeout-minutes: 150
@@ -109,15 +117,25 @@ jobs:
           dev/build-bench.sh
 
       - uses: actions/cache@v6
-        if: matrix.model
+        if: matrix.model && !matrix.smoke
         with:
           path: .cache/librispeech
           key: librispeech-dev-clean
 
+      - uses: actions/cache@v6
+        if: matrix.smoke
+        with:
+          path: ~/.cache/myna/corpus-src
+          key: corpus-src-${{ matrix.smoke }}
+
       - name: Smoke (transcribe)
         if: matrix.model
         run: |
-          python3 myna-bench.pyz download-corpus --out corpus/smoke --select balanced -n 4
+          if [ -n "${{ matrix.smoke }}" ]; then
+            python3 myna-bench.pyz download-corpus --preset "${{ matrix.smoke }}" --out corpus/smoke
+          else
+            python3 myna-bench.pyz download-corpus --out corpus/smoke --select balanced -n 4
+          fi
           cat > smoke.yaml <<EOF
           manifest: ./corpus/smoke/manifest.json
           out: ./smoke.jsonl
