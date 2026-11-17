@@ -5,8 +5,9 @@ backend, quantisation, export, runtime or execution provider), treating
 Parakeet's window-collapse rate as a port bug, tuning ONNX Runtime CUDA
 execution, re-attempting an fp16 Parakeet export, changing Parakeet's keyword
 biasing, giving Whisper or SenseVoice keywords, scoring keywords against the
-audio, or changing the Nemotron streaming adapter
-(export, quantisation, mel, the 3.5 multilingual model).
+audio, changing the Nemotron streaming adapter
+(export, quantisation, mel, the 3.5 multilingual model), or adding an
+IndicConformer language.
 
 Read the top-level `.kb/agents.md` file before continuing below.
 
@@ -16,7 +17,8 @@ Findings from the 2026-09-17 Parakeet GPU workstream (fp32 CUDA export, NeMo
 parity, fp16 attempt), the 2026-09-19 keyword-biasing tuning (Parakeet decode
 bias) and its 2026-10-13 follow-up (post-correction, the Spanish tier), the
 rejected Whisper keyword prompt, the September Nemotron 3.5 ASR evaluation,
-and the 2026-11-02 Nemotron streaming ONNX adapter.
+the 2026-11-02 Nemotron streaming ONNX adapter, and the 2026-11-17
+IndicConformer Hindi adapter (#82).
 Numbers are
 from zephyrus (RTX 4080 Laptop 12 GB, driver 595) on the 82-clip
 `corpus/english/manifest-balanced.json` (+ 5-minute long-form clip) or FLEURS
@@ -599,4 +601,45 @@ same adapter, MatMul-only int8, on chug:
 0.20 core throughout. English stays on the English model. The language tags
 3.5 writes after terminal punctuation are single vocabulary pieces carrying
 their own word-start space; the adapter drops both.
+
+## IndicConformer Hindi (2026-11-17)
+
+`myna.testbed.indicconformer` (`--adapter indicconformer`) serves one
+language of AI4Bharat's IndicConformer, torch-free, streamed as Parakeet is
+(SilenceCut, partials). Issue #82: a contributor measured 12.00% WER on
+FLEURS hi_in against 27.51% for Whisper large-v3.
+
+- The checkpoints are multilingual hybrid RNN-T/CTC models from AI4Bharat's
+  NeMo fork (`multisoftmax`): per language a 256-token vocabulary, its own
+  joint output layer and a slice of the CTC head. The "per-language" large
+  downloads are one 22-language checkpoint (the hi file was checked).
+  `dev/indicconformer/export_indicconformer_onnx.py` cuts one language into
+  a stock NeMo hybrid model and runs NeMo's exporter. The prediction net
+  takes language-local ids: embedding rows at the aggregate offset decode
+  garbage.
+- Mel: framing and FFT in numpy, the filterbank and log in `mel-model.onnx`.
+  A numpy matmul wakes OpenBLAS, whose idle threads then spin on every core:
+  0.21 CPU-s per audio-second instead of 0.065, and slower.
+- Parity (`dev/indicconformer/parity.py`): the fp32 export served by the
+  adapter is identical to NeMo on all 418 test clips, both decoders.
+- Output is unpunctuated and uncased, as trained.
+
+Full FLEURS hi_in test (418 clips, 1.34 h), whole clips, Myna normaliser
+v2, Ryzen AI 7 350 laptop, ORT 1.27, OpenBLAS one thread:
+
+| model | precision | head | WER | CER | RTF (4 threads) | encoder |
+|---|---|---|---|---|---|---|
+| large (129M) | NeMo fp32 | RNN-T | 11.98% | 5.12% | - | - |
+| large | NeMo fp32 | CTC | 12.09% | 4.86% | - | - |
+| large | int8 | RNN-T | 11.78% | 5.02% | 0.035 | 185 MB |
+| large | int8 | CTC | 12.00% | 4.85% | 0.016 | 185 MB |
+| 600m | NeMo fp32 | RNN-T | 12.27% | - | - | - |
+| 600m | int8 | CTC | 12.61% | 4.85% | 0.021 | 840 MB |
+
+The large model ships, int8, CTC head: the heads score within noise of each
+other and CTC decodes in a third less time; 600m is no better on Hindi in
+NeMo itself at 4.5x the size. RTF rows other than the large CTC one were
+taken with OpenBLAS spinning and are inflated. Encoder threads, large CTC
+int8: 1 = RTF 0.047, 2 = 0.026, 4 = 0.016, 8 = 0.014 (0.11 CPU-s/s); 4
+ships.
 

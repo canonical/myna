@@ -285,3 +285,26 @@ async def test_serve_restores_the_default_signal_disposition(tmp_path):
 
     assert signal.getsignal(signal.SIGTERM) is signal.SIG_DFL
     assert signal.set_wakeup_fd(-1) == -1, "wakeup fd still points at the closed self-pipe"
+
+
+def test_indicconformer_takes_its_head_and_the_chunked_streaming_flags():
+    from myna.testbed.indicconformer import PARTIAL_CADENCE_S, IndicConformerAdapter
+
+    adapter = build_adapter(parse("--adapter", "indicconformer", "--model", "/m/x-hi"))
+    assert isinstance(adapter, IndicConformerAdapter)
+    assert adapter.candidate.engine == "onnxruntime-cpu-ctc"
+    assert not adapter.streaming
+    assert adapter._stream_partial_cadence_s == PARTIAL_CADENCE_S
+
+    adapter = build_adapter(
+        parse(
+            "--adapter", "indicconformer", "--model", "/m/x-hi", "--streaming",
+            "--indicconformer-decoder", "rnnt", "--stream-arm-s", "8",
+            "--stream-silence-cut-s", "0.3", "--stream-force-cut-s", "30",
+            "--stream-partial-cadence-s", "0",
+        )
+    )  # fmt: skip
+    assert adapter.streaming
+    assert adapter.candidate.engine == "onnxruntime-cpu-rnnt"
+    assert (adapter._stream_arm_s, adapter._stream_silence_cut_s) == (8.0, 0.3)
+    assert (adapter._stream_force_cut_s, adapter._stream_partial_cadence_s) == (30.0, 0.0)

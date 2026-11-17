@@ -24,7 +24,10 @@ Read the top-level `.kb/agents.md` file before continuing below.
   switch). Typographic apostrophes (U+2019, U+2018, U+02BC) fold to ASCII `'`
   before that, because FLEURS French references use U+2019 for elisions and
   an ASCII hypothesis otherwise splits "l'accident" into two words against
-  them. `normalizer_version` is stamped on every row; `one_normalizer_version`
+  them. Combining marks are kept (version 2, 2026-11-17): Python's `\w`
+  excludes them, and version 1 scored Hindi (vowel signs, virama) as runs of
+  bare consonants, "विचारों" against "विचार" counting no error.
+  `normalizer_version` is stamped on every row; `one_normalizer_version`
   refuses a file whose rows were scored under different versions, same as
   `one_corpus` does for `corpus_id`.
 - Each row also carries a secondary score, `wer_whisper_norm`/
@@ -36,7 +39,9 @@ Read the top-level `.kb/agents.md` file before continuing below.
   bump both together. It never replaces the primary score. `summarize` shows
   it as `WERw%`/`CERw%`, in the table, the `--ci` intervals and `compare`,
   blank for a cell with any row scored before it existed; mixed secondary
-  versions are refused like primary ones.
+  versions are refused like primary ones. Whisper's `BasicTextNormalizer`
+  still drops combining marks (upstream behaviour, kept for leaderboard
+  parity), so `WERw%`/`CERw%` mean nothing for Indic scripts.
 - The bundled 40-clip FLEURS subset's bootstrap CI half-width is ~2-4 WER
   points, so a point estimate on it is not comparable to a published number;
   use the full test set for that comparison.

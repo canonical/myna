@@ -38,6 +38,11 @@ parakeet = [
 nemotron = [
     "onnxruntime>=1.27,<1.28",
 ]
+# IndicConformer (AI4Bharat) via ONNX Runtime (no torch): the same runtime pin
+# as parakeet.
+indicconformer = [
+    "onnxruntime>=1.27,<1.28",
+]
 # FunASR / SenseVoice batch adapter (feature 009): ONNX Runtime + fbank +
 # sentencepiece, no torch/NeMo. The single funasr-onnx dep pulls in all
 # transitive deps (onnxruntime, kaldi-native-fbank, sentencepiece, numpy,

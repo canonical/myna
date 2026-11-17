@@ -35,7 +35,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--adapter",
         default="whisper",
-        choices=("whisper", "parakeet", "nemotron", "funasr", "fake"),
+        choices=("whisper", "parakeet", "nemotron", "indicconformer", "funasr", "fake"),
         help="ASR backend ('fake' = scripted, no model — for wire/contract testing)",
     )
     parser.add_argument(
@@ -43,7 +43,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="model id/path; default per adapter (whisper: tiny; "
         "funasr: ONNX model dir — default: staged cache snapshot; "
-        "nemotron: exported model dir — default: $MODEL_DIR)",
+        "nemotron, indicconformer: exported model dir — default: $MODEL_DIR)",
     )
     parser.add_argument(
         "--device",
@@ -70,7 +70,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--streaming",
         action="store_true",
-        help="enable streaming mode (progressive committed segments; whisper/parakeet/nemotron; "
+        help="enable streaming mode (progressive committed segments; "
+        "whisper/parakeet/nemotron/indicconformer; "
         "fake: one unstable hypothesis ahead of the first segment)",
     )
     parser.add_argument(
@@ -112,26 +113,30 @@ def build_parser() -> argparse.ArgumentParser:
         "--stream-arm-s",
         type=float,
         default=None,
-        help="seconds of uncommitted audio before Parakeet SilenceCut can commit "
+        help="seconds of uncommitted audio before SilenceCut can commit (parakeet, "
+        "indicconformer) "
         "(default 15; lower for earlier chunks)",
     )
     parser.add_argument(
         "--stream-silence-cut-s",
         type=float,
         default=None,
-        help="pause duration in seconds that cuts a Parakeet streaming chunk (default 0.5)",
+        help="pause duration in seconds that cuts a streaming chunk (parakeet, "
+        "indicconformer; default 0.5)",
     )
     parser.add_argument(
         "--stream-force-cut-s",
         type=float,
         default=None,
-        help="max uncommitted audio window before Parakeet force-commits (default 60)",
+        help="max uncommitted audio window before a forced commit (parakeet, "
+        "indicconformer; default 60)",
     )
     parser.add_argument(
         "--stream-partial-cadence-s",
         type=float,
         default=None,
-        help="seconds between Parakeet unstable-partial ticks between commits "
+        help="seconds between unstable-partial ticks between commits (parakeet, "
+        "indicconformer) "
         "(default 2.0, perf T04; 0 shows nothing until the first cut)",
     )
     parser.add_argument(
@@ -152,6 +157,12 @@ def build_parser() -> argparse.ArgumentParser:
         default="unload",
         choices=("unload", "exit"),
         help="on idle: 'unload' (drop weights, keep serving) or 'exit' (for socket activation)",
+    )
+    parser.add_argument(
+        "--indicconformer-decoder",
+        default="ctc",
+        choices=("ctc", "rnnt"),
+        help="IndicConformer head: ctc (default) or rnnt",
     )
     parser.add_argument(
         "--funasr-language",
@@ -235,6 +246,21 @@ def build_adapter(args: argparse.Namespace) -> Adapter:
         from myna.testbed.nemotron import NemotronAdapter
 
         return NemotronAdapter(args.model, streaming=args.streaming)
+
+    if args.adapter == "indicconformer":
+        from myna.testbed.indicconformer import PARTIAL_CADENCE_S, IndicConformerAdapter
+
+        return IndicConformerAdapter(
+            args.model,
+            streaming=args.streaming,
+            decoder=getattr(args, "indicconformer_decoder", "ctc"),
+            stream_arm_s=getattr(args, "stream_arm_s", None) or 15.0,
+            stream_silence_cut_s=getattr(args, "stream_silence_cut_s", None) or 0.5,
+            stream_force_cut_s=getattr(args, "stream_force_cut_s", None) or 60.0,
+            stream_partial_cadence_s=_default_if_none(
+                getattr(args, "stream_partial_cadence_s", None), PARTIAL_CADENCE_S
+            ),
+        )
 
     if args.adapter == "funasr":
         from myna.testbed.funasr import FunasrAdapter
