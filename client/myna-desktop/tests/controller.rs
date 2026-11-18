@@ -2324,3 +2324,24 @@ async fn held_text_is_discarded_and_its_draft_hidden_when_focus_is_lost() {
         Some(&(String::new(), String::new()))
     );
 }
+
+#[tokio::test]
+async fn text_typed_as_it_arrives_is_never_processed() {
+    let injector = MockInjector::new();
+    let inject_log = injector.log();
+    let (builder, drafts) = held(
+        CommitPolicy::Streaming,
+        injector,
+        events_session(
+            vec![
+                OrchestratorEvent::Final("hello".into()),
+                OrchestratorEvent::Done("hello".into()),
+            ],
+            completed("hello"),
+        ),
+    );
+    builder.processor(Shout).build().run().await;
+
+    assert_eq!(inject_log.lock().unwrap().commits, vec!["hello"]);
+    assert!(drafts.0.lock().unwrap().is_empty());
+}

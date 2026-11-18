@@ -604,7 +604,14 @@ impl DesktopController {
         let auto_stop = self.auto_stop.clone();
         let warned = &self.warned;
         let policy = self.commit.get();
-        let processor = self.processor.as_mut();
+        // Text typed as it arrives is typed as heard: with nothing held,
+        // behaviour is exactly today's.
+        let mut unprocessed = Unprocessed;
+        let processor: &mut dyn Processor = if policy.streams() {
+            &mut unprocessed
+        } else {
+            self.processor.as_mut()
+        };
         let draft = self.draft.as_mut();
 
         tokio::pin!(run);
