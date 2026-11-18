@@ -1,0 +1,24 @@
+#!/bin/sh
+set -e
+
+# ppa:charles05/myna-config is retired: a system still following it moves to
+# ppa:canonical-desktop-team/myna, in the file add-apt-repository would write.
+if [ "$1" = configure ]; then
+    for old in /etc/apt/sources.list.d/charles05-ubuntu-myna-config-*.sources; do
+        [ -e "$old" ] || continue
+        suite=$(sed -n 's/^Suites: *//p' "$old")
+        case $suite in
+        '' | *[!a-z]*) continue ;;
+        esac
+        new=/etc/apt/sources.list.d/canonical-desktop-team-ubuntu-myna-$suite.sources
+        if [ ! -e "$new" ]; then
+            sed "s/@SUITE@/$suite/" /usr/share/myna-config/team-ppa.sources > "$new"
+            if grep -q '^Enabled: *no' "$old"; then
+                sed -i '1iEnabled: no' "$new"
+            fi
+        fi
+        rm -f "$old"
+    done
+fi
+
+#DEBHELPER#

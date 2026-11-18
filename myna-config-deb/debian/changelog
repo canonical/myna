@@ -6,6 +6,8 @@ myna-config (0.3.3-0ubuntu1) tenacious; urgency=medium
     finishing, is reported as lost instead of disappearing.
   * Fixes in typing through IBus, including a preedit memory bug (#18).
   * New Azerbaijani translation.
+  * Systems on the retired ppa:charles05/myna-config move to
+    ppa:canonical-desktop-team/myna (#111).
 
  -- Charles <charles05@canonical.com>  Wed, 18 Nov 2026 01:11:59 +0000
 

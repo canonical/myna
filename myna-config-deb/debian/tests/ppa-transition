@@ -1,0 +1,40 @@
+#!/bin/sh
+# Configuring the package moves a system that follows the retired
+# ppa:charles05/myna-config to the team PPA, keeping the suite and a
+# disabled state, and leaves every other system alone.
+set -eu
+dir=/etc/apt/sources.list.d
+old=$dir/charles05-ubuntu-myna-config-resolute.sources
+new=$dir/canonical-desktop-team-ubuntu-myna-resolute.sources
+postinst=/var/lib/dpkg/info/myna-config.postinst
+trap 'rm -f "$old" "$new"' EXIT
+
+follow_retired() {
+    printf '%s\n' "$@" 'Types: deb' \
+        'URIs: https://ppa.launchpadcontent.net/charles05/myna-config/ubuntu/' \
+        'Suites: resolute' 'Components: main' > "$old"
+}
+
+before=$(ls "$dir")
+"$postinst" configure
+test "$(ls "$dir")" = "$before"
+
+follow_retired
+"$postinst" configure
+test ! -e "$old"
+grep -qxF 'URIs: https://ppa.launchpadcontent.net/canonical-desktop-team/myna/ubuntu/' "$new"
+grep -qxF 'Suites: resolute' "$new"
+if grep -q '^Enabled:' "$new"; then exit 1; fi
+grep -qxF 'Signed-By: -----BEGIN PGP PUBLIC KEY BLOCK-----' "$new"
+
+# A source the user already has is theirs: only the retired one goes.
+echo '# mine' > "$new"
+follow_retired
+"$postinst" configure
+test ! -e "$old"
+test "$(cat "$new")" = '# mine'
+
+rm "$new"
+follow_retired 'Enabled: no'
+"$postinst" configure
+grep -qxF 'Enabled: no' "$new"
