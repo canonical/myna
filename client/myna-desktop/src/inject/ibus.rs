@@ -68,11 +68,34 @@ const SHELL_CLIENT: &str = "gnome-shell";
 /// text over XIM, Wine among them (#73).
 const XIM_CLIENT: &str = "xim";
 
-/// The most UTF-16 units one commit to an XIM client carries. Wine hands each
-/// commit to the application as one IME result string, and Windows
-/// applications read it into fixed buffers: Qt's holds 256 units and drops
-/// the rest without error. One unit short leaves room for a terminator.
-const XIM_COMMIT_UNITS: usize = 255;
+/// The most UTF-16 units one commit carries, whatever the field. Receivers
+/// read a commit into fixed buffers and drop what does not fit without
+/// error: under Wine, Qt's holds 256 units (#73), one unit short leaves room
+/// for a terminator; Noosphere's holds 1024 bytes and types 256 of them. On
+/// Wayland a commit of 4084 bytes or more does not fit a message at all, and
+/// Mutter 51 disconnects the focused application.
+const COMMIT_UNITS: usize = 255;
+
+/// How long a piece of a commit waits for the field to answer the one before
+/// (its cursor moving, or its surrounding text) before going anyway. Mutter
+/// sends each commit's `done` from an idle (mutter#5087), so two commits it
+/// reads in one turn of its loop reach the application as one, the earlier
+/// lost: with the Shell stalled 150 ms, 25 pieces of 30 sent back to back,
+/// and 5 of 30 sent 100 ms apart. GTK and Noosphere answer within 3 ms.
+const ECHO_WAIT: Duration = Duration::from_secs(2);
+const ECHO_POLL: Duration = Duration::from_millis(50);
+
+/// A field answers one commit more than once (GTK its surrounding text, then
+/// its cursor a frame later; Noosphere its cursor twice, 10 ms apart), and a
+/// late answer to one piece must not pass for the next one's: the wait ends
+/// once the field has been quiet this long, or `ECHO_SETTLE_LIMIT` after its
+/// first answer for a field that never is.
+const ECHO_SETTLE: Duration = Duration::from_millis(30);
+const ECHO_SETTLE_LIMIT: Duration = Duration::from_millis(150);
+
+/// The wait between pieces for a field that has said nothing since it was
+/// focused: there is nothing to wait for, only time to leave.
+const SILENT_GAP: Duration = Duration::from_millis(100);
 
 /// How far apart a `FocusOut` and an activation may be to belong together. A
 /// global key grab on X11 sends the focused window FocusOut on the key's
@@ -763,11 +786,15 @@ struct EngineState {
     /// that supersedes another finds `myna-stt` global and must not take that
     /// for the user's engine.
     displaced: Mutex<Option<String>>,
+    /// Counts what the focused field said after text reached it: its cursor
+    /// location and its surrounding text.
+    echoes: watch::Sender<u64>,
 }
 
 impl EngineState {
     fn new() -> Self {
         Self {
+            echoes: watch::Sender::new(0),
             lease: watch::Sender::new(Lease::new(0, Binding::Lost)),
             next_lease: AtomicU64::new(1),
             next_blip: AtomicU64::new(1),
@@ -928,6 +955,11 @@ impl EngineState {
         });
     }
 
+    /// The focused field said where its cursor is or what surrounds it.
+    fn echoed(&self) {
+        self.echoes.send_modify(|n| *n += 1);
+    }
+
     /// The character before the cursor, while lease `id` is held.
     fn before_cursor(&self, id: u64) -> Option<char> {
         let lease = self.lease.borrow();
@@ -1084,9 +1116,11 @@ impl EngineState {
             .is_some_and(|c| c != SHELL_CLIENT && !c.is_empty())
     }
 
-    /// The most UTF-16 units one commit to the focused field may carry.
-    fn commit_limit(&self) -> Option<usize> {
-        (self.lease.borrow().client() == Some(XIM_CLIENT)).then_some(XIM_COMMIT_UNITS)
+    /// Whether the pieces of a commit wait for the field between them. XIM
+    /// never passes through a compositor's text-input, and ibus-x11 relays
+    /// no answer to wait for.
+    fn paces_commits(&self) -> bool {
+        self.lease.borrow().client() != Some(XIM_CLIENT)
     }
 }
 
@@ -1180,6 +1214,7 @@ impl EngineObject {
     /// text is never logged.
     async fn set_surrounding_text(&self, text: OwnedValue, cursor_pos: u32, anchor_pos: u32) {
         let before = char_before(&text, cursor_pos.min(anchor_pos));
+        self.state.echoed();
         self.state.surrounding(before);
     }
 
@@ -1210,7 +1245,11 @@ impl EngineObject {
     }
 
     async fn set_capabilities(&self, _caps: u32) {}
-    async fn set_cursor_location(&self, _x: i32, _y: i32, _w: i32, _h: i32) {}
+    /// Where the field's cursor is. Only that it moved matters: it is the
+    /// field's answer to the text it was last given.
+    async fn set_cursor_location(&self, _x: i32, _y: i32, _w: i32, _h: i32) {
+        self.state.echoed();
+    }
     async fn property_activate(&self, _name: String, _state: u32) {}
     async fn enable(&self) {}
     async fn disable(&self) {}
@@ -1438,6 +1477,7 @@ impl Injector for IbusInjector {
     async fn acquire(&mut self) -> Result<Box<dyn Target>, InjectError> {
         // Read before the switch; recorded once it has succeeded.
         let before = self.global_engine().await;
+        let echoes_before = *self.state.echoes.borrow();
 
         call(&self.conn, "RegisterComponent", &(ibus_component(),)).await?;
         let mut displaced = before.clone();
@@ -1516,6 +1556,7 @@ impl Injector for IbusInjector {
             preedit_active: false,
             held: Vec::new(),
             held_preedit: None,
+            echoes_before,
         }))
     }
 
@@ -1543,6 +1584,9 @@ struct IbusTarget {
     held: Vec<String>,
     /// The preedit asked for then, shown once they land.
     held_preedit: Option<String>,
+    /// The engine's echo count when this lease was minted. A field that has
+    /// raised it since answers what it is given.
+    echoes_before: u64,
 }
 
 impl std::fmt::Debug for IbusTarget {
@@ -1617,18 +1661,56 @@ impl IbusTarget {
             return Err(InjectError::SecureField);
         }
         self.state.wrote(self.lease);
-        // One commit elsewhere: mutter keeps only the last of back-to-back
-        // commits (mutter#5087), and XIM never reaches mutter's text-input.
-        let pieces = match self.state.commit_limit() {
-            Some(limit) => commit_pieces(text, limit),
-            None => vec![text],
-        };
-        for piece in pieces {
+        let paced = self.state.paces_commits();
+        let mut echoes = self.state.echoes.subscribe();
+        let mut pieces = commit_pieces(text, COMMIT_UNITS).into_iter().peekable();
+        while let Some(piece) = pieces.next() {
+            echoes.borrow_and_update();
             self.emit("CommitText", &(ibus_text(piece),))
                 .await
                 .map_err(|e| classify("CommitText", e))?;
+            if pieces.peek().is_none() || !paced {
+                continue;
+            }
+            self.await_echo(&mut echoes).await;
+            if !self.state.holds(self.lease) {
+                myna_core::dbg_log!("inject", "commit CUT SHORT: focus lost between pieces");
+                return Err(InjectError::FocusLost);
+            }
         }
         Ok(())
+    }
+
+    /// Wait until the field has answered the piece just sent, so the next one
+    /// cannot overtake it in the compositor.
+    async fn await_echo(&mut self, echoes: &mut watch::Receiver<u64>) {
+        // A field that reports its cursor does so when it is focused, before
+        // anything is written to it.
+        if *echoes.borrow() == self.echoes_before {
+            tokio::time::sleep(SILENT_GAP).await;
+            return;
+        }
+        // In slices, so a field that lost focus is not waited for.
+        let waited = tokio::time::Instant::now();
+        while tokio::time::timeout(ECHO_POLL, echoes.changed())
+            .await
+            .is_err()
+        {
+            if !self.state.holds(self.lease) {
+                return;
+            }
+            if waited.elapsed() >= ECHO_WAIT {
+                myna_core::dbg_log!("inject", "no echo within {ECHO_WAIT:?}, going on");
+                return;
+            }
+        }
+        let quiet = async {
+            while tokio::time::timeout(ECHO_SETTLE, echoes.changed())
+                .await
+                .is_ok()
+            {}
+        };
+        let _ = tokio::time::timeout(ECHO_SETTLE_LIMIT, quiet).await;
     }
 
     async fn show_preedit(&mut self, text: &str) {
@@ -1870,25 +1952,21 @@ mod tests {
         assert!(!state.preedit_hint());
     }
 
-    /// #73: only a lease bound to an XIM client splits commits; a later
-    /// unnamed or unfocused lease does not inherit XIM splitting (mutter#5087).
+    /// Only an XIM field's pieces go back to back; a lease that lost the
+    /// field, or a later unnamed one, does not inherit that.
     #[test]
-    fn commit_limit_follows_the_focused_client() {
+    fn pieces_wait_for_every_field_but_xim() {
         let state = engine_state();
         let _first = state.mint();
-        assert_eq!(state.commit_limit(), None, "no field named yet");
+        assert!(state.paces_commits(), "no field named yet");
         focus_in(&state, "/org/freedesktop/IBus/InputContext_2", XIM_CLIENT);
-        assert_eq!(state.commit_limit(), Some(XIM_COMMIT_UNITS));
+        assert!(!state.paces_commits());
         focus_in(&state, "/org/freedesktop/IBus/InputContext_1", FAKE_CLIENT);
-        assert_eq!(state.commit_limit(), None, "lost lease has no XIM limit");
+        assert!(state.paces_commits(), "a lost lease is no XIM field");
 
         let _second = state.mint();
         state.focus(FocusChange::In(None));
-        assert_eq!(
-            state.commit_limit(),
-            None,
-            "prior XIM lease must not bleed into an unnamed lease"
-        );
+        assert!(state.paces_commits(), "an unnamed lease is no XIM field");
     }
 
     #[test]
