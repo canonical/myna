@@ -9,7 +9,7 @@ export const CARET_GAP = 6;
 export const FALLBACK_BOTTOM = 120;
 
 /** The most text shown; a long dictation shows its end. */
-export const DRAFT_LIMIT = 240;
+export const DRAFT_LIMIT = 600;
 
 function clamp(value, low, high) {
     return Math.max(low, Math.min(value, high));
@@ -38,6 +38,14 @@ export function placeDraft({caret, size, workArea}) {
     return {
         x: clamp(caret.x, workArea.x, Math.max(workArea.x, right)),
         y: clamp(y, workArea.y, Math.max(workArea.y, bottom)),
+    };
+}
+
+/** Place a draft of `size` in the middle of `workArea`. */
+export function placeCentre({size, workArea}) {
+    return {
+        x: workArea.x + Math.max(0, Math.floor((workArea.width - size.width) / 2)),
+        y: workArea.y + Math.max(0, Math.floor((workArea.height - size.height) / 2)),
     };
 }
 

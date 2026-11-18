@@ -1,24 +1,27 @@
 // draft.js - the draft of a dictation, drawn next to the text caret.
 //
 // With processing on, the daemon holds a dictation back from the field until
-// it ends and publishes it as DraftText and DraftTail. This draws them. The
-// caret is the Shell's own knowledge (Main.inputMethod), in stage
-// coordinates; a field that reports none gets the draft at the bottom centre.
+// it ends and publishes it as DraftText and DraftTail. This draws them, in
+// the middle of the screen. It can follow the text caret instead
+// (FOLLOW_CARET), which is the Shell's own knowledge (Main.inputMethod).
 
 import Pango from 'gi://Pango';
 import St from 'gi://St';
 
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
-import {draftMarkup, placeDraft} from './draftPlace.js';
+import {draftMarkup, placeCentre, placeDraft} from './draftPlace.js';
 
-const MAX_WIDTH = 560;
+// In the middle of the screen, where it is plain that the dictation is being
+// held and not typed. `true` puts it next to the text caret instead.
+const FOLLOW_CARET = false;
+const MAX_WIDTH = 900;
 const STYLE = [
     'background-color: rgba(36, 36, 36, 0.94)',
     'color: #ffffff',
-    'border-radius: 10px',
-    'padding: 6px 10px',
-    'font-size: 11pt',
+    'border-radius: 14px',
+    'padding: 14px 20px',
+    'font-size: 17pt',
 ].join('; ');
 
 export class DictationDraft {
@@ -109,11 +112,10 @@ export class DictationDraft {
         const width = Math.min(natural, MAX_WIDTH, workArea.width);
         this._label.set_width(width);
         const [, height] = this._label.get_preferred_height(width);
-        const {x, y} = placeDraft({
-            caret: this._caret,
-            size: {width, height},
-            workArea,
-        });
+        const size = {width, height};
+        const {x, y} = FOLLOW_CARET
+            ? placeDraft({caret: this._caret, size, workArea})
+            : placeCentre({size, workArea});
         this._label.set_position(Math.round(x), Math.round(y));
         // Above windows and the hosted HUD alike.
         this._label.get_parent()?.set_child_above_sibling(this._label, null);

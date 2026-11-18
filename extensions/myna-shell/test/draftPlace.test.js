@@ -5,7 +5,7 @@
 
 import System from 'system';
 
-import {CARET_GAP, FALLBACK_BOTTOM, draftEnd, draftMarkup, placeDraft} from '../draftPlace.js';
+import {CARET_GAP, FALLBACK_BOTTOM, draftEnd, draftMarkup, placeCentre, placeDraft} from '../draftPlace.js';
 
 let failures = 0;
 
@@ -63,6 +63,18 @@ eq('bottom centre when the field reports an empty caret',
 
 eq('a draft larger than the work area starts at its origin',
     placeDraft({caret: null, size: {width: 4000, height: 4000}, workArea: WORK_AREA}),
+    {x: 0, y: 32});
+
+// --- In the middle -----------------------------------------------------------
+
+eq('centred in the work area',
+    placeCentre({size: SIZE, workArea: WORK_AREA}),
+    {x: (1920 - SIZE.width) / 2, y: 32 + (1048 - SIZE.height) / 2});
+eq('centred on a second monitor',
+    placeCentre({size: SIZE, workArea: {x: 1920, y: 0, width: 2560, height: 1440}}),
+    {x: 1920 + (2560 - SIZE.width) / 2, y: (1440 - SIZE.height) / 2});
+eq('a draft larger than the work area starts at its origin when centred',
+    placeCentre({size: {width: 4000, height: 4000}, workArea: WORK_AREA}),
     {x: 0, y: 32});
 
 // --- What it says ----------------------------------------------------------
