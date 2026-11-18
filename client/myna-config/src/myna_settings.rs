@@ -33,6 +33,8 @@ pub enum Placement {
     ActiveModel,
     /// The Processing tab.
     Processing,
+    /// The Processing tab's list of steps, in the order they run.
+    ProcessingStep,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -160,16 +162,18 @@ pub fn widget_plan(metadata: &ClientSettingMetadata) -> WidgetPlan {
         writable: metadata.writable(),
         placement: match metadata.key().as_str() {
             myna_core::settings::KEY_LANGUAGE => Placement::ActiveModel,
-            myna_core::settings::KEY_PROCESSING | myna_core::settings::KEY_PROCESSING_HISTORY => {
-                Placement::Processing
-            }
+            myna_core::settings::KEY_PROCESSING
+            | myna_core::settings::KEY_PROCESSING_SENTENCES
+            | myna_core::settings::KEY_PROCESSING_HISTORY => Placement::Processing,
+            myna_core::settings::KEY_PROCESSING_TIDY
+            | myna_core::settings::KEY_PROCESSING_TRANSLATE => Placement::ProcessingStep,
             _ => Placement::Dictation,
         },
     }
 }
 
 /// The Dictation group's order; any other key follows, in the adapter's order.
-const DICTATION_ORDER: [&str; 6] = [
+const DICTATION_ORDER: [&str; 11] = [
     KEY_STREAMING_MODE,
     myna_core::settings::KEY_HUD_STYLE,
     myna_core::settings::KEY_SOUNDS,
@@ -177,6 +181,12 @@ const DICTATION_ORDER: [&str; 6] = [
     myna_core::settings::KEY_SILENCE_TIMEOUT,
     // Last: a row that opens a page of its own.
     myna_core::settings::KEY_VOCABULARY,
+    // The Processing tab; its steps in the order they run.
+    myna_core::settings::KEY_PROCESSING,
+    myna_core::settings::KEY_PROCESSING_SENTENCES,
+    myna_core::settings::KEY_PROCESSING_HISTORY,
+    myna_core::settings::KEY_PROCESSING_TIDY,
+    myna_core::settings::KEY_PROCESSING_TRANSLATE,
 ];
 
 fn display_rank(key: &str) -> usize {

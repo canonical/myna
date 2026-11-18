@@ -469,7 +469,7 @@ fn headless_widget_smoke_covers_every_real_schema_key() {
 
     let plans: Vec<_> = adapter.list().unwrap().iter().map(widget_plan).collect();
 
-    assert_eq!(plans.len(), 9);
+    assert_eq!(plans.len(), 12);
     assert!(plans.iter().any(|plan| plan.kind == WidgetKind::Choice));
     let vocabulary = plans
         .iter()
@@ -499,6 +499,14 @@ fn headless_widget_smoke_covers_every_real_schema_key() {
         .expect("processing is listed");
     assert_eq!(processing.kind, WidgetKind::Switch);
     assert_eq!(processing.placement, Placement::Processing);
+    let steps: Vec<_> = plans
+        .iter()
+        .filter(|plan| plan.placement == Placement::ProcessingStep)
+        .map(|plan| (plan.key.as_str(), plan.kind))
+        .collect();
+    assert_eq!(steps.len(), 2, "{steps:?}");
+    assert!(steps.contains(&("processing-tidy", WidgetKind::Switch)));
+    assert!(steps.contains(&("processing-translate", WidgetKind::Switch)));
     assert!(plans.iter().any(|plan| plan.kind == WidgetKind::Text));
     let number = plans
         .iter()

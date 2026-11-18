@@ -1622,7 +1622,7 @@ fn typing_probe() -> glib::ExitCode {
         rows,
         &overlay,
         &model_settings,
-        &adw::PreferencesGroup::new(),
+        &processing_group(),
     );
     overlay.set_child(Some(&model_settings));
     let window = adw::Window::builder().content(&overlay).build();
@@ -1728,7 +1728,7 @@ fn vocabulary_probe() -> glib::ExitCode {
         rows,
         &overlay,
         &model_settings,
-        &adw::PreferencesGroup::new(),
+        &processing_group(),
     );
     let navigation = adw::NavigationView::new();
     navigation.add(&root);
@@ -2214,7 +2214,7 @@ fn shortcut_unsupported_probe() -> glib::ExitCode {
         rows,
         &overlay,
         &adw::PreferencesGroup::new(),
-        &adw::PreferencesGroup::new(),
+        &processing_group(),
     );
     let Ok(myna) = page.clone().downcast::<ui::MynaPage>() else {
         eprintln!("the settings page is not the Myna page");
@@ -2285,7 +2285,7 @@ fn shortcut_probe() -> glib::ExitCode {
         rows,
         &overlay,
         &adw::PreferencesGroup::new(),
-        &adw::PreferencesGroup::new(),
+        &processing_group(),
     );
     let Ok(myna) = page.clone().downcast::<ui::MynaPage>() else {
         eprintln!("the settings page is not the Myna page");
@@ -3236,7 +3236,7 @@ fn backends_probe() -> glib::ExitCode {
         PersistenceWriter::spawn(GioClientSettings::open),
         &overlay,
         &spoken_language,
-        &adw::PreferencesGroup::new(),
+        &processing_group(),
     );
     general_nav.replace(std::slice::from_ref(&myna_page));
     window.present();
@@ -5666,7 +5666,7 @@ fn build_myna_page(
     writer: PersistenceWriter,
     overlay: &adw::ToastOverlay,
     model_settings: &adw::PreferencesGroup,
-    processing: &adw::PreferencesGroup,
+    processing: &ProcessingGroups,
 ) -> adw::NavigationPage {
     match controller.state() {
         PageState::Loading => status_page(
@@ -5691,18 +5691,34 @@ fn build_myna_page(
     }
 }
 
-/// The group the Processing tab shows; General's builder adds its rows.
-fn processing_group() -> adw::PreferencesGroup {
-    adw::PreferencesGroup::builder()
-        .description(gettextrs::gettext(
-            "Myna can work on what you said before typing it. This is experimental.",
-        ))
-        .build()
+/// The groups the Processing tab shows; General's builder adds their rows.
+#[derive(Clone)]
+struct ProcessingGroups {
+    general: adw::PreferencesGroup,
+    /// One switch per step, in the order the steps run.
+    steps: adw::PreferencesGroup,
 }
 
-fn processing_page(group: &adw::PreferencesGroup) -> adw::NavigationPage {
+fn processing_group() -> ProcessingGroups {
+    ProcessingGroups {
+        general: adw::PreferencesGroup::builder()
+            .description(gettextrs::gettext(
+                "Myna can work on what you said before typing it. This is experimental.",
+            ))
+            .build(),
+        steps: adw::PreferencesGroup::builder()
+            .title(gettextrs::gettext("Steps"))
+            .description(gettextrs::gettext(
+                "What is done to your words, from top to bottom.",
+            ))
+            .build(),
+    }
+}
+
+fn processing_page(groups: &ProcessingGroups) -> adw::NavigationPage {
     let preferences = adw::PreferencesPage::new();
-    preferences.add(group);
+    preferences.add(&groups.general);
+    preferences.add(&groups.steps);
     adw::NavigationPage::builder()
         .title(gettextrs::gettext("Processing"))
         .child(&preferences)
@@ -5867,7 +5883,7 @@ fn ready_page(
     rows: Vec<SettingRow>,
     overlay: &adw::ToastOverlay,
     model_settings: &adw::PreferencesGroup,
-    processing: &adw::PreferencesGroup,
+    processing: &ProcessingGroups,
 ) -> adw::NavigationPage {
     let page = ui::MynaPage::new();
     crate::shortcut_ui::ShortcutControl::attach(
@@ -5899,7 +5915,8 @@ fn ready_page(
         let group = match plan.placement {
             Placement::Dictation => &dictation,
             Placement::ActiveModel => model_settings,
-            Placement::Processing => processing,
+            Placement::Processing => &processing.general,
+            Placement::ProcessingStep => &processing.steps,
         };
         let widget_name = (plan.placement == Placement::ActiveModel)
             .then(|| crate::backend_ui::client_setting_widget_name(&plan.key));

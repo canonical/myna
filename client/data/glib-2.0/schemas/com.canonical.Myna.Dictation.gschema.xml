@@ -45,6 +45,32 @@
       </description>
     </key>
 
+    <key name="processing-tidy" type="b">
+      <default>true</default>
+      <summary>Remove hesitations and repeats</summary>
+      <description>
+        Drop the ums, the false starts and the words said twice. Nothing is
+        added to what you said.
+      </description>
+    </key>
+
+    <key name="processing-translate" type="b">
+      <default>false</default>
+      <summary>Translate English to French</summary>
+      <description>
+        Type in French what you said in English.
+      </description>
+    </key>
+
+    <key name="processing-sentences" type="b">
+      <default>false</default>
+      <summary>Type each sentence once it is finished</summary>
+      <description>
+        Type as you go, a sentence behind what you are saying, instead of
+        typing everything when you stop.
+      </description>
+    </key>
+
     <key name="processing-history" type="b">
       <default>false</default>
       <summary>Keep a record of tidied dictations</summary>

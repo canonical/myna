@@ -13,6 +13,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
 
 use super::Processor;
+use crate::live::Live;
 
 /// What a step asks of a model.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -22,6 +23,9 @@ pub struct Request {
     /// The language of the text, when known.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub language: Option<String>,
+    /// The language to answer in, for a translation.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub to: Option<String>,
     /// How long the answer may take before the step is skipped.
     #[serde(skip)]
     pub budget: Duration,
@@ -32,7 +36,19 @@ impl Request {
         Self {
             task: "text.cleanup".into(),
             language,
+            to: None,
             budget: Duration::from_secs(1),
+        }
+    }
+
+    /// A dictation typed at once is translated at once, so the budget is a
+    /// long dictation's: a sentence takes a model 60-260 ms.
+    pub fn translate(from: &str, to: &str) -> Self {
+        Self {
+            task: "text.translate".into(),
+            language: Some(from.into()),
+            to: Some(to.into()),
+            budget: Duration::from_secs(10),
         }
     }
 }
@@ -89,6 +105,7 @@ fn words(text: &str) -> impl Iterator<Item = String> + '_ {
         .filter(|word| !word.is_empty())
 }
 
+#[derive(Clone)]
 pub enum Step {
     /// A change that needs no model.
     Rule(fn(&str) -> String),
@@ -96,16 +113,51 @@ pub enum Step {
     Ask { request: Request, check: Check },
 }
 
-/// The steps between the speech model and the field.
+/// A chain of steps the user turns on or off as one. They run in the order
+/// listed here, whatever order they were turned on in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Chain {
+    /// Drop hesitations, false starts and repeats.
+    Tidy,
+    /// Type in French what was said in English.
+    French,
+}
+
+impl Chain {
+    pub fn steps(self) -> Vec<Step> {
+        match self {
+            Chain::Tidy => vec![Step::Ask {
+                request: Request::cleanup(None),
+                check: Check::NoNewWords,
+            }],
+            Chain::French => vec![Step::Ask {
+                request: Request::translate("en", "fr"),
+                check: Check::Present,
+            }],
+        }
+    }
+}
+
+/// The steps of `chains`, in the order they run.
+pub fn steps_of(chains: &[Chain]) -> Vec<Step> {
+    [Chain::Tidy, Chain::French]
+        .into_iter()
+        .filter(|chain| chains.contains(chain))
+        .flat_map(Chain::steps)
+        .collect()
+}
+
+/// The steps between the speech model and the field, read anew for each
+/// piece of text, so a change in Settings applies from the next one.
 pub struct Pipeline {
-    steps: Vec<Step>,
+    steps: Live<Vec<Step>>,
     models: Box<dyn Models>,
 }
 
 impl Pipeline {
-    pub fn new(steps: Vec<Step>, models: impl Models + 'static) -> Self {
+    pub fn new(steps: impl Into<Live<Vec<Step>>>, models: impl Models + 'static) -> Self {
         Self {
-            steps,
+            steps: steps.into(),
             models: Box::new(models),
         }
     }
@@ -114,7 +166,7 @@ impl Pipeline {
 #[async_trait]
 impl Processor for Pipeline {
     async fn process(&mut self, mut text: String) -> String {
-        for step in &self.steps {
+        for step in &self.steps.get() {
             match step {
                 Step::Rule(rule) => text = rule(&text),
                 Step::Ask { request, check } => {
@@ -224,13 +276,50 @@ mod tests {
     }
 
     fn cleanup(models: Scripted) -> Pipeline {
-        Pipeline::new(
-            vec![Step::Ask {
-                request: Request::cleanup(None),
-                check: Check::NoNewWords,
-            }],
-            models,
-        )
+        Pipeline::new(steps_of(&[Chain::Tidy]), models)
+    }
+
+    fn tasks(steps: &[Step]) -> Vec<&str> {
+        steps
+            .iter()
+            .map(|step| match step {
+                Step::Rule(_) => "rule",
+                Step::Ask { request, .. } => request.task.as_str(),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn chains_run_in_their_own_order_not_the_order_given() {
+        let steps = steps_of(&[Chain::French, Chain::Tidy]);
+        assert_eq!(tasks(&steps), ["text.cleanup", "text.translate"]);
+        assert_eq!(tasks(&steps_of(&[Chain::French])), ["text.translate"]);
+        assert!(steps_of(&[]).is_empty());
+    }
+
+    #[tokio::test]
+    async fn steps_changed_while_running_apply_to_the_next_text() {
+        let steps = Live::new(Vec::new());
+        let mut pipeline = Pipeline::new(steps.clone(), Scripted::Says("Bonjour."));
+        assert_eq!(pipeline.process("Hello.".into()).await, "Hello.");
+        steps.set(steps_of(&[Chain::French]));
+        assert_eq!(pipeline.process("Hello.".into()).await, "Bonjour.");
+    }
+
+    #[test]
+    fn a_translation_names_both_languages() {
+        let request = Request::translate("en", "fr");
+        let sent = serde_json::to_value(Ask {
+            request: &request,
+            text: "Hello.",
+        })
+        .unwrap();
+        assert_eq!(
+            sent,
+            serde_json::json!({
+                "task": "text.translate", "language": "en", "to": "fr", "text": "Hello."
+            })
+        );
     }
 
     const HEARD: &str = "Um, let's meet Monday, no, Tuesday.";

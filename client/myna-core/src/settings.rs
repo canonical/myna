@@ -60,6 +60,15 @@ pub const DEFAULT_SOUNDS: bool = true;
 /// Whether dictated text is held in a draft and processed before it is typed.
 pub const KEY_PROCESSING: &str = "processing";
 
+/// Whether processing removes hesitations and repeats.
+pub const KEY_PROCESSING_TIDY: &str = "processing-tidy";
+
+/// Whether processing translates English to French.
+pub const KEY_PROCESSING_TRANSLATE: &str = "processing-translate";
+
+/// Whether processed text is typed a sentence at a time rather than once.
+pub const KEY_PROCESSING_SENTENCES: &str = "processing-sentences";
+
 /// Whether processed dictations are recorded, as heard and as typed.
 pub const KEY_PROCESSING_HISTORY: &str = "processing-history";
 
@@ -148,6 +157,9 @@ pub struct Settings {
     pub sounds: bool,
     /// Whether text is held in a draft and processed before it is typed.
     pub processing: bool,
+    pub processing_tidy: bool,
+    pub processing_translate: bool,
+    pub processing_sentences: bool,
     /// Whether each processed dictation is recorded, as heard and as typed.
     pub processing_history: bool,
     /// Which cues are heard.
@@ -166,6 +178,9 @@ impl Default for Settings {
             silence_timeout: DEFAULT_SILENCE_TIMEOUT_SECS,
             sounds: DEFAULT_SOUNDS,
             processing: false,
+            processing_tidy: true,
+            processing_translate: false,
+            processing_sentences: false,
             processing_history: false,
             sound_set: SoundSet::default(),
             vocabulary: Vec::new(),
@@ -198,6 +213,15 @@ impl Settings {
                 .unwrap_or(default.silence_timeout),
             sounds: store.flag(KEY_SOUNDS).unwrap_or(default.sounds),
             processing: store.flag(KEY_PROCESSING).unwrap_or(default.processing),
+            processing_tidy: store
+                .flag(KEY_PROCESSING_TIDY)
+                .unwrap_or(default.processing_tidy),
+            processing_translate: store
+                .flag(KEY_PROCESSING_TRANSLATE)
+                .unwrap_or(default.processing_translate),
+            processing_sentences: store
+                .flag(KEY_PROCESSING_SENTENCES)
+                .unwrap_or(default.processing_sentences),
             processing_history: store
                 .flag(KEY_PROCESSING_HISTORY)
                 .unwrap_or(default.processing_history),
@@ -592,6 +616,27 @@ mod tests {
         assert!(!Settings::from_store(&store).processing);
         assert!(store.settings.set_boolean(KEY_PROCESSING, true).is_ok());
         assert!(Settings::from_store(&store).processing);
+
+        assert!(Settings::from_store(&store).processing_tidy);
+        assert!(store
+            .settings
+            .set_boolean(KEY_PROCESSING_TIDY, false)
+            .is_ok());
+        assert!(!Settings::from_store(&store).processing_tidy);
+
+        assert!(!Settings::from_store(&store).processing_translate);
+        assert!(store
+            .settings
+            .set_boolean(KEY_PROCESSING_TRANSLATE, true)
+            .is_ok());
+        assert!(Settings::from_store(&store).processing_translate);
+
+        assert!(!Settings::from_store(&store).processing_sentences);
+        assert!(store
+            .settings
+            .set_boolean(KEY_PROCESSING_SENTENCES, true)
+            .is_ok());
+        assert!(Settings::from_store(&store).processing_sentences);
 
         assert!(!Settings::from_store(&store).processing_history);
         assert!(store
