@@ -1,3 +1,14 @@
+myna-config (0.3.3-0ubuntu1) tenacious; urgency=medium
+
+  * Hindi: Myna Settings recommends the new IndicConformer model for
+    Hindi and sets it up on a Hindi desktop (#82).
+  * Text Myna could not type, because focus left the field while it was
+    finishing, is reported as lost instead of disappearing.
+  * Fixes in typing through IBus, including a preedit memory bug (#18).
+  * New Azerbaijani translation.
+
+ -- Charles <charles05@canonical.com>  Wed, 18 Nov 2026 01:11:59 +0000
+
 myna-config (0.3.2-0ubuntu1) tenacious; urgency=medium
 
   * Vocabulary now works with every model: Whisper and FunASR join
