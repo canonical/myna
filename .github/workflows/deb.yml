@@ -50,7 +50,7 @@ jobs:
       - name: Build tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y sbuild mmdebstrap uidmap distro-info devscripts dpkg-dev
+          sudo apt-get install -y sbuild autopkgtest mmdebstrap uidmap distro-info devscripts dpkg-dev
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           cargo install --locked cargo-vendor-filterer@0.5.18
 
@@ -69,19 +69,31 @@ jobs:
             "deb $mirror $series-security main universe"
 
       # --no-clean-source: the host lacks noble's build-deps, which a clean
-      # on the host would demand.
-      - name: Build
+      # on the host would demand. The autopkgtest installs the built deb in a
+      # fresh chroot, the only place its maintainer scripts run before a user's
+      # machine. sbuild exits 0 whatever lintian and autopkgtest say, so their
+      # verdicts are read from its log. The two suppressed tags are noble's
+      # lintian not knowing the current Standards-Version and watch format.
+      - name: Build, lintian and autopkgtest
         run: |
-          SERIES=${{ matrix.series }} make build-deb \
-            SBUILD_ARGS="--chroot-mode=unshare --no-clean-source"
+          series=${{ matrix.series }}
+          SERIES=$series make build-deb \
+            SBUILD_ARGS="--chroot-mode=unshare --no-clean-source --run-lintian --lintian-opt=--suppress-tags=newer-standards-version,unknown-debian-watch-file-standard --run-autopkgtest --autopkgtest-virt-server=unshare --autopkgtest-virt-server-opts=--release=$series --autopkgtest-virt-server-opts=--arch=${{ matrix.arch }}"
+          log=$(ls target/deb/"$series"/myna-config_*_${{ matrix.arch }}.build)
+          grep -E '^([EW]: |[a-z-]+ +(PASS|FAIL|SKIP)|(Lintian|Autopkgtest): )' "$log"
+          grep -qx 'Lintian: pass' "$log"
+          grep -qx 'Autopkgtest: pass' "$log"
 
-      # sbuild prints only "dpkg-buildpackage died"; the why is in its log.
+      # sbuild prints only "dpkg-buildpackage died"; the why is in its log,
+      # whose own name carries a timestamp with colons, which artifacts refuse.
+      - if: failure()
+        run: cp -L target/deb/${{ matrix.series }}/myna-config_*_${{ matrix.arch }}.build sbuild.log
       - if: failure()
         uses: actions/upload-artifact@v7
         with:
           name: sbuild-log-${{ matrix.series }}-${{ matrix.arch }}
           retention-days: 14
-          path: target/deb/${{ matrix.series }}/**/*.build
+          path: sbuild.log
 
       - uses: actions/upload-artifact@v7
         with:
