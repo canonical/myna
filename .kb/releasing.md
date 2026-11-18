@@ -17,6 +17,7 @@ A release is a signed annotated `vX.Y.Z` tag whose message is the release notes.
 - Tag with `--cleanup=verbatim`. The default cleanup strips lines starting with `#`, which takes the Markdown headings with it.
 - Tag a commit on `origin/main`; the PPA refuses anything else.
 - Try the commit as a store refresh before tagging it: `gh workflow run snaps.yml --ref main -f publish=true -f channel=edge/rc1` releases it to a branch that edge users never see and that expires after 30 days. A sideloaded snap does not exercise the refresh: it keeps no store components and gets no store-granted connections. A tag is refused without it: `snaps.yml`'s `candidate` job (`dev/release-candidate.sh`) fails the run before anything builds unless a manual run released the tagged commit, or its parent when the tag adds only the `debian/changelog` commit, to a branch. So the order is candidate, then the changelog commit, then the tag; anything else landing in between needs a new candidate.
+- After replacing the `store-edge` credential, run `gh workflow run store-credential.yml`: it logs in with the secret and fails on one the store cannot parse or one within 30 days of expiry. A secret pasted wrong otherwise shows only at the publish step, after every snap has built (0.3.3 lost an evening to that).
 - Releases link the PPA and the store, never attach a `.snap` or `.deb`: a sideloaded snap is unasserted and never refreshes, a loose deb never updates. The install text is `.github/release-footer.md`, appended to every release's notes.
 
 
