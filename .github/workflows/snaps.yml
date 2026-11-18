@@ -2,7 +2,8 @@
 # (snapcraft does not cross-build), smoke-tested there with myna-bench on a few
 # LibriSpeech clips, and released. A release tag releases to edge; a manual run
 # can release to a branch such as edge/rc1 to try a candidate as a store
-# refresh before tagging it.
+# refresh before tagging it, and a tag whose commit was never a candidate is
+# refused before anything is built.
 #
 # Publishing needs the store-edge environment's SNAPCRAFT_STORE_CREDENTIALS
 # (snapcraft export-login scoped to these snaps), so it only happens in a
@@ -29,7 +30,28 @@ on:
     tags: ["v[0-9]+.[0-9]+.[0-9]+"]
 
 jobs:
+  # A release tag releases only a commit already tried as a candidate: a
+  # manual run that released it, or its parent before the changelog commit,
+  # to a branch and so started upgrade-e2e. That run is what proves the
+  # credential, the store's review and the refresh before edge users get
+  # the tag.
+  candidate:
+    if: ${{ github.event_name == 'push' && vars.SNAP_PUBLISH == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: dev/release-candidate.sh "$GITHUB_REPOSITORY" "$GITHUB_SHA"
+
   build:
+    needs: candidate
+    if: ${{ !cancelled() && needs.candidate.result != 'failure' }}
     strategy:
       fail-fast: false
       matrix:
@@ -182,8 +204,8 @@ jobs:
           path: bundle/
 
   publish:
-    needs: build
-    if: ${{ !cancelled() && vars.SNAP_PUBLISH == 'true' && (github.event_name == 'push' || inputs.publish) }}
+    needs: [candidate, build]
+    if: ${{ !cancelled() && needs.candidate.result != 'failure' && vars.SNAP_PUBLISH == 'true' && (github.event_name == 'push' || inputs.publish) }}
     strategy:
       fail-fast: false
       matrix:
