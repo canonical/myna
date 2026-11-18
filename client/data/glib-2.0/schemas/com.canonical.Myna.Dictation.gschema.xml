@@ -45,6 +45,15 @@
       </description>
     </key>
 
+    <key name="processing-history" type="b">
+      <default>false</default>
+      <summary>Keep a record of tidied dictations</summary>
+      <description>
+        Save what was heard and what was typed, to check how tidying up went.
+        The record stays on this computer.
+      </description>
+    </key>
+
     <key name="sounds" type="b">
       <default>true</default>
       <summary>Sounds on start, stop and error</summary>

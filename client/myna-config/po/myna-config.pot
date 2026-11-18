@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-17 23:54+0000\n"
+"POT-Creation-Date: 2026-11-18 00:56+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -261,11 +261,11 @@ msgstr ""
 msgid "Most languages, with uneven accuracy"
 msgstr ""
 
-#: src/app.rs:3498 src/myna_settings.rs:196
+#: src/app.rs:3498 src/myna_settings.rs:198
 msgid "As you speak"
 msgstr ""
 
-#: src/app.rs:3499 src/myna_settings.rs:197
+#: src/app.rs:3499 src/myna_settings.rs:199
 msgid "When you stop"
 msgstr ""
 
@@ -1480,43 +1480,43 @@ msgstr ""
 msgid "The list holds at most {limit} words. Remove one to add another."
 msgstr ""
 
-#: src/myna_settings.rs:198
+#: src/myna_settings.rs:200
 msgid "Ribbon"
 msgstr ""
 
-#: src/myna_settings.rs:199
+#: src/myna_settings.rs:201
 msgid "VU meter"
 msgstr ""
 
-#: src/myna_settings.rs:200
+#: src/myna_settings.rs:202
 msgid "Default"
 msgstr ""
 
-#: src/myna_settings.rs:201
+#: src/myna_settings.rs:203
 msgid "Bird"
 msgstr ""
 
-#: src/myna_settings.rs:202
+#: src/myna_settings.rs:204
 msgid "Chime"
 msgstr ""
 
-#: src/myna_settings.rs:203
+#: src/myna_settings.rs:205
 msgid "Voice"
 msgstr ""
 
-#: src/myna_settings.rs:204
+#: src/myna_settings.rs:206
 msgid "Marimba"
 msgstr ""
 
-#: src/myna_settings.rs:205
+#: src/myna_settings.rs:207
 msgid "Water"
 msgstr ""
 
-#: src/myna_settings.rs:206
+#: src/myna_settings.rs:208
 msgid "Radio"
 msgstr ""
 
-#: src/myna_settings.rs:207
+#: src/myna_settings.rs:209
 msgid "Strings"
 msgstr ""
 
@@ -1719,73 +1719,83 @@ msgid ""
 msgstr ""
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:50
-msgid "Sounds on start, stop and error"
+msgid "Keep a record of tidied dictations"
 msgstr ""
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:51
+msgid ""
+"Save what was heard and what was typed, to check how tidying up went. The "
+"record stays on this computer."
+msgstr ""
+
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:59
+msgid "Sounds on start, stop and error"
+msgstr ""
+
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:60
 msgid ""
 "Play a short sound when dictation starts listening, when it stops, and when "
 "it fails."
 msgstr ""
 
-#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:59
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:68
 msgid "Sound style"
 msgstr ""
 
-#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:60
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:69
 msgid ""
 "Which sounds play: Chime is a struck bar, Bird whistled chirps, Voice the "
 "hums people make while listening, Marimba a rising fifth, Water falling "
 "drops, Radio a walkie-talkie and Strings a plucked koto."
 msgstr ""
 
-#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:69
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:78
 msgid "When to transcribe"
 msgstr ""
 
-#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:70
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:79
 msgid ""
 "As you speak shows partial text in the field while you talk; When you stop "
 "injects the whole transcript once the utterance ends."
 msgstr ""
 
-#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:78
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:87
 msgid "Spoken language"
 msgstr ""
 
-#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:79
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:88
 msgid ""
 "A BCP-47-ish code (en, fr, zh) for the language you dictate in. The model "
 "skips language detection and decodes in this language; a code that does not "
 "match what is spoken degrades the transcript. Empty lets the model decide."
 msgstr ""
 
-#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:89
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:98
 msgid "Indicator style"
 msgstr ""
 
-#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:90
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:99
 msgid ""
 "All three render the same calibrated audio envelope: Default is a level bar "
 "in the accent colour, Ribbon a flowing GPU wave, VU meter a segmented meter."
 msgstr ""
 
-#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:100
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:109
 msgid "Stop after silence (seconds)"
 msgstr ""
 
-#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:101
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:110
 msgid ""
 "With tap-to-start activation, end the dictation session on its own after "
 "this many seconds without speech. 0 keeps it running until the next tap. "
 "Hold-to-talk always ends with the key."
 msgstr ""
 
-#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:110
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:119
 msgid "Vocabulary"
 msgstr ""
 
-#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:111
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:120
 msgid ""
 "Names and terms you use that speech recognition might get wrong, such as a "
 "colleague's name, a product or a term from your field: \"Nguyen\", "

@@ -5,6 +5,7 @@
 
 use async_trait::async_trait;
 
+pub mod history;
 pub mod pipeline;
 
 /// Turns heard text into the text to type.

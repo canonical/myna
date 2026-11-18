@@ -54,6 +54,7 @@ use myna_desktop::indicator::readiness::{Readiness, ReadinessTee};
 use myna_desktop::inject::lazy::{IbusConnect, LazyInjector};
 use myna_desktop::inject::Injector as _;
 use myna_desktop::platform::Platform;
+use myna_desktop::process::history::{history_path, Recorded};
 use myna_desktop::process::pipeline::{Check, Pipeline, Request, SocketModels, Step};
 use myna_desktop::shortcut::control::{default_socket_path, listen, send_toggle, ControlTrigger};
 use myna_desktop::sound::{
@@ -141,6 +142,7 @@ struct Resolved {
     sounds: bool,
     sound_set: SoundSet,
     commit: CommitPolicy,
+    history: bool,
 }
 
 impl Resolved {
@@ -162,6 +164,7 @@ impl Resolved {
             sounds: settings.sounds,
             sound_set: settings.sound_set,
             commit: resolve_commit(settings.processing),
+            history: settings.processing_history,
         }
     }
 }
@@ -242,6 +245,8 @@ struct LiveSettings {
     auto_stop: Live<AutoStop>,
     /// Read at each press.
     commit: Live<CommitPolicy>,
+    /// Read at each commit.
+    history: Live<bool>,
     sounds: Live<bool>,
     /// Shared with the [`Player`], which reads it at every cue.
     sound_set: Live<SoundSet>,
@@ -257,6 +262,7 @@ impl LiveSettings {
             vocabulary: Live::new(resolved.vocabulary.clone()),
             auto_stop: Live::new(resolved.auto_stop),
             commit: Live::new(resolved.commit),
+            history: Live::new(resolved.history),
             sounds: Live::new(resolved.sounds),
             sound_set,
             // The schema default until the first read in `follow`; a machine
@@ -389,6 +395,14 @@ impl LiveSettings {
                 resolved.commit
             );
             self.commit.set(resolved.commit);
+        }
+        if self.history.get() != resolved.history {
+            myna_core::info_log!(
+                "settings",
+                "processing history -> {} (live)",
+                resolved.history
+            );
+            self.history.set(resolved.history);
         }
         if self.sounds.get() != resolved.sounds {
             myna_core::info_log!("settings", "sounds -> {} (live)", resolved.sounds);
@@ -758,12 +772,16 @@ async fn run_controller(
         .preedit(live.preedit.clone())
         .auto_stop(live.auto_stop.clone())
         .commit(live.commit.clone())
-        .processor(Pipeline::new(
-            vec![Step::Ask {
-                request: Request::cleanup(None),
-                check: Check::NoNewWords,
-            }],
-            SocketModels::new(text_models_socket()),
+        .processor(Recorded::new(
+            Pipeline::new(
+                vec![Step::Ask {
+                    request: Request::cleanup(None),
+                    check: Check::NoNewWords,
+                }],
+                SocketModels::new(text_models_socket()),
+            ),
+            live.history.clone(),
+            history_path(),
         ));
     let builder = match &pump_bus {
         Some(bus) => builder.draft(BusDraftView::new(bus.clone())),
@@ -1564,6 +1582,14 @@ mod tests {
         let live = LiveSettings::new(&resolved(&a, &unset()), Live::new(SoundSet::default()));
         live.apply(&resolved(&a, &on), "test");
         assert_eq!(live.commit.get(), CommitPolicy::AtEnd);
+
+        assert!(!live.history.get());
+        let recording = myna_core::Settings {
+            processing_history: true,
+            ..on
+        };
+        live.apply(&resolved(&a, &recording), "test");
+        assert!(live.history.get());
     }
 
     #[test]

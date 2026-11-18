@@ -160,7 +160,9 @@ pub fn widget_plan(metadata: &ClientSettingMetadata) -> WidgetPlan {
         writable: metadata.writable(),
         placement: match metadata.key().as_str() {
             myna_core::settings::KEY_LANGUAGE => Placement::ActiveModel,
-            myna_core::settings::KEY_PROCESSING => Placement::Processing,
+            myna_core::settings::KEY_PROCESSING | myna_core::settings::KEY_PROCESSING_HISTORY => {
+                Placement::Processing
+            }
             _ => Placement::Dictation,
         },
     }

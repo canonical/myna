@@ -60,6 +60,9 @@ pub const DEFAULT_SOUNDS: bool = true;
 /// Whether dictated text is held in a draft and processed before it is typed.
 pub const KEY_PROCESSING: &str = "processing";
 
+/// Whether processed dictations are recorded, as heard and as typed.
+pub const KEY_PROCESSING_HISTORY: &str = "processing-history";
+
 /// Which set of cues the daemon plays.
 pub const KEY_SOUND_SET: &str = "sound-set";
 
@@ -145,6 +148,8 @@ pub struct Settings {
     pub sounds: bool,
     /// Whether text is held in a draft and processed before it is typed.
     pub processing: bool,
+    /// Whether each processed dictation is recorded, as heard and as typed.
+    pub processing_history: bool,
     /// Which cues are heard.
     pub sound_set: SoundSet,
     /// The user's local dictionary, raw (unnormalized) as stored.
@@ -161,6 +166,7 @@ impl Default for Settings {
             silence_timeout: DEFAULT_SILENCE_TIMEOUT_SECS,
             sounds: DEFAULT_SOUNDS,
             processing: false,
+            processing_history: false,
             sound_set: SoundSet::default(),
             vocabulary: Vec::new(),
         }
@@ -192,6 +198,9 @@ impl Settings {
                 .unwrap_or(default.silence_timeout),
             sounds: store.flag(KEY_SOUNDS).unwrap_or(default.sounds),
             processing: store.flag(KEY_PROCESSING).unwrap_or(default.processing),
+            processing_history: store
+                .flag(KEY_PROCESSING_HISTORY)
+                .unwrap_or(default.processing_history),
             sound_set: store
                 .text(KEY_SOUND_SET)
                 .as_deref()
@@ -583,6 +592,13 @@ mod tests {
         assert!(!Settings::from_store(&store).processing);
         assert!(store.settings.set_boolean(KEY_PROCESSING, true).is_ok());
         assert!(Settings::from_store(&store).processing);
+
+        assert!(!Settings::from_store(&store).processing_history);
+        assert!(store
+            .settings
+            .set_boolean(KEY_PROCESSING_HISTORY, true)
+            .is_ok());
+        assert!(Settings::from_store(&store).processing_history);
     }
 
     /// The chime is heard out of the box, with or without a schema, and a set
