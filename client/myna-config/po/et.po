@@ -8,7 +8,7 @@ msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-10-11 11:54+0100\n"
-"PO-Revision-Date: 2026-11-12 06:51+0000\n"
+"PO-Revision-Date: 2026-11-18 13:19+0000\n"
 "Last-Translator: Priit Jõerüüt <jrthwlate@users.noreply.hosted.weblate.org>\n"
 "Language-Team: Estonian <https://hosted.weblate.org/projects/ubuntu-desktop-"
 "translations/myna-config/et/>\n"
@@ -17,7 +17,7 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=n != 1;\n"
-"X-Generator: Weblate 2026.11.2.dev0\n"
+"X-Generator: Weblate 2026.12.dev0\n"
 
 #: data/diagnostics-page.blp:5 data/diagnostics-page.blp:8 src/app.rs:1485
 msgid "About and Diagnostics"
@@ -348,7 +348,7 @@ msgstr ""
 
 #: src/app.rs:4465 src/backend_ui.rs:2463
 msgid "D-Bus call:"
-msgstr ""
+msgstr "D-Busi päring:"
 
 #: src/app.rs:4730 src/shortcut_ui.rs:669
 msgid "You can trigger Dictation anytime by using the keyboard shortcut:"
@@ -487,7 +487,7 @@ msgstr "Aktiivset mudelit ei ole"
 
 #: src/backend_ui.rs:1783
 msgid "Choose a model on the General tab."
-msgstr ""
+msgstr "Vali mudel üldseadistuste vahekaardilt."
 
 #: src/backend_ui.rs:1786
 msgid "Several models are connected"
@@ -495,7 +495,7 @@ msgstr "Ühendatud on mitu mudelit"
 
 #: src/backend_ui.rs:1787
 msgid "Choose one model on the General tab."
-msgstr ""
+msgstr "Vali üks mudel üldseadistuste vahekaardilt."
 
 #: src/backend_ui.rs:1993
 msgid "Diagnostics copied. Paste them into the issue."
@@ -527,19 +527,19 @@ msgstr "Ühtegi sisendmeetodit pole paigaldatud"
 
 #: src/backend_ui.rs:2314
 msgid "The model kept a different value than the one you chose."
-msgstr ""
+msgstr "See mudel säilitas sinu valitust erineva väärtuse."
 
 #: src/backend_ui.rs:2321
 msgid "The setting was saved, but the model did not start again."
-msgstr ""
+msgstr "Seadistus sai salvestatud, aga mudel ei käivitunud uuesti."
 
 #: src/backend_ui.rs:2328
 msgid "The setting was changed, but it could not be read back."
-msgstr ""
+msgstr "Seadistus sai muudetud, aga andmete uuesti lugemine ei õnnestunud."
 
 #: src/backend_ui.rs:2335
 msgid "The setting was changed, but reading it back was interrupted."
-msgstr ""
+msgstr "Seadistus sai muudetud, aga andmete uuesti lugemine katkes."
 
 #: src/backend_ui.rs:2353 src/backend_ui.rs:2380
 msgid "The system did not allow the change."
@@ -547,7 +547,7 @@ msgstr "Süsteem ei lubanud seda muudatust teha."
 
 #: src/backend_ui.rs:2360 src/backend_ui.rs:2383
 msgid "The model rejected the value."
-msgstr ""
+msgstr "See mudel lükkas väärtuse tagasi."
 
 #: src/backend_ui.rs:2367 src/backend_ui.rs:2386 src/backend_ui.rs:3165
 msgid "The change could not be made."
@@ -707,11 +707,11 @@ msgstr ""
 
 #: src/backend_ui.rs:2828
 msgid "Runtime and performance related settings."
-msgstr ""
+msgstr "Käituse ja jõudluse seadistused."
 
 #: src/backend_ui.rs:2831
 msgid "Advanced settings."
-msgstr ""
+msgstr "Täiendavad seadistused."
 
 #: src/backend_ui.rs:2834
 msgid "Internal and sensitive values are shown for diagnostics only."

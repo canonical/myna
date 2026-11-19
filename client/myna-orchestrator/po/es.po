@@ -8,8 +8,8 @@ msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-09-16 21:37+0100\n"
-"PO-Revision-Date: 2026-09-21 19:24+0000\n"
-"Last-Translator: Anonymous <noreply@weblate.org>\n"
+"PO-Revision-Date: 2026-11-19 20:13+0000\n"
+"Last-Translator: Adolfo Jayme Barrientos <fito@libreoffice.org>\n"
 "Language-Team: Spanish <https://hosted.weblate.org/projects/ubuntu-desktop-"
 "translations/myna-orchestrator/es/>\n"
 "Language: es\n"
@@ -17,7 +17,7 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=n != 1;\n"
-"X-Generator: Weblate 2026.10.dev0\n"
+"X-Generator: Weblate 2026.12.dev0\n"
 
 #: src/backend/mod.rs:75
 #, c-format
@@ -64,7 +64,7 @@ msgstr ""
 #: src/backend/share.rs:85
 #, c-format
 msgid "%s is connected but its server is not running"
-msgstr ""
+msgstr "%s está conectado pero su servidor no se está ejecutando"
 
 #: src/backend/share.rs:91
 #, c-format
