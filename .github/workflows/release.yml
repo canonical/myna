@@ -1,7 +1,7 @@
 # On a pushed vX.Y.Z tag: draft its GitHub Release, the annotated tag's message
-# followed by .github/release-footer.md as the notes (.kb/releasing.md). The
-# draft is published by hand once the snaps and the PPA carry the version, as
-# their credentials stay off CI.
+# followed by .github/release-footer.md as the notes (.kb/releasing.md).
+# release-publish.yml publishes the draft once the snaps and the PPA carry
+# the version.
 name: Release
 
 on:

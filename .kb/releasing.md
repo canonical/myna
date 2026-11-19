@@ -7,7 +7,7 @@ Read the top-level `.kb/agents.md` file before continuing below.
 
 # Overview
 
-A release is a signed annotated `vX.Y.Z` tag whose message is the release notes. Everything else follows from the tag: `dev/version.sh` versions every artifact from it (`.kb/versioning.md`), CI turns its message into a draft GitHub Release, the snaps and the PPA are uploaded by hand from the tagged checkout, and the draft is published once they carry the version. The GitHub Release is the one place a release is described; posts, store text and tickets link to it.
+A release is a signed annotated `vX.Y.Z` tag whose message is the release notes. Everything else follows from the tag: `dev/version.sh` versions every artifact from it (`.kb/versioning.md`), CI turns its message into a draft GitHub Release, the snaps and the PPA are uploaded by hand from the tagged checkout, and CI publishes the draft once they carry the version. The GitHub Release is the one place a release is described; posts, store text and tickets link to it.
 
 
 # Important
@@ -30,5 +30,5 @@ The steps, in order:
 3. `git tag -s --cleanup=verbatim -F notes.md vX.Y.Z`, then `git push origin vX.Y.Z`. `.github/workflows/release.yml` drafts the GitHub Release from the tag message and the footer.
 4. The tag also runs `.github/workflows/snaps.yml`, which builds, smoke-tests and releases the five snaps to edge on amd64 and arm64 runners, once the `store-edge` environment's reviewer approves. `make publish-<snap> CHANNEL=latest/edge` from the tagged checkout is the fallback for amd64.
 5. From the tagged checkout, the PPA uploads per series (`myna-config-deb/AGENTS.md`). The PPA builds arm64 from the same uploads.
-6. Once the store and the PPA serve `X.Y.Z` on both architectures, `gh release edit vX.Y.Z --draft=false`.
+6. Nothing to do: `.github/workflows/release-publish.yml` polls twice an hour and publishes the draft once `dev/release-ready.sh X.Y.Z` passes, that is, the store's edge serves every snap at `X.Y.Z` on amd64 and arm64 and the PPA publishes no `myna-config` binary of another version. Run the script to see what a release is still waiting for. A draft is public the moment those match, so finish its notes in the tag, not in the draft.
 7. Close each issue the notes say this release fixes, with a comment linking the release.

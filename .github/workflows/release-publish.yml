@@ -1,0 +1,36 @@
+# Publishes a draft GitHub Release once the store and the PPA serve its
+# version (dev/release-ready.sh), so a release goes public when it can be
+# installed and not before. The snaps and the PPA land hours apart and by
+# hand, hence a poll: with no draft waiting it does nothing.
+name: Release publish
+
+on:
+  schedule:
+    - cron: "7,37 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          drafts=$(gh release list --json tagName,isDraft \
+            --jq '.[] | select(.isDraft and (.tagName | test("^v[0-9]+\\.[0-9]+\\.[0-9]+$"))) | .tagName')
+          for tag in $drafts; do
+            # Not ready is the usual answer, not a failure; unreadable is.
+            if dev/release-ready.sh "${tag#v}"; then
+              gh release edit "$tag" --draft=false
+            elif [ $? != 1 ]; then
+              exit 1
+            fi
+          done
