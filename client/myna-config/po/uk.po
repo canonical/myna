@@ -8,7 +8,7 @@ msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-10-11 11:54+0100\n"
-"PO-Revision-Date: 2026-10-17 10:38+0000\n"
+"PO-Revision-Date: 2026-11-19 20:13+0000\n"
 "Last-Translator: Ihor Hordiichuk <ihor_ck@users.noreply.hosted.weblate.org>\n"
 "Language-Team: Ukrainian <https://hosted.weblate.org/projects/ubuntu-desktop-"
 "translations/myna-config/uk/>\n"
@@ -18,7 +18,7 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && "
 "n%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2);\n"
-"X-Generator: Weblate 2026.11.dev0\n"
+"X-Generator: Weblate 2026.12.dev0\n"
 
 #: data/diagnostics-page.blp:5 data/diagnostics-page.blp:8 src/app.rs:1485
 msgid "About and Diagnostics"
@@ -663,7 +663,7 @@ msgstr "Не під'єднано до Myna."
 
 #: src/backend_ui.rs:2679
 msgid "Active model"
-msgstr "Активно модель"
+msgstr "Активна модель"
 
 #: src/backend_ui.rs:2685
 msgid "Active engine"
@@ -1662,7 +1662,7 @@ msgstr ""
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:50
 msgid "Sound style"
-msgstr "Стильь звуку"
+msgstr "Стиль звуку"
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:51
 msgid ""
