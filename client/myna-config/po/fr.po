@@ -8,7 +8,7 @@ msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-10-11 11:54+0100\n"
-"PO-Revision-Date: 2026-11-15 11:16+0000\n"
+"PO-Revision-Date: 2026-11-19 20:13+0000\n"
 "Last-Translator: \"David D.\" <dadu042@users.noreply.hosted.weblate.org>\n"
 "Language-Team: French <https://hosted.weblate.org/projects/ubuntu-desktop-"
 "translations/myna-config/fr/>\n"
@@ -605,11 +605,8 @@ msgstr ""
 "Certaines des opérations ont été effectuées avant que l'app n'ait échouée.\n"
 
 #: src/backend_ui.rs:2498
-#, fuzzy
 msgid "No privileged operations completed.\n"
-msgstr ""
-"Aucune des opérations fondamentales n'est terminée.\n"
-".\n"
+msgstr "Aucune des opérations fondamentales n'est terminée.\n"
 
 #: src/backend_ui.rs:2500
 msgid "Completed operations:\n"
@@ -893,14 +890,12 @@ msgid "selector value must be text"
 msgstr "la valeur du sélecteur doit être du texte"
 
 #: src/backend_apply.rs:95
-#, fuzzy
 msgid "the model's settings command could not be found"
 msgstr "la commande des paramètres du modèle n'a pas pu être trouvée"
 
 #: src/backend_apply.rs:380
-#, fuzzy
 msgid "the model's restart command could not be built"
-msgstr "la commande de redémarrage du modèle n'a pu pas être compilée"
+msgstr "la commande de redémarrage du modèle n'a pu pas être construite"
 
 #: src/backend_apply.rs:479
 msgid "value must be a finite number"
@@ -943,25 +938,24 @@ msgstr ""
 
 #: src/onboarding_ui.rs:778
 msgid "Continue to the next onboarding step."
-msgstr ""
+msgstr "Continuer vers l’étape d’intégration suivante."
 
 #: src/onboarding_ui.rs:783
 msgid "Close Myna Settings."
 msgstr "Fermer paramètres Myna."
 
 #: src/onboarding_ui.rs:873
-#, fuzzy
 msgid ""
 "The input method IBus is not installed. Install the “ibus” package, then log "
 "out and back in."
 msgstr ""
-"La méthode d'entrée IBus n'est pas installée. Installez le paquet « ibus », "
+"La méthode d’entrée IBus n’est pas installée. Installez le paquet « ibus », "
 "puis déconnectez-vous et reconnectez-vous."
 
 #: src/onboarding_ui.rs:878
-#, fuzzy
 msgid "Setup status unavailable. The log has the details."
-msgstr "État de configuration indisponible. Le journal contient les détails."
+msgstr ""
+"Statut de la configuration non disponible. Le journal contient les détails."
 
 #: src/onboarding_ui.rs:993
 msgid "Setting up the input method"
@@ -992,16 +986,14 @@ msgid "Checking the installation"
 msgstr "Vérification de l'installation"
 
 #: src/onboarding_ui.rs:1299
-#, fuzzy
 msgid "Waiting for other software changes to finish"
-msgstr "D'autres changements logiciels sont nécessaires avant de terminer"
+msgstr "En attente de la fin des autres modifications logicielles"
 
 #: src/onboarding_ui.rs:1301
 msgid "Setting up speech-to-text model"
 msgstr "Mise en place du modèle voix-vers-texte"
 
 #: src/onboarding_ui.rs:1302
-#, fuzzy
 msgid "Starting dictation"
 msgstr "Début de dictée"
 
@@ -1329,6 +1321,8 @@ msgid ""
 "IBus is not installed, so Myna cannot type. Install the “ibus” package, then "
 "log out and back in."
 msgstr ""
+"IBus n’est pas installé, donc Myna ne peut pas taper. Installez le paquet « "
+"ibus », puis déconnectez-vous et reconnectez-vous."
 
 #: src/diagnostics.rs:673 src/diagnostics.rs:687
 msgid "(none)"
@@ -1364,7 +1358,7 @@ msgstr ""
 
 #: src/diagnostics.rs:796
 msgid "Input method"
-msgstr ""
+msgstr "Méthode de saisie"
 
 #: src/diagnostics.rs:797
 msgid "Indicator host"
@@ -1376,15 +1370,15 @@ msgstr ""
 
 #: src/diagnostics.rs:805
 msgid "set up, starts at the next login"
-msgstr ""
+msgstr "Défini, commence à la prochaine connexion"
 
 #: src/diagnostics.rs:808
 msgid "not set up"
-msgstr ""
+msgstr "Non défini"
 
 #: src/diagnostics.rs:809
 msgid "turned off"
-msgstr ""
+msgstr "éteint(e)"
 
 #: src/diagnostics.rs:811
 msgid "locked by the administrator"
@@ -1412,11 +1406,11 @@ msgstr "gnome-shell n’a pas répondu"
 
 #: src/diagnostics.rs:831
 msgid "installed since login, starts at the next one"
-msgstr ""
+msgstr "installé depuis la connexion, commence à la prochaine connexion"
 
 #: src/diagnostics.rs:834
 msgid "installed since login, not enabled"
-msgstr ""
+msgstr "installé depuis la connexion, non activé(e)"
 
 #: src/diagnostics.rs:837
 msgid "myna-config package"
@@ -1448,7 +1442,7 @@ msgstr ""
 
 #: src/myna_settings.rs:109
 msgid "Default"
-msgstr ""
+msgstr "Par défaut"
 
 #: src/myna_settings.rs:110
 msgid "Bird"
@@ -1464,7 +1458,7 @@ msgstr "Voix"
 
 #: src/myna_settings.rs:113
 msgid "Marimba"
-msgstr ""
+msgstr "Marimba"
 
 #: src/myna_settings.rs:114
 msgid "Water"
@@ -1476,7 +1470,7 @@ msgstr "Radio"
 
 #: src/myna_settings.rs:116
 msgid "Strings"
-msgstr ""
+msgstr "Cordes"
 
 #. TRANSLATORS: separates language names in a list, as in "English, Deutsch".
 #: src/model_family.rs:224
@@ -1525,7 +1519,7 @@ msgstr "valeur invalide"
 
 #: src/presentation.rs:48
 msgid "value must be true or false"
-msgstr ""
+msgstr "valeur doit être vraie (true) ou fausse (false)"
 
 #: src/presentation.rs:49
 msgid "value must be a number"
@@ -1566,7 +1560,7 @@ msgstr "Le moteur d’inférence sur lequel ce modèle fonctionne."
 
 #: src/presentation.rs:171
 msgid "Streaming output"
-msgstr ""
+msgstr "Sortie streaming"
 
 #: src/presentation.rs:172
 msgid "Emit partial transcription results while speech is being processed."
@@ -1584,15 +1578,15 @@ msgstr ""
 
 #: src/presentation.rs:185
 msgid "Verbose logging"
-msgstr ""
+msgstr "Journalisation détaillée"
 
 #: src/presentation.rs:186
 msgid "Write additional diagnostics to the system log."
-msgstr ""
+msgstr "Écrire des diagnostics supplémentaires dans le journal système."
 
 #: src/presentation.rs:192
 msgid "Socket path"
-msgstr ""
+msgstr "Chemin socket"
 
 #: src/presentation.rs:193
 msgid "Raw Unix socket path used by the transcription service."
@@ -1600,11 +1594,12 @@ msgstr ""
 
 #: src/presentation.rs:199
 msgid "Minimum speech before pause commit (seconds)"
-msgstr ""
+msgstr "Dictée minimale avant de mettre en pause la validation (secondes)"
 
 #: src/presentation.rs:200
 msgid "Speech required before a pause can commit a transcript chunk."
 msgstr ""
+"Dictée requise avant qu'une pause puisse valider un morceau de transcription."
 
 #: src/presentation.rs:205
 msgid "Pause length for commit (seconds)"
@@ -1612,7 +1607,7 @@ msgstr "Durée de pause pour validation (secondes)"
 
 #: src/presentation.rs:206
 msgid "Silence duration that commits the current transcript chunk."
-msgstr ""
+msgstr "Durée de silence qui valide le segment de transcription actuel."
 
 #: src/presentation.rs:211
 msgid "Maximum uncommitted audio (seconds)"
@@ -1646,13 +1641,15 @@ msgstr ""
 
 #: src/presentation.rs:229
 msgid "Compute type"
-msgstr ""
+msgstr "Type de calcul"
 
 #: src/presentation.rs:230
 msgid ""
 "Runtime numeric format override. Leave the model's own value unchanged "
 "unless required."
 msgstr ""
+"Remplacement du format numérique d’exécution. Laissez inchangée la valeur "
+"propre au modèle, sauf si nécessaire."
 
 #: src/presentation.rs:236
 msgid "Attention context size"
@@ -1696,6 +1693,10 @@ msgid ""
 "hums people make while listening, Marimba a rising fifth, Water falling "
 "drops, Radio a walkie-talkie and Strings a plucked koto."
 msgstr ""
+"Quels sons sont joués : carillon est une barre frappée, oiseau siffle des "
+"gazouillis, voix fait les fredonnements que les gens font en écoutant, "
+"Marimba une quinte montante, eau évoque eau qui tombe, radio un talkie-"
+"walkie et cordes un koto arraché."
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:60
 msgid "When to transcribe"
@@ -1720,6 +1721,10 @@ msgid ""
 "skips language detection and decodes in this language; a code that does not "
 "match what is spoken degrades the transcript. Empty lets the model decide."
 msgstr ""
+"Un code BCP-47 (en, fr, zh) pour la langue dans laquelle vous dictez. Le "
+"modèle ignore la détection de langue et décode dans cette langue ; un code "
+"qui ne correspond pas à ce qui est parlé dégrade la transcription. Vide "
+"laisse le modèle décider."
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:80
 msgid "Indicator style"
@@ -1744,6 +1749,10 @@ msgid ""
 "this many seconds without speech. 0 keeps it running until the next tap. "
 "Hold-to-talk always ends with the key."
 msgstr ""
+"Avec l’activation tape-pour-démarrer, cela termine la session de dictée de "
+"votre propre chef après ce nombre de secondes sans parole. 0 maintient la "
+"session jusqu’à la prochaine tape. Le presser-pour-parler se termine "
+"toujours par la touche."
 
 #: data/com.canonical.Myna.Config.metainfo.xml:9
 msgid "Set up and configure local dictation"
