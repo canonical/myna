@@ -12,9 +12,9 @@ use myna_platform::components::{ComponentStatus, Components};
 use crate::adapters::client_settings::GioClientSettings;
 use crate::domain::ClientSettingValue;
 use crate::myna_settings::{
-    choice_detail, choice_display_label, widget_plan, DebouncedTextCommit, MynaSettingsController,
-    PageState, PersistenceRequest, PersistenceWriter, Placement, SettingRow, SettingsEvent,
-    WidgetKind,
+    choice_detail, choice_display_label, past_dictation, widget_plan, DebouncedTextCommit,
+    MynaSettingsController, PageState, PersistenceRequest, PersistenceWriter, Placement,
+    SettingRow, SettingsEvent, WidgetKind, PAST_DICTATIONS_SHOWN,
 };
 use crate::onboarding::needs_onboarding;
 use crate::ports::{ClientSettings, ClientSettingsError};
@@ -5698,6 +5698,114 @@ struct ProcessingGroups {
     /// What is done to the text: one row per chain.
     chain: adw::PreferencesGroup,
     record: adw::PreferencesGroup,
+    past: Rc<PastDictations>,
+}
+
+/// The recorded dictations, listed under the switch that keeps them.
+struct PastDictations {
+    group: adw::PreferencesGroup,
+    rows: RefCell<Vec<adw::ActionRow>>,
+    path: Option<std::path::PathBuf>,
+    /// Kept so the list follows the daemon as it records.
+    monitor: RefCell<Option<gio::FileMonitor>>,
+}
+
+impl PastDictations {
+    fn new() -> Rc<Self> {
+        let clear = gtk::Button::builder()
+            .label(gettextrs::gettext("Clear"))
+            .valign(gtk::Align::Center)
+            .css_classes(["flat"])
+            .build();
+        let group = adw::PreferencesGroup::builder()
+            .title(gettextrs::gettext("Past dictations"))
+            .description(gettextrs::gettext(
+                "What Myna typed and, where it changed something, what it heard.",
+            ))
+            .header_suffix(&clear)
+            .visible(false)
+            .build();
+        let past = Rc::new(Self {
+            group,
+            rows: RefCell::new(Vec::new()),
+            path: myna_core::history::path(),
+            monitor: RefCell::new(None),
+        });
+        clear.connect_clicked({
+            let past = Rc::downgrade(&past);
+            move |_| {
+                let Some(past) = past.upgrade() else { return };
+                if let Some(Err(err)) = past.path.as_deref().map(myna_core::history::clear) {
+                    glib::g_warning!(crate::LOG_DOMAIN, "record not cleared: {err}");
+                }
+                past.refresh();
+            }
+        });
+        if let Some(path) = &past.path {
+            let watched = gio::File::for_path(path)
+                .monitor_file(gio::FileMonitorFlags::NONE, gio::Cancellable::NONE);
+            if let Ok(monitor) = watched {
+                monitor.connect_changed({
+                    let past = Rc::downgrade(&past);
+                    move |_, _, _, _| {
+                        if let Some(past) = past.upgrade() {
+                            past.refresh();
+                        }
+                    }
+                });
+                past.monitor.replace(Some(monitor));
+            }
+        }
+        past.refresh();
+        past
+    }
+
+    fn refresh(&self) {
+        for row in self.rows.take() {
+            self.group.remove(&row);
+        }
+        let entries = self
+            .path
+            .as_deref()
+            .map(|path| myna_core::history::recent(path, PAST_DICTATIONS_SHOWN))
+            .unwrap_or_default();
+        let mut rows = Vec::new();
+        if entries.is_empty() {
+            rows.push(
+                adw::ActionRow::builder()
+                    .title(gettextrs::gettext("Nothing recorded yet"))
+                    .sensitive(false)
+                    .build(),
+            );
+        }
+        for entry in &entries {
+            let shown = past_dictation(entry);
+            let row = adw::ActionRow::builder()
+                .title(crate::markup::escape_markup(&shown.typed))
+                .subtitle(crate::markup::escape_markup(&shown.detail))
+                .title_lines(0)
+                .subtitle_lines(0)
+                .build();
+            let when = i64::try_from(entry.time)
+                .ok()
+                .and_then(|time| glib::DateTime::from_unix_local(time).ok())
+                .and_then(|time| time.format("%-d %b %H:%M").ok());
+            if let Some(when) = when {
+                let label = gtk::Label::builder()
+                    .label(when.as_str())
+                    .css_classes(["dim-label", "caption"])
+                    .valign(gtk::Align::Start)
+                    .margin_top(12)
+                    .build();
+                row.add_suffix(&label);
+            }
+            rows.push(row);
+        }
+        for row in &rows {
+            self.group.add(row);
+        }
+        self.rows.replace(rows);
+    }
 }
 
 fn processing_group() -> ProcessingGroups {
@@ -5709,6 +5817,7 @@ fn processing_group() -> ProcessingGroups {
             ))
             .build(),
         record: adw::PreferencesGroup::new(),
+        past: PastDictations::new(),
     }
 }
 
@@ -5716,6 +5825,7 @@ fn processing_page(groups: &ProcessingGroups) -> adw::NavigationPage {
     let preferences = adw::PreferencesPage::new();
     preferences.add(&groups.chain);
     preferences.add(&groups.record);
+    preferences.add(&groups.past.group);
     adw::NavigationPage::builder()
         .title(gettextrs::gettext("Processing"))
         .child(&preferences)
@@ -6126,6 +6236,11 @@ fn ready_page(
                     .sensitive(plan.writable)
                     .build();
                 describe(&row, &plan.description);
+                if plan.key == myna_core::settings::KEY_PROCESSING_HISTORY {
+                    row.bind_property("active", &processing.past.group, "visible")
+                        .sync_create()
+                        .build();
+                }
                 let updating = Rc::new(Cell::new(false));
                 row.connect_active_notify({
                     let controller = controller.clone();

@@ -9,8 +9,8 @@ use gio::glib;
 use myna_config::adapters::client_settings::GioClientSettings;
 use myna_config::domain::{ClientSettingValue, SettingRange};
 use myna_config::myna_settings::{
-    choice_detail, choice_display_label, widget_plan, MynaSettingsController, PersistenceWriter,
-    Placement, WidgetKind,
+    choice_detail, choice_display_label, past_dictation, widget_plan, MynaSettingsController,
+    PersistenceWriter, Placement, WidgetKind,
 };
 use myna_config::ports::{ClientSettings, ClientSettingsError};
 
@@ -461,6 +461,20 @@ fn non_writable_keys_reject_set_without_claiming_success() {
         Err(ClientSettingsError::NotWritable { key: failed_key }) if failed_key == key
     ));
     assert_eq!(adapter.get(key).unwrap(), original);
+}
+
+#[test]
+fn a_past_dictation_shows_what_was_heard_only_when_it_differs() {
+    let entry = |heard: &str, typed: &str| myna_core::history::Entry {
+        time: 1,
+        heard: heard.into(),
+        typed: typed.into(),
+    };
+    let changed = past_dictation(&entry("um so I think ", "So I think."));
+    assert_eq!(changed.typed, "So I think.");
+    assert_eq!(changed.detail, "Heard: um so I think");
+    let same = past_dictation(&entry("So I think. ", "So I think."));
+    assert_eq!(same.detail, "Typed as heard");
 }
 
 #[test]

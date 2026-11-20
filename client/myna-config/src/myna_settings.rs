@@ -262,6 +262,29 @@ pub fn choice_detail(choice: &str) -> Option<ChoiceDetail> {
     })
 }
 
+/// A recorded dictation as the Processing tab lists it: what was typed, and
+/// under it what was heard when that differs.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PastDictation {
+    pub typed: String,
+    pub detail: String,
+}
+
+/// How many recorded dictations the Processing tab lists, newest first.
+pub const PAST_DICTATIONS_SHOWN: usize = 20;
+
+pub fn past_dictation(entry: &myna_core::history::Entry) -> PastDictation {
+    let detail = if entry.heard.trim() == entry.typed.trim() {
+        gettextrs::gettext("Typed as heard")
+    } else {
+        gettextrs::gettext("Heard: {heard}").replace("{heard}", entry.heard.trim())
+    };
+    PastDictation {
+        typed: entry.typed.trim().to_owned(),
+        detail,
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub struct DebouncedTextCommit {
     committed: String,

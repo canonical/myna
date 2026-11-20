@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-20 10:52+0000\n"
+"POT-Creation-Date: 2026-11-20 11:04+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -109,7 +109,7 @@ msgstr ""
 msgid "Model"
 msgstr ""
 
-#: data/main-window.blp:46 src/app.rs:5720
+#: data/main-window.blp:46 src/app.rs:5830
 msgid "Processing"
 msgstr ""
 
@@ -269,7 +269,7 @@ msgstr ""
 msgid "When you stop"
 msgstr ""
 
-#: src/app.rs:3640 src/app.rs:6309
+#: src/app.rs:3640 src/app.rs:6424
 msgid "Preview"
 msgstr ""
 
@@ -376,30 +376,46 @@ msgstr ""
 msgid "The installed schema does not declare any settings."
 msgstr ""
 
-#: src/app.rs:5706
+#: src/app.rs:5716
+msgid "Clear"
+msgstr ""
+
+#: src/app.rs:5721
+msgid "Past dictations"
+msgstr ""
+
+#: src/app.rs:5723
+msgid "What Myna typed and, where it changed something, what it heard."
+msgstr ""
+
+#: src/app.rs:5776
+msgid "Nothing recorded yet"
+msgstr ""
+
+#: src/app.rs:5814
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:47
 msgid "What Myna types"
 msgstr ""
 
-#: src/app.rs:5708
+#: src/app.rs:5816
 msgid ""
 "Anything but the first is shown on screen while you speak and typed a "
 "sentence at a time. This is experimental."
 msgstr ""
 
-#: src/app.rs:5737
+#: src/app.rs:5847
 msgid "Myna Settings Unavailable"
 msgstr ""
 
-#: src/app.rs:5738
+#: src/app.rs:5848
 msgid "Myna Settings could not start."
 msgstr ""
 
-#: src/app.rs:6277
+#: src/app.rs:6392
 msgid "Could not save the setting"
 msgstr ""
 
-#: src/app.rs:6314
+#: src/app.rs:6429
 msgid "Preview sound style"
 msgstr ""
 
@@ -1558,6 +1574,14 @@ msgstr ""
 
 #: src/myna_settings.rs:253
 msgid "Tidied, then translated from English."
+msgstr ""
+
+#: src/myna_settings.rs:278
+msgid "Typed as heard"
+msgstr ""
+
+#: src/myna_settings.rs:280
+msgid "Heard: {heard}"
 msgstr ""
 
 #. TRANSLATORS: separates language names in a list, as in "English, Deutsch".
