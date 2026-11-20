@@ -8,6 +8,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use myna_core::ProcessingChain;
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
@@ -113,38 +114,62 @@ pub enum Step {
     Ask { request: Request, check: Check },
 }
 
-/// A chain of steps the user turns on or off as one. They run in the order
-/// listed here, whatever order they were turned on in.
+/// How much of a dictation a node has to see at once.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Needs {
+    /// A finished sentence is enough.
+    Sentence,
+    /// Everything that was said.
+    Dictation,
+}
+
+/// One thing done to the text. A chain is nodes in a row.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Chain {
+pub enum Node {
     /// Drop hesitations, false starts and repeats.
     Tidy,
     /// Type in French what was said in English.
     French,
 }
 
-impl Chain {
+impl Node {
     pub fn steps(self) -> Vec<Step> {
         match self {
-            Chain::Tidy => vec![Step::Ask {
+            Node::Tidy => vec![Step::Ask {
                 request: Request::cleanup(None),
                 check: Check::NoNewWords,
             }],
-            Chain::French => vec![Step::Ask {
+            Node::French => vec![Step::Ask {
                 request: Request::translate("en", "fr"),
                 check: Check::Present,
             }],
         }
     }
+
+    pub fn needs(self) -> Needs {
+        match self {
+            Node::Tidy | Node::French => Needs::Sentence,
+        }
+    }
 }
 
-/// The steps of `chains`, in the order they run.
-pub fn steps_of(chains: &[Chain]) -> Vec<Step> {
-    [Chain::Tidy, Chain::French]
-        .into_iter()
-        .filter(|chain| chains.contains(chain))
-        .flat_map(Chain::steps)
-        .collect()
+/// The nodes of a chain, in the order they run.
+pub fn nodes_of(chain: ProcessingChain) -> &'static [Node] {
+    match chain {
+        ProcessingChain::Exact => &[],
+        ProcessingChain::Tidy => &[Node::Tidy],
+        ProcessingChain::TidyFrench => &[Node::Tidy, Node::French],
+    }
+}
+
+/// The most any of `nodes` has to see at once; `None` when there are none.
+pub fn needs_of(nodes: &[Node]) -> Option<Needs> {
+    nodes.iter().map(|node| node.needs()).max()
+}
+
+/// The steps of `nodes`, in order.
+pub fn steps_of(nodes: &[Node]) -> Vec<Step> {
+    nodes.iter().copied().flat_map(Node::steps).collect()
 }
 
 /// The steps between the speech model and the field, read anew for each
@@ -276,7 +301,7 @@ mod tests {
     }
 
     fn cleanup(models: Scripted) -> Pipeline {
-        Pipeline::new(steps_of(&[Chain::Tidy]), models)
+        Pipeline::new(steps_of(&[Node::Tidy]), models)
     }
 
     fn tasks(steps: &[Step]) -> Vec<&str> {
@@ -290,11 +315,17 @@ mod tests {
     }
 
     #[test]
-    fn chains_run_in_their_own_order_not_the_order_given() {
-        let steps = steps_of(&[Chain::French, Chain::Tidy]);
-        assert_eq!(tasks(&steps), ["text.cleanup", "text.translate"]);
-        assert_eq!(tasks(&steps_of(&[Chain::French])), ["text.translate"]);
-        assert!(steps_of(&[]).is_empty());
+    fn a_chain_is_its_nodes_in_order() {
+        let french = nodes_of(ProcessingChain::TidyFrench);
+        assert_eq!(tasks(&steps_of(french)), ["text.cleanup", "text.translate"]);
+        assert_eq!(needs_of(french), Some(Needs::Sentence));
+        assert_eq!(
+            tasks(&steps_of(nodes_of(ProcessingChain::Tidy))),
+            ["text.cleanup"]
+        );
+        let exact = nodes_of(ProcessingChain::Exact);
+        assert!(steps_of(exact).is_empty());
+        assert_eq!(needs_of(exact), None);
     }
 
     #[tokio::test]
@@ -302,7 +333,7 @@ mod tests {
         let steps = Live::new(Vec::new());
         let mut pipeline = Pipeline::new(steps.clone(), Scripted::Says("Bonjour."));
         assert_eq!(pipeline.process("Hello.".into()).await, "Hello.");
-        steps.set(steps_of(&[Chain::French]));
+        steps.set(steps_of(&[Node::French]));
         assert_eq!(pipeline.process("Hello.".into()).await, "Bonjour.");
     }
 

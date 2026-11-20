@@ -55,7 +55,9 @@ use myna_desktop::inject::lazy::{IbusConnect, LazyInjector};
 use myna_desktop::inject::Injector as _;
 use myna_desktop::platform::Platform;
 use myna_desktop::process::history::{history_path, Recorded};
-use myna_desktop::process::pipeline::{steps_of, Chain, Pipeline, SocketModels, Step};
+use myna_desktop::process::pipeline::{
+    needs_of, nodes_of, steps_of, Needs, Node, Pipeline, SocketModels, Step,
+};
 use myna_desktop::shortcut::control::{default_socket_path, listen, send_toggle, ControlTrigger};
 use myna_desktop::sound::{
     player::{Player, Previewer},
@@ -142,7 +144,7 @@ struct Resolved {
     sounds: bool,
     sound_set: SoundSet,
     commit: CommitPolicy,
-    chains: Vec<Chain>,
+    nodes: Vec<Node>,
     history: bool,
 }
 
@@ -155,6 +157,7 @@ impl Resolved {
             choice: settings.streaming_mode,
             backend_streams,
         };
+        let nodes = nodes_of(settings.processing_chain);
         Self {
             activation,
             language: args.language.clone().or_else(|| settings.language.clone()),
@@ -164,33 +167,22 @@ impl Resolved {
             auto_stop: resolve_auto_stop(activation, settings.silence_timeout),
             sounds: settings.sounds,
             sound_set: settings.sound_set,
-            commit: resolve_commit(settings.processing, settings.processing_sentences),
-            chains: resolve_chains(settings),
+            commit: resolve_commit(needs_of(nodes)),
+            nodes: nodes.to_vec(),
             history: settings.processing_history,
         }
     }
 }
 
-/// Processing may still change text, so it holds the dictation back: all
-/// of it until the end, or, typing sentence by sentence, the last finished
-/// sentence and the one being said. Without it text is typed as it arrives.
-fn resolve_commit(processing: bool, sentences: bool) -> CommitPolicy {
-    match (processing, sentences) {
-        (false, _) => CommitPolicy::Streaming,
-        (true, false) => CommitPolicy::AtEnd,
-        (true, true) => CommitPolicy::Horizon { sentences: 1 },
+/// A chain may still change text, so it holds the dictation back: only as
+/// far as its nodes need, the last finished sentence and the one being said,
+/// or all of it until the end. With no chain text is typed as it arrives.
+fn resolve_commit(needs: Option<Needs>) -> CommitPolicy {
+    match needs {
+        None => CommitPolicy::Streaming,
+        Some(Needs::Sentence) => CommitPolicy::Horizon { sentences: 1 },
+        Some(Needs::Dictation) => CommitPolicy::AtEnd,
     }
-}
-
-/// The chains the user has turned on.
-fn resolve_chains(settings: &myna_core::Settings) -> Vec<Chain> {
-    [
-        (settings.processing_tidy, Chain::Tidy),
-        (settings.processing_translate, Chain::French),
-    ]
-    .into_iter()
-    .filter_map(|(on, chain)| on.then_some(chain))
-    .collect()
 }
 
 /// Where the text models are reached: `MYNA_TEXT_MODELS`, or a socket in
@@ -259,8 +251,8 @@ struct LiveSettings {
     auto_stop: Live<AutoStop>,
     /// Read at each press.
     commit: Live<CommitPolicy>,
-    chains: Live<Vec<Chain>>,
-    /// The steps of `chains`, read for each piece of text.
+    nodes: Live<Vec<Node>>,
+    /// The steps of `nodes`, read for each piece of text.
     steps: Live<Vec<Step>>,
     /// Read at each commit.
     history: Live<bool>,
@@ -279,8 +271,8 @@ impl LiveSettings {
             vocabulary: Live::new(resolved.vocabulary.clone()),
             auto_stop: Live::new(resolved.auto_stop),
             commit: Live::new(resolved.commit),
-            chains: Live::new(resolved.chains.clone()),
-            steps: Live::new(steps_of(&resolved.chains)),
+            nodes: Live::new(resolved.nodes.clone()),
+            steps: Live::new(steps_of(&resolved.nodes)),
             history: Live::new(resolved.history),
             sounds: Live::new(resolved.sounds),
             sound_set,
@@ -415,14 +407,14 @@ impl LiveSettings {
             );
             self.commit.set(resolved.commit);
         }
-        if self.chains.get() != resolved.chains {
+        if self.nodes.get() != resolved.nodes {
             myna_core::info_log!(
                 "settings",
                 "processing steps -> {:?} (live, from the next text)",
-                resolved.chains
+                resolved.nodes
             );
-            self.chains.set(resolved.chains.clone());
-            self.steps.set(steps_of(&resolved.chains));
+            self.nodes.set(resolved.nodes.clone());
+            self.steps.set(steps_of(&resolved.nodes));
         }
         if self.history.get() != resolved.history {
             myna_core::info_log!(
@@ -1592,49 +1584,36 @@ mod tests {
     }
 
     #[test]
-    fn processing_holds_the_dictation_for_one_commit() {
+    fn a_chain_holds_the_dictation_as_far_as_its_nodes_need() {
         let a = Args::default();
         assert_eq!(resolved(&a, &unset()).commit, CommitPolicy::Streaming);
-        let on = myna_core::Settings {
-            processing: true,
+        let tidy = myna_core::Settings {
+            processing_chain: myna_core::ProcessingChain::Tidy,
             ..unset()
         };
-        assert_eq!(resolved(&a, &on).commit, CommitPolicy::AtEnd);
-        let by_sentence = myna_core::Settings {
-            processing_sentences: true,
-            ..on.clone()
-        };
         assert_eq!(
-            resolved(&a, &by_sentence).commit,
+            resolved(&a, &tidy).commit,
             CommitPolicy::Horizon { sentences: 1 }
         );
-        let typed_as_heard = myna_core::Settings {
-            processing_sentences: true,
-            ..unset()
-        };
-        assert_eq!(
-            resolved(&a, &typed_as_heard).commit,
-            CommitPolicy::Streaming
-        );
+        assert_eq!(resolve_commit(Some(Needs::Dictation)), CommitPolicy::AtEnd);
 
         let live = LiveSettings::new(&resolved(&a, &unset()), Live::new(SoundSet::default()));
-        live.apply(&resolved(&a, &on), "test");
-        assert_eq!(live.commit.get(), CommitPolicy::AtEnd);
-
-        assert_eq!(live.chains.get(), [Chain::Tidy]);
+        assert!(live.nodes.get().is_empty());
+        live.apply(&resolved(&a, &tidy), "test");
+        assert_eq!(live.commit.get(), CommitPolicy::Horizon { sentences: 1 });
+        assert_eq!(live.nodes.get(), [Node::Tidy]);
         let french = myna_core::Settings {
-            processing_tidy: false,
-            processing_translate: true,
-            ..on.clone()
+            processing_chain: myna_core::ProcessingChain::TidyFrench,
+            ..unset()
         };
         live.apply(&resolved(&a, &french), "test");
-        assert_eq!(live.chains.get(), [Chain::French]);
-        assert_eq!(live.steps.get().len(), 1);
+        assert_eq!(live.nodes.get(), [Node::Tidy, Node::French]);
+        assert_eq!(live.steps.get().len(), 2);
 
         assert!(!live.history.get());
         let recording = myna_core::Settings {
             processing_history: true,
-            ..on
+            ..tidy
         };
         live.apply(&resolved(&a, &recording), "test");
         assert!(live.history.get());

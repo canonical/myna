@@ -9,7 +9,8 @@ use gio::glib;
 use myna_config::adapters::client_settings::GioClientSettings;
 use myna_config::domain::{ClientSettingValue, SettingRange};
 use myna_config::myna_settings::{
-    widget_plan, MynaSettingsController, PersistenceWriter, Placement, WidgetKind,
+    choice_detail, choice_display_label, widget_plan, MynaSettingsController, PersistenceWriter,
+    Placement, WidgetKind,
 };
 use myna_config::ports::{ClientSettings, ClientSettingsError};
 
@@ -469,7 +470,7 @@ fn headless_widget_smoke_covers_every_real_schema_key() {
 
     let plans: Vec<_> = adapter.list().unwrap().iter().map(widget_plan).collect();
 
-    assert_eq!(plans.len(), 12);
+    assert_eq!(plans.len(), 9);
     assert!(plans.iter().any(|plan| plan.kind == WidgetKind::Choice));
     let vocabulary = plans
         .iter()
@@ -493,20 +494,26 @@ fn headless_widget_smoke_covers_every_real_schema_key() {
         .expect("sounds is listed");
     assert_eq!(switch.kind, WidgetKind::Switch);
     assert_eq!(switch.title, "Sounds on start, stop and error");
-    let processing = plans
+    let chain = plans
         .iter()
-        .find(|plan| plan.key == "processing")
-        .expect("processing is listed");
-    assert_eq!(processing.kind, WidgetKind::Switch);
-    assert_eq!(processing.placement, Placement::Processing);
-    let steps: Vec<_> = plans
+        .find(|plan| plan.key == "processing-chain")
+        .expect("processing-chain is listed");
+    assert_eq!(chain.kind, WidgetKind::Options);
+    assert_eq!(chain.placement, Placement::Processing);
+    assert_eq!(chain.choices, ["exact", "tidy", "tidy-french"]);
+    for choice in &chain.choices {
+        assert_ne!(&choice_display_label(choice), choice);
+        let detail = choice_detail(choice).expect("every chain explains itself");
+        assert!(!detail.description.is_empty());
+        assert!(!detail.example.is_empty());
+    }
+    assert_eq!(choice_detail("tine"), None);
+    let record = plans
         .iter()
-        .filter(|plan| plan.placement == Placement::ProcessingStep)
-        .map(|plan| (plan.key.as_str(), plan.kind))
-        .collect();
-    assert_eq!(steps.len(), 2, "{steps:?}");
-    assert!(steps.contains(&("processing-tidy", WidgetKind::Switch)));
-    assert!(steps.contains(&("processing-translate", WidgetKind::Switch)));
+        .find(|plan| plan.key == "processing-history")
+        .expect("processing-history is listed");
+    assert_eq!(record.kind, WidgetKind::Switch);
+    assert_eq!(record.placement, Placement::ProcessingRecord);
     assert!(plans.iter().any(|plan| plan.kind == WidgetKind::Text));
     let number = plans
         .iter()

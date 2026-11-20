@@ -7,7 +7,7 @@ Read the top-level `.kb/agents.md` file before continuing below.
 # Important
 
 - Myna is offline: no component needs the network for its core function, and nothing falls back to a remote service or downloads at session time. `client/deny.toml` bans network client crates from the client.
-- Captured audio lives only in bounded in-memory buffers and is never persisted by default. Transcript text never leaves the injection path: the D-Bus status, the HUD and logs carry state and energy only. The one exception is the `processing` setting, off by default: while it is on, the dictation in progress is published on the session bus as `DraftText` and `DraftTail` for the Shell extension to draw, and sent to the text model socket. It is still never logged or persisted.
+- Captured audio lives only in bounded in-memory buffers and is never persisted by default. Transcript text never leaves the injection path: the D-Bus status, the HUD and logs carry state and energy only. The one exception is a `processing-chain` other than `exact`, the default: while one is chosen, the dictation in progress is published on the session bus as `DraftText` and `DraftTail` for the Shell extension to draw, and sent to the text model socket. It is still never logged, and persisted only while `processing-history` is on.
 
 # Architecture
 

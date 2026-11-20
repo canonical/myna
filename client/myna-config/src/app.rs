@@ -12,8 +12,9 @@ use myna_platform::components::{ComponentStatus, Components};
 use crate::adapters::client_settings::GioClientSettings;
 use crate::domain::ClientSettingValue;
 use crate::myna_settings::{
-    choice_display_label, widget_plan, DebouncedTextCommit, MynaSettingsController, PageState,
-    PersistenceRequest, PersistenceWriter, Placement, SettingRow, SettingsEvent, WidgetKind,
+    choice_detail, choice_display_label, widget_plan, DebouncedTextCommit, MynaSettingsController,
+    PageState, PersistenceRequest, PersistenceWriter, Placement, SettingRow, SettingsEvent,
+    WidgetKind,
 };
 use crate::onboarding::needs_onboarding;
 use crate::ports::{ClientSettings, ClientSettingsError};
@@ -5694,31 +5695,27 @@ fn build_myna_page(
 /// The groups the Processing tab shows; General's builder adds their rows.
 #[derive(Clone)]
 struct ProcessingGroups {
-    general: adw::PreferencesGroup,
-    /// One switch per step, in the order the steps run.
-    steps: adw::PreferencesGroup,
+    /// What is done to the text: one row per chain.
+    chain: adw::PreferencesGroup,
+    record: adw::PreferencesGroup,
 }
 
 fn processing_group() -> ProcessingGroups {
     ProcessingGroups {
-        general: adw::PreferencesGroup::builder()
+        chain: adw::PreferencesGroup::builder()
+            .title(gettextrs::gettext("What Myna types"))
             .description(gettextrs::gettext(
-                "Myna can work on what you said before typing it. This is experimental.",
+                "Anything but the first is shown on screen while you speak and typed a sentence at a time. This is experimental.",
             ))
             .build(),
-        steps: adw::PreferencesGroup::builder()
-            .title(gettextrs::gettext("Steps"))
-            .description(gettextrs::gettext(
-                "What is done to your words, from top to bottom.",
-            ))
-            .build(),
+        record: adw::PreferencesGroup::new(),
     }
 }
 
 fn processing_page(groups: &ProcessingGroups) -> adw::NavigationPage {
     let preferences = adw::PreferencesPage::new();
-    preferences.add(&groups.general);
-    preferences.add(&groups.steps);
+    preferences.add(&groups.chain);
+    preferences.add(&groups.record);
     adw::NavigationPage::builder()
         .title(gettextrs::gettext("Processing"))
         .child(&preferences)
@@ -5749,6 +5746,12 @@ fn error_page(detail: &str) -> adw::NavigationPage {
 enum RowBinding {
     Choice {
         row: adw::ComboRow,
+        choices: Vec<String>,
+        writable: bool,
+        updating: Rc<Cell<bool>>,
+    },
+    Options {
+        buttons: Vec<gtk::CheckButton>,
         choices: Vec<String>,
         writable: bool,
         updating: Rc<Cell<bool>>,
@@ -5818,6 +5821,24 @@ impl RowBinding {
                     }
                 }
                 row.set_sensitive(*writable);
+                updating.set(false);
+            }
+            Self::Options {
+                buttons,
+                choices,
+                writable,
+                updating,
+            } => {
+                updating.set(true);
+                let chosen = value
+                    .as_str()
+                    .and_then(|value| choices.iter().position(|choice| choice == value));
+                for (index, button) in buttons.iter().enumerate() {
+                    if chosen == Some(index) {
+                        button.set_active(true);
+                    }
+                    button.set_sensitive(*writable);
+                }
                 updating.set(false);
             }
             Self::Number {
@@ -5915,8 +5936,8 @@ fn ready_page(
         let group = match plan.placement {
             Placement::Dictation => &dictation,
             Placement::ActiveModel => model_settings,
-            Placement::Processing => &processing.general,
-            Placement::ProcessingStep => &processing.steps,
+            Placement::Processing => &processing.chain,
+            Placement::ProcessingRecord => &processing.record,
         };
         let widget_name = (plan.placement == Placement::ActiveModel)
             .then(|| crate::backend_ui::client_setting_widget_name(&plan.key));
@@ -6006,6 +6027,62 @@ fn ready_page(
                     },
                 );
                 add(row.upcast_ref());
+            }
+            WidgetKind::Options => {
+                let chosen = controller.shown_value(&plan.key);
+                let chosen = chosen.as_ref().and_then(ClientSettingValue::as_str);
+                let updating = Rc::new(Cell::new(false));
+                let mut buttons: Vec<gtk::CheckButton> = Vec::new();
+                for choice in &plan.choices {
+                    let button = gtk::CheckButton::builder()
+                        .valign(gtk::Align::Center)
+                        .active(chosen == Some(choice.as_str()))
+                        .sensitive(plan.writable)
+                        .build();
+                    if let Some(first) = buttons.first() {
+                        button.set_group(Some(first));
+                    }
+                    let row = adw::ActionRow::builder()
+                        .title(choice_display_label(choice))
+                        .subtitle_lines(0)
+                        .activatable_widget(&button)
+                        .build();
+                    if let Some(detail) = choice_detail(choice) {
+                        row.set_subtitle(&crate::markup::escape_markup(&format!(
+                            "{}\n\u{201c}{}\u{201d}",
+                            detail.description, detail.example
+                        )));
+                    }
+                    row.add_prefix(&button);
+                    button.connect_toggled({
+                        let controller = controller.clone();
+                        let key = plan.key.clone();
+                        let choice = choice.clone();
+                        let updating = updating.clone();
+                        let writer = writer.clone();
+                        move |button| {
+                            if updating.get() || !button.is_active() {
+                                return;
+                            }
+                            if let Ok(request) =
+                                controller.set(&key, ClientSettingValue::Choice(choice.clone()))
+                            {
+                                persist_request(writer.clone(), controller.clone(), request, None);
+                            }
+                        }
+                    });
+                    add(row.upcast_ref());
+                    buttons.push(button);
+                }
+                bindings.borrow_mut().insert(
+                    plan.key.clone(),
+                    RowBinding::Options {
+                        buttons,
+                        choices: plan.choices,
+                        writable: plan.writable,
+                        updating,
+                    },
+                );
             }
             WidgetKind::Number => {
                 let (minimum, maximum) = plan.bounds.expect("Number plans carry bounds");

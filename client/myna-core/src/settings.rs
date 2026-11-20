@@ -57,17 +57,8 @@ pub const KEY_SOUNDS: &str = "sounds";
 /// installed gets.
 pub const DEFAULT_SOUNDS: bool = true;
 
-/// Whether dictated text is held in a draft and processed before it is typed.
-pub const KEY_PROCESSING: &str = "processing";
-
-/// Whether processing removes hesitations and repeats.
-pub const KEY_PROCESSING_TIDY: &str = "processing-tidy";
-
-/// Whether processing translates English to French.
-pub const KEY_PROCESSING_TRANSLATE: &str = "processing-translate";
-
-/// Whether processed text is typed a sentence at a time rather than once.
-pub const KEY_PROCESSING_SENTENCES: &str = "processing-sentences";
+/// What is done to dictated text before it is typed.
+pub const KEY_PROCESSING_CHAIN: &str = "processing-chain";
 
 /// Whether processed dictations are recorded, as heard and as typed.
 pub const KEY_PROCESSING_HISTORY: &str = "processing-history";
@@ -127,6 +118,38 @@ impl SoundSet {
     }
 }
 
+/// What is done to dictated text before it is typed (`processing-chain`):
+/// one of the chains this build knows.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum ProcessingChain {
+    /// Nothing: typed as heard.
+    #[default]
+    Exact,
+    /// Hesitations, false starts and repeats dropped.
+    Tidy,
+    /// Tidied, then translated from English to French.
+    TidyFrench,
+}
+
+impl ProcessingChain {
+    /// Every chain, in schema order.
+    pub const ALL: [Self; 3] = [Self::Exact, Self::Tidy, Self::TidyFrench];
+
+    /// The schema enum nick.
+    pub fn nick(self) -> &'static str {
+        match self {
+            Self::Exact => "exact",
+            Self::Tidy => "tidy",
+            Self::TidyFrench => "tidy-french",
+        }
+    }
+
+    /// The chain a nick names; `None` for one this build does not know.
+    pub fn from_nick(nick: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|chain| chain.nick() == nick)
+    }
+}
+
 /// The schema default for [`KEY_SILENCE_TIMEOUT`], also what a machine with
 /// no schema installed gets - a forgotten session should end there too.
 pub const DEFAULT_SILENCE_TIMEOUT_SECS: u32 = 30;
@@ -155,11 +178,8 @@ pub struct Settings {
     pub silence_timeout: u32,
     /// Whether a session's start, stop and failure are heard as well as seen.
     pub sounds: bool,
-    /// Whether text is held in a draft and processed before it is typed.
-    pub processing: bool,
-    pub processing_tidy: bool,
-    pub processing_translate: bool,
-    pub processing_sentences: bool,
+    /// What is done to the text before it is typed.
+    pub processing_chain: ProcessingChain,
     /// Whether each processed dictation is recorded, as heard and as typed.
     pub processing_history: bool,
     /// Which cues are heard.
@@ -177,10 +197,7 @@ impl Default for Settings {
             hud_style: None,
             silence_timeout: DEFAULT_SILENCE_TIMEOUT_SECS,
             sounds: DEFAULT_SOUNDS,
-            processing: false,
-            processing_tidy: true,
-            processing_translate: false,
-            processing_sentences: false,
+            processing_chain: ProcessingChain::default(),
             processing_history: false,
             sound_set: SoundSet::default(),
             vocabulary: Vec::new(),
@@ -212,16 +229,11 @@ impl Settings {
                 .seconds(KEY_SILENCE_TIMEOUT)
                 .unwrap_or(default.silence_timeout),
             sounds: store.flag(KEY_SOUNDS).unwrap_or(default.sounds),
-            processing: store.flag(KEY_PROCESSING).unwrap_or(default.processing),
-            processing_tidy: store
-                .flag(KEY_PROCESSING_TIDY)
-                .unwrap_or(default.processing_tidy),
-            processing_translate: store
-                .flag(KEY_PROCESSING_TRANSLATE)
-                .unwrap_or(default.processing_translate),
-            processing_sentences: store
-                .flag(KEY_PROCESSING_SENTENCES)
-                .unwrap_or(default.processing_sentences),
+            processing_chain: store
+                .text(KEY_PROCESSING_CHAIN)
+                .as_deref()
+                .and_then(ProcessingChain::from_nick)
+                .unwrap_or(default.processing_chain),
             processing_history: store
                 .flag(KEY_PROCESSING_HISTORY)
                 .unwrap_or(default.processing_history),
@@ -613,31 +625,6 @@ mod tests {
         assert!(store.settings.set_boolean(KEY_SOUNDS, true).is_ok());
         assert!(Settings::from_store(&store).sounds);
 
-        assert!(!Settings::from_store(&store).processing);
-        assert!(store.settings.set_boolean(KEY_PROCESSING, true).is_ok());
-        assert!(Settings::from_store(&store).processing);
-
-        assert!(Settings::from_store(&store).processing_tidy);
-        assert!(store
-            .settings
-            .set_boolean(KEY_PROCESSING_TIDY, false)
-            .is_ok());
-        assert!(!Settings::from_store(&store).processing_tidy);
-
-        assert!(!Settings::from_store(&store).processing_translate);
-        assert!(store
-            .settings
-            .set_boolean(KEY_PROCESSING_TRANSLATE, true)
-            .is_ok());
-        assert!(Settings::from_store(&store).processing_translate);
-
-        assert!(!Settings::from_store(&store).processing_sentences);
-        assert!(store
-            .settings
-            .set_boolean(KEY_PROCESSING_SENTENCES, true)
-            .is_ok());
-        assert!(Settings::from_store(&store).processing_sentences);
-
         assert!(!Settings::from_store(&store).processing_history);
         assert!(store
             .settings
@@ -662,6 +649,33 @@ mod tests {
             assert!(store.settings.set_string(KEY_SOUND_SET, set.nick()).is_ok());
             assert_eq!(Settings::from_store(&store).sound_set, set);
         }
+    }
+
+    /// Text is typed as heard out of the box, with or without a schema, and
+    /// the schema and [`ProcessingChain`] name the same chains.
+    #[test]
+    fn the_processing_chain_reads_the_schema_default_and_round_trips() {
+        let store = test_store();
+        assert_eq!(
+            Settings::from_store(&store).processing_chain,
+            ProcessingChain::Exact
+        );
+        assert_eq!(Settings::default().processing_chain, ProcessingChain::Exact);
+        let range = test_schema().key(KEY_PROCESSING_CHAIN).range();
+        let (_, nicks) = range.get::<(String, glib::Variant)>().unwrap();
+        let nicks: Vec<String> = nicks.get().unwrap();
+        assert_eq!(
+            nicks,
+            ProcessingChain::ALL.map(|chain| chain.nick().to_owned())
+        );
+        for chain in [ProcessingChain::TidyFrench, ProcessingChain::Tidy] {
+            assert!(store
+                .settings
+                .set_string(KEY_PROCESSING_CHAIN, chain.nick())
+                .is_ok());
+            assert_eq!(Settings::from_store(&store).processing_chain, chain);
+        }
+        assert_eq!(ProcessingChain::from_nick("summary"), None);
     }
 
     /// The schema enum and [`SoundSet`] name the same sets: every nick this

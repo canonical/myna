@@ -35,48 +35,30 @@
     <value nick="koto" value="7"/>
   </enum>
 
+  <enum id="com.canonical.Myna.Dictation.ProcessingChain">
+    <value nick="exact" value="0"/>
+    <value nick="tidy" value="1"/>
+    <value nick="tidy-french" value="2"/>
+  </enum>
+
   <schema id="com.canonical.Myna.Dictation" path="/com/canonical/myna/dictation/">
-    <key name="processing" type="b">
-      <default>false</default>
-      <summary>Tidy up dictated text</summary>
+    <key name="processing-chain" enum="com.canonical.Myna.Dictation.ProcessingChain">
+      <default>'exact'</default>
+      <summary>What Myna types</summary>
       <description>
-        Show the text next to the cursor while you speak, and type it once,
-        tidied up, when you stop.
-      </description>
-    </key>
-
-    <key name="processing-tidy" type="b">
-      <default>true</default>
-      <summary>Remove hesitations and repeats</summary>
-      <description>
-        Drop the ums, the false starts and the words said twice. Nothing is
-        added to what you said.
-      </description>
-    </key>
-
-    <key name="processing-translate" type="b">
-      <default>false</default>
-      <summary>Translate English to French</summary>
-      <description>
-        Type in French what you said in English.
-      </description>
-    </key>
-
-    <key name="processing-sentences" type="b">
-      <default>false</default>
-      <summary>Type each sentence once it is finished</summary>
-      <description>
-        Type as you go, a sentence behind what you are saying, instead of
-        typing everything when you stop.
+        Exactly what you say, typed as you speak; a tidied version, without
+        the hesitations and repeats; or a French translation of it. Anything
+        but the first is shown on screen while you speak and typed a sentence
+        at a time.
       </description>
     </key>
 
     <key name="processing-history" type="b">
       <default>false</default>
-      <summary>Keep a record of tidied dictations</summary>
+      <summary>Keep a record of what was changed</summary>
       <description>
-        Save what was heard and what was typed, to check how tidying up went.
-        The record stays on this computer.
+        Save what was heard and what was typed, to check what Myna changed.
+        The record holds your words and stays on this computer.
       </description>
     </key>
 
