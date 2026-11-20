@@ -3,40 +3,14 @@
 //! Off unless the user turns it on: it is the one place dictated text is
 //! written to disk.
 
-use std::io::Write;
-use std::os::unix::fs::OpenOptionsExt;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
-use serde::Serialize;
+use myna_core::history::{append, Entry};
 
 use super::Processor;
 use crate::live::Live;
-
-/// Where the record is kept: beside the settings in the snap's own data, or
-/// the user's state directory for an unpackaged daemon.
-pub fn history_path() -> Option<PathBuf> {
-    let dir = std::env::var_os("SNAP_USER_COMMON")
-        .map(PathBuf::from)
-        .or_else(|| {
-            std::env::var_os("XDG_STATE_HOME")
-                .map(PathBuf::from)
-                .or_else(|| {
-                    std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/state"))
-                })
-                .map(|state| state.join("myna"))
-        })?;
-    Some(dir.join("processing-history.jsonl"))
-}
-
-#[derive(Serialize)]
-struct Entry<'a> {
-    /// Seconds since the epoch.
-    time: u64,
-    heard: &'a str,
-    typed: &'a str,
-}
 
 /// Runs a processor and, while `on`, appends what went in and what came out
 /// to `path` as one JSON line.
@@ -64,8 +38,8 @@ impl<P: Processor> Processor for Recorded<P> {
             time: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .map_or(0, |since| since.as_secs()),
-            heard: &heard,
-            typed: &typed,
+            heard,
+            typed: typed.clone(),
         };
         // A record that cannot be written must not cost the dictation.
         if let Err(err) = append(path, &entry) {
@@ -73,20 +47,6 @@ impl<P: Processor> Processor for Recorded<P> {
         }
         typed
     }
-}
-
-fn append(path: &std::path::Path, entry: &Entry<'_>) -> std::io::Result<()> {
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir)?;
-    }
-    let mut line = serde_json::to_string(entry)?;
-    line.push('\n');
-    std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .mode(0o600)
-        .open(path)?
-        .write_all(line.as_bytes())
 }
 
 #[cfg(test)]

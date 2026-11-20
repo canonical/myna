@@ -54,7 +54,7 @@ use myna_desktop::indicator::readiness::{Readiness, ReadinessTee};
 use myna_desktop::inject::lazy::{IbusConnect, LazyInjector};
 use myna_desktop::inject::Injector as _;
 use myna_desktop::platform::Platform;
-use myna_desktop::process::history::{history_path, Recorded};
+use myna_desktop::process::history::Recorded;
 use myna_desktop::process::pipeline::{
     needs_of, nodes_of, steps_of, Needs, Node, Pipeline, SocketModels, Step,
 };
@@ -795,7 +795,7 @@ async fn run_controller(
         .processor(Recorded::new(
             Pipeline::new(live.steps.clone(), SocketModels::new(text_models_socket())),
             live.history.clone(),
-            history_path(),
+            myna_core::history::path(),
         ));
     let builder = match &pump_bus {
         Some(bus) => builder.draft(BusDraftView::new(bus.clone())),
