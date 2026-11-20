@@ -25,6 +25,7 @@ const TEMPLATE_ENV: &str = "MYNA_CONFIG_TEMPLATE_TEST";
 const ACCESSIBILITY_ENV: &str = "MYNA_CONFIG_ACCESSIBILITY_TEST";
 const TYPING_ENV: &str = "MYNA_CONFIG_TYPING_TEST";
 const VOCABULARY_ENV: &str = "MYNA_CONFIG_VOCABULARY_TEST";
+const PROCESSING_ENV: &str = "MYNA_CONFIG_PROCESSING_TEST";
 const ONBOARDING_ENV: &str = "MYNA_CONFIG_ONBOARDING_TEST";
 const SHORTCUT_UNSUPPORTED_ENV: &str = "MYNA_CONFIG_SHORTCUT_UNSUPPORTED_TEST";
 const SHORTCUT_ENV: &str = "MYNA_CONFIG_SHORTCUT_TEST";
@@ -72,6 +73,10 @@ pub fn run() -> glib::ExitCode {
 
     if smoke_requested(std::env::var_os(VOCABULARY_ENV).as_deref()) {
         return vocabulary_probe();
+    }
+
+    if smoke_requested(std::env::var_os(PROCESSING_ENV).as_deref()) {
+        return processing_probe();
     }
 
     if smoke_requested(std::env::var_os(ONBOARDING_ENV).as_deref()) {
@@ -1681,6 +1686,127 @@ fn typing_probe() -> glib::ExitCode {
 
 /// Drive the vocabulary editor on the real page against a scratch store: add,
 /// the three refusals, and remove, each read back from the store.
+/// Pick a chain on the Processing tab, then record a dictation behind the
+/// window's back and clear the record, reporting what the tab shows.
+///
+/// The regression: the list of past dictations was drawn once and never
+/// again, because what redrew it was dropped with the groups once the page
+/// was built.
+fn processing_probe() -> glib::ExitCode {
+    ui::register_resources();
+    if let Err(error) = gtk::init() {
+        eprintln!("myna-config processing probe could not initialize GTK: {error}");
+        return glib::ExitCode::FAILURE;
+    }
+    adw::init().expect("libadwaita init");
+
+    let settings = match GioClientSettings::open() {
+        Ok(settings) => settings,
+        Err(error) => {
+            eprintln!("myna-config processing probe could not open the settings store: {error}");
+            return glib::ExitCode::FAILURE;
+        }
+    };
+    let controller = MynaSettingsController::load(Rc::new(settings) as Rc<dyn ClientSettings>);
+    let PageState::Ready(rows) = controller.state() else {
+        eprintln!("myna-config processing probe found no settings rows");
+        return glib::ExitCode::FAILURE;
+    };
+    let overlay = adw::ToastOverlay::new();
+    // The groups go out of scope with this block, as they do once the real
+    // window is built; the page keeps the widgets.
+    let (page, _general) = {
+        let groups = processing_group();
+        let general = ready_page(
+            controller.clone(),
+            PersistenceWriter::spawn(GioClientSettings::open),
+            rows,
+            &overlay,
+            &adw::PreferencesGroup::new(),
+            &groups,
+        );
+        (processing_page(&groups), general)
+    };
+    overlay.set_child(Some(&page));
+    let window = adw::Window::builder().content(&overlay).build();
+    window.present();
+    settle_gtk();
+
+    let root = page.upcast_ref::<gtk::Widget>();
+    let radios = typed_descendants::<gtk::CheckButton>(root);
+    let Some(tidy) = radios.get(1) else {
+        eprintln!("myna-config processing probe found {} chains", radios.len());
+        return glib::ExitCode::FAILURE;
+    };
+    tidy.set_active(true);
+    settle_gtk();
+    let chain = controller.shown_value(myna_core::settings::KEY_PROCESSING_CHAIN);
+    println!(
+        "chain: {}",
+        chain
+            .as_ref()
+            .and_then(ClientSettingValue::as_str)
+            .unwrap_or_default()
+    );
+
+    let titles = || -> Vec<String> {
+        typed_descendants::<adw::ActionRow>(root)
+            .iter()
+            .map(|row| row.title().to_string())
+            .collect()
+    };
+    let shows = |title: &str, wanted: bool| {
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while titles().iter().any(|shown| shown == title) != wanted {
+            if std::time::Instant::now() > deadline {
+                return false;
+            }
+            glib::MainContext::default().iteration(false);
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        true
+    };
+    let Some(path) = myna_core::history::path() else {
+        eprintln!("myna-config processing probe has nowhere to record");
+        return glib::ExitCode::FAILURE;
+    };
+    let entry = myna_core::history::Entry {
+        time: 1,
+        heard: "um so I think".into(),
+        typed: "So I think.".into(),
+    };
+    if let Err(error) = myna_core::history::append(&path, &entry) {
+        eprintln!("myna-config processing probe could not record: {error}");
+        return glib::ExitCode::FAILURE;
+    }
+    println!("recorded: {}", shows("So I think.", true));
+
+    let clear = typed_descendants::<gtk::Button>(root)
+        .into_iter()
+        .find(|button| button.label().as_deref() == Some(gettextrs::gettext("Clear").as_str()));
+    if let Some(clear) = clear {
+        clear.emit_clicked();
+    }
+    println!("cleared: {}", shows("So I think.", false) && !path.exists());
+
+    window.close();
+    glib::ExitCode::SUCCESS
+}
+
+/// Every `T` under `widget`, in tree order.
+fn typed_descendants<T: IsA<gtk::Widget>>(widget: &gtk::Widget) -> Vec<T> {
+    let mut found = Vec::new();
+    let mut child = widget.first_child();
+    while let Some(current) = child {
+        if let Some(matched) = current.downcast_ref::<T>() {
+            found.push(matched.clone());
+        }
+        found.extend(typed_descendants::<T>(&current));
+        child = current.next_sibling();
+    }
+    found
+}
+
 fn vocabulary_probe() -> glib::ExitCode {
     ui::register_resources();
     if let Err(error) = gtk::init() {
@@ -5698,12 +5824,13 @@ struct ProcessingGroups {
     /// What is done to the text: one row per chain.
     chain: adw::PreferencesGroup,
     record: adw::PreferencesGroup,
-    past: Rc<PastDictations>,
+    /// The recorded dictations, listed under the switch that keeps them.
+    past: adw::PreferencesGroup,
 }
 
-/// The recorded dictations, listed under the switch that keeps them.
+/// What the list of recorded dictations is drawn from. The Clear button owns
+/// it, so it lives exactly as long as the group it fills.
 struct PastDictations {
-    group: adw::PreferencesGroup,
     rows: RefCell<Vec<adw::ActionRow>>,
     path: Option<std::path::PathBuf>,
     /// Kept so the list follows the daemon as it records.
@@ -5711,7 +5838,7 @@ struct PastDictations {
 }
 
 impl PastDictations {
-    fn new() -> Rc<Self> {
+    fn group() -> adw::PreferencesGroup {
         let clear = gtk::Button::builder()
             .label(gettextrs::gettext("Clear"))
             .valign(gtk::Align::Center)
@@ -5726,20 +5853,9 @@ impl PastDictations {
             .visible(false)
             .build();
         let past = Rc::new(Self {
-            group,
             rows: RefCell::new(Vec::new()),
             path: myna_core::history::path(),
             monitor: RefCell::new(None),
-        });
-        clear.connect_clicked({
-            let past = Rc::downgrade(&past);
-            move |_| {
-                let Some(past) = past.upgrade() else { return };
-                if let Some(Err(err)) = past.path.as_deref().map(myna_core::history::clear) {
-                    glib::g_warning!(crate::LOG_DOMAIN, "record not cleared: {err}");
-                }
-                past.refresh();
-            }
         });
         if let Some(path) = &past.path {
             let watched = gio::File::for_path(path)
@@ -5747,22 +5863,34 @@ impl PastDictations {
             if let Ok(monitor) = watched {
                 monitor.connect_changed({
                     let past = Rc::downgrade(&past);
+                    let group = group.downgrade();
                     move |_, _, _, _| {
-                        if let Some(past) = past.upgrade() {
-                            past.refresh();
+                        if let Some((past, group)) = past.upgrade().zip(group.upgrade()) {
+                            past.refresh(&group);
                         }
                     }
                 });
                 past.monitor.replace(Some(monitor));
             }
         }
-        past.refresh();
-        past
+        past.refresh(&group);
+        clear.connect_clicked({
+            let group = group.downgrade();
+            move |_| {
+                if let Some(Err(err)) = past.path.as_deref().map(myna_core::history::clear) {
+                    glib::g_warning!(crate::LOG_DOMAIN, "record not cleared: {err}");
+                }
+                if let Some(group) = group.upgrade() {
+                    past.refresh(&group);
+                }
+            }
+        });
+        group
     }
 
-    fn refresh(&self) {
+    fn refresh(&self, group: &adw::PreferencesGroup) {
         for row in self.rows.take() {
-            self.group.remove(&row);
+            group.remove(&row);
         }
         let entries = self
             .path
@@ -5802,7 +5930,7 @@ impl PastDictations {
             rows.push(row);
         }
         for row in &rows {
-            self.group.add(row);
+            group.add(row);
         }
         self.rows.replace(rows);
     }
@@ -5817,7 +5945,7 @@ fn processing_group() -> ProcessingGroups {
             ))
             .build(),
         record: adw::PreferencesGroup::new(),
-        past: PastDictations::new(),
+        past: PastDictations::group(),
     }
 }
 
@@ -5825,7 +5953,7 @@ fn processing_page(groups: &ProcessingGroups) -> adw::NavigationPage {
     let preferences = adw::PreferencesPage::new();
     preferences.add(&groups.chain);
     preferences.add(&groups.record);
-    preferences.add(&groups.past.group);
+    preferences.add(&groups.past);
     adw::NavigationPage::builder()
         .title(gettextrs::gettext("Processing"))
         .child(&preferences)
@@ -6237,7 +6365,7 @@ fn ready_page(
                     .build();
                 describe(&row, &plan.description);
                 if plan.key == myna_core::settings::KEY_PROCESSING_HISTORY {
-                    row.bind_property("active", &processing.past.group, "visible")
+                    row.bind_property("active", &processing.past, "visible")
                         .sync_create()
                         .build();
                 }
