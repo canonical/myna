@@ -5,7 +5,10 @@
 
 import System from 'system';
 
-import {CARET_GAP, FALLBACK_BOTTOM, draftEnd, draftMarkup, placeCentre, placeDraft} from '../draftPlace.js';
+import {
+    BUBBLE_RADIUS, CARET_GAP, FALLBACK_BOTTOM, PILL_GAP, TAIL_SIZE, draftEnd, draftMarkup,
+    placeAbovePill, placeCentre, placeDraft, tailAbovePill,
+} from '../draftPlace.js';
 
 let failures = 0;
 
@@ -76,6 +79,50 @@ eq('centred on a second monitor',
 eq('a draft larger than the work area starts at its origin when centred',
     placeCentre({size: {width: 4000, height: 4000}, workArea: WORK_AREA}),
     {x: 0, y: 32});
+
+// --- Above the pill ---------------------------------------------------------
+
+const PILL = {x: 800, y: 1000, width: 200, height: 40};
+const BUBBLE = (pill) =>
+    ({...placeAbovePill({pill, size: SIZE, workArea: WORK_AREA}), ...SIZE});
+
+eq('above the pill, centred on it',
+    placeAbovePill({pill: PILL, size: SIZE, workArea: WORK_AREA}),
+    {x: 750, y: 1000 - PILL_GAP - SIZE.height});
+
+eq('kept off the left edge above a pill at it',
+    placeAbovePill({pill: {...PILL, x: 0}, size: SIZE, workArea: WORK_AREA}),
+    {x: 0, y: 946});
+
+eq('kept off the right edge above a pill at it',
+    placeAbovePill({pill: {...PILL, x: 1820}, size: SIZE, workArea: WORK_AREA}),
+    {x: 1920 - SIZE.width, y: 946});
+
+eq('kept off the top when the draft is taller than the room above',
+    placeAbovePill({pill: {...PILL, y: 300}, size: {width: 300, height: 400}, workArea: WORK_AREA}),
+    {x: 750, y: 32});
+eq('a draft larger than the work area starts at its origin above a pill',
+    placeAbovePill({pill: PILL, size: {width: 4000, height: 4000}, workArea: WORK_AREA}),
+    {x: 0, y: 32});
+
+// --- Its tail ----------------------------------------------------------------
+
+eq('the tail points at the pill, from the bubble\'s bottom edge',
+    tailAbovePill({pill: PILL, bubble: BUBBLE(PILL)}),
+    {x: 800 + 100 - TAIL_SIZE / 2, y: 946 + SIZE.height - 1 - TAIL_SIZE / 2});
+// The bubble against the left edge still has the pill's centre (100) over
+// its flat bottom, so the tail stays pointed at the pill.
+eq('the tail follows the pill when the bubble had to move left',
+    tailAbovePill({pill: {...PILL, x: 0}, bubble: BUBBLE({...PILL, x: 0})}),
+    {x: 100 - TAIL_SIZE / 2, y: 977});
+// Against the right edge it no longer does: the tail stops at the corner.
+const movedRight = BUBBLE({...PILL, x: 1820});
+eq('the tail stops at the corner when the pill is past the bubble\'s edge',
+    tailAbovePill({pill: {...PILL, x: 1820}, bubble: movedRight}),
+    {x: movedRight.x + movedRight.width - BUBBLE_RADIUS - TAIL_SIZE, y: 977});
+eq('a bubble too narrow for the tail keeps it at the corner it can reach',
+    tailAbovePill({pill: PILL, bubble: {x: 700, y: 946, width: 20, height: 40}}),
+    {x: 700 + BUBBLE_RADIUS, y: 977});
 
 // --- What it says ----------------------------------------------------------
 

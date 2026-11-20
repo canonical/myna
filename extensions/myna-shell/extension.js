@@ -77,6 +77,7 @@ export default class MynaShellExtension extends Extension {
         this._draft = new DictationDraft({
             proxy: this._proxy,
             getWorkArea: () => getWorkAreaForMonitor(resolveTargetMonitor()),
+            getPillRect: () => this._host?.pillRect ?? null,
         });
         this._draft.enable();
 
