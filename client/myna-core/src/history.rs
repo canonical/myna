@@ -7,13 +7,42 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-/// One dictation, or one piece of one: what was heard and what was typed.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+/// One dictation, or one piece of one: what was heard, what was typed, and
+/// what turned the one into the other. Everything past the text is absent
+/// from a record written before it was kept.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Entry {
     /// Seconds since the epoch.
     pub time: u64,
     pub heard: String,
     pub typed: String,
+    /// The chain that was chosen, by its settings nick.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chain: Option<String>,
+    /// What each step of the chain did, in the order they ran.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub steps: Vec<Step>,
+    /// The model that heard the speech, as the backend names it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub speech_model: Option<String>,
+    /// The Myna build that typed it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+}
+
+/// One step of a chain, as it went for one piece of text.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Step {
+    /// What was asked: `text.cleanup`, `text.translate`.
+    pub task: String,
+    /// The model that answered, when it said.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    /// How long the step took, in milliseconds.
+    pub ms: u64,
+    /// Why the step left the text as it was; `None` when its answer was used.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skipped: Option<String>,
 }
 
 /// Where the record is kept: beside the settings in the snap's own data, as
@@ -100,6 +129,7 @@ mod tests {
             time,
             heard: format!("um {typed}"),
             typed: typed.to_owned(),
+            ..Entry::default()
         }
     }
 
@@ -137,6 +167,39 @@ mod tests {
         assert_eq!(recent(&path, 2), [entry(3, "three"), entry(2, "two")]);
         let mode = std::fs::metadata(&path).unwrap().permissions().mode();
         assert_eq!(mode & 0o777, 0o600);
+    }
+
+    #[test]
+    fn what_did_the_work_is_kept_and_an_older_line_still_reads() {
+        let path = scratch("details");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &path,
+            "{\"time\":1,\"heard\":\"um one\",\"typed\":\"one\"}\n",
+        )
+        .unwrap();
+        let full = Entry {
+            chain: Some("tidy".into()),
+            steps: vec![
+                Step {
+                    task: "text.cleanup".into(),
+                    model: Some("fdt".into()),
+                    ms: 4,
+                    skipped: None,
+                },
+                Step {
+                    task: "text.translate".into(),
+                    model: None,
+                    ms: 1000,
+                    skipped: Some("no answer".into()),
+                },
+            ],
+            speech_model: Some("parakeet".into()),
+            version: Some("0.3.3".into()),
+            ..entry(2, "two")
+        };
+        append(&path, &full).unwrap();
+        assert_eq!(recent(&path, 10), [full, entry(1, "one")]);
     }
 
     #[test]

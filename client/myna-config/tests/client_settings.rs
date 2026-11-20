@@ -469,12 +469,51 @@ fn a_past_dictation_shows_what_was_heard_only_when_it_differs() {
         time: 1,
         heard: heard.into(),
         typed: typed.into(),
+        ..Default::default()
     };
     let changed = past_dictation(&entry("um so I think ", "So I think."));
     assert_eq!(changed.typed, "So I think.");
     assert_eq!(changed.detail, "Heard: um so I think");
+    assert!(changed.made_by.is_empty(), "an older record says no more");
     let same = past_dictation(&entry("So I think. ", "So I think."));
     assert_eq!(same.detail, "Typed as heard");
+}
+
+#[test]
+fn a_past_dictation_says_what_made_it() {
+    let step =
+        |task: &str, model: Option<&str>, ms, skipped: Option<&str>| myna_core::history::Step {
+            task: task.into(),
+            model: model.map(Into::into),
+            ms,
+            skipped: skipped.map(Into::into),
+        };
+    let entry = myna_core::history::Entry {
+        time: 1,
+        heard: "um bonjour".into(),
+        typed: "Bonjour.".into(),
+        chain: Some("tidy-french".into()),
+        steps: vec![
+            step("text.cleanup", Some("fdt-small"), 4, None),
+            step("text.translate", None, 1000, Some("no answer within 10s")),
+            step("text.summarise", Some("gemma"), 7, None),
+        ],
+        speech_model: Some("parakeet-tdt".into()),
+        version: Some("0.3.3+git22".into()),
+    };
+    let made_by: Vec<(String, String)> = past_dictation(&entry).made_by;
+    let pair = |label: &str, value: &str| (label.to_owned(), value.to_owned());
+    assert_eq!(
+        made_by,
+        [
+            pair("Speech model", "parakeet-tdt"),
+            pair("Processing", "A French translation"),
+            pair("Tidying", "fdt-small, 4 ms"),
+            pair("Translation", "Not used (1000 ms): no answer within 10s"),
+            pair("text.summarise", "gemma, 7 ms"),
+            pair("Myna version", "0.3.3+git22"),
+        ]
+    );
 }
 
 #[test]

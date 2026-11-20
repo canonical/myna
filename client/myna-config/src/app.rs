@@ -1774,12 +1774,18 @@ fn processing_probe() -> glib::ExitCode {
         time: 1,
         heard: "um so I think".into(),
         typed: "So I think.".into(),
+        speech_model: Some("a speech model".into()),
+        ..Default::default()
     };
     if let Err(error) = myna_core::history::append(&path, &entry) {
         eprintln!("myna-config processing probe could not record: {error}");
         return glib::ExitCode::FAILURE;
     }
     println!("recorded: {}", shows("So I think.", true));
+    println!(
+        "made-by: {}",
+        descendants_subtitles(root).contains(&"a speech model".to_owned())
+    );
 
     let clear = typed_descendants::<gtk::Button>(root)
         .into_iter()
@@ -1791,6 +1797,14 @@ fn processing_probe() -> glib::ExitCode {
 
     window.close();
     glib::ExitCode::SUCCESS
+}
+
+fn descendants_subtitles(root: &gtk::Widget) -> Vec<String> {
+    typed_descendants::<adw::ActionRow>(root)
+        .iter()
+        .filter_map(|row| row.subtitle())
+        .map(|subtitle| subtitle.to_string())
+        .collect()
 }
 
 /// Every `T` under `widget`, in tree order.
@@ -5831,7 +5845,7 @@ struct ProcessingGroups {
 /// What the list of recorded dictations is drawn from. The Clear button owns
 /// it, so it lives exactly as long as the group it fills.
 struct PastDictations {
-    rows: RefCell<Vec<adw::ActionRow>>,
+    rows: RefCell<Vec<gtk::Widget>>,
     path: Option<std::path::PathBuf>,
     /// Kept so the list follows the daemon as it records.
     monitor: RefCell<Option<gio::FileMonitor>>,
@@ -5897,37 +5911,66 @@ impl PastDictations {
             .as_deref()
             .map(|path| myna_core::history::recent(path, PAST_DICTATIONS_SHOWN))
             .unwrap_or_default();
-        let mut rows = Vec::new();
+        let mut rows: Vec<gtk::Widget> = Vec::new();
         if entries.is_empty() {
             rows.push(
                 adw::ActionRow::builder()
                     .title(gettextrs::gettext("Nothing recorded yet"))
                     .sensitive(false)
-                    .build(),
+                    .build()
+                    .upcast(),
             );
         }
         for entry in &entries {
             let shown = past_dictation(entry);
-            let row = adw::ActionRow::builder()
-                .title(crate::markup::escape_markup(&shown.typed))
-                .subtitle(crate::markup::escape_markup(&shown.detail))
-                .title_lines(0)
-                .subtitle_lines(0)
-                .build();
+            let title = crate::markup::escape_markup(&shown.typed);
+            let subtitle = crate::markup::escape_markup(&shown.detail);
             let when = i64::try_from(entry.time)
                 .ok()
                 .and_then(|time| glib::DateTime::from_unix_local(time).ok())
-                .and_then(|time| time.format("%-d %b %H:%M").ok());
-            if let Some(when) = when {
-                let label = gtk::Label::builder()
-                    .label(when.as_str())
-                    .css_classes(["dim-label", "caption"])
-                    .valign(gtk::Align::Start)
-                    .margin_top(12)
+                .and_then(|time| time.format("%-d %b %H:%M").ok())
+                .map(|when| {
+                    gtk::Label::builder()
+                        .label(when.as_str())
+                        .css_classes(["dim-label", "caption"])
+                        .valign(gtk::Align::Center)
+                        .build()
+                });
+            // A record from before it said what made it has nothing to open.
+            if shown.made_by.is_empty() {
+                let row = adw::ActionRow::builder()
+                    .title(title)
+                    .subtitle(subtitle)
+                    .title_lines(0)
+                    .subtitle_lines(0)
                     .build();
-                row.add_suffix(&label);
+                if let Some(when) = &when {
+                    row.add_suffix(when);
+                }
+                rows.push(row.upcast());
+                continue;
             }
-            rows.push(row);
+            let row = adw::ExpanderRow::builder()
+                .title(title)
+                .subtitle(subtitle)
+                .title_lines(0)
+                .subtitle_lines(0)
+                .build();
+            if let Some(when) = &when {
+                row.add_suffix(when);
+            }
+            for (label, value) in &shown.made_by {
+                row.add_row(
+                    &adw::ActionRow::builder()
+                        .title(crate::markup::escape_markup(label))
+                        .subtitle(crate::markup::escape_markup(value))
+                        .subtitle_lines(0)
+                        .subtitle_selectable(true)
+                        .css_classes(["property"])
+                        .build(),
+                );
+            }
+            rows.push(row.upcast());
         }
         for row in &rows {
             group.add(row);

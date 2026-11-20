@@ -54,7 +54,7 @@ use myna_desktop::indicator::readiness::{Readiness, ReadinessTee};
 use myna_desktop::inject::lazy::{IbusConnect, LazyInjector};
 use myna_desktop::inject::Injector as _;
 use myna_desktop::platform::Platform;
-use myna_desktop::process::history::Recorded;
+use myna_desktop::process::history::{Context, Recorded};
 use myna_desktop::process::pipeline::{
     needs_of, nodes_of, steps_of, Needs, Node, Pipeline, SocketModels, Step,
 };
@@ -144,6 +144,7 @@ struct Resolved {
     sounds: bool,
     sound_set: SoundSet,
     commit: CommitPolicy,
+    chain: myna_core::ProcessingChain,
     nodes: Vec<Node>,
     history: bool,
 }
@@ -168,6 +169,7 @@ impl Resolved {
             sounds: settings.sounds,
             sound_set: settings.sound_set,
             commit: resolve_commit(needs_of(nodes)),
+            chain: settings.processing_chain,
             nodes: nodes.to_vec(),
             history: settings.processing_history,
         }
@@ -251,6 +253,10 @@ struct LiveSettings {
     auto_stop: Live<AutoStop>,
     /// Read at each press.
     commit: Live<CommitPolicy>,
+    /// Read as each piece is recorded.
+    chain: Live<myna_core::ProcessingChain>,
+    /// The model the backend said it serves; `None` until a press has asked.
+    speech_model: Live<Option<String>>,
     nodes: Live<Vec<Node>>,
     /// The steps of `nodes`, read for each piece of text.
     steps: Live<Vec<Step>>,
@@ -271,6 +277,8 @@ impl LiveSettings {
             vocabulary: Live::new(resolved.vocabulary.clone()),
             auto_stop: Live::new(resolved.auto_stop),
             commit: Live::new(resolved.commit),
+            chain: Live::new(resolved.chain),
+            speech_model: Live::default(),
             nodes: Live::new(resolved.nodes.clone()),
             steps: Live::new(steps_of(&resolved.nodes)),
             history: Live::new(resolved.history),
@@ -413,6 +421,7 @@ impl LiveSettings {
                 "processing steps -> {:?} (live, from the next text)",
                 resolved.nodes
             );
+            self.chain.set(resolved.chain);
             self.nodes.set(resolved.nodes.clone());
             self.steps.set(steps_of(&resolved.nodes));
         }
@@ -549,16 +558,20 @@ fn preedit_reason(forced: Option<bool>, mode: myna_core::EffectiveMode) -> Strin
     }
 }
 
-/// The backend's `Capabilities.streaming`, `None` when it does not say or
-/// cannot be asked.
-async fn backend_streams(socket: &std::path::Path) -> Option<bool> {
+/// What the backend says it can do, `None` when it cannot be asked.
+async fn backend_capabilities(socket: &std::path::Path) -> Option<myna_core::Capabilities> {
     match myna_orchestrator::query_capabilities(socket).await {
-        Ok(caps) => caps.streaming,
+        Ok(caps) => Some(caps),
         Err(e) => {
             myna_core::dbg_log!("settings", "capabilities query failed: {e}");
             None
         }
     }
+}
+
+/// The model a backend serves, as it names it; `None` when it names none.
+fn speech_model(caps: &myna_core::Capabilities) -> Option<String> {
+    (!caps.models.is_empty()).then(|| caps.models.join(", "))
 }
 
 fn next(it: &mut impl Iterator<Item = String>, flag: &str) -> Result<String, String> {
@@ -662,7 +675,11 @@ fn make_session(
         // transcript event, and the answer lands long before the first one.
         let learn = {
             let (live, socket) = (live.clone(), socket.clone());
-            async move { live.backend_learned(forced_preedit, backend_streams(&socket).await) }
+            async move {
+                let caps = backend_capabilities(&socket).await;
+                live.speech_model.set(caps.as_ref().and_then(speech_model));
+                live.backend_learned(forced_preedit, caps.and_then(|caps| caps.streaming));
+            }
         };
         let run: SessionRun = Box::pin(async move {
             tokio::spawn(learn);
@@ -792,11 +809,22 @@ async fn run_controller(
         .preedit(live.preedit.clone())
         .auto_stop(live.auto_stop.clone())
         .commit(live.commit.clone())
-        .processor(Recorded::new(
-            Pipeline::new(live.steps.clone(), SocketModels::new(text_models_socket())),
-            live.history.clone(),
-            myna_core::history::path(),
-        ));
+        .processor({
+            let pipeline =
+                Pipeline::new(live.steps.clone(), SocketModels::new(text_models_socket()));
+            let context = Context {
+                chain: live.chain.clone(),
+                trace: pipeline.trace(),
+                speech_model: live.speech_model.clone(),
+                version: Some(env!("MYNA_VERSION")),
+            };
+            Recorded::new(
+                pipeline,
+                live.history.clone(),
+                myna_core::history::path(),
+                context,
+            )
+        });
     let builder = match &pump_bus {
         Some(bus) => builder.draft(BusDraftView::new(bus.clone())),
         None => builder,
@@ -2002,7 +2030,8 @@ mod tests {
     async fn a_press_asks_the_backend_whether_it_streams() {
         for streaming in [Some(true), Some(false), None] {
             let (_dir, path) = fake_backend(streaming).await;
-            assert_eq!(backend_streams(&path).await, streaming);
+            let caps = backend_capabilities(&path).await;
+            assert_eq!(caps.and_then(|caps| caps.streaming), streaming);
         }
     }
 
@@ -2030,10 +2059,25 @@ mod tests {
         assert!(!live.preedit.get(), "the batch backend's answer landed");
     }
 
+    #[test]
+    fn the_speech_model_is_what_the_backend_names() {
+        let named = myna_core::Capabilities {
+            models: vec!["parakeet-tdt-0.6b-v3".into(), "int8".into()],
+            ..Default::default()
+        };
+        assert_eq!(
+            speech_model(&named).as_deref(),
+            Some("parakeet-tdt-0.6b-v3, int8")
+        );
+        assert_eq!(speech_model(&myna_core::Capabilities::default()), None);
+    }
+
     #[tokio::test]
     async fn an_unreachable_backend_streams_unknown() {
         let dir = tempdir::Dir::new("caps-missing");
-        assert_eq!(backend_streams(&dir.0.join("absent.sock")).await, None);
+        assert!(backend_capabilities(&dir.0.join("absent.sock"))
+            .await
+            .is_none());
     }
 
     // Regression (manual test report, 2026-07-31): the HUD pill visibly

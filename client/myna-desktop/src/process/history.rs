@@ -8,9 +8,22 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
 use myna_core::history::{append, Entry};
+use myna_core::ProcessingChain;
 
+use super::pipeline::Trace;
 use super::Processor;
 use crate::live::Live;
+
+/// What a record says besides the text, read as each piece is recorded.
+#[derive(Clone, Default)]
+pub struct Context {
+    pub chain: Live<ProcessingChain>,
+    /// What the steps of the piece just processed did.
+    pub trace: Trace,
+    /// The model the backend said it serves, once a press has asked.
+    pub speech_model: Live<Option<String>>,
+    pub version: Option<&'static str>,
+}
 
 /// Runs a processor and, while `on`, appends what went in and what came out
 /// to `path` as one JSON line.
@@ -18,11 +31,17 @@ pub struct Recorded<P> {
     inner: P,
     on: Live<bool>,
     path: Option<PathBuf>,
+    context: Context,
 }
 
 impl<P> Recorded<P> {
-    pub fn new(inner: P, on: Live<bool>, path: Option<PathBuf>) -> Self {
-        Self { inner, on, path }
+    pub fn new(inner: P, on: Live<bool>, path: Option<PathBuf>, context: Context) -> Self {
+        Self {
+            inner,
+            on,
+            path,
+            context,
+        }
     }
 }
 
@@ -40,6 +59,15 @@ impl<P: Processor> Processor for Recorded<P> {
                 .map_or(0, |since| since.as_secs()),
             heard,
             typed: typed.clone(),
+            chain: Some(self.context.chain.get().nick().to_owned()),
+            steps: self
+                .context
+                .trace
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .clone(),
+            speech_model: self.context.speech_model.get(),
+            version: self.context.version.map(str::to_owned),
         };
         // A record that cannot be written must not cost the dictation.
         if let Err(err) = append(path, &entry) {
@@ -63,6 +91,26 @@ mod tests {
         }
     }
 
+    fn context() -> Context {
+        let context = Context {
+            chain: Live::new(ProcessingChain::Tidy),
+            speech_model: Live::new(Some("parakeet".into())),
+            version: Some("1.2.3"),
+            ..Context::default()
+        };
+        context
+            .trace
+            .lock()
+            .unwrap()
+            .push(myna_core::history::Step {
+                task: "text.cleanup".into(),
+                model: Some("fdt".into()),
+                ms: 4,
+                skipped: None,
+            });
+        context
+    }
+
     fn scratch(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("myna-history-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
@@ -72,7 +120,7 @@ mod tests {
     #[tokio::test]
     async fn records_what_was_heard_and_what_was_typed() {
         let path = scratch("on");
-        let mut recorded = Recorded::new(Shout, Live::new(true), Some(path.clone()));
+        let mut recorded = Recorded::new(Shout, Live::new(true), Some(path.clone()), context());
         assert_eq!(recorded.process("um hi".into()).await, "UM HI");
         assert_eq!(recorded.process("bye".into()).await, "BYE");
 
@@ -86,6 +134,11 @@ mod tests {
         assert_eq!(lines[0]["typed"], "UM HI");
         assert_eq!(lines[1]["heard"], "bye");
         assert!(lines[0]["time"].as_u64().unwrap() > 0);
+        assert_eq!(lines[0]["chain"], "tidy");
+        assert_eq!(lines[0]["steps"][0]["task"], "text.cleanup");
+        assert_eq!(lines[0]["steps"][0]["model"], "fdt");
+        assert_eq!(lines[0]["speech_model"], "parakeet");
+        assert_eq!(lines[0]["version"], "1.2.3");
         let mode = std::fs::metadata(&path).unwrap().permissions().mode();
         assert_eq!(mode & 0o077, 0, "the record is the user's alone");
     }
@@ -94,7 +147,7 @@ mod tests {
     async fn writes_nothing_while_off_and_follows_the_switch() {
         let path = scratch("off");
         let on = Live::new(false);
-        let mut recorded = Recorded::new(Shout, on.clone(), Some(path.clone()));
+        let mut recorded = Recorded::new(Shout, on.clone(), Some(path.clone()), Context::default());
         assert_eq!(recorded.process("hi".into()).await, "HI");
         assert!(!path.exists());
 
@@ -109,6 +162,7 @@ mod tests {
             Shout,
             Live::new(true),
             Some(PathBuf::from("/proc/myna-nowhere/history.jsonl")),
+            Context::default(),
         );
         assert_eq!(recorded.process("hi".into()).await, "HI");
     }

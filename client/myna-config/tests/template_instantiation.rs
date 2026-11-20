@@ -177,6 +177,7 @@ fn the_processing_tab_follows_the_record_and_the_chosen_chain_when_enabled() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("chain: tidy"), "{stdout}");
     assert!(stdout.contains("recorded: true"), "{stdout}");
+    assert!(stdout.contains("made-by: true"), "{stdout}");
     assert!(stdout.contains("cleared: true"), "{stdout}");
 }
 

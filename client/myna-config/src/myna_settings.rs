@@ -262,12 +262,14 @@ pub fn choice_detail(choice: &str) -> Option<ChoiceDetail> {
     })
 }
 
-/// A recorded dictation as the Processing tab lists it: what was typed, and
-/// under it what was heard when that differs.
+/// A recorded dictation as the Processing tab lists it: what was typed, under
+/// it what was heard when that differs, and, shown when the row is opened,
+/// what did the work, as label and value.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PastDictation {
     pub typed: String,
     pub detail: String,
+    pub made_by: Vec<(String, String)>,
 }
 
 /// How many recorded dictations the Processing tab lists, newest first.
@@ -279,9 +281,44 @@ pub fn past_dictation(entry: &myna_core::history::Entry) -> PastDictation {
     } else {
         gettextrs::gettext("Heard: {heard}").replace("{heard}", entry.heard.trim())
     };
+    let mut made_by = Vec::new();
+    if let Some(model) = &entry.speech_model {
+        made_by.push((gettextrs::gettext("Speech model"), model.clone()));
+    }
+    if let Some(chain) = &entry.chain {
+        made_by.push((
+            gettextrs::gettext("Processing"),
+            choice_display_label(chain),
+        ));
+    }
+    for step in &entry.steps {
+        let label = match step.task.as_str() {
+            "text.cleanup" => gettextrs::gettext("Tidying"),
+            "text.translate" => gettextrs::gettext("Translation"),
+            task => task.to_owned(),
+        };
+        // Translators: how long a step took, in milliseconds.
+        let took = gettextrs::gettext("{ms} ms").replace("{ms}", &step.ms.to_string());
+        let ran = match &step.model {
+            Some(model) => format!("{model}, {took}"),
+            None => took,
+        };
+        let value = match &step.skipped {
+            // Translators: a step whose result was not used, how it ran and why.
+            Some(why) => gettextrs::gettext("Not used ({ran}): {why}")
+                .replace("{ran}", &ran)
+                .replace("{why}", why),
+            None => ran,
+        };
+        made_by.push((label, value));
+    }
+    if let Some(version) = &entry.version {
+        made_by.push((gettextrs::gettext("Myna version"), version.clone()));
+    }
     PastDictation {
         typed: entry.typed.trim().to_owned(),
         detail,
+        made_by,
     }
 }
 

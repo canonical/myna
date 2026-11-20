@@ -5,7 +5,8 @@
 
 use std::collections::HashSet;
 use std::path::PathBuf;
-use std::time::Duration;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use myna_core::ProcessingChain;
@@ -63,11 +64,21 @@ pub enum ModelError {
     Refused(String),
 }
 
+/// A model's answer, and which model it was when the far side says.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Answer {
+    pub text: String,
+    pub model: Option<String>,
+}
+
 /// Whatever answers a [`Request`]: the place models are found and chosen.
 #[async_trait]
 pub trait Models: Send {
-    async fn run(&mut self, request: &Request, text: &str) -> Result<String, ModelError>;
+    async fn run(&mut self, request: &Request, text: &str) -> Result<Answer, ModelError>;
 }
+
+/// What each step did to the last piece of text, for the record.
+pub type Trace = Arc<Mutex<Vec<myna_core::history::Step>>>;
 
 /// What an answer must satisfy to be typed in place of what was heard.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -177,6 +188,7 @@ pub fn steps_of(nodes: &[Node]) -> Vec<Step> {
 pub struct Pipeline {
     steps: Live<Vec<Step>>,
     models: Box<dyn Models>,
+    trace: Trace,
 }
 
 impl Pipeline {
@@ -184,43 +196,54 @@ impl Pipeline {
         Self {
             steps: steps.into(),
             models: Box::new(models),
+            trace: Trace::default(),
         }
+    }
+
+    /// Where the steps of the last piece of text are left.
+    pub fn trace(&self) -> Trace {
+        self.trace.clone()
     }
 }
 
 #[async_trait]
 impl Processor for Pipeline {
     async fn process(&mut self, mut text: String) -> String {
+        let mut trace = Vec::new();
         for step in &self.steps.get() {
             match step {
                 Step::Rule(rule) => text = rule(&text),
                 Step::Ask { request, check } => {
+                    let started = Instant::now();
                     let answer =
                         tokio::time::timeout(request.budget, self.models.run(request, &text)).await;
-                    match answer {
-                        Ok(Ok(answer)) if check.passes(&text, &answer) => text = answer,
-                        Ok(Ok(_)) => {
-                            myna_core::info_log!(
-                                "process",
-                                "{} skipped: the answer failed {check:?}",
-                                request.task
-                            );
+                    let mut model = None;
+                    let skipped = match answer {
+                        Ok(Ok(answer)) => {
+                            model = answer.model;
+                            if check.passes(&text, &answer.text) {
+                                text = answer.text;
+                                None
+                            } else {
+                                Some(format!("the answer failed {check:?}"))
+                            }
                         }
-                        Ok(Err(err)) => {
-                            myna_core::info_log!("process", "{} skipped: {err}", request.task);
-                        }
-                        Err(_) => {
-                            myna_core::info_log!(
-                                "process",
-                                "{} skipped: no answer within {:?}",
-                                request.task,
-                                request.budget
-                            );
-                        }
+                        Ok(Err(err)) => Some(err.to_string()),
+                        Err(_) => Some(format!("no answer within {:?}", request.budget)),
+                    };
+                    if let Some(why) = &skipped {
+                        myna_core::info_log!("process", "{} skipped: {why}", request.task);
                     }
+                    trace.push(myna_core::history::Step {
+                        task: request.task.clone(),
+                        model,
+                        ms: u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
+                        skipped,
+                    });
                 }
             }
         }
+        *self.trace.lock().unwrap_or_else(|p| p.into_inner()) = trace;
         text
     }
 }
@@ -245,14 +268,15 @@ struct Ask<'a> {
 }
 
 #[derive(Deserialize)]
-struct Answer {
+struct Reply {
     text: Option<String>,
     error: Option<String>,
+    model: Option<String>,
 }
 
 #[async_trait]
 impl Models for SocketModels {
-    async fn run(&mut self, request: &Request, text: &str) -> Result<String, ModelError> {
+    async fn run(&mut self, request: &Request, text: &str) -> Result<Answer, ModelError> {
         let unavailable = |e: std::io::Error| ModelError::Unavailable(e.to_string());
         let stream = UnixStream::connect(&self.path).await.map_err(unavailable)?;
         let (read, mut write) = stream.into_split();
@@ -268,10 +292,13 @@ impl Models for SocketModels {
             .read_line(&mut reply)
             .await
             .map_err(unavailable)?;
-        let answer: Answer = serde_json::from_str(&reply)
+        let reply: Reply = serde_json::from_str(&reply)
             .map_err(|_| ModelError::Refused("unreadable reply".into()))?;
-        match (answer.text, answer.error) {
-            (Some(text), _) => Ok(text),
+        match (reply.text, reply.error) {
+            (Some(text), _) => Ok(Answer {
+                text,
+                model: reply.model,
+            }),
             (None, error) => Err(ModelError::Refused(error.unwrap_or_default())),
         }
     }
@@ -291,9 +318,12 @@ mod tests {
 
     #[async_trait]
     impl Models for Scripted {
-        async fn run(&mut self, _: &Request, _: &str) -> Result<String, ModelError> {
+        async fn run(&mut self, _: &Request, _: &str) -> Result<Answer, ModelError> {
             match self {
-                Scripted::Says(answer) => Ok(answer.to_string()),
+                Scripted::Says(answer) => Ok(Answer {
+                    text: answer.to_string(),
+                    model: Some("scripted".into()),
+                }),
                 Scripted::Fails => Err(ModelError::Unavailable("none installed".into())),
                 Scripted::Hangs => std::future::pending().await,
             }
@@ -359,12 +389,27 @@ mod tests {
     async fn an_answer_made_of_words_that_were_said_is_typed() {
         let mut pipeline = cleanup(Scripted::Says("Let's meet Tuesday."));
         assert_eq!(pipeline.process(HEARD.into()).await, "Let's meet Tuesday.");
+        let trace = traced(&pipeline);
+        assert_eq!(trace.len(), 1);
+        assert_eq!(trace[0].task, "text.cleanup");
+        assert_eq!(trace[0].model.as_deref(), Some("scripted"));
+        assert_eq!(trace[0].skipped, None);
+    }
+
+    fn traced(pipeline: &Pipeline) -> Vec<myna_core::history::Step> {
+        pipeline.trace().lock().unwrap().clone()
     }
 
     #[tokio::test]
     async fn an_answer_with_a_new_word_is_dropped_for_what_was_heard() {
         let mut pipeline = cleanup(Scripted::Says("Sure! Let's meet Tuesday."));
         assert_eq!(pipeline.process(HEARD.into()).await, HEARD);
+        let trace = traced(&pipeline);
+        assert_eq!(trace[0].model.as_deref(), Some("scripted"));
+        assert_eq!(
+            trace[0].skipped.as_deref(),
+            Some("the answer failed NoNewWords")
+        );
     }
 
     #[tokio::test]
@@ -377,12 +422,25 @@ mod tests {
     async fn a_missing_model_types_what_was_heard() {
         let mut pipeline = cleanup(Scripted::Fails);
         assert_eq!(pipeline.process(HEARD.into()).await, HEARD);
+        let trace = traced(&pipeline);
+        assert_eq!(trace[0].model, None);
+        assert_eq!(
+            trace[0].skipped.as_deref(),
+            Some("no model: none installed")
+        );
     }
 
     #[tokio::test(start_paused = true)]
     async fn a_model_over_its_budget_types_what_was_heard() {
         let mut pipeline = cleanup(Scripted::Hangs);
         assert_eq!(pipeline.process(HEARD.into()).await, HEARD);
+        assert_eq!(
+            traced(&pipeline)[0].skipped.as_deref(),
+            Some("no answer within 1s")
+        );
+        // The trace is of the last text alone.
+        assert_eq!(pipeline.process(HEARD.into()).await, HEARD);
+        assert_eq!(traced(&pipeline).len(), 1);
     }
 
     #[tokio::test]
@@ -410,7 +468,11 @@ mod tests {
         let listener = UnixListener::bind(&path).unwrap();
         let server = tokio::spawn(async move {
             let mut seen = Vec::new();
-            for reply in ["{\"text\":\"Hi.\"}\n", "{\"error\":\"no model fits\"}\n"] {
+            for reply in [
+                "{\"text\":\"Hi.\",\"model\":\"fdt\"}\n",
+                "{\"text\":\"Hi.\"}\n",
+                "{\"error\":\"no model fits\"}\n",
+            ] {
                 let (stream, _) = listener.accept().await.unwrap();
                 let (read, mut write) = stream.into_split();
                 let mut line = String::new();
@@ -423,7 +485,10 @@ mod tests {
 
         let mut models = SocketModels::new(&path);
         let request = Request::cleanup(Some("en".into()));
-        assert_eq!(models.run(&request, "um hi").await.unwrap(), "Hi.");
+        let named = models.run(&request, "um hi").await.unwrap();
+        assert_eq!(named.text, "Hi.");
+        assert_eq!(named.model.as_deref(), Some("fdt"));
+        assert_eq!(models.run(&request, "um hi").await.unwrap().model, None);
         assert!(matches!(
             models.run(&request, "um hi").await,
             Err(ModelError::Refused(reason)) if reason == "no model fits"
