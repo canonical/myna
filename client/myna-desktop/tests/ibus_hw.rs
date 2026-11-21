@@ -65,8 +65,13 @@ const NOTICE: Duration = Duration::from_secs(1);
 
 const SENTINEL: &str = "after";
 
+/// `IBusInputPurpose` values used by the conformance fixture.
+const PURPOSE_ALPHA: u32 = 1;
+const PURPOSE_URL: u32 = 5;
+const PURPOSE_EMAIL: u32 = 6;
 /// `IBusInputPurpose::PASSWORD`.
 const PURPOSE_PASSWORD: u32 = 8;
+const PURPOSE_TERMINAL: u32 = 10;
 /// `IBusInputHints::PRIVATE` and `HIDDEN_TEXT`.
 const HINT_PRIVATE: u32 = 1 << 11;
 const HINT_HIDDEN_TEXT: u32 = 1 << 12;
@@ -583,6 +588,10 @@ impl suite::Fixture for IbusFixture {
         self.close().await;
         let purpose = match kind {
             FieldKind::Plain => 0,
+            FieldKind::Url => PURPOSE_URL,
+            FieldKind::Email => PURPOSE_EMAIL,
+            FieldKind::Terminal => PURPOSE_TERMINAL,
+            FieldKind::Other => PURPOSE_ALPHA,
             FieldKind::Secure => PURPOSE_PASSWORD,
         };
         let (field, injector) = session(purpose, 0).await;
@@ -1605,13 +1614,21 @@ async fn the_ibus_backend_conforms() {
             "a_blip_kept_alive_by_continued_activation_is_not_a_loss",
             "secure_fields_are_refused",
             "a_field_turning_secure_is_refused",
+            "field_purpose_is_reported",
+            "terminal_fields_fold_control_characters",
             "commit_clears_the_preedit",
             "no_preedit_after_focus_loss",
             "release_clears_the_preedit",
         ]
     );
     assert!(report.unobserved.is_empty(), "{report:?}");
-    assert_eq!(report.not_applicable, ["preedit_without_support_is_inert"]);
+    assert_eq!(
+        report.not_applicable,
+        [
+            "field_purpose_without_support_is_plain",
+            "preedit_without_support_is_inert",
+        ]
+    );
 }
 
 /// Live **visual** probe for the preedit path (R9): shows an underlined

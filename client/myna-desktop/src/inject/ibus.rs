@@ -40,7 +40,8 @@ use zbus::zvariant::{OwnedValue, StructureBuilder, Value};
 use zbus::{Address, Connection};
 
 use super::{
-    Activation, FocusEvent, InjectError, Injector, Support, Target, TextInputCapabilities,
+    fold_control_chars, Activation, FieldPurpose, FocusEvent, InjectError, Injector, Support,
+    Target, TextInputCapabilities,
 };
 
 const IBUS_SERVICE: &str = "org.freedesktop.IBus";
@@ -110,9 +111,13 @@ const ACTIVATION_WINDOW: Duration = Duration::from_millis(500);
 /// activation until then.
 const FOCUS_BLIP_GRACE: Duration = Duration::from_millis(1000);
 
-/// `IBusInputPurpose` values we refuse to inject into.
+/// `IBusInputPurpose` values Myna distinguishes or refuses.
+const PURPOSE_FREE_FORM: u32 = 0;
+const PURPOSE_URL: u32 = 5;
+const PURPOSE_EMAIL: u32 = 6;
 const PURPOSE_PASSWORD: u32 = 8;
 const PURPOSE_PIN: u32 = 9;
+const PURPOSE_TERMINAL: u32 = 10;
 /// `IBusInputHints::HIDDEN_TEXT`.
 const HINT_HIDDEN_TEXT: u32 = 1 << 12;
 
@@ -138,6 +143,17 @@ impl ContentType {
         self.purpose == PURPOSE_PASSWORD
             || self.purpose == PURPOSE_PIN
             || self.hints & HINT_HIDDEN_TEXT != 0
+    }
+
+    /// What the field says it is for.
+    fn field_purpose(self) -> FieldPurpose {
+        match self.purpose {
+            PURPOSE_FREE_FORM => FieldPurpose::Plain,
+            PURPOSE_URL => FieldPurpose::Url,
+            PURPOSE_EMAIL => FieldPurpose::Email,
+            PURPOSE_TERMINAL => FieldPurpose::Terminal,
+            _ => FieldPurpose::Other,
+        }
     }
 }
 
@@ -1099,13 +1115,25 @@ impl EngineState {
 
     fn set_content_type(&self, content_type: ContentType) {
         self.lease.send_if_modified(|lease| {
-            lease.content_type = content_type;
+            if !matches!(lease.binding, Binding::Away { .. }) {
+                lease.content_type = content_type;
+            }
             false
         });
     }
 
     fn content_type(&self) -> ContentType {
         self.lease.borrow().content_type
+    }
+
+    /// What the focused field says it is for, while lease `id` is held.
+    fn field_purpose(&self, id: u64) -> FieldPurpose {
+        let lease = self.lease.borrow();
+        if lease.held_by(id) {
+            lease.content_type.field_purpose()
+        } else {
+            FieldPurpose::Plain
+        }
     }
 
     /// Whether preedit may carry the WHOLE hint to the focused field.
@@ -1386,6 +1414,7 @@ impl IbusInjector {
 pub const CAPABILITIES: TextInputCapabilities = TextInputCapabilities {
     preedit: true,
     surrounding_text: true,
+    field_purpose: true,
     secure_field_detection: Support::Supported,
 };
 
@@ -1651,14 +1680,21 @@ impl IbusTarget {
             myna_core::dbg_log!("inject", "commit REFUSED: focus lost");
             return Err(InjectError::FocusLost);
         }
-        if text.is_empty() {
-            return Ok(());
-        }
         // The content type can change after `acquire` (I5, FR-021).
         let content_type = self.state.content_type();
         if content_type.is_secure() {
             myna_core::dbg_log!("inject", "commit REFUSED: secure field {content_type:?}");
             return Err(InjectError::SecureField);
+        }
+        let folded;
+        let text = if content_type.field_purpose() == FieldPurpose::Terminal {
+            folded = fold_control_chars(text);
+            folded.as_str()
+        } else {
+            text
+        };
+        if text.is_empty() {
+            return Ok(());
         }
         self.state.wrote(self.lease);
         let paced = self.state.paces_commits();
@@ -1799,6 +1835,10 @@ impl Target for IbusTarget {
 
     fn char_before_cursor(&self) -> Option<char> {
         self.state.before_cursor(self.lease)
+    }
+
+    fn field_purpose(&self) -> FieldPurpose {
+        self.state.field_purpose(self.lease)
     }
 
     fn focus_events(&self) -> BoxStream<'static, FocusEvent> {
@@ -3065,6 +3105,38 @@ mod tests {
         for accepted in accepted {
             assert!(!accepted.is_secure(), "{accepted:?} must be injectable");
         }
+    }
+
+    #[test]
+    fn field_purpose_classification() {
+        let purpose = |p, hints| ContentType { purpose: p, hints }.field_purpose();
+        assert_eq!(purpose(0, 0), FieldPurpose::Plain);
+        assert_eq!(purpose(5, 0), FieldPurpose::Url);
+        assert_eq!(purpose(6, 0), FieldPurpose::Email);
+        assert_eq!(purpose(10, 0), FieldPurpose::Terminal);
+        for other in [1, 2, 3, 4, 7, 8, 9, 11, 12, 13, 99] {
+            assert_eq!(purpose(other, 0), FieldPurpose::Other, "purpose {other}");
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn content_type_from_elsewhere_during_a_blip_is_ignored() {
+        let (state, engine, lease) = focused().await;
+        engine.set_content_type((PURPOSE_TERMINAL, 0)).await;
+        assert_eq!(state.field_purpose(lease), FieldPurpose::Terminal);
+        grab(&engine).await;
+        engine.set_content_type((PURPOSE_FREE_FORM, 0)).await;
+        state.activated(Some(lease));
+        ungrab(&engine).await;
+        assert_eq!(state.field_purpose(lease), FieldPurpose::Terminal);
+
+        engine.focus_out_id(FIELD.into()).await;
+        tokio::time::sleep(FOCUS_BLIP_GRACE + TICK).await;
+        assert_eq!(
+            state.field_purpose(lease),
+            FieldPurpose::Plain,
+            "a lost lease says nothing"
+        );
     }
 
     /// The daemon only `Properties.Set`s `ContentType (uu)` and drops the

@@ -5,7 +5,8 @@
 //! the hermetic test fixture.
 
 pub use myna_platform::text_input::{
-    Activation, FocusEvent, InjectError, Injector, Support, Target, TextInputCapabilities,
+    fold_control_chars, Activation, FieldPurpose, FocusEvent, InjectError, Injector, Support,
+    Target, TextInputCapabilities,
 };
 
 pub mod ibus;

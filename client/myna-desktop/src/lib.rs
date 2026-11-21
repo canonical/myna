@@ -41,6 +41,6 @@ pub use controller::{
     SessionFactory, SessionRun,
 };
 pub use indicator::{Indicator, IndicatorState, InputLevels};
-pub use inject::{FocusEvent, InjectError, Injector, Target};
+pub use inject::{FieldPurpose, FocusEvent, InjectError, Injector, Target};
 pub use live::Live;
 pub use shortcut::{Trigger, TriggerEdge};

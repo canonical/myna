@@ -22,6 +22,20 @@ pub enum Support {
     Unknown,
 }
 
+/// What the focused field says it is for, when it says.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum FieldPurpose {
+    /// Free-form text, or a field that says nothing more specific.
+    #[default]
+    Plain,
+    Url,
+    Email,
+    Terminal,
+    /// A purpose Myna does not distinguish (`ALPHA`, `DIGITS`, `NUMBER`,
+    /// `PHONE`, `NAME`, date/time).
+    Other,
+}
+
 /// What a text input backend can do, known without connecting to it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TextInputCapabilities {
@@ -29,6 +43,8 @@ pub struct TextInputCapabilities {
     pub preedit: bool,
     /// [`Target::char_before_cursor`] can answer for fields that say.
     pub surrounding_text: bool,
+    /// [`Target::field_purpose`] can answer for fields that say.
+    pub field_purpose: bool,
     /// Whether a secure field (password, PIN) can be recognised. Where it is
     /// [`Support::Unknown`] a secure field looks like any other.
     pub secure_field_detection: Support,
@@ -39,8 +55,41 @@ impl TextInputCapabilities {
     pub const COMMIT_ONLY: Self = Self {
         preedit: false,
         surrounding_text: false,
+        field_purpose: false,
         secure_field_detection: Support::Unknown,
     };
+}
+
+fn is_control_or_break(c: char) -> bool {
+    c.is_control() || matches!(c, '\u{2028}' | '\u{2029}')
+}
+
+/// Replace control characters and Unicode line/paragraph separators with
+/// single ASCII spaces, collapsing adjacent ASCII spaces so folded breaks
+/// never concatenate tokens (`"rm -rf /tmp/x\nsudo reboot"` becomes
+/// `"rm -rf /tmp/x sudo reboot"`). Leading and trailing spaces introduced by
+/// control characters are trimmed while intentional leading or trailing `' '`
+/// in clean text is kept.
+pub fn fold_control_chars(text: &str) -> String {
+    let trim_start = text.chars().next().is_some_and(is_control_or_break);
+    let trim_end = text.chars().next_back().is_some_and(is_control_or_break);
+    let mut out = String::with_capacity(text.len());
+    let mut prev_space = trim_start;
+    for c in text.chars() {
+        if is_control_or_break(c) || c == ' ' {
+            if !prev_space {
+                out.push(' ');
+                prev_space = true;
+            }
+        } else {
+            out.push(c);
+            prev_space = false;
+        }
+    }
+    if trim_end {
+        out.pop();
+    }
+    out
 }
 
 /// Focus or target loss on an acquired target.
@@ -142,10 +191,13 @@ impl fmt::Debug for Activation {
 #[async_trait]
 pub trait Target: Send + fmt::Debug {
     /// Insert stable text, never modified afterwards; clears any preedit.
-    /// `Err(FocusLost)` once the right to write is gone; `Err(SecureField)`
-    /// when the field turned out secure only after `acquire`. While focus is
-    /// away and may be coming back ([`Target::activated`]) the text is held:
-    /// it lands once focus is back, or is dropped with the loss.
+    /// Into a [`FieldPurpose::Terminal`] target, control characters are folded
+    /// through [`fold_control_chars`] before insertion so a newline or escape
+    /// never executes or alters a command. `Err(FocusLost)` once the right to
+    /// write is gone; `Err(SecureField)` when the field turned out secure only
+    /// after `acquire`. While focus is away and may be coming back
+    /// ([`Target::activated`]) the text is held: it lands once focus is back,
+    /// or is dropped with the loss.
     async fn commit(&mut self, text: &str) -> Result<(), InjectError>;
 
     /// Show a volatile hypothesis in the field's preedit region, replacing
@@ -159,6 +211,12 @@ pub trait Target: Send + fmt::Debug {
     /// start and wherever it does not say.
     fn char_before_cursor(&self) -> Option<char> {
         None
+    }
+
+    /// What the focused field says it is for, when it says;
+    /// [`FieldPurpose::Plain`] wherever it does not.
+    fn field_purpose(&self) -> FieldPurpose {
+        Default::default()
     }
 
     /// Yields a [`FocusEvent`] once the right to write is gone, including
@@ -237,6 +295,20 @@ mod tests {
     #[test]
     fn a_field_that_says_nothing_has_no_char_before_the_cursor() {
         assert_eq!(Silent.char_before_cursor(), None);
+        assert_eq!(Silent.field_purpose(), FieldPurpose::Plain);
+    }
+
+    #[test]
+    fn activation_signals_its_callback_and_formats_without_capturing_state() {
+        let called = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let seen = std::sync::Arc::clone(&called);
+        let activation = Activation::new(move || {
+            seen.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        });
+        activation.signal();
+        assert_eq!(called.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert_eq!(format!("{activation:?}"), "Activation");
+        Activation::none().signal();
     }
 
     #[test]
@@ -246,8 +318,50 @@ mod tests {
             TextInputCapabilities {
                 preedit: false,
                 surrounding_text: false,
+                field_purpose: false,
                 secure_field_detection: Support::Unknown,
             }
         );
+    }
+
+    #[test]
+    fn control_characters_fold_to_single_word_breaks_without_joining_tokens() {
+        let cases = [
+            ("rm -rf /tmp/x\nsudo reboot", "rm -rf /tmp/x sudo reboot"),
+            ("rm -rf /tmp/x\r\nsudo reboot", "rm -rf /tmp/x sudo reboot"),
+            (
+                "rm -rf /tmp/x \t\n\t sudo reboot",
+                "rm -rf /tmp/x sudo reboot",
+            ),
+            ("echo\x1b[31mred\x08\x7f\u{85}end", "echo [31mred end"),
+            ("line\u{2028}two\u{2029}three", "line two three"),
+            ("\nBonjour.\n", "Bonjour."),
+            ("Bonjour. \n", "Bonjour."),
+            ("\n Bonjour.", "Bonjour."),
+            ("\n\r\t\x1b", ""),
+            ("  \n", ""),
+            ("\n  ", ""),
+            ("", ""),
+            (" hello", " hello"),
+            ("w001 ", "w001 "),
+            (" second\nthird.", " second third."),
+            (
+                "\u{ab}\u{00a0}Bonjour\u{202f}!\u{00a0}\u{bb}\n",
+                "\u{ab}\u{00a0}Bonjour\u{202f}!\u{00a0}\u{bb}",
+            ),
+        ];
+        for (input, expected) in cases {
+            let folded = fold_control_chars(input);
+            assert_eq!(folded, expected, "input: {input:?}");
+            assert!(
+                !folded.chars().any(char::is_control),
+                "control survived in {folded:?}"
+            );
+            assert_eq!(
+                fold_control_chars(&folded),
+                folded,
+                "not idempotent on {input:?}"
+            );
+        }
     }
 }
