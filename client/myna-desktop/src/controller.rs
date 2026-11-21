@@ -30,7 +30,9 @@ use async_trait::async_trait;
 use myna_orchestrator::{
     BackendError, OrchestratorEvent, SessionOutcome, StopHandle, TextSink, Trigger, TriggerEdge,
 };
-use myna_platform::text_input::{FocusEvent, InjectError, Injector, Support, Target};
+use myna_platform::text_input::{
+    fold_control_chars, FieldPurpose, FocusEvent, InjectError, Injector, Support, Target,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DictationState {
@@ -1224,6 +1226,9 @@ impl CommitBuffer {
         let rest = self.pending.split_off(ready);
         let heard = std::mem::replace(&mut self.pending, rest);
         let mut text = processor.process(heard).await;
+        if target.field_purpose() == FieldPurpose::Terminal {
+            text = fold_control_chars(&text);
+        }
         if text.is_empty() {
             return Ending::None;
         }
@@ -1660,6 +1665,7 @@ mod tests {
         answer: Option<InjectError>,
         commits: Vec<String>,
         before_cursor: Option<char>,
+        purpose: myna_platform::text_input::FieldPurpose,
     }
 
     impl ScriptedTarget {
@@ -1676,12 +1682,25 @@ mod tests {
                 ..Self::default()
             }
         }
+
+        fn terminal_after(before: Option<char>) -> Self {
+            Self {
+                before_cursor: before,
+                purpose: myna_platform::text_input::FieldPurpose::Terminal,
+                ..Self::default()
+            }
+        }
     }
 
     #[async_trait]
     impl Target for ScriptedTarget {
         async fn commit(&mut self, text: &str) -> Result<(), InjectError> {
-            self.commits.push(text.to_string());
+            let written = if self.purpose == myna_platform::text_input::FieldPurpose::Terminal {
+                myna_platform::text_input::fold_control_chars(text)
+            } else {
+                text.to_string()
+            };
+            self.commits.push(written);
             match self.answer.take() {
                 Some(err) => Err(err),
                 None => Ok(()),
@@ -1690,6 +1709,10 @@ mod tests {
 
         fn char_before_cursor(&self) -> Option<char> {
             self.before_cursor
+        }
+
+        fn field_purpose(&self) -> myna_platform::text_input::FieldPurpose {
+            self.purpose
         }
 
         fn focus_events(&self) -> BoxStream<'static, FocusEvent> {
@@ -1809,5 +1832,25 @@ mod tests {
             "the discarded text is not insertable later"
         );
         assert!(target.commits.is_empty());
+    }
+
+    #[tokio::test]
+    async fn terminal_flushes_fold_breaks_before_spacing_and_drop_pure_breaks() {
+        let mut target = ScriptedTarget::terminal_after(Some('x'));
+        assert_eq!(
+            first_flush(&mut target, "\nsudo reboot").await,
+            " sudo reboot",
+            "a folded leading break still separates from text already before the cursor"
+        );
+
+        let mut target = ScriptedTarget::terminal_after(None);
+        let mut buffer = CommitBuffer::default();
+        buffer.push("\n\n");
+        assert_eq!(buffer.flush(&mut target, true).await, Ending::None);
+        assert!(
+            target.commits.is_empty(),
+            "a pure layout break commits nothing into a terminal"
+        );
+        assert!(!buffer.committed_any);
     }
 }

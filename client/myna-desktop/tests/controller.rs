@@ -2345,3 +2345,47 @@ async fn text_typed_as_it_arrives_is_never_processed() {
     assert_eq!(inject_log.lock().unwrap().commits, vec!["hello"]);
     assert!(drafts.0.lock().unwrap().is_empty());
 }
+
+struct LayoutRule;
+
+#[async_trait::async_trait]
+impl Processor for LayoutRule {
+    async fn process(&mut self, text: String) -> String {
+        text.replace(" new line ", "\n").replace("new line ", "\n")
+    }
+}
+
+#[tokio::test]
+async fn terminal_fields_fold_layout_breaks_across_streaming_and_held_commits() {
+    let injector = MockInjector::new();
+    let field = injector.field();
+    field.set_purpose(myna_desktop::FieldPurpose::Terminal);
+    let (builder, _) = held(
+        CommitPolicy::Horizon { sentences: 0 },
+        injector,
+        events_session(
+            vec![
+                OrchestratorEvent::Final("rm -rf /tmp/x.".into()),
+                OrchestratorEvent::Transcribing,
+                OrchestratorEvent::Final("new line sudo reboot".into()),
+                OrchestratorEvent::Done("rm -rf /tmp/x. new line sudo reboot".into()),
+            ],
+            completed("rm -rf /tmp/x. new line sudo reboot"),
+        ),
+    );
+    builder.processor(LayoutRule).build().run().await;
+    assert_eq!(field.text(), "rm -rf /tmp/x. sudo reboot");
+
+    let plain_injector = MockInjector::new();
+    let plain_field = plain_injector.field();
+    let (builder, _) = held(
+        CommitPolicy::AtEnd,
+        plain_injector,
+        events_session(
+            vec![OrchestratorEvent::Final("one new line two".into())],
+            completed("one new line two"),
+        ),
+    );
+    builder.processor(LayoutRule).build().run().await;
+    assert_eq!(plain_field.text(), "one\ntwo");
+}

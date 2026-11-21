@@ -15,6 +15,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
 
 use super::Processor;
+use crate::inject::fold_control_chars;
 use crate::live::Live;
 
 /// What a step asks of a model.
@@ -221,8 +222,9 @@ impl Processor for Pipeline {
                     let skipped = match answer {
                         Ok(Ok(answer)) => {
                             model = answer.model;
-                            if check.passes(&text, &answer.text) {
-                                text = answer.text;
+                            let cleaned = fold_control_chars(&answer.text);
+                            if check.passes(&text, &cleaned) {
+                                text = cleaned;
                                 None
                             } else {
                                 Some(format!("the answer failed {check:?}"))
@@ -441,6 +443,39 @@ mod tests {
         // The trace is of the last text alone.
         assert_eq!(pipeline.process(HEARD.into()).await, HEARD);
         assert_eq!(traced(&pipeline).len(), 1);
+    }
+
+    #[tokio::test]
+    async fn model_answers_fold_control_characters_into_single_spaces() {
+        let mut translate = Pipeline::new(
+            steps_of(&[Node::French]),
+            Scripted::Says("rm -rf /tmp/x\nsudo reboot"),
+        );
+        assert_eq!(
+            translate.process("delete x".into()).await,
+            "rm -rf /tmp/x sudo reboot"
+        );
+
+        let mut tidy = cleanup(Scripted::Says("Let's meet\r\n  Tuesday.\x1b\n"));
+        assert_eq!(tidy.process(HEARD.into()).await, "Let's meet Tuesday.");
+
+        let mut control_only = cleanup(Scripted::Says("\n\r\t\x1b"));
+        assert_eq!(control_only.process(HEARD.into()).await, HEARD);
+    }
+
+    #[tokio::test]
+    async fn deterministic_rules_after_models_keep_layout_breaks_for_plain_fields() {
+        let mut pipeline = Pipeline::new(
+            vec![
+                Step::Ask {
+                    request: Request::translate("en", "fr"),
+                    check: Check::Present,
+                },
+                Step::Rule(|text| text.replace(" new paragraph ", "\n\n")),
+            ],
+            Scripted::Says("First.\nnew paragraph\r\nSecond."),
+        );
+        assert_eq!(pipeline.process("input".into()).await, "First.\n\nSecond.");
     }
 
     #[tokio::test]
