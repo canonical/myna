@@ -1,7 +1,9 @@
 use std::collections::BTreeMap;
+use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
+use myna_core::provider_env::{parse_env, DeclaredRole, PROVIDER_ENV_FILENAME};
 
 use crate::adapters::snapd_client::{SnapdError, SnapdReads};
 use crate::command::{
@@ -9,17 +11,19 @@ use crate::command::{
 };
 use crate::diagnostics::InstalledSnap;
 use crate::domain::{
-    connection_snapshot, parse_engine_options, parse_model_options, parse_modelctl_config,
-    parse_status, BackendIdentity, BackendSnapshot, BackendSurface, BackendSurfaceError,
-    ConnectionSnapshot, ParseError,
+    connection_snapshot_with_roles, parse_engine_options, parse_model_options,
+    parse_modelctl_config, parse_status, BackendIdentity, BackendSnapshot, BackendSurface,
+    BackendSurfaceError, ConnectionSnapshot, ContentConnections, ContentSlot, ParseError,
 };
 use crate::ports::BackendRepository;
 
+const DEFAULT_SNAP_ROOT: &str = "/var/snap";
 const MAX_MODELCTL_CANDIDATES: usize = 4;
 
 pub struct SnapBackendRepository {
     runner: Arc<dyn CommandRunner>,
     snapd: Arc<dyn SnapdReads>,
+    snap_root: PathBuf,
     modelctl_cache: Mutex<ModelctlCache>,
 }
 
@@ -42,9 +46,18 @@ enum ModelctlResolution {
 
 impl SnapBackendRepository {
     pub fn new(runner: Arc<dyn CommandRunner>, snapd: Arc<dyn SnapdReads>) -> Self {
+        Self::with_snap_root(runner, snapd, DEFAULT_SNAP_ROOT)
+    }
+
+    pub fn with_snap_root(
+        runner: Arc<dyn CommandRunner>,
+        snapd: Arc<dyn SnapdReads>,
+        snap_root: impl Into<PathBuf>,
+    ) -> Self {
         Self {
             runner,
             snapd,
+            snap_root: snap_root.into(),
             modelctl_cache: Mutex::new(ModelctlCache::default()),
         }
     }
@@ -267,11 +280,31 @@ impl BackendRepository for SnapBackendRepository {
         &self,
         cancellation: CancellationToken,
     ) -> Result<ConnectionSnapshot, BackendSurfaceError> {
-        self.snapd
+        let connections = self
+            .snapd
             .content_connections(cancellation)
             .await
-            .map(|connections| connection_snapshot(&connections))
-            .map_err(|error| snapd_error(BackendSurface::Connections, error))
+            .map_err(|error| snapd_error(BackendSurface::Connections, error))?;
+        if !connections
+            .slots()
+            .iter()
+            .any(ContentSlot::is_inference_provider)
+        {
+            return Ok(connection_snapshot_with_roles(
+                &connections,
+                &BTreeMap::new(),
+            ));
+        }
+        let snap_root = self.snap_root.clone();
+        gio::spawn_blocking(move || snapshot_reading_provider_roles(&connections, &snap_root))
+            .await
+            .map_err(|_| {
+                BackendSurfaceError::new(
+                    BackendSurface::Connections,
+                    "provider role discovery task panicked",
+                    "",
+                )
+            })
     }
 
     async fn read_snapshot(
@@ -325,6 +358,67 @@ impl BackendRepository for SnapBackendRepository {
         }
         self.discover(cancellation).await
     }
+}
+
+fn snapshot_reading_provider_roles(
+    connections: &ContentConnections,
+    snap_root: &Path,
+) -> ConnectionSnapshot {
+    let mut roles = BTreeMap::new();
+    for slot in connections.slots() {
+        if !slot.is_inference_provider() {
+            continue;
+        }
+        if let Some(role) = read_slot_role(snap_root, slot) {
+            roles.insert(
+                (slot.snap_name().to_owned(), slot.slot_name().to_owned()),
+                role,
+            );
+        }
+    }
+    connection_snapshot_with_roles(connections, &roles)
+}
+
+fn read_slot_role(snap_root: &Path, slot: &ContentSlot) -> Option<DeclaredRole> {
+    let snap = slot.snap_name();
+    if !is_single_normal_component(snap) {
+        return None;
+    }
+    for raw in slot.share_source_dirs() {
+        let Some(dir) = expand_snap_share_dir(snap_root, snap, raw) else {
+            continue;
+        };
+        let Ok(text) = std::fs::read_to_string(dir.join(PROVIDER_ENV_FILENAME)) else {
+            continue;
+        };
+        if let Some(env) = parse_env(&text) {
+            if let Some(role) = DeclaredRole::from_env(&env) {
+                return Some(role);
+            }
+        }
+    }
+    None
+}
+
+fn expand_snap_share_dir(snap_root: &Path, snap: &str, source: &str) -> Option<PathBuf> {
+    let (base, rest) = if let Some(rest) = source.strip_prefix("$SNAP_COMMON") {
+        (snap_root.join(snap).join("common"), rest)
+    } else {
+        let rest = source.strip_prefix("$SNAP_DATA")?;
+        (snap_root.join(snap).join("current"), rest)
+    };
+    if rest.is_empty() {
+        return Some(base);
+    }
+    let rel = Path::new(rest.strip_prefix('/')?);
+    rel.components()
+        .all(|c| matches!(c, Component::Normal(_) | Component::CurDir))
+        .then(|| base.join(rel))
+}
+
+fn is_single_normal_component(name: &str) -> bool {
+    let mut components = Path::new(name).components();
+    matches!(components.next(), Some(Component::Normal(_))) && components.next().is_none()
 }
 
 fn parse_snap_commands(output: &str, snap: &str) -> Vec<String> {

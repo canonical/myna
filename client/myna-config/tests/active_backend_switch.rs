@@ -1518,3 +1518,105 @@ fn a_cancel_whose_model_cannot_be_put_back_is_a_failure() {
     );
     assert_eq!(outcome.notice(), SwitchNotice::Failed);
 }
+
+#[test]
+fn switching_speech_models_preserves_connected_text_and_llm_slots_while_disconnecting_true_strays()
+{
+    let make_snapshot = |active_speech: &str, with_stray: bool| {
+        let mut slots = vec![
+            serde_json::json!({
+                "snap": "myna-parakeet",
+                "slot": "provider",
+                "attrs": { "content": "inference-provider" },
+                "connections": if active_speech == "myna-parakeet" {
+                    serde_json::json!([{ "snap": "myna", "plug": "backend" }])
+                } else {
+                    serde_json::json!([])
+                },
+            }),
+            serde_json::json!({
+                "snap": "myna-whisper",
+                "slot": "provider",
+                "attrs": { "content": "inference-provider" },
+                "connections": if active_speech == "myna-whisper" {
+                    serde_json::json!([{ "snap": "myna", "plug": "backend" }])
+                } else {
+                    serde_json::json!([])
+                },
+            }),
+            serde_json::json!({
+                "snap": "myna-text",
+                "slot": "provider",
+                "attrs": { "content": "inference-provider" },
+                "connections": [{ "snap": "myna", "plug": "backend" }],
+            }),
+            serde_json::json!({
+                "snap": "gemma4",
+                "slot": "provider",
+                "attrs": { "content": "inference-provider" },
+                "connections": [{ "snap": "myna", "plug": "backend" }],
+            }),
+        ];
+        if with_stray {
+            slots.push(serde_json::json!({
+                "snap": "myna-funasr",
+                "slot": "ubustt-socket",
+                "attrs": { "content": "ubustt-socket" },
+                "connections": [{ "snap": "myna", "plug": "backend" }],
+            }));
+        }
+        let parsed: ContentConnections =
+            serde_json::from_value(serde_json::json!({ "slots": slots })).unwrap();
+        connection_snapshot(&parsed)
+    };
+
+    let initial = make_snapshot("myna-parakeet", true);
+    let after = make_snapshot("myna-whisper", false);
+
+    // Through BackendController, to prove discovery -> controller.connection_snapshot()
+    // -> SwitchPlan -> execute_switch preserves companion providers and strays
+    // without failing preflight equality (StaleDiscovery).
+    let backend_controller = myna_config::backend_controller::BackendController::detached();
+    let req = backend_controller.begin_discovery();
+    assert!(backend_controller.complete_discovery(req, Ok(initial.clone())));
+    assert_eq!(backend_controller.connection_snapshot(), initial);
+
+    let plan = SwitchPlan::new(
+        &backend_controller.connection_snapshot(),
+        BackendIdentity::new("myna-whisper", "provider"),
+    )
+    .unwrap();
+
+    let args: Vec<_> = plan
+        .operations()
+        .iter()
+        .map(|op| format!("{} {}", op.executable(), op.arguments().join(" ")))
+        .collect();
+    assert_eq!(
+        args,
+        [
+            "snap disconnect myna:backend myna-parakeet:provider",
+            "snap disconnect myna:backend myna-funasr:ubustt-socket",
+            "snap connect myna:backend myna-whisper:provider",
+            "systemctl --user restart snap.myna.myna.service",
+        ]
+    );
+
+    let repository = FakeRepository::new([Ok(initial), Ok(after.clone())]);
+    let configurator = FakeConfigurator::returning(Ok(success(&plan)));
+    let outcome = block_on(execute_switch(
+        &plan,
+        &configurator,
+        &repository,
+        CancellationToken::new(),
+    ));
+    assert!(
+        matches!(outcome, SwitchOutcome::Applied { ref final_snapshot, .. } if *final_snapshot == after),
+        "{outcome:?}"
+    );
+
+    // Selecting the already-active speech model while myna-text and gemma4 are
+    // connected is a no-op.
+    let noop = SwitchPlan::new(&after, BackendIdentity::new("myna-whisper", "provider")).unwrap();
+    assert!(noop.is_noop());
+}

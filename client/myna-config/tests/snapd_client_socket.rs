@@ -629,10 +629,12 @@ fn backend_switches_reach_snapd_and_restart_only_the_user_service() {
     for (models, connected, selected) in [
         (vec!["new"], vec![], "new"),
         (vec!["new"], vec!["stray"], "new"),
+        (vec!["new"], vec!["gemma4"], "new"),
+        (vec!["old", "new"], vec!["old", "gemma4"], "new"),
         (vec!["old", "new"], vec!["old"], "new"),
         (vec!["old", "new", "third"], vec!["old", "new"], "third"),
         (vec!["old", "new"], vec!["old", "new"], "new"),
-        (vec!["new"], vec!["new"], "new"),
+        (vec!["new"], vec!["new", "gemma4"], "new"),
     ] {
         let slots: Vec<_> = models
             .iter()
@@ -642,8 +644,14 @@ fn backend_switches_reach_snapd_and_restart_only_the_user_service() {
             .into_iter()
             .map(|snap| serde_json::json!({
                 "snap": snap, "slot": "provider",
-                "attrs": {"content": "inference-provider",
-                          "task": if models.contains(&snap) { Some("speech-to-text") } else { None }},
+                "attrs": if snap == "stray" {
+                    serde_json::json!({"content": "ubustt-socket"})
+                } else {
+                    serde_json::json!({
+                        "content": "inference-provider",
+                        "task": if models.contains(&snap) { Some("speech-to-text") } else { None }
+                    })
+                },
                 "connections": if connected.contains(&snap) {
                     serde_json::json!([{"snap": "myna", "plug": "backend"}])
                 } else { serde_json::json!([]) },
@@ -652,11 +660,16 @@ fn backend_switches_reach_snapd_and_restart_only_the_user_service() {
         let snapshot = connection_snapshot(
             &serde_json::from_value(serde_json::json!({"slots": slots})).unwrap(),
         );
-        let noop = connected == [selected];
+        let disconnecting: Vec<&str> = connected
+            .iter()
+            .copied()
+            .filter(|snap| models.contains(snap) || *snap == "stray")
+            .collect();
+        let noop = disconnecting == [selected];
         let requests: Vec<_> = if noop {
             Vec::new()
         } else {
-            connected
+            disconnecting
                 .iter()
                 .map(|snap| ("disconnect", *snap))
                 .chain([("connect", selected)])
