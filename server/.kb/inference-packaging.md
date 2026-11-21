@@ -17,7 +17,7 @@ The upstream source of truth for `modelctl` behaviour is https://github.com/cano
 - Keep the `modelctl` release aligned across inference snaps.
 - Every model manifest declares `capabilities: [realtime-transcription]`, the value modelctl reserves for the realtime session API. Set `format` only when the weights are in a modelctl-supported format (`CTranslate2` for faster-whisper); ONNX, `.nemo` and raw safetensors have no value, so leave it unset.
 - Expose `$SNAP_COMMON/share/provider` as the `provider` slot with `write`, not `read`: a named-socket `connect()` through the bind mount needs the rw AppArmor rule.
-- `myna-server --share-provider` is the only writer of `provider.env` (`SNAP_NAME`, `SNAP_INSTANCE_NAME`, `UNIX_SOCKET`). Every launcher passes it; none passes `modelctl run --share-provider`, whose file lacks `UNIX_SOCKET` and would replace ours.
+- `myna-server --share-provider` is the only writer of `provider.env` (`SNAP_NAME`, `SNAP_INSTANCE_NAME`, `UNIX_SOCKET`, `MYNA_ROLE=speech`). Every launcher passes it; none passes `modelctl run --share-provider`, whose file lacks `UNIX_SOCKET` and would replace ours.
 - Grant `network-bind` for Unix-socket `listen()`, but do not add the `network` plug for runtime downloads.
 - Grant `hardware-observe` only to apps and hooks that perform hardware discovery.
 - Grant `system-observe` only to a server that reads PSI (`/proc/pressure/memory`), today parakeet's memory-pressure monitor. ONNX Runtime and CTranslate2 size their pools from `sched_getaffinity` and `/sys/devices/system/cpu/{online,possible}`, which the base template allows; neither opens a cgroup file, and `system-observe` would not grant the service's quota files anyway.

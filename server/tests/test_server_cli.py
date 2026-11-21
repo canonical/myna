@@ -236,7 +236,10 @@ async def test_share_provider_writes_provider_env_before_binding(tmp_path, monke
 
     assert await _serve_until_bound(args, monkeypatch) == [True]
     assert (socket.parent / "provider.env").read_text() == (
-        "SNAP_NAME=myna-whisper\nSNAP_INSTANCE_NAME=myna-whisper_dev\nUNIX_SOCKET=myna.sock\n"
+        "SNAP_NAME=myna-whisper\n"
+        "SNAP_INSTANCE_NAME=myna-whisper_dev\n"
+        "UNIX_SOCKET=myna.sock\n"
+        "MYNA_ROLE=speech\n"
     )
 
 

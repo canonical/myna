@@ -63,8 +63,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--share-provider",
         action="store_true",
-        help="write provider.env (SNAP_NAME, SNAP_INSTANCE_NAME, UNIX_SOCKET) beside the "
-        "socket for the inference-provider content interface; needs the snap environment",
+        help="write provider.env (SNAP_NAME, SNAP_INSTANCE_NAME, UNIX_SOCKET, MYNA_ROLE) "
+        "beside the socket for the inference-provider content interface; needs the snap "
+        "environment",
     )
     parser.add_argument("--preload", action="store_true", help="load the model at startup")
     parser.add_argument(

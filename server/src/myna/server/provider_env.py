@@ -12,6 +12,7 @@ from collections.abc import Mapping
 from pathlib import Path
 
 FILENAME = "provider.env"
+ROLE = "speech"
 
 
 def render(snap_name: str, instance_name: str, socket_name: str) -> str:
@@ -19,6 +20,7 @@ def render(snap_name: str, instance_name: str, socket_name: str) -> str:
         "SNAP_NAME": snap_name,
         "SNAP_INSTANCE_NAME": instance_name,
         "UNIX_SOCKET": socket_name,
+        "MYNA_ROLE": ROLE,
     }
     for key, value in fields.items():
         if "\n" in value or "\r" in value:
