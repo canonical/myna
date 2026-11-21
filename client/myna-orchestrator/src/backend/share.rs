@@ -18,16 +18,50 @@ use std::io;
 use std::os::unix::fs::FileTypeExt;
 use std::path::{Component, Path, PathBuf};
 
-use crate::i18n::tr;
+use myna_core::provider_env::{
+    parse_env, DeclaredRole, PROVIDER_ENV_FILENAME as PROVIDER_ENV, SPEECH_SOCKET_FILENAME,
+};
 
-/// The identity file every `inference-provider` share holds.
-const PROVIDER_ENV: &str = "provider.env";
+use crate::i18n::tr;
 
 /// A backend socket, and the snap providing it when a share named one.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Provider {
     pub socket: PathBuf,
     pub snap_name: Option<String>,
+}
+
+/// How a connected text share identified itself in `provider.env`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TextShareKind {
+    /// Declared `MYNA_ROLE=text` (speaks `myna-text-v1`).
+    MynaText,
+    /// Third-party or Canonical LLM share without `MYNA_ROLE`, to be probed
+    /// over its Unix socket.
+    Unlabelled,
+}
+
+/// A connected share offering a live Unix socket for text or LLM inference.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TextProvider {
+    pub socket: PathBuf,
+    pub snap_name: String,
+    pub kind: TextShareKind,
+}
+
+/// Connected text / LLM shares discovered under the `backend` directory.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct TextShares {
+    pub providers: Vec<TextProvider>,
+    pub unusable: Unusable,
+}
+
+impl TextShares {
+    /// Whether a share was connected after this process started, so only a
+    /// fresh daemon process can see its mount.
+    pub fn needs_restart(&self) -> bool {
+        self.unusable.unmounted > 0
+    }
 }
 
 /// Connected shares that could not serve as the backend.
@@ -48,7 +82,7 @@ pub struct Unusable {
 }
 
 impl Unusable {
-    fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.no_unix_socket.is_empty()
             && self.not_serving.is_empty()
             && self.malformed == 0
@@ -139,27 +173,71 @@ impl fmt::Display for ResolveError {
 
 impl std::error::Error for ResolveError {}
 
-/// Find the one backend socket under `dir`, reading `dir/<entry>/provider.env`
-/// for every subdirectory in name order. Missing `dir` reads as "not
-/// connected": before the first `snap connect` there is no mount point at all.
+/// Find the one speech backend socket under `dir`, reading
+/// `dir/<entry>/provider.env` for every subdirectory in name order. Missing
+/// `dir` reads as "not connected": before the first `snap connect` there is no
+/// mount point at all.
 pub fn resolve(dir: &Path) -> Result<Provider, ResolveError> {
+    resolve_speech(dir)
+}
+
+/// Resolve the active speech provider under `dir`, ignoring connected text or
+/// LLM shares so simultaneous speech + text connections never collide.
+pub fn resolve_speech(dir: &Path) -> Result<Provider, ResolveError> {
     resolve_with(dir, is_mount_point)
 }
 
-/// [`resolve`], asking `mounted` whether an empty share is a mount point.
+/// Discover all connected text and LLM shares under `dir`, preserving
+/// [`Unusable::unmounted`] when a new share was connected after daemon start.
+pub fn resolve_text_shares(dir: &Path) -> TextShares {
+    resolve_text_shares_with(dir, is_mount_point)
+}
+
+fn resolve_text_shares_with(dir: &Path, mounted: impl Fn(&Path) -> bool) -> TextShares {
+    enumerate_with(dir, mounted).text
+}
+
+/// [`resolve_speech`], asking `mounted` whether an empty share is a mount point.
 fn resolve_with(dir: &Path, mounted: impl Fn(&Path) -> bool) -> Result<Provider, ResolveError> {
+    let mut partitioned = enumerate_with(dir, mounted);
+    match partitioned.speech_providers.len() {
+        0 => Err(ResolveError::NotConnected(partitioned.speech_unusable)),
+        1 => Ok(partitioned.speech_providers.pop().expect("length checked")),
+        _ => Err(ResolveError::Ambiguous(
+            partitioned
+                .speech_providers
+                .into_iter()
+                .filter_map(|p| p.snap_name)
+                .collect(),
+        )),
+    }
+}
+
+#[derive(Default)]
+struct PartitionedShares {
+    speech_providers: Vec<Provider>,
+    speech_unusable: Unusable,
+    text: TextShares,
+}
+
+#[derive(Clone, Copy)]
+enum ShareRole {
+    Speech,
+    Text(TextShareKind),
+    Other,
+}
+
+fn enumerate_with(dir: &Path, mounted: impl Fn(&Path) -> bool) -> PartitionedShares {
     let mut shares: Vec<PathBuf> = match std::fs::read_dir(dir) {
         Ok(entries) => entries.flatten().map(|entry| entry.path()).collect(),
         // Absent before the first `snap connect`; a broken mount (EIO,
-        // ENOTCONN) means the same thing to the user: nothing to dictate
-        // through.
-        Err(_) => return Err(ResolveError::NotConnected(Unusable::default())),
+        // ENOTCONN) means the same thing to the user: nothing to connect to.
+        Err(_) => return PartitionedShares::default(),
     };
     shares.retain(|path| path.is_dir());
     shares.sort();
 
-    let mut found = Vec::new();
-    let mut unusable = Unusable::default();
+    let mut out = PartitionedShares::default();
     for share in shares {
         let text = match std::fs::read_to_string(share.join(PROVIDER_ENV)) {
             Ok(text) => text,
@@ -173,61 +251,168 @@ fn resolve_with(dir: &Path, mounted: impl Fn(&Path) -> bool) -> Result<Provider,
                         "{} is empty and not mounted in this namespace: connected after start",
                         share.display()
                     );
-                    unusable.unmounted += 1;
+                    out.speech_unusable.unmounted += 1;
+                    out.text.unusable.unmounted += 1;
                 }
                 continue;
             }
             Err(e) => {
-                malformed(&mut unusable, &share, &format!("unreadable: {e}"));
+                malformed_both(&mut out, &share, &format!("unreadable: {e}"));
                 continue;
             }
         };
         let Some(env) = parse_env(&text) else {
-            malformed(&mut unusable, &share, "not KEY=value lines");
+            malformed_both(&mut out, &share, "not KEY=value lines");
             continue;
         };
-        let Some(snap_name) = env.get("SNAP_NAME").filter(|name| !name.is_empty()) else {
-            malformed(&mut unusable, &share, "no SNAP_NAME");
+        let Some(snap_name) = non_empty(&env, "SNAP_NAME") else {
+            malformed_both(&mut out, &share, "no SNAP_NAME");
             continue;
         };
-        let snap_name = snap_name.clone();
-        let Some(relative) = env.get("UNIX_SOCKET").filter(|s| !s.is_empty()) else {
-            myna_core::info_log!("backend", "{snap_name}: {PROVIDER_ENV} has no UNIX_SOCKET");
-            unusable.no_unix_socket.push(snap_name);
-            continue;
-        };
-        let relative = Path::new(relative);
-        if !relative
-            .components()
-            .all(|c| matches!(c, Component::Normal(_) | Component::CurDir))
-        {
-            malformed(&mut unusable, &share, "UNIX_SOCKET outside the share");
-            continue;
-        }
-        let socket = share.join(relative);
-        if socket.metadata().is_ok_and(|m| m.file_type().is_socket()) {
-            found.push(Provider {
-                socket,
-                snap_name: Some(snap_name),
-            });
-        } else {
-            myna_core::info_log!("backend", "{snap_name}: no socket at {}", socket.display());
-            unusable.not_serving.push(snap_name);
-        }
-    }
+        let snap_name = snap_name.to_string();
+        let unix_socket = non_empty(&env, "UNIX_SOCKET");
+        let openai_unix_socket = non_empty(&env, "OPENAI_UNIX_SOCKET");
+        let has_openai_base_url = non_empty(&env, "OPENAI_BASE_URL").is_some();
 
-    match found.len() {
-        0 => Err(ResolveError::NotConnected(unusable)),
-        1 => Ok(found.pop().expect("length checked")),
-        _ => Err(ResolveError::Ambiguous(
-            found.into_iter().filter_map(|p| p.snap_name).collect(),
-        )),
+        let role = match DeclaredRole::from_env(&env) {
+            Some(DeclaredRole::Speech) => ShareRole::Speech,
+            Some(DeclaredRole::Text) => ShareRole::Text(TextShareKind::MynaText),
+            Some(DeclaredRole::Other) => ShareRole::Other,
+            None if is_legacy_speech(
+                &snap_name,
+                unix_socket,
+                openai_unix_socket,
+                has_openai_base_url,
+            ) =>
+            {
+                ShareRole::Speech
+            }
+            None => ShareRole::Text(TextShareKind::Unlabelled),
+        };
+
+        match role {
+            ShareRole::Other => {
+                myna_core::info_log!(
+                    "backend",
+                    "{snap_name}: {PROVIDER_ENV} declares an unsupported MYNA_ROLE"
+                );
+            }
+            ShareRole::Speech => {
+                let Some(relative) = unix_socket else {
+                    myna_core::info_log!(
+                        "backend",
+                        "{snap_name}: {PROVIDER_ENV} has no UNIX_SOCKET"
+                    );
+                    out.speech_unusable.no_unix_socket.push(snap_name);
+                    continue;
+                };
+                let Some(socket) = resolve_in_share(&share, relative) else {
+                    malformed(
+                        &mut out.speech_unusable,
+                        &share,
+                        "UNIX_SOCKET outside the share",
+                    );
+                    continue;
+                };
+                if is_live_socket(&socket) {
+                    out.speech_providers.push(Provider {
+                        socket,
+                        snap_name: Some(snap_name),
+                    });
+                } else {
+                    myna_core::info_log!(
+                        "backend",
+                        "{snap_name}: no socket at {}",
+                        socket.display()
+                    );
+                    out.speech_unusable.not_serving.push(snap_name);
+                }
+            }
+            ShareRole::Text(kind) => {
+                let Some(relative) = unix_socket.or(openai_unix_socket) else {
+                    myna_core::info_log!(
+                        "backend",
+                        "{snap_name}: {PROVIDER_ENV} has no UNIX_SOCKET"
+                    );
+                    if kind == TextShareKind::Unlabelled {
+                        out.speech_unusable.no_unix_socket.push(snap_name.clone());
+                    }
+                    out.text.unusable.no_unix_socket.push(snap_name);
+                    continue;
+                };
+                let Some(socket) = resolve_in_share(&share, relative) else {
+                    if kind == TextShareKind::Unlabelled {
+                        out.speech_unusable.malformed += 1;
+                    }
+                    malformed(
+                        &mut out.text.unusable,
+                        &share,
+                        "UNIX_SOCKET outside the share",
+                    );
+                    continue;
+                };
+                if is_live_socket(&socket) {
+                    out.text.providers.push(TextProvider {
+                        socket,
+                        snap_name,
+                        kind,
+                    });
+                } else {
+                    myna_core::info_log!(
+                        "backend",
+                        "{snap_name}: no socket at {}",
+                        socket.display()
+                    );
+                    out.text.unusable.not_serving.push(snap_name);
+                }
+            }
+        }
     }
+    out
+}
+
+fn non_empty<'a>(env: &'a HashMap<String, String>, key: &str) -> Option<&'a str> {
+    env.get(key).map(String::as_str).filter(|s| !s.is_empty())
+}
+
+fn is_legacy_speech(
+    snap_name: &str,
+    unix_socket: Option<&str>,
+    openai_unix_socket: Option<&str>,
+    has_openai_base_url: bool,
+) -> bool {
+    if has_openai_base_url || openai_unix_socket.is_some() {
+        return false;
+    }
+    let matches_speech_socket = unix_socket
+        .and_then(|s| Path::new(s).file_name())
+        .is_some_and(|name| name == SPEECH_SOCKET_FILENAME);
+    matches_speech_socket
+        || myna_core::language::ModelFamily::from_snap_name(snap_name).is_some()
+        || snap_name == "myna-fake-backend"
+}
+
+fn resolve_in_share(share: &Path, relative: &str) -> Option<PathBuf> {
+    let relative = Path::new(relative);
+    relative
+        .components()
+        .all(|c| matches!(c, Component::Normal(_) | Component::CurDir))
+        .then(|| share.join(relative))
+}
+
+fn is_live_socket(path: &Path) -> bool {
+    path.metadata().is_ok_and(|m| m.file_type().is_socket())
 }
 
 fn malformed(unusable: &mut Unusable, share: &Path, why: &str) {
     myna_core::info_log!("backend", "{}/{PROVIDER_ENV}: {why}", share.display());
     unusable.malformed += 1;
+}
+
+fn malformed_both(out: &mut PartitionedShares, share: &Path, why: &str) {
+    myna_core::info_log!("backend", "{}/{PROVIDER_ENV}: {why}", share.display());
+    out.speech_unusable.malformed += 1;
+    out.text.unusable.malformed += 1;
 }
 
 fn is_empty_dir(path: &Path) -> bool {
@@ -273,29 +458,6 @@ fn unescape_mountinfo(field: &str) -> PathBuf {
         }
     }
     PathBuf::from(std::ffi::OsString::from_vec(out))
-}
-
-/// A `provider.env`: `KEY=value` lines, blank lines and `#` comments ignored,
-/// one pair of matching quotes stripped. No interpolation, no escapes.
-fn parse_env(text: &str) -> Option<HashMap<String, String>> {
-    let mut env = HashMap::new();
-    for line in text.lines().map(str::trim) {
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-        let (key, value) = line.split_once('=')?;
-        let key = key.trim();
-        if key.is_empty() {
-            return None;
-        }
-        let value = value.trim();
-        let unquoted = ['"', '\'']
-            .iter()
-            .find_map(|&q| value.strip_prefix(q).and_then(|rest| rest.strip_suffix(q)))
-            .unwrap_or(value);
-        env.insert(key.to_string(), unquoted.to_string());
-    }
-    Some(env)
 }
 
 /// Either an explicit socket path (`--socket`, the dev/testbed path) or a
@@ -455,13 +617,15 @@ mod tests {
     fn mount_points_are_read_from_mountinfo_with_escapes_decoded() {
         let table =
             "36 35 98:0 /mnt1 /mnt/with\\040space rw,noatime master:1 - ext3 /dev/root rw\n\
-                     40 30 0:5 / /var/snap/myna/x5/backend/provider rw - ext4 /dev/sda1 rw\n";
+                     40 30 0:5 / /var/snap/myna/x5/backend/provider rw - ext4 /dev/sda1 rw\n\
+                     41 30 0:5 / /mnt/\\999a040b rw - ext4 /dev/sda1 rw\n";
         let points: Vec<PathBuf> = mount_points(table).collect();
         assert_eq!(
             points,
             [
                 PathBuf::from("/mnt/with space"),
-                PathBuf::from("/var/snap/myna/x5/backend/provider")
+                PathBuf::from("/var/snap/myna/x5/backend/provider"),
+                PathBuf::from("/mnt/\\999a040b"),
             ]
         );
         assert!(is_mount_point(Path::new("/")), "the root is always one");
@@ -545,6 +709,7 @@ mod tests {
             "4 connected models could not be identified"
         );
         assert_eq!(not_connected(Err(err)).malformed, 4);
+        assert_eq!(resolve_text_shares(&dir).unusable.malformed, 4);
 
         let _held = serving(&dir, "provider-5", "myna-parakeet");
         assert_eq!(
@@ -776,5 +941,258 @@ mod tests {
             BackendSocket::Search(PathBuf::from("/var/snap/myna/x1/backend")).describe(),
             "/var/snap/myna/x1/backend/*/provider.env"
         );
+    }
+
+    #[test]
+    fn speech_and_text_shares_coexist_without_ambiguity() {
+        let dir = tmpdir();
+        let s1 = share(
+            &dir,
+            "provider",
+            "SNAP_NAME=myna-parakeet\nSNAP_INSTANCE_NAME=myna-parakeet\nUNIX_SOCKET=myna.sock\nMYNA_ROLE=speech\n",
+        );
+        let _speech = UnixListener::bind(s1.join("myna.sock")).expect("bind speech");
+        let s2 = share(
+            &dir,
+            "provider-2",
+            "SNAP_NAME=myna-text\nSNAP_INSTANCE_NAME=myna-text\nUNIX_SOCKET=myna.sock\nMYNA_ROLE=text\n",
+        );
+        let _text = UnixListener::bind(s2.join("myna.sock")).expect("bind text");
+        let s3 = share(
+            &dir,
+            "provider-3",
+            "SNAP_NAME=gemma4\nSNAP_INSTANCE_NAME=gemma4\nUNIX_SOCKET=server.sock\n",
+        );
+        let _llm = UnixListener::bind(s3.join("server.sock")).expect("bind llm");
+        let s4 = share(
+            &dir,
+            "provider-4",
+            "SNAP_NAME=qwen3\nSNAP_INSTANCE_NAME=qwen3\nOPENAI_UNIX_SOCKET=openai.sock\n",
+        );
+        let _qwen = UnixListener::bind(s4.join("openai.sock")).expect("bind qwen");
+        share(
+            &dir,
+            "provider-5",
+            "SNAP_NAME=smollm2\nSNAP_INSTANCE_NAME=smollm2\nOPENAI_BASE_URL=http://127.0.0.1:8080/v1\n",
+        );
+
+        assert_eq!(
+            resolve_speech(&dir).expect("speech resolves without ambiguity"),
+            Provider {
+                socket: s1.join("myna.sock"),
+                snap_name: Some("myna-parakeet".into()),
+            }
+        );
+
+        let text = resolve_text_shares(&dir);
+        assert_eq!(
+            text.providers,
+            vec![
+                TextProvider {
+                    socket: s2.join("myna.sock"),
+                    snap_name: "myna-text".into(),
+                    kind: TextShareKind::MynaText,
+                },
+                TextProvider {
+                    socket: s3.join("server.sock"),
+                    snap_name: "gemma4".into(),
+                    kind: TextShareKind::Unlabelled,
+                },
+                TextProvider {
+                    socket: s4.join("openai.sock"),
+                    snap_name: "qwen3".into(),
+                    kind: TextShareKind::Unlabelled,
+                },
+            ]
+        );
+        assert_eq!(text.unusable.no_unix_socket, vec!["smollm2".to_string()]);
+        assert!(!text.needs_restart());
+    }
+
+    #[test]
+    fn ambiguous_fires_only_when_more_than_one_speech_provider_serves() {
+        let dir = tmpdir();
+        let _a = serving(&dir, "provider", "myna-parakeet");
+        let s2 = share(
+            &dir,
+            "provider-2",
+            "SNAP_NAME=myna-whisper\nUNIX_SOCKET=asr.sock\nMYNA_ROLE=speech\n",
+        );
+        let _b = UnixListener::bind(s2.join("asr.sock")).expect("bind");
+        let s3 = share(
+            &dir,
+            "provider-3",
+            "SNAP_NAME=myna-text\nUNIX_SOCKET=text.sock\nMYNA_ROLE=text\n",
+        );
+        let _c = UnixListener::bind(s3.join("text.sock")).expect("bind");
+        let s4 = share(
+            &dir,
+            "provider-4",
+            "SNAP_NAME=gemma4\nUNIX_SOCKET=server.sock\n",
+        );
+        let _d = UnixListener::bind(s4.join("server.sock")).expect("bind");
+
+        match resolve_speech(&dir) {
+            Err(ResolveError::Ambiguous(names)) => {
+                assert_eq!(names, vec!["myna-parakeet", "myna-whisper"]);
+            }
+            other => panic!("expected Ambiguous over speech providers only, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn connected_text_providers_alone_report_no_speech_model_connected() {
+        let dir = tmpdir();
+        let s1 = share(
+            &dir,
+            "provider",
+            "SNAP_NAME=myna-text\nUNIX_SOCKET=text.sock\nMYNA_ROLE=text\n",
+        );
+        let _text = UnixListener::bind(s1.join("text.sock")).expect("bind");
+        share(
+            &dir,
+            "provider-2",
+            "SNAP_NAME=gemma4\nUNIX_SOCKET=server.sock\n",
+        );
+
+        assert_eq!(not_connected(resolve_speech(&dir)), Unusable::default());
+
+        let text = resolve_text_shares(&dir);
+        assert_eq!(text.providers.len(), 1);
+        assert_eq!(text.providers[0].snap_name, "myna-text");
+        assert_eq!(text.unusable.not_serving, vec!["gemma4".to_string()]);
+    }
+
+    #[test]
+    fn unmounted_share_flags_restart_for_text_without_breaking_active_speech() {
+        let dir = tmpdir();
+        let _speech = serving(&dir, "provider", "myna-parakeet");
+        std::fs::create_dir_all(dir.join("provider-2")).expect("empty mount point");
+
+        let speech = resolve_with(&dir, |_| false).expect("active speech still serves");
+        assert_eq!(speech.snap_name.as_deref(), Some("myna-parakeet"));
+
+        let text = resolve_text_shares_with(&dir, |_| false);
+        assert!(text.providers.is_empty());
+        assert_eq!(text.unusable.unmounted, 1);
+        assert!(text.needs_restart());
+    }
+
+    #[test]
+    fn legacy_speech_snap_without_myna_role_is_excluded_from_text_shares() {
+        let dir = tmpdir();
+        let _speech = serving(&dir, "provider", "myna-parakeet");
+        let s2 = share(
+            &dir,
+            "provider-2",
+            "SNAP_NAME=gemma4\nUNIX_SOCKET=server.sock\n",
+        );
+        let _llm = UnixListener::bind(s2.join("server.sock")).expect("bind");
+
+        assert_eq!(
+            resolve_speech(&dir)
+                .expect("legacy speech resolves")
+                .snap_name
+                .as_deref(),
+            Some("myna-parakeet")
+        );
+        let text = resolve_text_shares(&dir);
+        assert_eq!(
+            text.providers,
+            vec![TextProvider {
+                socket: s2.join("server.sock"),
+                snap_name: "gemma4".into(),
+                kind: TextShareKind::Unlabelled,
+            }]
+        );
+
+        for snap in ["myna-parakeet", "myna-fake-backend"] {
+            let d = tmpdir();
+            let s = share(
+                &d,
+                "provider",
+                &format!("SNAP_NAME={snap}\nUNIX_SOCKET=custom.sock\n"),
+            );
+            let _sock = UnixListener::bind(s.join("custom.sock")).expect("bind");
+            assert_eq!(
+                resolve_speech(&d).expect("speech").snap_name.as_deref(),
+                Some(snap)
+            );
+            assert!(resolve_text_shares(&d).providers.is_empty());
+        }
+        let d_url = tmpdir();
+        let s_url = share(
+            &d_url,
+            "provider",
+            "SNAP_NAME=myna-parakeet\nOPENAI_BASE_URL=http://127.0.0.1:8080/v1\nUNIX_SOCKET=myna.sock\n",
+        );
+        let _u = UnixListener::bind(s_url.join("myna.sock")).expect("bind");
+        assert!(resolve_speech(&d_url).is_err());
+        assert_eq!(resolve_text_shares(&d_url).providers.len(), 1);
+
+        let d_oas = tmpdir();
+        let s_oas = share(
+            &d_oas,
+            "provider",
+            "SNAP_NAME=myna-parakeet\nOPENAI_UNIX_SOCKET=openai.sock\n",
+        );
+        let _o = UnixListener::bind(s_oas.join("openai.sock")).expect("bind");
+        assert!(resolve_speech(&d_oas).is_err());
+        assert_eq!(resolve_text_shares(&d_oas).providers.len(), 1);
+    }
+
+    #[test]
+    fn unsupported_myna_role_and_malformed_text_shares_are_handled_safely() {
+        let text_only = tmpdir();
+        share(
+            &text_only,
+            "provider",
+            "SNAP_NAME=myna-text\nUNIX_SOCKET=../outside.sock\nMYNA_ROLE=text\n",
+        );
+        assert_eq!(
+            not_connected(resolve_speech(&text_only)),
+            Unusable::default()
+        );
+        assert_eq!(resolve_text_shares(&text_only).unusable.malformed, 1);
+
+        let dir = tmpdir();
+        let other = share(
+            &dir,
+            "provider",
+            "SNAP_NAME=myna-tts\nUNIX_SOCKET=tts.sock\nMYNA_ROLE=tts\n",
+        );
+        let _tts = UnixListener::bind(other.join("tts.sock")).expect("bind");
+        share(
+            &dir,
+            "provider-2",
+            "SNAP_NAME=myna-text\nUNIX_SOCKET=../outside.sock\nMYNA_ROLE=text\n",
+        );
+        share(
+            &dir,
+            "provider-3",
+            "SNAP_NAME=myna-text-2\nMYNA_ROLE=text\n",
+        );
+        share(
+            &dir,
+            "provider-4",
+            "SNAP_NAME=gemma4\nUNIX_SOCKET=/abs/server.sock\n",
+        );
+
+        assert_eq!(
+            not_connected(resolve_speech(&dir)),
+            Unusable {
+                malformed: 1,
+                ..Unusable::default()
+            }
+        );
+        let text = resolve_text_shares(&dir);
+        assert!(text.providers.is_empty());
+        assert!(text.unusable.not_serving.is_empty());
+        assert_eq!(
+            text.unusable.no_unix_socket,
+            vec!["myna-text-2".to_string()]
+        );
+        assert_eq!(text.unusable.malformed, 2);
+        assert!(!text.unusable.is_empty());
     }
 }
