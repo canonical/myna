@@ -27,6 +27,7 @@ pub mod language;
 pub mod locale;
 pub mod mode;
 pub mod protocol;
+pub mod provider_env;
 pub mod session;
 pub mod settings;
 
