@@ -73,6 +73,18 @@ def test_lightweight_tags_are_ignored(repo: Path) -> None:
     assert _version(repo, "client") == f"0+git.{sha}"
 
 
+def test_non_release_annotated_tags_are_ignored(repo: Path) -> None:
+    sha1 = _commit(repo, "client/a", "1")
+    _git(repo, "tag", "-a", "fleurs-smoke-v1", "-m", "corpus")
+    _git(repo, "tag", "-a", "vnext", "-m", "not a version")
+    assert _version(repo, "client") == f"0+git.{sha1}"
+
+    _git(repo, "tag", "-a", "v0.1.0", "-m", "v0.1.0")
+    sha2 = _commit(repo, "client/a", "2")
+    _git(repo, "tag", "-a", "fleurs-smoke-v2", "-m", "corpus")
+    assert _version(repo, "client") == f"0.1.0+git1.{sha2}"
+
+
 def test_on_an_annotated_tag_is_the_tag(repo: Path) -> None:
     _commit(repo, "client/a", "1")
     _git(repo, "tag", "-a", "v0.1.0", "-m", "v0.1.0")

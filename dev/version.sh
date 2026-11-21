@@ -12,7 +12,7 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 
-if described=$(git -C "$repo_root" describe 2>/dev/null); then
+if described=$(git -C "$repo_root" describe --match 'v[0-9]*' 2>/dev/null); then
     described=${described#v}
     if [[ $described =~ ^(.+)-([0-9]+)-g([0-9a-f]+)$ ]]; then
         version="${BASH_REMATCH[1]}+git${BASH_REMATCH[2]}.${BASH_REMATCH[3]}"
