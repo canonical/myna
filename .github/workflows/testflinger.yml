@@ -1,9 +1,11 @@
 # Nightly lab run (tests/testflinger/): the store's latest/edge snaps on real
 # hardware. `accuracy`: the adapter smoke and a per-language FLEURS accuracy
-# gate. `continuity`: dictations through the daemon that must not lose audio,
-# idle and under load. Needs repository secrets TESTFLINGER_CLIENT_ID and
-# TESTFLINGER_SECRET_KEY and the variable TESTFLINGER_QUEUE; without them the
-# jobs are skipped.
+# gate (noble). `continuity`: dictations through the daemon that must not lose
+# audio, idle and under load (resolute). Needs repository secrets
+# TESTFLINGER_CLIENT_ID and TESTFLINGER_SECRET_KEY and per-suite queue
+# variables TESTFLINGER_ACCURACY_QUEUE / TESTFLINGER_CONTINUITY_QUEUE (each
+# falling back to TESTFLINGER_QUEUE); suites with no queue resolved are
+# skipped.
 name: Testflinger
 
 on:
@@ -13,13 +15,19 @@ on:
 
 jobs:
   lab:
-    if: vars.TESTFLINGER_QUEUE != ''
+    if: >-
+      vars.TESTFLINGER_QUEUE != ''
+      || vars.TESTFLINGER_ACCURACY_QUEUE != ''
+      || vars.TESTFLINGER_CONTINUITY_QUEUE != ''
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         suite: [accuracy, continuity]
-    # Both suites queue for the same machine, so one waits out the other.
+        exclude:
+          - suite: ${{ (vars.TESTFLINGER_ACCURACY_QUEUE || vars.TESTFLINGER_QUEUE) == '' && 'accuracy' || 'none' }}
+          - suite: ${{ (vars.TESTFLINGER_CONTINUITY_QUEUE || vars.TESTFLINGER_QUEUE) == '' && 'continuity' || 'none' }}
+    # Both suites may queue for the same machine, so one waits out the other.
     timeout-minutes: 240
     env:
       TESTFLINGER_CLIENT_ID: ${{ secrets.TESTFLINGER_CLIENT_ID }}
@@ -27,7 +35,15 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - run: sudo snap install testflinger-cli
-      - run: make testflinger TESTFLINGER_QUEUE=${{ vars.TESTFLINGER_QUEUE }} TESTFLINGER_SUITE=${{ matrix.suite }}
+      - env:
+          ACCURACY_QUEUE: ${{ vars.TESTFLINGER_ACCURACY_QUEUE || vars.TESTFLINGER_QUEUE }}
+          CONTINUITY_QUEUE: ${{ vars.TESTFLINGER_CONTINUITY_QUEUE || vars.TESTFLINGER_QUEUE }}
+        run: |
+          case ${{ matrix.suite }} in
+            accuracy) queue=$ACCURACY_QUEUE ;;
+            continuity) queue=$CONTINUITY_QUEUE ;;
+          esac
+          make testflinger TESTFLINGER_QUEUE="$queue" TESTFLINGER_SUITE=${{ matrix.suite }}
       - name: Gate verdict
         if: always()
         run: >-
