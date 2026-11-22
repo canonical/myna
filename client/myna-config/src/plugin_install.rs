@@ -271,7 +271,7 @@ async fn settle(
     if !matches!(ctx.daemon.rescan().await, Ok(())) {
         return Ok(Outcome::Unconfirmed);
     }
-    for attempt in 0..OFFER_ATTEMPTS {
+    for _ in 0..OFFER_ATTEMPTS {
         if ctx.follow.cancellation.is_cancelled() {
             break;
         }
@@ -287,9 +287,7 @@ async fn settle(
             }
             _ => return Ok(Outcome::Unconfirmed),
         }
-        if attempt + 1 < OFFER_ATTEMPTS {
-            (ctx.follow.sleep)(ctx.follow.interval).await;
-        }
+        (ctx.follow.sleep)(ctx.follow.interval).await;
     }
     Ok(Outcome::Unconfirmed)
 }
