@@ -1489,7 +1489,13 @@ mod tests {
             let menu =
                 || all::<gtk::MenuButton>(switch(&rig, "Tidy up speech").upcast_ref()).remove(0);
             pump_until("the menu", || menu().is_visible());
-            rig.page.remove_step_model("tidy");
+            let remove = menu()
+                .popover()
+                .and_then(|popover| popover.child())
+                .and_then(|child| child.downcast::<gtk::Button>().ok())
+                .expect("the menu's Remove model button");
+            assert_eq!(remove.label().as_deref(), Some("Remove model"));
+            remove.emit_clicked();
             pump_until("the removal", || {
                 rig.calls.borrow().as_slice() == ["remove myna-translation tidy"]
             });
