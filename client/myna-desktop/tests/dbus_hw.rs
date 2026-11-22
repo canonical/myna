@@ -489,6 +489,43 @@ async fn the_chains_status_follows_the_models_on_the_bus() {
     std::fs::remove_dir_all(&root).unwrap();
 }
 
+/// The catalog and the missing requests are pushed as `PropertiesChanged`,
+/// not only readable: Settings follows them without polling.
+#[tokio::test]
+async fn the_catalog_and_missing_requests_are_announced_when_they_change() {
+    use futures_util::StreamExt;
+    use myna_desktop::dbus::{Bus, PropertyValue, OBJECT_PATH};
+    use std::time::Duration;
+
+    skip_unless_dbus!();
+    let _serial = exclusive().await;
+    name_is_free().await;
+    let mut owner = ZbusBus::serve().await.expect("serve owns the name");
+    let conn = zbus::Connection::session().await.expect("session bus");
+    let proxy = zbus::Proxy::new(&conn, BUS_NAME, OBJECT_PATH, BUS_NAME)
+        .await
+        .expect("proxy");
+    for (name, value) in [
+        ("InstalledSteps", r#"{"models":[],"steps":[]}x"#),
+        ("ChainMissingRequests", r#"[{"task":"text.translate"}]"#),
+    ] {
+        let mut changes = proxy.receive_property_changed::<String>(name).await;
+        owner
+            .set_property(name, PropertyValue::Str(value.into()))
+            .await;
+        let announced = async {
+            while let Some(change) = changes.next().await {
+                if change.get().await.unwrap() == value {
+                    return;
+                }
+            }
+        };
+        tokio::time::timeout(Duration::from_secs(2), announced)
+            .await
+            .unwrap_or_else(|_| panic!("{name} was never announced"));
+    }
+}
+
 /// `RescanModels` on the bus rings the bell the binder waits on.
 #[tokio::test]
 async fn rescan_models_wakes_the_binder() {
