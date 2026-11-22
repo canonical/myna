@@ -1425,4 +1425,47 @@ mod tests {
         watcher.abort();
         std::fs::remove_dir_all(&dir).unwrap();
     }
+
+    #[tokio::test]
+    async fn only_the_share_that_withdrew_a_model_loses_its_binding() {
+        let dir = root("same-id");
+        let a = share(
+            &dir,
+            "a",
+            json!([model("m", "text.cleanup", 5)]),
+            Mode::Works,
+        );
+        share(
+            &dir,
+            "b",
+            json!([model("m", "text.cleanup", 50)]),
+            Mode::Works,
+        );
+        let resolver = Resolver::new(vec![dir.clone()]);
+        let request = Request::cleanup(Some("en".into()));
+        resolver.settle(std::slice::from_ref(&request)).await;
+        assert_eq!(bound(&resolver, &request).as_deref(), Some("a/m"));
+        *a.models.lock().unwrap() = json!([model("other", "text.translate", 5)]);
+        resolver.settle(std::slice::from_ref(&request)).await;
+        assert_eq!(bound(&resolver, &request).as_deref(), Some("b/m"));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn the_catalog_is_published_when_the_models_change_and_not_otherwise() {
+        let dir = root("catalog-change");
+        let s = share(&dir, "a", json!([]), Mode::Works);
+        let resolver = Resolver::new(vec![dir.clone()]);
+        let mut seen = resolver.catalog();
+        seen.borrow_and_update();
+        resolver.settle(&[]).await;
+        assert!(!seen.has_changed().unwrap());
+        *s.models.lock().unwrap() = json!([model("m", "text.cleanup", 5)]);
+        resolver.settle(&[]).await;
+        assert!(seen.has_changed().unwrap());
+        assert_eq!(seen.borrow_and_update().models.len(), 1);
+        resolver.settle(&[]).await;
+        assert!(!seen.has_changed().unwrap());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 }

@@ -12,6 +12,7 @@ import pytest
 from myna.benchmarker.text_gate import (
     GateConfig,
     GateError,
+    _call,
     find_plugin,
     load_plugin,
     pair_of,
@@ -49,6 +50,7 @@ def test_from_plugin_reads_the_gate_table_and_the_direction():
     g = GateConfig.from_plugin(plugin)
     assert g.vendor_comet == 0.9 and g.p95_max_ms == 300.0 and g.reverse
     assert not GateConfig.from_plugin({"language": "en", "to": "de"}).reverse
+    assert not GateConfig.from_plugin({"language": "en", "to": "en"}).reverse
     assert GateConfig.from_plugin({}) == GateConfig()
 
 
@@ -58,7 +60,8 @@ def test_from_plugin_reads_the_gate_table_and_the_direction():
         ({"vendor_comat": 0.9}, "unknown gate keys: vendor_comat"),
         ({"vendor_comet": "high"}, "must be a number"),
         ({"vendor_comet": True}, "must be a number"),
-        ({"spot_check_waiver": " "}, "must say why"),
+        ({"spot_check_waiver": " "}, "^gate.spot_check_waiver must say why$"),
+        ({"b_key": 1, "a_key": 2}, "^unknown gate keys: a_key, b_key$"),
         ({"reverse": 1}, "unknown gate keys: reverse"),
     ],
 )
@@ -77,7 +80,7 @@ def test_pair_of_names_the_foreign_language_and_refuses_other_shapes():
         pair_of(plugin("fr", "de"))
     with pytest.raises(GateError, match="English to X"):
         pair_of(plugin("en", "en"))
-    with pytest.raises(GateError, match="not a translation"):
+    with pytest.raises(GateError, match="^p: not a translation"):
         pair_of(plugin("en", "de", "text.cleanup"))
 
 
@@ -114,7 +117,9 @@ class Provider:
                 self.seen.append(request)
                 reply = self.replies.get(request["op"])
                 if request["op"] == "capabilities":
-                    reply = {"protocol": "myna-text-v1", "models": self.models}
+                    reply = {"protocol": "myna-text-v1"}
+                    if self.models is not None:
+                        reply["models"] = self.models
                 elif callable(reply):
                     reply = reply(request)
                 conn.sendall(json.dumps(reply or {}).encode() + b"\n")
@@ -147,6 +152,7 @@ def test_socket_system_for_a_cleanup_model_offers_tidy(tmp_path):
     Provider(path, [_model("text.cleanup")], {"warm": {}, "run": lambda r: {"text": r["text"]}})
     system = socket_system(str(path), "m")
     assert system.translate is None and system.tidy("x") == "x"
+    assert system.name == "socket:m"
 
 
 def test_socket_system_refuses_what_the_provider_does_not_offer_or_will_not_do(tmp_path):
@@ -161,7 +167,43 @@ def test_socket_system_refuses_what_the_provider_does_not_offer_or_will_not_do(t
     system = socket_system(str(path2), "m")
     with pytest.raises(GateError, match="run refused: deadline"):
         system.translate("x")
+    path4 = tmp_path / "d.sock"
+    Provider(path4, [_model()], {"warm": {}, "run": {"nope": 1}})
+    with pytest.raises(GateError, match=r"run refused: \{'nope': 1\}"):
+        socket_system(str(path4), "m").translate("x")
+    path5 = tmp_path / "e.sock"
+    Provider(path5, None)
+    with pytest.raises(GateError, match="does not offer model 'm'"):
+        socket_system(str(path5), "m")
     path3 = tmp_path / "c.sock"
     Provider(path3, [_model("text.rewrite")], {"warm": {}})
     with pytest.raises(GateError, match="no text suite"):
         socket_system(str(path3), "m")
+
+
+def test_a_provider_that_never_answers_times_out(tmp_path):
+    path = tmp_path / "silent.sock"
+    server = socket.socket(socket.AF_UNIX)
+    server.bind(str(path))
+    server.listen()
+    with pytest.raises(TimeoutError):
+        _call(str(path), {"op": "capabilities"}, timeout=0.2)
+    server.close()
+
+
+def test_find_plugin_searches_every_snap_directory_of_a_tree(tmp_path):
+    for snap, stem, ident in (("a-snap", "one", "id-one"), ("b-snap", "two", "id-two")):
+        (tmp_path / snap / "plugins").mkdir(parents=True)
+        (tmp_path / snap / "plugins" / f"{stem}.toml").write_text(f'id = "{ident}"\n', encoding="utf-8")
+    (tmp_path / "c-snap" / "plugins").mkdir(parents=True)
+    (tmp_path / "c-snap" / "plugins" / "bad.toml").write_text('id = "id-bad"\n', encoding="utf-8")
+    assert find_plugin(tmp_path, "id-two") == tmp_path / "b-snap/plugins/two.toml"
+    assert find_plugin(tmp_path, "one") == tmp_path / "a-snap/plugins/one.toml"
+    direct = tmp_path / "a-snap/plugins/one.toml"
+    assert find_plugin(tmp_path / "nowhere", str(direct)) == direct
+    with pytest.raises(GateError, match="no plugin 'zzz'"):
+        find_plugin(tmp_path, "zzz")
+    with pytest.raises(GateError, match="no plugin 'ghost.toml'"):
+        find_plugin(tmp_path, "ghost.toml")
+    plugin = load_plugin(direct)
+    assert plugin == {"id": "id-one", "name": "one", "path": str(direct)}

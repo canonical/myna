@@ -260,6 +260,9 @@ def test_empty_rate_counts_outputs_with_no_letter_or_digit():
         ("a b c d e f g a b c d e f g a b c d e f g a b c d e f g", False),
         ("Nobody repeats themselves here at all.", False),
         ("the the the then the", False),
+        ("a b a c a b a b", False),
+        ("aaaaaaa", True),
+        ("aaaaaaa b", False),
         ("ははははははは", True),
         ("ああああ", False),
         ("abab", False),
@@ -280,6 +283,14 @@ def test_median_length_ratio_is_against_the_reference_and_ignores_empty_referenc
     assert median_length_ratio(["a", "bbbb"], ["aa", "bb"]) == pytest.approx(1.25)
     assert median_length_ratio(["xx"], ["  "]) == 0.0
     assert median_length_ratio(["xx", "  yyyy  "], ["xx", "yy"]) == pytest.approx(1.5)
+    five = median_length_ratio(["a", "aa", "aaa", "aaaa", "aaaaa"], ["a"] * 5)
+    assert five == 3.0
+    four = median_length_ratio(["a", "aa", "aaa", "aaaa"], ["a"] * 4)
+    assert four == 2.5
+    with pytest.raises(ValueError):
+        median_length_ratio(["a"], [])
+    with pytest.raises(ValueError):
+        median_length_ratio([], ["a"])
 
 
 def test_copy_through_ignores_case_and_punctuation():
