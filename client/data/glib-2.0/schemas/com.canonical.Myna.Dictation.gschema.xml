@@ -149,8 +149,8 @@
         Names and terms you use that speech recognition might get wrong,
         such as a colleague's name, a product or a term from your field:
         "Nguyen", "Kubernetes", "ibuprofen". To choose how something is
-        written, type what you say, a colon, then what to write: "my
-        sequel:MySQL". Up to 100 words or short phrases.
+        written, type what you say, an arrow with a space on each
+        side, then what to write: "my sequel => MySQL". Up to 100 words or short phrases.
       </description>
     </key>
   </schema>

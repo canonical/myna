@@ -2071,8 +2071,8 @@ fn vocabulary_probe() -> glib::ExitCode {
     println!("vocabulary-remove: persisted");
 
     let mut spoken = preset.clone();
-    spoken.push("my sequel:MySQL".into());
-    submit("my sequel:MySQL");
+    spoken.push("my sequel => MySQL".into());
+    submit("my sequel => MySQL");
     let spoken_row = || {
         descendants(group.upcast_ref(), &|w| {
             w.is::<adw::ActionRow>() && !w.is::<adw::EntryRow>()
@@ -2090,6 +2090,39 @@ fn vocabulary_probe() -> glib::ExitCode {
         return glib::ExitCode::FAILURE;
     }
     println!("vocabulary-spoken: shown as two sides");
+
+    let Some(remove_spoken) = find_descendant(&group, &|widget| {
+        widget.is::<adw::ActionRow>()
+            && widget.downcast_ref::<adw::ActionRow>().unwrap().title() == "MySQL"
+    })
+    .and_then(|row| find_descendant(&row, &|widget| widget.is::<gtk::Button>()))
+    .and_then(|button| button.downcast::<gtk::Button>().ok()) else {
+        eprintln!("the spoken form has no remove button");
+        return glib::ExitCode::FAILURE;
+    };
+    remove_spoken.emit_clicked();
+    if !wait_for_store(&preset) {
+        eprintln!("the spoken form was not removed");
+        return glib::ExitCode::FAILURE;
+    }
+    let mut plain = preset.clone();
+    plain.push("localhost:8080".into());
+    submit("localhost:8080");
+    let plain_row = || {
+        descendants(group.upcast_ref(), &|w| {
+            w.is::<adw::ActionRow>() && !w.is::<adw::EntryRow>()
+        })
+        .into_iter()
+        .filter_map(|row| row.downcast::<adw::ActionRow>().ok())
+        .find(|row| row.title() == "localhost:8080")
+    };
+    if !wait_for_store(&plain)
+        || !wait_until(|| plain_row().is_some_and(|r| r.subtitle().is_none_or(|s| s.is_empty())))
+    {
+        eprintln!("a term with a colon was not kept whole and plain");
+        return glib::ExitCode::FAILURE;
+    }
+    println!("vocabulary-plain: colon kept");
     glib::ExitCode::SUCCESS
 }
 

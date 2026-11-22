@@ -306,7 +306,7 @@ mod tests {
             Ok(())
         );
         assert_eq!(tidy("a b c d", "MySQL"), Err(Skip::NewWord));
-        let spoken = ["my sequel:MySQL".to_owned()];
+        let spoken = ["my sequel => MySQL".to_owned()];
         let tidy = |heard, answer| Check::ConservativeEdit.verdict(heard, answer, &spoken);
         assert_eq!(tidy("restart my sequel", "Restart MySQL."), Ok(()));
         assert_eq!(

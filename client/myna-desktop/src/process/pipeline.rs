@@ -459,7 +459,7 @@ mod tests {
             }
         }
         let seen = Arc::new(Mutex::new(String::new()));
-        let written = Live::new(vec!["my sequel:MySQL".to_owned()]);
+        let written = Live::new(vec!["my sequel => MySQL".to_owned()]);
         let mut pipeline = Pipeline::new(graph_of(ProcessingChain::TIDY), Echo(seen.clone()))
             .written(written.clone());
         let said = "I run my sequel";
@@ -476,7 +476,7 @@ mod tests {
     #[tokio::test]
     async fn a_term_keeps_its_capitals_in_the_keyword_preset() {
         let mut pipeline = Pipeline::new(graph_of(ProcessingChain::KEYWORD), Scripted::Fails)
-            .written(Live::new(vec!["my sequel:MySQL".to_owned()]));
+            .written(Live::new(vec!["my sequel => MySQL".to_owned()]));
         let mid = Field::after(FieldPurpose::Plain, Some('a'));
         assert_eq!(
             pipeline.process("The my sequel dump.".into(), &mid).await,

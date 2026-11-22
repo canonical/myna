@@ -1,4 +1,4 @@
-//! The user's vocabulary applied to text: `spoken:written` entries and
+//! The user's vocabulary applied to text: `spoken => written` entries and
 //! multi-word terms by longest match, and near-misses of long single words
 //! by sound.
 //!
@@ -7,7 +7,7 @@
 //! does not allow.
 //!
 //! An entry is `written` (a word or term to spell as given) or
-//! `spoken:written` (what the speech model tends to hear, then what to
+//! `spoken => written` (what the speech model tends to hear, then what to
 //! type). Matching is ASCII case-insensitive and stops at word edges.
 
 use aho_corasick::{AhoCorasick, Input, MatchKind};
@@ -253,20 +253,20 @@ mod tests {
 
     #[test]
     fn a_spoken_form_is_typed_as_the_user_wrote_it() {
-        let v = vocab(&["my sequel:MySQL"]);
+        let v = vocab(&["my sequel => MySQL"]);
         assert_eq!(v.apply("I use my sequel daily."), "I use MySQL daily.");
         assert_eq!(v.apply("My Sequel is up"), "MySQL is up");
     }
 
     #[test]
     fn the_longest_entry_wins() {
-        let v = vocab(&["sequel:SQL", "my sequel:MySQL"]);
+        let v = vocab(&["sequel => SQL", "my sequel => MySQL"]);
         assert_eq!(v.apply("my sequel and sequel"), "MySQL and SQL");
     }
 
     #[test]
     fn only_whole_words_match() {
-        let v = vocab(&["sequel:SQL"]);
+        let v = vocab(&["sequel => SQL"]);
         assert_eq!(v.apply("a sequels sequel"), "a sequels SQL");
         assert_eq!(v.apply("presequel"), "presequel");
         assert_eq!(v.apply("sequel's end"), "SQL's end");
@@ -274,7 +274,7 @@ mod tests {
 
     #[test]
     fn a_match_hidden_behind_a_partial_one_is_still_found() {
-        let v = vocab(&["abab:X", "ba:Y"]);
+        let v = vocab(&["abab => X", "ba => Y"]);
         assert_eq!(v.apply("aba ba"), "aba Y");
     }
 
@@ -291,7 +291,7 @@ mod tests {
             v.apply("Kernel panic. the kernel. KERNEL"),
             "Kernel panic. the kernel. KERNEL"
         );
-        let v = vocab(&["sequel:sql"]);
+        let v = vocab(&["sequel => sql"]);
         assert_eq!(
             v.apply("Sequel is fine, sequel too"),
             "Sql is fine, sql too"
@@ -349,14 +349,14 @@ mod tests {
 
     #[test]
     fn a_word_beside_a_match_is_still_corrected() {
-        let v = vocab(&["go:GO", "Kubernetes"]);
+        let v = vocab(&["go => GO", "Kubernetes"]);
         assert_eq!(v.apply("go kubernettes"), "GO Kubernetes");
         assert_eq!(v.apply("kubernettes go"), "Kubernetes GO");
     }
 
     #[test]
     fn a_word_inside_a_match_is_not_corrected_again() {
-        let v = vocab(&["kubernettes:K8s", "Kubernetes"]);
+        let v = vocab(&["kubernettes => K8s", "Kubernetes"]);
         assert_eq!(v.apply("kubernettes"), "K8s");
     }
 
@@ -382,22 +382,24 @@ mod tests {
 
     #[test]
     fn a_word_already_matched_is_not_corrected_again() {
-        let v = vocab(&["kubernettes:Kubernetes", "Kubernites"]);
+        let v = vocab(&["kubernettes => Kubernetes", "Kubernites"]);
         assert_eq!(v.apply("kubernettes"), "Kubernetes");
     }
 
     #[test]
-    fn a_term_with_a_colon_but_no_other_side_is_plain() {
-        assert_eq!(written("ratio:"), "ratio:");
-        assert_eq!(written(":x"), ":x");
-        assert_eq!(written("a:b"), "b");
-        assert_eq!(written(" my sequel : MySQL "), "MySQL");
+    fn a_term_with_a_colon_is_plain() {
+        for term in ["ratio:", ":x", "a:b", "localhost:8080", "std::vector"] {
+            assert_eq!(written(term), term);
+        }
+        assert_eq!(written(" my sequel => MySQL "), "MySQL");
+        let v = vocab(&["localhost:8080"]);
+        assert_eq!(v.apply("open localhost"), "open localhost");
     }
 
     #[test]
     fn the_speech_model_is_told_the_written_forms() {
         assert_eq!(
-            keywords(&["my sequel:MySQL".into(), "Siobhan".into()]),
+            keywords(&["my sequel => MySQL".into(), "Siobhan".into()]),
             ["MySQL", "Siobhan"]
         );
     }
@@ -412,7 +414,7 @@ mod tests {
 
     #[test]
     fn text_with_multibyte_characters_keeps_its_bytes() {
-        let v = vocab(&["naive:Naïve"]);
+        let v = vocab(&["naive => Naïve"]);
         assert_eq!(v.apply("é naive é"), "é Naïve é");
         assert_eq!(v.apply("éé"), "éé");
     }
@@ -421,7 +423,7 @@ mod tests {
     #[ignore = "timing, run with --release"]
     fn a_dictation_is_corrected_within_the_budget() {
         let mut entries: Vec<String> = (0..98).map(|i| format!("term{i}x:Term{i}X")).collect();
-        entries.extend(["my sequel:MySQL".to_owned(), "Kubernetes".to_owned()]);
+        entries.extend(["my sequel => MySQL".to_owned(), "Kubernetes".to_owned()]);
         let v = Vocabulary::new(&entries);
         let text = "we talked about my sequel and the kubernettes cluster for a while \
                     and then went home to eat dinner with the whole family tonight";

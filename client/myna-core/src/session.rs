@@ -46,10 +46,15 @@ impl SessionConfig {
 pub const KEYWORDS_MAX_ENTRIES: usize = 100;
 pub const KEYWORDS_MAX_ENTRY_CHARS: usize = 64;
 
-/// An entry written `spoken:written`, split at the first colon. `None` when
-/// either side is blank, so the whole entry is a plain word.
+/// The separator of a `spoken => written` vocabulary entry. It needs a space
+/// on each side, so no ordinary term (`localhost:8080`, `std::vector`,
+/// `a=>b`) is ever read as a rewrite rule.
+pub const SPOKEN_WRITTEN_SEPARATOR: &str = " => ";
+
+/// An entry written `spoken => written`, split at the first separator. `None`
+/// when either side is blank, so the whole entry is a plain word.
 pub fn spoken_written(entry: &str) -> Option<(&str, &str)> {
-    let (spoken, written) = entry.split_once(':')?;
+    let (spoken, written) = entry.trim().split_once(SPOKEN_WRITTEN_SEPARATOR)?;
     let (spoken, written) = (spoken.trim(), written.trim());
     (!spoken.is_empty() && !written.is_empty()).then_some((spoken, written))
 }
@@ -150,17 +155,33 @@ mod tests {
     }
 
     #[test]
-    fn spoken_written_splits_at_the_first_colon() {
+    fn spoken_written_splits_at_the_first_arrow() {
         assert_eq!(
-            spoken_written("my sequel:MySQL"),
+            spoken_written("my sequel => MySQL"),
             Some(("my sequel", "MySQL"))
         );
-        assert_eq!(spoken_written(" a : b:c "), Some(("a", "b:c")));
+        assert_eq!(spoken_written(" a  =>  b => c "), Some(("a", "b => c")));
     }
 
     #[test]
     fn spoken_written_needs_both_sides() {
-        for entry in ["MySQL", ":MySQL", "my sequel:", " : ", ""] {
+        for entry in ["MySQL", "=> MySQL", "my sequel =>", " => ", ""] {
+            assert_eq!(spoken_written(entry), None, "{entry:?}");
+        }
+    }
+
+    #[test]
+    fn plain_terms_stay_plain() {
+        for entry in [
+            "localhost:8080",
+            "std::vector",
+            "my sequel:MySQL",
+            "a=>b",
+            "x=> y",
+            "x =>y",
+            "C++",
+            "https://example.org",
+        ] {
             assert_eq!(spoken_written(entry), None, "{entry:?}");
         }
     }
