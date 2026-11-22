@@ -1,0 +1,31 @@
+Myna text evaluation corpus
+
+Three JSONL slices, pinned by SHA256SUMS and verified on every load.
+Regenerate the FLEURS slices with: myna-bench build-text-corpus
+
+clean_en.jsonl, translate_en_fr.jsonl
+  Derived from Google FLEURS, redistributed under its original licence.
+  Source:  https://huggingface.co/datasets/google/fleurs
+           (revision 70bb2e84b976b7e960aa89f1c648e09c59f894dd)
+  Licence: CC-BY-4.0  (https://creativecommons.org/licenses/by/4.0/)
+  Cite:    A. Conneau et al., "FLEURS: Few-shot Learning Evaluation of Universal
+           Representations of Speech", IEEE SLT 2022.
+  Inputs:  data/en_us/test.tsv  sha256 74c046239374deeb60fa63f258f907388093a32bcaa3140965f70ef05c79f7ca
+           data/fr_fr/test.tsv  sha256 5d06d338b242e00786fcf12c4c92008b9f399d5a5c872c91dca90572e7869c0d
+  Text is the raw (cased, punctuated) transcription, whitespace-collapsed.
+  clean_en is 200 en_us test sentences and translate_en_fr 200 en_us/fr_fr
+  pairs aligned by FLEURS sentence id, each picked by a seeded sha256 order
+  (seed "myna-text-corpus-v1") among sentences of 6 to 40 words that start
+  with a capital and end in sentence punctuation. The translation side never
+  ships as a model input, only as a reference.
+
+disfluent_en.jsonl
+  Original work written for this repository, licensed with it
+  (AGPL-3.0-or-later). No external text or dataset was copied, so no
+  non-commercial or share-alike corpus taints it. Each row is (heard,
+  intended, category): heard is what a punctuated ASR transcript of a
+  disfluent speaker looks like, intended is the cleaned sentence.
+  Categories: vocalized_pause, repeat_k1..repeat_k4 (tandem repeats of one
+  to four words), reduplication_keep and ambiguous_keep (must stay
+  untouched), self_repair, negation_trap (a negation that must survive),
+  negation_with_disfluency and negation_repair.

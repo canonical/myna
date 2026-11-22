@@ -1,0 +1,190 @@
+{"id": "disfluent-001", "heard": "Um, I think we should ship on Friday.", "intended": "I think we should ship on Friday.", "category": "vocalized_pause"}
+{"id": "disfluent-002", "heard": "We should, uh, ship on Friday.", "intended": "We should ship on Friday.", "category": "vocalized_pause"}
+{"id": "disfluent-003", "heard": "Uh, can you send me the report?", "intended": "Can you send me the report?", "category": "vocalized_pause"}
+{"id": "disfluent-004", "heard": "The meeting is, um, at three o'clock.", "intended": "The meeting is at three o'clock.", "category": "vocalized_pause"}
+{"id": "disfluent-005", "heard": "Erm, I am not sure about that.", "intended": "I am not sure about that.", "category": "vocalized_pause"}
+{"id": "disfluent-006", "heard": "So, uh, the build failed again.", "intended": "So the build failed again.", "category": "vocalized_pause"}
+{"id": "disfluent-007", "heard": "I'll call her tomorrow, um.", "intended": "I'll call her tomorrow.", "category": "vocalized_pause"}
+{"id": "disfluent-008", "heard": "Please open the file, uh, and read the first line.", "intended": "Please open the file and read the first line.", "category": "vocalized_pause"}
+{"id": "disfluent-009", "heard": "Um, uh, I forgot the password.", "intended": "I forgot the password.", "category": "vocalized_pause"}
+{"id": "disfluent-010", "heard": "We need, erm, more time.", "intended": "We need more time.", "category": "vocalized_pause"}
+{"id": "disfluent-011", "heard": "Could you, um, check the logs?", "intended": "Could you check the logs?", "category": "vocalized_pause"}
+{"id": "disfluent-012", "heard": "The deadline is, uh, next Monday.", "intended": "The deadline is next Monday.", "category": "vocalized_pause"}
+{"id": "disfluent-013", "heard": "Uh, thanks for the update.", "intended": "Thanks for the update.", "category": "vocalized_pause"}
+{"id": "disfluent-014", "heard": "I was thinking, um, that we could split the work.", "intended": "I was thinking that we could split the work.", "category": "vocalized_pause"}
+{"id": "disfluent-015", "heard": "Um, the server is down.", "intended": "The server is down.", "category": "vocalized_pause"}
+{"id": "disfluent-016", "heard": "He said, uh, he would be late.", "intended": "He said he would be late.", "category": "vocalized_pause"}
+{"id": "disfluent-017", "heard": "Let's meet at, erm, noon.", "intended": "Let's meet at noon.", "category": "vocalized_pause"}
+{"id": "disfluent-018", "heard": "The patch fixes, um, the crash on startup.", "intended": "The patch fixes the crash on startup.", "category": "vocalized_pause"}
+{"id": "disfluent-019", "heard": "Uh, where did you put the keys?", "intended": "Where did you put the keys?", "category": "vocalized_pause"}
+{"id": "disfluent-020", "heard": "We ordered, uh, twelve units.", "intended": "We ordered twelve units.", "category": "vocalized_pause"}
+{"id": "disfluent-021", "heard": "Um, hello everyone.", "intended": "Hello everyone.", "category": "vocalized_pause"}
+{"id": "disfluent-022", "heard": "It takes, um, about ten minutes.", "intended": "It takes about ten minutes.", "category": "vocalized_pause"}
+{"id": "disfluent-023", "heard": "I think, um, it works.", "intended": "I think it works.", "category": "vocalized_pause"}
+{"id": "disfluent-024", "heard": "Please, uh, remind me tomorrow.", "intended": "Please remind me tomorrow.", "category": "vocalized_pause"}
+{"id": "disfluent-025", "heard": "I I think we should go.", "intended": "I think we should go.", "category": "repeat_k1"}
+{"id": "disfluent-026", "heard": "We should should go home.", "intended": "We should go home.", "category": "repeat_k1"}
+{"id": "disfluent-027", "heard": "The the report is ready.", "intended": "The report is ready.", "category": "repeat_k1"}
+{"id": "disfluent-028", "heard": "Can you you send it today?", "intended": "Can you send it today?", "category": "repeat_k1"}
+{"id": "disfluent-029", "heard": "I need to to finish this.", "intended": "I need to finish this.", "category": "repeat_k1"}
+{"id": "disfluent-030", "heard": "Please send send the invoice.", "intended": "Please send the invoice.", "category": "repeat_k1"}
+{"id": "disfluent-031", "heard": "We are are ready to start.", "intended": "We are ready to start.", "category": "repeat_k1"}
+{"id": "disfluent-032", "heard": "It's a a good idea.", "intended": "It's a good idea.", "category": "repeat_k1"}
+{"id": "disfluent-033", "heard": "Let's go to the the park.", "intended": "Let's go to the park.", "category": "repeat_k1"}
+{"id": "disfluent-034", "heard": "I want to to buy a ticket.", "intended": "I want to buy a ticket.", "category": "repeat_k1"}
+{"id": "disfluent-035", "heard": "The server is is down.", "intended": "The server is down.", "category": "repeat_k1"}
+{"id": "disfluent-036", "heard": "They will will arrive at noon.", "intended": "They will arrive at noon.", "category": "repeat_k1"}
+{"id": "disfluent-037", "heard": "My my laptop is broken.", "intended": "My laptop is broken.", "category": "repeat_k1"}
+{"id": "disfluent-038", "heard": "He went to to the store.", "intended": "He went to the store.", "category": "repeat_k1"}
+{"id": "disfluent-039", "heard": "Open the the door please.", "intended": "Open the door please.", "category": "repeat_k1"}
+{"id": "disfluent-040", "heard": "We we need more coffee.", "intended": "We need more coffee.", "category": "repeat_k1"}
+{"id": "disfluent-041", "heard": "I think think it works.", "intended": "I think it works.", "category": "repeat_k1"}
+{"id": "disfluent-042", "heard": "Is is the build green?", "intended": "Is the build green?", "category": "repeat_k1"}
+{"id": "disfluent-043", "heard": "Our team team meets on Monday.", "intended": "Our team meets on Monday.", "category": "repeat_k1"}
+{"id": "disfluent-044", "heard": "Check the the logs first.", "intended": "Check the logs first.", "category": "repeat_k1"}
+{"id": "disfluent-045", "heard": "She is is going to call you.", "intended": "She is going to call you.", "category": "repeat_k1"}
+{"id": "disfluent-046", "heard": "The meeting meeting starts at nine.", "intended": "The meeting starts at nine.", "category": "repeat_k1"}
+{"id": "disfluent-047", "heard": "I think I think we should go.", "intended": "I think we should go.", "category": "repeat_k2"}
+{"id": "disfluent-048", "heard": "Can you can you open the file?", "intended": "Can you open the file?", "category": "repeat_k2"}
+{"id": "disfluent-049", "heard": "Let's go to let's go to the park.", "intended": "Let's go to the park.", "category": "repeat_k3"}
+{"id": "disfluent-050", "heard": "He said he said it was fine.", "intended": "He said it was fine.", "category": "repeat_k2"}
+{"id": "disfluent-051", "heard": "On Monday on Monday we ship.", "intended": "On Monday we ship.", "category": "repeat_k2"}
+{"id": "disfluent-052", "heard": "In the morning in the morning I run.", "intended": "In the morning I run.", "category": "repeat_k3"}
+{"id": "disfluent-053", "heard": "The report the report is ready.", "intended": "The report is ready.", "category": "repeat_k2"}
+{"id": "disfluent-054", "heard": "Please check please check the logs.", "intended": "Please check the logs.", "category": "repeat_k2"}
+{"id": "disfluent-055", "heard": "It might be it might be broken.", "intended": "It might be broken.", "category": "repeat_k3"}
+{"id": "disfluent-056", "heard": "The build is the build is failing.", "intended": "The build is failing.", "category": "repeat_k3"}
+{"id": "disfluent-057", "heard": "We moved to we moved to a new office.", "intended": "We moved to a new office.", "category": "repeat_k3"}
+{"id": "disfluent-058", "heard": "You can you can use the tab key.", "intended": "You can use the tab key.", "category": "repeat_k2"}
+{"id": "disfluent-059", "heard": "Send it to send it to the team.", "intended": "Send it to the team.", "category": "repeat_k3"}
+{"id": "disfluent-060", "heard": "Have you seen have you seen the new design?", "intended": "Have you seen the new design?", "category": "repeat_k3"}
+{"id": "disfluent-061", "heard": "Look at look at the graph.", "intended": "Look at the graph.", "category": "repeat_k2"}
+{"id": "disfluent-062", "heard": "There is there is a problem.", "intended": "There is a problem.", "category": "repeat_k2"}
+{"id": "disfluent-063", "heard": "We need to we need to leave now.", "intended": "We need to leave now.", "category": "repeat_k3"}
+{"id": "disfluent-064", "heard": "I want to I want to book a room.", "intended": "I want to book a room.", "category": "repeat_k3"}
+{"id": "disfluent-065", "heard": "It is in it is in the drawer.", "intended": "It is in the drawer.", "category": "repeat_k3"}
+{"id": "disfluent-066", "heard": "Please send me please send me the file.", "intended": "Please send me the file.", "category": "repeat_k3"}
+{"id": "disfluent-067", "heard": "I will call I will call you tomorrow.", "intended": "I will call you tomorrow.", "category": "repeat_k3"}
+{"id": "disfluent-068", "heard": "Can we meet can we meet on Friday?", "intended": "Can we meet on Friday?", "category": "repeat_k3"}
+{"id": "disfluent-069", "heard": "She wants to she wants to join us.", "intended": "She wants to join us.", "category": "repeat_k3"}
+{"id": "disfluent-070", "heard": "We have to we have to restart the server.", "intended": "We have to restart the server.", "category": "repeat_k3"}
+{"id": "disfluent-071", "heard": "Do you want do you want some tea?", "intended": "Do you want some tea?", "category": "repeat_k3"}
+{"id": "disfluent-072", "heard": "They are going they are going to be late.", "intended": "They are going to be late.", "category": "repeat_k3"}
+{"id": "disfluent-073", "heard": "I was going I was going to call you.", "intended": "I was going to call you.", "category": "repeat_k3"}
+{"id": "disfluent-074", "heard": "We should send we should send the invoice.", "intended": "We should send the invoice.", "category": "repeat_k3"}
+{"id": "disfluent-075", "heard": "That is a that is a good plan.", "intended": "That is a good plan.", "category": "repeat_k3"}
+{"id": "disfluent-076", "heard": "You can use you can use the tab key.", "intended": "You can use the tab key.", "category": "repeat_k3"}
+{"id": "disfluent-077", "heard": "I was going to I was going to call you.", "intended": "I was going to call you.", "category": "repeat_k4"}
+{"id": "disfluent-078", "heard": "He said he would he said he would come.", "intended": "He said he would come.", "category": "repeat_k4"}
+{"id": "disfluent-079", "heard": "We are going to we are going to be late.", "intended": "We are going to be late.", "category": "repeat_k4"}
+{"id": "disfluent-080", "heard": "Please remember to please remember to lock the door.", "intended": "Please remember to lock the door.", "category": "repeat_k3"}
+{"id": "disfluent-081", "heard": "On Monday morning on Monday morning we ship.", "intended": "On Monday morning we ship.", "category": "repeat_k3"}
+{"id": "disfluent-082", "heard": "I think we should I think we should wait.", "intended": "I think we should wait.", "category": "repeat_k4"}
+{"id": "disfluent-083", "heard": "We need to finish we need to finish the draft.", "intended": "We need to finish the draft.", "category": "repeat_k4"}
+{"id": "disfluent-084", "heard": "It is going to it is going to be fine.", "intended": "It is going to be fine.", "category": "repeat_k4"}
+{"id": "disfluent-085", "heard": "Can you send me can you send me the link?", "intended": "Can you send me the link?", "category": "repeat_k4"}
+{"id": "disfluent-086", "heard": "Let me know if let me know if you need help.", "intended": "Let me know if you need help.", "category": "repeat_k4"}
+{"id": "disfluent-087", "heard": "We are looking for we are looking for a new tool.", "intended": "We are looking for a new tool.", "category": "repeat_k4"}
+{"id": "disfluent-088", "heard": "The server is running the server is running again.", "intended": "The server is running again.", "category": "repeat_k4"}
+{"id": "disfluent-089", "heard": "I am trying to I am trying to fix the bug.", "intended": "I am trying to fix the bug.", "category": "repeat_k4"}
+{"id": "disfluent-090", "heard": "Do you know where do you know where the keys are?", "intended": "Do you know where the keys are?", "category": "repeat_k4"}
+{"id": "disfluent-091", "heard": "She told me that she told me that it was done.", "intended": "She told me that it was done.", "category": "repeat_k4"}
+{"id": "disfluent-092", "heard": "We can we can try again.", "intended": "We can try again.", "category": "repeat_k2"}
+{"id": "disfluent-093", "heard": "It is it is working now.", "intended": "It is working now.", "category": "repeat_k2"}
+{"id": "disfluent-094", "heard": "Then we then we deploy.", "intended": "Then we deploy.", "category": "repeat_k2"}
+{"id": "disfluent-095", "heard": "She was she was late.", "intended": "She was late.", "category": "repeat_k2"}
+{"id": "disfluent-096", "heard": "How many how many are left?", "intended": "How many are left?", "category": "repeat_k2"}
+{"id": "disfluent-097", "heard": "It was very very cold.", "intended": "It was very very cold.", "category": "reduplication_keep"}
+{"id": "disfluent-098", "heard": "That is a very, very good idea.", "intended": "That is a very, very good idea.", "category": "reduplication_keep"}
+{"id": "disfluent-099", "heard": "She said bye bye and left.", "intended": "She said bye bye and left.", "category": "reduplication_keep"}
+{"id": "disfluent-100", "heard": "We had had enough of the delays.", "intended": "We had had enough of the delays.", "category": "reduplication_keep"}
+{"id": "disfluent-101", "heard": "I know that that is true.", "intended": "I know that that is true.", "category": "reduplication_keep"}
+{"id": "disfluent-102", "heard": "It is so so expensive.", "intended": "It is so so expensive.", "category": "reduplication_keep"}
+{"id": "disfluent-103", "heard": "I really really like this plan.", "intended": "I really really like this plan.", "category": "reduplication_keep"}
+{"id": "disfluent-104", "heard": "Bora Bora is a lovely island.", "intended": "Bora Bora is a lovely island.", "category": "reduplication_keep"}
+{"id": "disfluent-105", "heard": "We went to Walla Walla last year.", "intended": "We went to Walla Walla last year.", "category": "reduplication_keep"}
+{"id": "disfluent-106", "heard": "It is way way too loud.", "intended": "It is way way too loud.", "category": "reduplication_keep"}
+{"id": "disfluent-107", "heard": "Night night, sleep well.", "intended": "Night night, sleep well.", "category": "reduplication_keep"}
+{"id": "disfluent-108", "heard": "The singer sang la la la during the chorus.", "intended": "The singer sang la la la during the chorus.", "category": "reduplication_keep"}
+{"id": "disfluent-109", "heard": "Knock knock, who is there?", "intended": "Knock knock, who is there?", "category": "reduplication_keep"}
+{"id": "disfluent-110", "heard": "No no, that is not what I meant.", "intended": "No no, that is not what I meant.", "category": "reduplication_keep"}
+{"id": "disfluent-111", "heard": "The word had had is grammatical.", "intended": "The word had had is grammatical.", "category": "reduplication_keep"}
+{"id": "disfluent-112", "heard": "He is a little little bit tired.", "intended": "He is a little little bit tired.", "category": "reduplication_keep"}
+{"id": "disfluent-113", "heard": "I like pizza.", "intended": "I like pizza.", "category": "ambiguous_keep"}
+{"id": "disfluent-114", "heard": "It looks like rain.", "intended": "It looks like rain.", "category": "ambiguous_keep"}
+{"id": "disfluent-115", "heard": "Well, that depends on the budget.", "intended": "Well, that depends on the budget.", "category": "ambiguous_keep"}
+{"id": "disfluent-116", "heard": "The well is dry.", "intended": "The well is dry.", "category": "ambiguous_keep"}
+{"id": "disfluent-117", "heard": "So we left early.", "intended": "So we left early.", "category": "ambiguous_keep"}
+{"id": "disfluent-118", "heard": "It was, like, totally unexpected.", "intended": "It was, like, totally unexpected.", "category": "ambiguous_keep"}
+{"id": "disfluent-119", "heard": "She is well aware of the risk.", "intended": "She is well aware of the risk.", "category": "ambiguous_keep"}
+{"id": "disfluent-120", "heard": "So, what should we do next?", "intended": "So, what should we do next?", "category": "ambiguous_keep"}
+{"id": "disfluent-121", "heard": "Things like that happen often.", "intended": "Things like that happen often.", "category": "ambiguous_keep"}
+{"id": "disfluent-122", "heard": "We do well under pressure.", "intended": "We do well under pressure.", "category": "ambiguous_keep"}
+{"id": "disfluent-123", "heard": "I feel like we should wait.", "intended": "I feel like we should wait.", "category": "ambiguous_keep"}
+{"id": "disfluent-124", "heard": "Like I said, the deadline is firm.", "intended": "Like I said, the deadline is firm.", "category": "ambiguous_keep"}
+{"id": "disfluent-125", "heard": "Do you like it?", "intended": "Do you like it?", "category": "ambiguous_keep"}
+{"id": "disfluent-126", "heard": "That is, like, really loud.", "intended": "That is, like, really loud.", "category": "ambiguous_keep"}
+{"id": "disfluent-127", "heard": "You know, it is fine.", "intended": "You know, it is fine.", "category": "ambiguous_keep"}
+{"id": "disfluent-128", "heard": "Well, I guess we can try.", "intended": "Well, I guess we can try.", "category": "ambiguous_keep"}
+{"id": "disfluent-129", "heard": "Meet me on Monday, no, Tuesday.", "intended": "Meet me on Tuesday.", "category": "self_repair"}
+{"id": "disfluent-130", "heard": "Set the port to 8080, no, 9090.", "intended": "Set the port to 9090.", "category": "self_repair"}
+{"id": "disfluent-131", "heard": "Use port 8080, no, 9090.", "intended": "Use port 9090.", "category": "self_repair"}
+{"id": "disfluent-132", "heard": "Send it to John, I mean, Mary.", "intended": "Send it to Mary.", "category": "self_repair"}
+{"id": "disfluent-133", "heard": "The meeting is at three, sorry, four o'clock.", "intended": "The meeting is at four o'clock.", "category": "self_repair"}
+{"id": "disfluent-134", "heard": "Turn left, no, right at the corner.", "intended": "Turn right at the corner.", "category": "self_repair"}
+{"id": "disfluent-135", "heard": "We need five, wait, six chairs.", "intended": "We need six chairs.", "category": "self_repair"}
+{"id": "disfluent-136", "heard": "Call me at nine, no, ten.", "intended": "Call me at ten.", "category": "self_repair"}
+{"id": "disfluent-137", "heard": "Open the blue, sorry, the green folder.", "intended": "Open the green folder.", "category": "self_repair"}
+{"id": "disfluent-138", "heard": "It costs twenty, I mean, thirty dollars.", "intended": "It costs thirty dollars.", "category": "self_repair"}
+{"id": "disfluent-139", "heard": "Email Anna, no, Ben about the invoice.", "intended": "Email Ben about the invoice.", "category": "self_repair"}
+{"id": "disfluent-140", "heard": "The flight leaves on Friday, no, Saturday.", "intended": "The flight leaves on Saturday.", "category": "self_repair"}
+{"id": "disfluent-141", "heard": "Install version 2.1, no, 2.2.", "intended": "Install version 2.2.", "category": "self_repair"}
+{"id": "disfluent-142", "heard": "Book a table for four, sorry, five.", "intended": "Book a table for five.", "category": "self_repair"}
+{"id": "disfluent-143", "heard": "Use the red, no, the yellow cable.", "intended": "Use the yellow cable.", "category": "self_repair"}
+{"id": "disfluent-144", "heard": "Move it to the left, I mean, the right.", "intended": "Move it to the right.", "category": "self_repair"}
+{"id": "disfluent-145", "heard": "Her name is Karen, no, Karin.", "intended": "Her name is Karin.", "category": "self_repair"}
+{"id": "disfluent-146", "heard": "Deploy to staging, no, production.", "intended": "Deploy to production.", "category": "self_repair"}
+{"id": "disfluent-147", "heard": "Deadline is the fifth, sorry, the sixth of May.", "intended": "Deadline is the sixth of May.", "category": "self_repair"}
+{"id": "disfluent-148", "heard": "Ping Alice, wait, Alex.", "intended": "Ping Alex.", "category": "self_repair"}
+{"id": "disfluent-149", "heard": "Set the timeout to ten seconds, no, thirty seconds.", "intended": "Set the timeout to thirty seconds.", "category": "self_repair"}
+{"id": "disfluent-150", "heard": "Reserve room 12, no, room 14.", "intended": "Reserve room 14.", "category": "self_repair"}
+{"id": "disfluent-151", "heard": "Go to the bank, no, the post office first.", "intended": "Go to the post office first.", "category": "self_repair"}
+{"id": "disfluent-152", "heard": "The file is in docs, sorry, in src.", "intended": "The file is in src.", "category": "self_repair"}
+{"id": "disfluent-153", "heard": "I'll take the early, no, the late train.", "intended": "I'll take the late train.", "category": "self_repair"}
+{"id": "disfluent-154", "heard": "The report is due Wednesday, I mean, Thursday.", "intended": "The report is due Thursday.", "category": "self_repair"}
+{"id": "disfluent-155", "heard": "Add two, no, three eggs.", "intended": "Add three eggs.", "category": "self_repair"}
+{"id": "disfluent-156", "heard": "Open port 22, no, 2222.", "intended": "Open port 2222.", "category": "self_repair"}
+{"id": "disfluent-157", "heard": "Restart the database, sorry, the web server.", "intended": "Restart the web server.", "category": "self_repair"}
+{"id": "disfluent-158", "heard": "Take the second, no, the third exit.", "intended": "Take the third exit.", "category": "self_repair"}
+{"id": "disfluent-159", "heard": "Do not merge this branch.", "intended": "Do not merge this branch.", "category": "negation_trap"}
+{"id": "disfluent-160", "heard": "We should not ship on Friday.", "intended": "We should not ship on Friday.", "category": "negation_trap"}
+{"id": "disfluent-161", "heard": "I never said that.", "intended": "I never said that.", "category": "negation_trap"}
+{"id": "disfluent-162", "heard": "Please do not delete the backup.", "intended": "Please do not delete the backup.", "category": "negation_trap"}
+{"id": "disfluent-163", "heard": "It isn't ready yet.", "intended": "It isn't ready yet.", "category": "negation_trap"}
+{"id": "disfluent-164", "heard": "They won't approve the change.", "intended": "They won't approve the change.", "category": "negation_trap"}
+{"id": "disfluent-165", "heard": "I can't attend the meeting.", "intended": "I can't attend the meeting.", "category": "negation_trap"}
+{"id": "disfluent-166", "heard": "Do not restart the server.", "intended": "Do not restart the server.", "category": "negation_trap"}
+{"id": "disfluent-167", "heard": "He did not call me back.", "intended": "He did not call me back.", "category": "negation_trap"}
+{"id": "disfluent-168", "heard": "We shouldn't skip the tests.", "intended": "We shouldn't skip the tests.", "category": "negation_trap"}
+{"id": "disfluent-169", "heard": "I don't think that is right.", "intended": "I don't think that is right.", "category": "negation_trap"}
+{"id": "disfluent-170", "heard": "Never push to main.", "intended": "Never push to main.", "category": "negation_trap"}
+{"id": "disfluent-171", "heard": "That is not what I meant.", "intended": "That is not what I meant.", "category": "negation_trap"}
+{"id": "disfluent-172", "heard": "She hasn't replied yet.", "intended": "She hasn't replied yet.", "category": "negation_trap"}
+{"id": "disfluent-173", "heard": "You must not share the password.", "intended": "You must not share the password.", "category": "negation_trap"}
+{"id": "disfluent-174", "heard": "It doesn't work on my machine.", "intended": "It doesn't work on my machine.", "category": "negation_trap"}
+{"id": "disfluent-175", "heard": "Don't forget the keys.", "intended": "Don't forget the keys.", "category": "negation_trap"}
+{"id": "disfluent-176", "heard": "I do not want any sugar.", "intended": "I do not want any sugar.", "category": "negation_trap"}
+{"id": "disfluent-177", "heard": "We will not be late.", "intended": "We will not be late.", "category": "negation_trap"}
+{"id": "disfluent-178", "heard": "This is not a bug, it is a feature.", "intended": "This is not a bug, it is a feature.", "category": "negation_trap"}
+{"id": "disfluent-179", "heard": "Um, do not merge this branch.", "intended": "Do not merge this branch.", "category": "negation_with_disfluency"}
+{"id": "disfluent-180", "heard": "We should, uh, not ship on Friday.", "intended": "We should not ship on Friday.", "category": "negation_with_disfluency"}
+{"id": "disfluent-181", "heard": "I I do not want any sugar.", "intended": "I do not want any sugar.", "category": "negation_with_disfluency"}
+{"id": "disfluent-182", "heard": "Please do do not delete the backup.", "intended": "Please do not delete the backup.", "category": "negation_with_disfluency"}
+{"id": "disfluent-183", "heard": "We shouldn't, wait, we should ship on Friday.", "intended": "We should ship on Friday.", "category": "negation_repair"}
+{"id": "disfluent-184", "heard": "Do not, I mean, do merge the branch.", "intended": "Do merge the branch.", "category": "negation_repair"}
+{"id": "disfluent-185", "heard": "Let's meet, not on Monday, no, on Tuesday afternoon.", "intended": "Let's meet on Tuesday afternoon.", "category": "negation_repair"}
+{"id": "disfluent-186", "heard": "We can't, sorry, we can ship on Friday.", "intended": "We can ship on Friday.", "category": "negation_repair"}
+{"id": "disfluent-187", "heard": "I won't, wait, I will attend the call tomorrow.", "intended": "I will attend the call tomorrow.", "category": "negation_repair"}
+{"id": "disfluent-188", "heard": "You should not, no, you should send it today.", "intended": "You should send it today.", "category": "negation_repair"}
+{"id": "disfluent-189", "heard": "Do not, wait, do approve the request.", "intended": "Do approve the request.", "category": "negation_repair"}
+{"id": "disfluent-190", "heard": "They don't, I mean, they do accept all major cards.", "intended": "They do accept all major cards.", "category": "negation_repair"}
