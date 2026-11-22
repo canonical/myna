@@ -207,6 +207,13 @@ mod tests {
     }
 
     #[test]
+    fn only_a_translation_is_named_by_its_languages() {
+        let json = r#"[{"task":"text.cleanup","params":{"language":"en","to":"fr"}},{"task":"text.cleanup","params":{"to":"fr"}}]"#;
+        let state = ChainState::parse("degraded", "text.cleanup", json).unwrap();
+        assert_eq!(state.summary(), "missing a model for text cleanup");
+    }
+
+    #[test]
     fn restart_asks_for_a_restart() {
         let state = ChainState::parse("restart", "text.translate", "").expect("restart");
         assert_eq!(
