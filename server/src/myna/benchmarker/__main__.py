@@ -335,13 +335,21 @@ def build_parser() -> argparse.ArgumentParser:
         description=(
             "Run the decision-gated text suite: clean_en (unnecessary edit rate),\n"
             "disfluent_en (edit reduction, polarity flips, ConservativeEdit false\n"
-            "rejects) and translate_en_fr (chrF, warm latency). Needs no network,\n"
+            "rejects) and translate_en_<l> (chrF, warm latency). Needs no network,\n"
             "snap or root. A gate on a task the system lacks is pending."
         ),
     )
     from myna.benchmarker.text_suite import add_arguments as add_text_arguments
 
     add_text_arguments(p_text)
+
+    p_pe = sub.add_parser(
+        "plugin-eval",
+        help="fetch, build, serve, grade and gate one text plugin (run via dev/plugin-pipeline.sh)",
+    )
+    from myna.benchmarker.plugin_eval import add_arguments as add_plugin_eval_arguments
+
+    add_plugin_eval_arguments(p_pe)
 
     p_tc = sub.add_parser(
         "build-text-corpus",
@@ -351,6 +359,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--fleurs",
         default="~/.cache/myna/corpus-src/fleurs",
         help="dir holding <locale>/test.tsv (default: the publication-preset cache)",
+    )
+    p_tc.add_argument(
+        "--pair",
+        default=None,
+        help="build only the translate_en_<l> slice of this en:<l> pair (Mozilla code)",
     )
     p_tc.add_argument("--out", default=None, help="corpus dir (default: the packaged one)")
 
@@ -487,6 +500,10 @@ def main() -> None:
         from myna.benchmarker.text_suite import cmd_text
 
         cmd_text(args)
+    elif args.command == "plugin-eval":
+        from myna.benchmarker.plugin_eval import cmd_plugin_eval
+
+        cmd_plugin_eval(args)
     elif args.command == "build-text-corpus":
         from pathlib import Path
 

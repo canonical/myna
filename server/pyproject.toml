@@ -126,7 +126,8 @@ pytest_add_cli_args_test_selection = ["tests"]
 # The GJS coverage test imports dev/gjs_coverage.py the same way. The snap
 # packaging test scans the *-snap directories to build its parametrize lists
 # (MULTI_ENGINE_SNAPS, ALL_SNAPS) at module level, which fails the same way:
-# ignore it too.
+# ignore it too. The plugin catalog test imports dev/gen-plugins.py at module
+# level, so it is ignored for the same reason.
 pytest_add_cli_args = [
     "-m",
     "not repo_tree",
@@ -134,6 +135,7 @@ pytest_add_cli_args = [
     "--ignore=tests/test_coverage_populations.py",
     "--ignore=tests/test_gjs_coverage.py",
     "--ignore=tests/test_snap_packaging.py",
+    "--ignore=tests/test_plugin_catalog.py",
 ]
 
 [tool.pytest.ini_options]
