@@ -284,7 +284,9 @@ def test_the_translation_plan_fetches_and_the_tagger_plan_copies_locally():
     text = gen.list_files(SNAP_DIRS[0])
     translation = gen.list_files(SNAP_DIRS[1])
     assert "MYNA_TAGGER_SRC" in text and "https://" not in text
-    assert translation.count("https://firefox-settings-attachments.cdn.mozilla.net/") == 3
+    pairs = sum(row.startswith("P\t") for row in translation.splitlines())
+    assert pairs >= 2
+    assert translation.count("https://firefox-settings-attachments.cdn.mozilla.net/") == 3 * pairs
 
 
 def test_a_component_is_declared_by_exactly_one_source_each():

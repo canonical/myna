@@ -25,7 +25,10 @@ TRANSLATION = ROOT / "translation-snap"
 SNAPS = {"myna-text": TEXT, "myna-translation": TRANSLATION}
 COMPONENT_IDS = {
     "myna-text": {"myna-disfluency-en": "text.cleanup"},
-    "myna-translation": {"bergamot-base-memory-en-fr": "text.translate"},
+    "myna-translation": {
+        "bergamot-base-memory-en-de": "text.translate",
+        "bergamot-base-memory-en-fr": "text.translate",
+    },
 }
 
 
@@ -158,9 +161,10 @@ def test_the_mozilla_attribution_travels_with_the_translation_snap(translation):
     assert "MPL" not in read(TEXT / "models/disfluency-en/NOTICE")
 
 
-def test_the_translate_config_names_files_the_component_ships():
-    config = yaml.safe_load(read(TRANSLATION / "models/translate-en-fr/config.yml"))
-    script = read(TRANSLATION / "plugins/translate-en-fr.toml")
+@pytest.mark.parametrize("pair", ["en-fr", "en-de"])
+def test_the_translate_config_names_files_the_component_ships(pair):
+    config = yaml.safe_load(read(TRANSLATION / f"models/translate-{pair}/config.yml"))
+    script = read(TRANSLATION / f"plugins/translate-{pair}.toml")
     files = [*config["models"], *config["vocabs"], config["shortlist"][0]]
     assert files
     for name in files:
