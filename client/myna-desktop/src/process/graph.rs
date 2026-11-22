@@ -83,12 +83,24 @@ pub enum Op {
     },
     /// Every part, in order, once each has arrived for the piece.
     Join { parts: Vec<Src>, sep: &'static str },
+    /// Two model changes that only make sense together, such as translating
+    /// through a third language: the second reads what the first made, and
+    /// unless both pass the text leaves as it came.
+    Pivot { from: Src, first: Leg, second: Leg },
+}
+
+/// One model change of an [`Op::Pivot`], typed only if it passes `check`
+/// against what it was given.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Leg {
+    pub request: Request,
+    pub check: Check,
 }
 
 impl Op {
     fn sources(&self) -> Vec<Src> {
         match self {
-            Op::Rule { from, .. } | Op::Ask { from, .. } => vec![*from],
+            Op::Rule { from, .. } | Op::Ask { from, .. } | Op::Pivot { from, .. } => vec![*from],
             Op::Route { cases, otherwise } => cases
                 .iter()
                 .map(|(_, src)| *src)
@@ -101,7 +113,18 @@ impl Op {
     fn needs(&self) -> Needs {
         match self {
             Op::Ask { needs, .. } => *needs,
-            Op::Rule { .. } | Op::Route { .. } | Op::Join { .. } => Needs::Sentence,
+            Op::Rule { .. } | Op::Route { .. } | Op::Join { .. } | Op::Pivot { .. } => {
+                Needs::Sentence
+            }
+        }
+    }
+
+    /// The requests this node makes, in the order it makes them.
+    fn asks(&self) -> Vec<&Request> {
+        match self {
+            Op::Ask { request, .. } => vec![request],
+            Op::Pivot { first, second, .. } => vec![&first.request, &second.request],
+            Op::Rule { .. } | Op::Route { .. } | Op::Join { .. } => Vec::new(),
         }
     }
 
@@ -156,10 +179,7 @@ impl Graph {
         let mut seen = std::collections::HashSet::new();
         self.nodes
             .iter()
-            .filter_map(|op| match op {
-                Op::Ask { request, .. } => Some(request),
-                _ => None,
-            })
+            .flat_map(Op::asks)
             .filter(|r| seen.insert(r.key()))
             .cloned()
             .collect()
@@ -218,6 +238,21 @@ impl Builder {
             request,
             check,
             needs,
+        })
+    }
+
+    /// Change the text with `first`, then what that made with `second`.
+    pub fn pivot(&mut self, from: Src, first: Request, second: Request, check: Check) -> Src {
+        self.push(Op::Pivot {
+            from,
+            first: Leg {
+                request: first,
+                check,
+            },
+            second: Leg {
+                request: second,
+                check,
+            },
         })
     }
 
@@ -329,6 +364,9 @@ mod tests {
                 Op::Ask { request, .. } => request.task.clone(),
                 Op::Route { .. } => "route".into(),
                 Op::Join { .. } => "join".into(),
+                Op::Pivot { first, second, .. } => {
+                    format!("{}+{}", first.request.task, second.request.task)
+                }
             })
             .collect()
     }
@@ -370,6 +408,30 @@ mod tests {
                 "{i} repeats an earlier preset"
             );
         }
+    }
+
+    #[test]
+    fn a_pivot_asks_both_legs_and_needs_a_sentence() {
+        let mut g = Builder::default();
+        let out = g.pivot(
+            Src::Input,
+            Request::translate("fr", "en"),
+            Request::translate("en", "de"),
+            Check::Present,
+        );
+        let graph = g.finish(out);
+        assert_eq!(graph.needs(), Some(Needs::Sentence));
+        assert_eq!(
+            graph.requests(),
+            [
+                Request::translate("fr", "en"),
+                Request::translate("en", "de")
+            ]
+        );
+        assert_eq!(
+            tasks(&graph, &Field::default()),
+            ["text.translate+text.translate"]
+        );
     }
 
     #[test]

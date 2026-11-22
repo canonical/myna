@@ -192,6 +192,19 @@ impl Pipeline {
         text: String,
         trace: &mut Vec<myna_core::history::Step>,
     ) -> String {
+        self.try_ask(request, check, &text, trace)
+            .await
+            .unwrap_or(text)
+    }
+
+    /// One model step: its answer if usable.
+    async fn try_ask(
+        &mut self,
+        request: &Request,
+        check: Check,
+        text: &str,
+        trace: &mut Vec<myna_core::history::Step>,
+    ) -> Option<String> {
         let written = self.written.get();
         let started = Instant::now();
         // The far side holds itself to the run budget (it is on the wire as
@@ -199,7 +212,7 @@ impl Pipeline {
         // one, a little later, only catches a `Models` that does not.
         let answer = tokio::time::timeout(
             request.run_budget + RUN_GRACE,
-            self.models.run(request, &text),
+            self.models.run(request, text),
         )
         .await;
         let mut model = None;
@@ -210,7 +223,7 @@ impl Pipeline {
                 model = answer.model;
                 let cleaned = fold_control_chars(&answer.text);
                 answer_chars = cleaned.chars().count();
-                match check.verdict(&text, &cleaned, &written) {
+                match check.verdict(text, &cleaned, &written) {
                     Ok(()) => {
                         typed = Some(cleaned);
                         None
@@ -236,7 +249,7 @@ impl Pipeline {
             ms: u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
             skipped,
         });
-        typed.unwrap_or(text)
+        typed
     }
 }
 
@@ -271,6 +284,23 @@ impl Processor for Pipeline {
                 } => {
                     let input = read(&made, *from);
                     self.ask(request, *check, input, &mut trace).await
+                }
+                Op::Pivot {
+                    from,
+                    first,
+                    second,
+                } => {
+                    let input = read(&made, *from);
+                    match self
+                        .try_ask(&first.request, first.check, &input, &mut trace)
+                        .await
+                    {
+                        Some(mid) => self
+                            .try_ask(&second.request, second.check, &mid, &mut trace)
+                            .await
+                            .unwrap_or(input),
+                        None => input,
+                    }
                 }
                 Op::Route { .. } => op
                     .select(field)
@@ -350,6 +380,100 @@ mod tests {
 
     fn here() -> Field {
         Field::default()
+    }
+
+    /// Answers by the language a request translates to, or fails for it.
+    struct ByTarget(Vec<(&'static str, Option<&'static str>)>);
+
+    #[async_trait]
+    impl Models for ByTarget {
+        async fn run(&mut self, request: &Request, _: &str) -> Result<Answer, ModelError> {
+            let to = request.params["to"].as_str().unwrap_or_default();
+            match self.0.iter().find(|(t, _)| *t == to) {
+                Some((_, Some(text))) => Ok(Answer {
+                    text: (*text).into(),
+                    model: Some(to.into()),
+                }),
+                _ => Err(ModelError::Unavailable("none".into())),
+            }
+        }
+    }
+
+    fn pivot() -> Graph {
+        let mut g = Builder::default();
+        let out = g.pivot(
+            Src::Input,
+            Request::translate("fr", "en"),
+            Request::translate("en", "de"),
+            Check::Usable { translation: true },
+        );
+        g.finish(out)
+    }
+
+    #[tokio::test]
+    async fn a_pivot_runs_the_second_leg_on_what_the_first_made() {
+        let models = ByTarget(vec![
+            ("en", Some("See you Monday.")),
+            ("de", Some("Bis Montag.")),
+        ]);
+        let mut pipeline = Pipeline::new(pivot(), models);
+        assert_eq!(
+            pipeline.process("A lundi.".into(), &here()).await,
+            "Bis Montag."
+        );
+        let trace = traced(&pipeline);
+        assert_eq!(trace.len(), 2);
+        assert!(trace.iter().all(|step| step.skipped.is_none()));
+    }
+
+    #[tokio::test]
+    async fn a_pivot_with_a_failed_leg_types_what_was_heard_never_the_half() {
+        let first_fails = ByTarget(vec![("de", Some("Bis Montag."))]);
+        let mut pipeline = Pipeline::new(pivot(), first_fails);
+        assert_eq!(
+            pipeline.process("A lundi.".into(), &here()).await,
+            "A lundi."
+        );
+        assert_eq!(traced(&pipeline).len(), 1, "the second leg never ran");
+
+        let second_fails = ByTarget(vec![("en", Some("See you Monday."))]);
+        let mut pipeline = Pipeline::new(pivot(), second_fails);
+        assert_eq!(
+            pipeline.process("A lundi.".into(), &here()).await,
+            "A lundi."
+        );
+        let trace = traced(&pipeline);
+        assert_eq!(trace.len(), 2);
+        assert_eq!(trace[1].skipped, Some(Skip::NoModel));
+    }
+
+    #[tokio::test]
+    async fn each_leg_is_checked_against_its_own_input() {
+        let empty = ByTarget(vec![("en", Some("   ")), ("de", Some("Bis Montag."))]);
+        let mut pipeline = Pipeline::new(pivot(), empty);
+        assert_eq!(
+            pipeline.process("A lundi.".into(), &here()).await,
+            "A lundi."
+        );
+        assert_eq!(traced(&pipeline)[0].skipped, Some(Skip::Empty));
+
+        let runaway = ByTarget(vec![
+            ("en", Some("See you Monday.")),
+            ("de", Some("ja ja ja ja ja ja ja ja ja ja ja ja ja ja ja ja ja ja ja ja ja ja ja ja ja ja ja ja")),
+        ]);
+        let mut pipeline = Pipeline::new(pivot(), runaway);
+        assert_eq!(
+            pipeline.process("A lundi.".into(), &here()).await,
+            "A lundi."
+        );
+        assert_eq!(traced(&pipeline)[1].skipped, Some(Skip::OddLength));
+
+        // 50 chars: too long for what was heard (8), fine for the first
+        // leg's 15, which is what the second leg is checked against.
+        let long = "Wir sehen uns am Montag um zehn Uhr im Buero, ja.";
+        let wide = ByTarget(vec![("en", Some("See you Monday.")), ("de", Some(long))]);
+        let mut pipeline = Pipeline::new(pivot(), wide);
+        assert_eq!(pipeline.process("A lundi.".into(), &here()).await, long);
     }
 
     #[tokio::test]
