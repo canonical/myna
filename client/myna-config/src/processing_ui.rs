@@ -149,10 +149,7 @@ impl StepsPage {
             .build();
         let preferences = adw::PreferencesPage::new();
         preferences.add(&catalog_group);
-        let catalog_page = adw::NavigationPage::builder()
-            .title(gettextrs::gettext("Add step"))
-            .child(&preferences)
-            .build();
+        let catalog_page = crate::subpage::subpage(&gettextrs::gettext("Add step"), &preferences);
         let page = Rc::new(Self {
             deps,
             group: group.downgrade(),
@@ -1397,6 +1394,22 @@ mod tests {
                     .collect();
             assert!(facts.contains(&"For example".to_owned()), "{facts:?}");
             assert!(facts.contains(&"Download".to_owned()), "{facts:?}");
+        });
+    }
+
+    #[test]
+    fn the_catalog_page_has_a_back_button_that_returns() {
+        crate::ui::on_gtk_thread(|| {
+            let rig = rig("back", TIDY, TIDY, "");
+            rig.page.add_row.emit_by_name::<()>("activated", &[]);
+            let page = rig.nav.visible_page().unwrap();
+            let back = all::<gtk::Button>(page.upcast_ref())
+                .into_iter()
+                .filter(|b| b.has_css_class("back"))
+                .count();
+            assert_eq!(back, 1);
+            rig.nav.pop();
+            assert_eq!(rig.nav.visible_page().unwrap().title(), "Processing");
         });
     }
 

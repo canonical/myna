@@ -38,6 +38,7 @@ pub mod snap_changes;
 pub mod snap_install;
 pub mod sound_preview;
 pub mod step_catalog;
+pub mod subpage;
 pub mod ui;
 
 pub const APP_ID: &str = "com.canonical.Myna.Config";

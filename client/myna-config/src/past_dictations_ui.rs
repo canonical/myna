@@ -41,10 +41,7 @@ impl PastPage {
         preferences.add(&record);
         preferences.add(&off);
         preferences.add(&list);
-        let page = adw::NavigationPage::builder()
-            .title(gettextrs::gettext("Past dictations"))
-            .child(&preferences)
-            .build();
+        let page = crate::subpage::subpage(&gettextrs::gettext("Past dictations"), &preferences);
         Self {
             page,
             record,

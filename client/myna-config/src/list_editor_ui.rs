@@ -54,19 +54,7 @@ impl ListEditor {
         group.set_widget_name(&plan.key);
         let content = adw::PreferencesPage::new();
         content.add(&group);
-        // The window's header holds the tab switcher; this one holds the way
-        // back.
-        let header = adw::HeaderBar::builder()
-            .show_start_title_buttons(false)
-            .show_end_title_buttons(false)
-            .build();
-        let toolbar = adw::ToolbarView::new();
-        toolbar.add_top_bar(&header);
-        toolbar.set_content(Some(&content));
-        let page = adw::NavigationPage::builder()
-            .title(&plan.title)
-            .child(&toolbar)
-            .build();
+        let page = crate::subpage::subpage(&plan.title, &content);
         link.connect_activated(move |link| {
             if let Some(navigation) = link
                 .ancestor(adw::NavigationView::static_type())

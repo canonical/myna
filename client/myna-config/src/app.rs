@@ -1805,7 +1805,8 @@ fn processing_probe() -> glib::ExitCode {
             .iter()
             .any(|row| row.title().starts_with("Keep a record"))
     );
-    if let Some(link) = link {
+    if let Some(link) = &link {
+        link.grab_focus();
         link.emit_by_name::<()>("activated", &[]);
     }
     settle_gtk();
@@ -1814,12 +1815,40 @@ fn processing_probe() -> glib::ExitCode {
         nav.visible_page()
             .is_some_and(|p| p.title() == "Past dictations")
     );
+    let back = |nav: &adw::NavigationView| {
+        nav.visible_page()
+            .and_then(|page| page.child())
+            .map(|toolbar| {
+                typed_descendants::<gtk::Button>(&toolbar)
+                    .iter()
+                    .any(|b| b.is_mapped() && b.has_css_class("back"))
+            })
+            .unwrap_or(false)
+    };
+    println!("past-back: {}", back(&nav));
     println!(
         "record-on-subpage: {}",
         typed_descendants::<adw::SwitchRow>(root)
             .iter()
             .any(|row| row.title().starts_with("Keep a record"))
     );
+    let _ = nav.activate_action("navigation.pop", None);
+    settle_gtk();
+    println!(
+        "past-back-returns: {}",
+        nav.visible_page()
+            .is_some_and(|p| p.title() != "Past dictations")
+    );
+    println!(
+        "past-focus-on-row: {}",
+        link.as_ref()
+            .is_some_and(|link| gtk::prelude::GtkWindowExt::focus(&window)
+                .is_some_and(|w| w == *link.upcast_ref::<gtk::Widget>()))
+    );
+    if let Some(link) = &link {
+        link.emit_by_name::<()>("activated", &[]);
+    }
+    settle_gtk();
     let titles = || -> Vec<String> {
         typed_descendants::<adw::ActionRow>(root)
             .iter()
