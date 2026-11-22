@@ -5,7 +5,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use myna_core::processing::{in_stage_order, param_key, Params};
+use myna_core::processing::{in_stage_order, param_key, script_of, ChineseScript, Params};
 
 use crate::plugin_catalog::{self, Entry};
 
@@ -13,8 +13,10 @@ use crate::plugin_catalog::{self, Entry};
 pub const TRANSLATE: &str = "translate";
 pub const TRANSLATE_TO: &str = "to";
 
-/// A step the client carries itself, in no catalog.
+/// The steps the client carries itself, in no catalog.
 const FIT: &str = "fit";
+pub const SCRIPT: &str = "script";
+pub const SCRIPT_MODE: &str = "mode";
 
 /// The stages in the order the steps run (`.kb/text-plugin-contract.md`).
 const STAGES: [&str; 4] = ["field-fit", "clean-up", "translate", "target-language"];
@@ -181,6 +183,16 @@ pub struct Row {
     pub enabled: bool,
     pub standing: Standing,
     pub translate: Option<TranslateRow>,
+    pub script: Option<ScriptRow>,
+}
+
+/// How the Chinese script step writes Chinese: the modes it offers and the
+/// one chosen, or the one a switch-on would choose.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ScriptRow {
+    /// `(nick, name)`, in the order the combo lists them.
+    pub modes: Vec<(String, String)>,
+    pub selected: usize,
 }
 
 impl Row {
@@ -223,6 +235,8 @@ pub fn size(bytes: u64) -> String {
 }
 
 pub struct Inputs<'a> {
+    /// The `language` setting is empty: the model decides.
+    pub language_unset: bool,
     pub enabled: &'a [String],
     pub params: &'a Params,
     pub source: &'a Source,
@@ -247,6 +261,7 @@ fn stage_rank(stage: &str) -> usize {
 fn step_ids(catalog: &[Entry]) -> Vec<(String, usize)> {
     let mut found: BTreeMap<String, usize> = BTreeMap::new();
     found.insert(FIT.to_owned(), 0);
+    found.insert(SCRIPT.to_owned(), stage_rank("target-language"));
     for entry in catalog {
         found
             .entry(entry.step.id.clone())
@@ -269,6 +284,7 @@ fn row(id: &str, inputs: &Inputs) -> Row {
     let title = own
         .and_then(|e| plugin_catalog::label(&e.step.label_key))
         .or_else(|| (id == FIT).then(|| gettextrs::gettext("Fitted to the field")))
+        .or_else(|| (id == SCRIPT).then(|| gettextrs::gettext("Chinese script")))
         .unwrap_or_else(|| id.to_owned());
     let description = own
         .and_then(|e| plugin_catalog::label(&e.step.description_key))
@@ -279,9 +295,15 @@ fn row(id: &str, inputs: &Inputs) -> Row {
                 )
             })
         })
+        .or_else(|| {
+            (id == SCRIPT).then(|| {
+                gettextrs::gettext("Types Chinese in the characters you choose. Other text is left alone.")
+            })
+        })
         .unwrap_or_default();
     let enabled = inputs.enabled.iter().any(|on| on == id);
     let translate = (id == TRANSLATE).then(|| translate_row(inputs));
+    let script = (id == SCRIPT).then(|| script_row(inputs));
     let standing = standing(id, enabled, translate.as_ref(), inputs);
     Row {
         id: id.to_owned(),
@@ -290,6 +312,93 @@ fn row(id: &str, inputs: &Inputs) -> Row {
         enabled,
         standing,
         translate,
+        script,
+    }
+}
+
+/// The modes the step offers; "as recognised" is the step being off.
+const SCRIPT_MODES: [ChineseScript; 4] = [
+    ChineseScript::Simplified,
+    ChineseScript::Traditional,
+    ChineseScript::TraditionalTaiwan,
+    ChineseScript::TraditionalHongKong,
+];
+
+/// The mode a Chinese user most likely wants, from the desktop's locales.
+pub fn default_script(locales: &[String]) -> ChineseScript {
+    let first = locales
+        .iter()
+        .map(|locale| {
+            let name = locale.split(['.', '@']).next().unwrap_or_default();
+            name.replace('_', "-").to_ascii_lowercase()
+        })
+        .find(|locale| is_chinese(locale))
+        .unwrap_or_default();
+    if first.ends_with("-tw") || first.contains("-hant-tw") {
+        ChineseScript::TraditionalTaiwan
+    } else if first.ends_with("-hk") || first.ends_with("-mo") {
+        ChineseScript::TraditionalHongKong
+    } else if first.contains("hant") {
+        ChineseScript::Traditional
+    } else {
+        ChineseScript::Simplified
+    }
+}
+
+fn script_row(inputs: &Inputs) -> ScriptRow {
+    let stored = script_of(&[SCRIPT.to_owned()], inputs.params);
+    let chosen = SCRIPT_MODES
+        .iter()
+        .position(|mode| *mode == stored)
+        .filter(|_| inputs.params.contains_key(&param_key(SCRIPT, SCRIPT_MODE)));
+    let selected = chosen.unwrap_or_else(|| {
+        let default = default_script(inputs.locales);
+        SCRIPT_MODES.iter().position(|m| *m == default).unwrap_or(0)
+    });
+    ScriptRow {
+        modes: SCRIPT_MODES
+            .iter()
+            .map(|mode| {
+                (
+                    mode.nick().to_owned(),
+                    crate::myna_settings::choice_display_label(mode.nick()),
+                )
+            })
+            .collect(),
+        selected,
+    }
+}
+
+/// Whether a language code, a locale or a dictation setting is Chinese.
+fn is_chinese(code: &str) -> bool {
+    let code = code.to_ascii_lowercase();
+    ["zh", "yue", "cmn"].iter().any(|c| {
+        code.strip_prefix(c)
+            .is_some_and(|rest| rest.is_empty() || rest.starts_with(['-', '_']))
+    })
+}
+
+/// Whether the text at the script step's position is Chinese, as far as
+/// Settings can tell: the translation target when one runs, else the
+/// dictation language, which an unset one leaves to the desktop's.
+fn text_is_chinese(inputs: &Inputs) -> bool {
+    let translated = inputs
+        .enabled
+        .iter()
+        .any(|id| id == TRANSLATE)
+        .then(|| target_of(inputs.params))
+        .flatten()
+        .filter(|to| matches!(inputs.source, Source::One(from) if from != to));
+    if let Some(to) = translated {
+        return is_chinese(to);
+    }
+    match inputs.source {
+        Source::Unknown => true,
+        Source::One(_) if inputs.language_unset => inputs
+            .locales
+            .first()
+            .is_some_and(|locale| is_chinese(locale)),
+        Source::One(from) => is_chinese(from),
     }
 }
 
@@ -390,6 +499,12 @@ fn standing(
         Source::Unknown => None,
     };
     let own: Vec<&Entry> = inputs.catalog.iter().filter(|e| e.step.id == id).collect();
+    if id == SCRIPT {
+        if !text_is_chinese(inputs) {
+            return Standing::NotApplicable(gettextrs::gettext("Applies when the text is Chinese"));
+        }
+        return Standing::Ready;
+    }
     if id == TRANSLATE {
         let Some(from) = source else {
             return Standing::NotApplicable(gettextrs::gettext(
@@ -495,6 +610,27 @@ pub fn with_enabled(ids: &[String], id: &str, on: bool) -> Vec<String> {
     in_stage_order(&next)
 }
 
+/// The parameters after the Chinese script step is switched on: a mode it
+/// can run with, the one chosen before or else the locale's.
+pub fn with_script_on(params: &Params, locales: &[String]) -> Params {
+    let key = param_key(SCRIPT, SCRIPT_MODE);
+    let mut next = params.clone();
+    if !params
+        .get(&key)
+        .is_some_and(|nick| SCRIPT_MODES.iter().any(|mode| mode.nick() == nick))
+    {
+        next.insert(key, default_script(locales).nick().to_owned());
+    }
+    next
+}
+
+/// The parameters after a Chinese script mode is chosen.
+pub fn with_script_mode(params: &Params, nick: &str) -> Params {
+    let mut next = params.clone();
+    next.insert(param_key(SCRIPT, SCRIPT_MODE), nick.to_owned());
+    next
+}
+
 /// The parameters after `translate.to` is set, or cleared.
 pub fn with_target(params: &Params, to: Option<&str>) -> Params {
     let mut next = params.clone();
@@ -576,6 +712,7 @@ mod tests {
         enabled: Vec<String>,
         params: Params,
         source: Source,
+        unset: bool,
         catalog: Vec<Entry>,
         daemon: Option<Offered>,
         installing: BTreeMap<String, Option<u8>>,
@@ -588,6 +725,7 @@ mod tests {
                 enabled: Vec::new(),
                 params: Params::new(),
                 source: Source::One("en".into()),
+                unset: false,
                 catalog: catalog(),
                 daemon: Some(Offered::default()),
                 installing: BTreeMap::new(),
@@ -597,6 +735,7 @@ mod tests {
 
         fn rows(&self) -> Vec<Row> {
             rows(&Inputs {
+                language_unset: self.unset,
                 enabled: &self.enabled,
                 params: &self.params,
                 source: &self.source,
@@ -634,7 +773,7 @@ mod tests {
         let mut rig = Rig::new();
         rig.catalog.reverse();
         let ids: Vec<String> = rig.rows().into_iter().map(|r| r.id).collect();
-        assert_eq!(ids, ["fit", "tidy", "translate"]);
+        assert_eq!(ids, ["fit", "tidy", "translate", "script"]);
     }
 
     #[test]
@@ -643,7 +782,7 @@ mod tests {
         rig.catalog.clear();
         rig.daemon = None;
         let rows = rig.rows();
-        assert_eq!(rows.len(), 1);
+        assert_eq!(rows.len(), 2, "Fitted to the field and Chinese script");
         assert_eq!(rows[0].standing, Standing::Ready);
         assert!(rows[0].enabled);
     }
@@ -909,11 +1048,11 @@ mod tests {
         ];
         let rows = rig.rows();
         let ids: Vec<&str> = rows.iter().map(|r| r.id.as_str()).collect();
-        assert_eq!(ids, ["fit", "zzz", "aaa", "mmm"]);
+        assert_eq!(ids, ["fit", "zzz", "aaa", "script", "mmm"]);
         assert_eq!(rows[0].title, "Fitted to the field");
         assert_eq!(rows[1].title, "zzz");
         assert!(rows[1].description.is_empty());
-        assert!(rows.iter().all(Row::switchable));
+        assert!(rows.iter().filter(|r| r.id != SCRIPT).all(Row::switchable));
     }
 
     #[test]
@@ -993,6 +1132,7 @@ mod tests {
         let first = |locales: &[&str]| {
             let locales: Vec<String> = locales.iter().map(|l| (*l).to_owned()).collect();
             let rows = rows(&Inputs {
+                language_unset: rig.unset,
                 enabled: &rig.enabled,
                 params: &rig.params,
                 source: &rig.source,
@@ -1037,5 +1177,151 @@ mod tests {
         assert_eq!(size(1), "1 MB");
         assert_eq!(size(24_000_001), "25 MB");
         assert_eq!(size(33_353_728), "34 MB");
+    }
+
+    fn zh() -> Source {
+        Source::of_setting("zh")
+    }
+
+    fn state_of(rig: &Rig) -> Standing {
+        rig.row(SCRIPT).standing
+    }
+
+    #[test]
+    fn the_script_step_is_built_in_and_last_before_the_guards() {
+        let mut rig = Rig::new();
+        rig.catalog.clear();
+        let row = rig.row(SCRIPT);
+        assert_eq!(row.title, "Chinese script");
+        assert!(!row.enabled);
+        let ids: Vec<String> = rig.rows().into_iter().map(|r| r.id).collect();
+        assert_eq!(ids, ["fit", "script"]);
+    }
+
+    #[test]
+    fn the_script_step_applies_when_the_text_is_chinese() {
+        for (setting, applies) in [
+            ("zh", true),
+            ("zh-Hant", true),
+            ("zh_TW", true),
+            ("yue-HK", true),
+            ("cmn", true),
+            ("auto", true),
+            ("en", false),
+            ("fr", false),
+            ("ja", false),
+            ("zhuang", false),
+        ] {
+            let mut rig = Rig::new().on(&[SCRIPT]);
+            rig.source = Source::of_setting(setting);
+            let ready = state_of(&rig) == Standing::Ready;
+            assert_eq!(ready, applies, "{setting}");
+            if !applies {
+                assert_eq!(
+                    rig.row(SCRIPT).subtitle(),
+                    "Applies when the text is Chinese"
+                );
+                assert!(!rig.row(SCRIPT).switchable());
+            }
+        }
+    }
+
+    #[test]
+    fn the_script_step_follows_a_translation_into_or_out_of_chinese() {
+        let mut rig = Rig::new().on(&[TRANSLATE, SCRIPT]).to("zh-Hans");
+        assert_eq!(state_of(&rig), Standing::Ready, "English into Chinese");
+        rig.source = zh();
+        let mut rig = rig.to("en");
+        rig.source = zh();
+        assert!(
+            matches!(state_of(&rig), Standing::NotApplicable(_)),
+            "Chinese into English"
+        );
+        let mut off = Rig::new().on(&[SCRIPT]).to("zh-Hans");
+        assert!(
+            matches!(state_of(&off), Standing::NotApplicable(_)),
+            "a translation that is off changes nothing"
+        );
+        off.enabled.push(TRANSLATE.to_owned());
+        assert_eq!(state_of(&off), Standing::Ready);
+    }
+
+    #[test]
+    fn an_unset_language_is_chinese_for_a_chinese_desktop_only() {
+        let mut rig = Rig::new().on(&[SCRIPT]);
+        rig.unset = true;
+        assert!(matches!(state_of(&rig), Standing::NotApplicable(_)));
+        let locales = ["zh_TW".to_owned(), "en".to_owned()];
+        let standing = |rig: &Rig| {
+            row(
+                SCRIPT,
+                &Inputs {
+                    language_unset: rig.unset,
+                    enabled: &rig.enabled,
+                    params: &rig.params,
+                    source: &rig.source,
+                    catalog: &rig.catalog,
+                    daemon: rig.daemon.as_ref(),
+                    installing: &rig.installing,
+                    preparing: &rig.preparing,
+                    locales: &locales,
+                },
+            )
+            .standing
+        };
+        assert_eq!(standing(&rig), Standing::Ready);
+        rig.unset = false;
+        assert!(matches!(standing(&rig), Standing::NotApplicable(_)));
+    }
+
+    #[test]
+    fn the_modes_are_the_four_scripts_and_show_the_stored_one() {
+        let mut rig = Rig::new().on(&[SCRIPT]);
+        rig.source = zh();
+        let modes = rig.row(SCRIPT).script.unwrap();
+        let nicks: Vec<&str> = modes.modes.iter().map(|(n, _)| n.as_str()).collect();
+        assert_eq!(
+            nicks,
+            [
+                "simplified",
+                "traditional",
+                "traditional-taiwan",
+                "traditional-hongkong"
+            ]
+        );
+        assert!(modes.modes.iter().all(|(n, name)| n != name));
+        for (index, nick) in nicks.iter().enumerate() {
+            rig.params = with_script_mode(&rig.params, nick);
+            assert_eq!(rig.row(SCRIPT).script.unwrap().selected, index, "{nick}");
+        }
+        rig.params = with_script_mode(&Params::new(), "klingon");
+        assert_eq!(rig.row(SCRIPT).script.unwrap().selected, 0, "unknown");
+    }
+
+    #[test]
+    fn switching_the_step_on_picks_the_desktops_script_and_keeps_a_choice() {
+        for (locales, mode) in [
+            (&["zh_CN"][..], "simplified"),
+            (&["zh_TW.UTF-8"], "traditional-taiwan"),
+            (&["en", "zh_HK"], "traditional-hongkong"),
+            (&["yue_HK"], "traditional-hongkong"),
+            (&["zh_Hant"], "traditional"),
+            (&["zh-Hant-TW"], "traditional-taiwan"),
+            (&["en", "de"], "simplified"),
+        ] {
+            let locales: Vec<String> = locales.iter().map(|l| (*l).to_owned()).collect();
+            let params = with_script_on(&Params::new(), &locales);
+            assert_eq!(params["script.mode"], mode, "{locales:?}");
+        }
+        let kept = with_script_mode(&Params::new(), "traditional");
+        assert_eq!(
+            with_script_on(&kept, &["zh_TW".to_owned()])["script.mode"],
+            "traditional"
+        );
+        let broken = with_script_mode(&Params::new(), "as-recognised");
+        assert_eq!(
+            with_script_on(&broken, &["zh_TW".to_owned()])["script.mode"],
+            "traditional-taiwan"
+        );
     }
 }

@@ -21,7 +21,8 @@ use crate::ports::{
     BackendRepository, ClientSettingsSubscription, DictationDaemon, SystemConfigurator,
 };
 use crate::processing_steps::{
-    example, rows, with_enabled, with_target, Inputs, Offered, Row, Source, Standing, TRANSLATE,
+    example, rows, with_enabled, with_script_mode, with_script_on, with_target, Inputs, Offered,
+    Row, Source, Standing, SCRIPT, TRANSLATE,
 };
 use crate::ui::InstallControl;
 
@@ -67,6 +68,10 @@ enum Widgets {
         /// The names the combo lists now, to refill it only when they change.
         listed: RefCell<Vec<String>>,
     },
+    Script {
+        row: adw::ExpanderRow,
+        combo: adw::ComboRow,
+    },
 }
 
 impl Widgets {
@@ -74,6 +79,7 @@ impl Widgets {
         match self {
             Self::Switch { row, .. } => row.clone().upcast(),
             Self::Translate { row, .. } => row.clone().upcast(),
+            Self::Script { row, .. } => row.clone().upcast(),
         }
     }
 }
@@ -173,6 +179,7 @@ impl StepsPage {
             .map(|(id, _)| id.clone())
             .collect();
         rows(&Inputs {
+            language_unset: self.deps.store.language().trim().is_empty(),
             enabled: &ids,
             params: &params,
             source: &source,
@@ -235,6 +242,8 @@ impl StepsPage {
         for row in rows {
             let widgets = if row.id == TRANSLATE {
                 self.translate_widgets(&row.id)
+            } else if row.id == SCRIPT {
+                self.script_widgets(&row.id)
             } else {
                 self.switch_widgets(&row.id)
             };
@@ -335,6 +344,42 @@ impl StepsPage {
         }
     }
 
+    fn script_widgets(self: &Rc<Self>, id: &str) -> Widgets {
+        let row = adw::ExpanderRow::builder()
+            .show_enable_switch(true)
+            .subtitle_lines(0)
+            .build();
+        let combo = adw::ComboRow::builder()
+            .title(gettextrs::gettext("Write Chinese as"))
+            .build();
+        row.add_row(&combo);
+        row.connect_enable_expansion_notify({
+            let page = Rc::downgrade(self);
+            let id = id.to_owned();
+            move |row| {
+                if let Some(page) = page.upgrade() {
+                    if !page.updating.get() {
+                        if row.enables_expansion() {
+                            row.set_expanded(true);
+                        }
+                        page.set_enabled(&id, row.enables_expansion());
+                    }
+                }
+            }
+        });
+        combo.connect_selected_notify({
+            let page = Rc::downgrade(self);
+            move |combo| {
+                if let Some(page) = page.upgrade() {
+                    if !page.updating.get() {
+                        page.choose_script(combo.selected());
+                    }
+                }
+            }
+        });
+        Widgets::Script { row, combo }
+    }
+
     fn write(&self, ids: &[String], params: &myna_core::processing::Params) {
         if let Err(error) = self.deps.store.set_steps(ids, params) {
             glib::g_warning!(crate::LOG_DOMAIN, "steps not stored: {error}");
@@ -347,8 +392,29 @@ impl StepsPage {
     }
 
     fn set_enabled(self: &Rc<Self>, id: &str, on: bool) {
-        let (ids, params) = self.deps.store.steps();
+        let (ids, mut params) = self.deps.store.steps();
+        if on && id == SCRIPT {
+            params = with_script_on(&params, &self.deps.locales);
+        }
         self.write(&with_enabled(&ids, id, on), &params);
+        self.render();
+    }
+
+    fn choose_script(self: &Rc<Self>, index: u32) {
+        let nick = {
+            let shown = self.shown.borrow();
+            shown
+                .iter()
+                .find(|row| row.id == SCRIPT)
+                .and_then(|row| row.script.as_ref())
+                .and_then(|script| script.modes.get(index as usize))
+                .map(|(nick, _)| nick.clone())
+        };
+        let Some(nick) = nick else {
+            return;
+        };
+        let (ids, params) = self.deps.store.steps();
+        self.write(&ids, &with_script_mode(&params, &nick));
         self.render();
     }
 
@@ -559,6 +625,21 @@ fn update(widgets: &Widgets, row: &Row) {
             if let Some(name) = &translate.from {
                 from.set_subtitle(&escape_markup(name));
             }
+        }
+        Widgets::Script { row: widget, combo } => {
+            widget.set_title(&escape_markup(&row.title));
+            widget.set_subtitle(&subtitle);
+            widget.set_enable_expansion(row.enabled);
+            widget.set_sensitive(row.switchable());
+            let Some(script) = &row.script else {
+                return;
+            };
+            if combo.model().is_none() {
+                let names: Vec<&str> = script.modes.iter().map(|(_, n)| n.as_str()).collect();
+                combo.set_model(Some(&gtk::StringList::new(&names)));
+            }
+            combo.set_selected(script.selected as u32);
+            combo.set_sensitive(row.enabled);
         }
     }
 }
@@ -1047,6 +1128,84 @@ mod tests {
             pump_until("the switch", || {
                 switch(&rig, "Fitted to the field").is_active()
             });
+        });
+    }
+
+    fn script_row(rig: &Rig) -> (adw::ExpanderRow, adw::ComboRow) {
+        let row = all::<adw::ExpanderRow>(rig.group.upcast_ref())
+            .into_iter()
+            .find(|row| row.title() == "Chinese script")
+            .expect("the Chinese script row");
+        let combo = all::<adw::ComboRow>(row.upcast_ref())
+            .into_iter()
+            .next()
+            .expect("its mode combo");
+        (row, combo)
+    }
+
+    #[test]
+    fn the_chinese_script_row_is_dimmed_for_english_with_no_snap_installed() {
+        crate::ui::on_gtk_thread(|| {
+            let rig = rig("script-dim", NOTHING, NOTHING, "");
+            let (row, _) = script_row(&rig);
+            assert!(!row.is_sensitive());
+            assert_eq!(row.subtitle(), "Applies when the text is Chinese");
+            assert!(!row.enables_expansion());
+        });
+    }
+
+    #[test]
+    fn switching_chinese_script_on_stores_a_mode_and_the_combo_changes_it() {
+        crate::ui::on_gtk_thread(|| {
+            let rig = rig("script-on", NOTHING, NOTHING, "language='zh'\n");
+            let (row, combo) = script_row(&rig);
+            assert!(row.is_sensitive());
+            assert!(row.subtitle().starts_with("Types Chinese"));
+            assert!(!combo.is_sensitive());
+            row.set_enable_expansion(true);
+            let (ids, params) = rig.store.steps();
+            assert_eq!(ids, ["script"]);
+            assert_eq!(params["script.mode"], "simplified");
+            assert!(combo.is_sensitive());
+            let shown: Vec<String> = (0..4)
+                .map(|i| {
+                    combo
+                        .model()
+                        .unwrap()
+                        .item(i)
+                        .and_downcast::<gtk::StringObject>()
+                        .unwrap()
+                        .string()
+                        .to_string()
+                })
+                .collect();
+            assert_eq!(shown[2], "Traditional, Taiwan (繁體)");
+            combo.set_selected(2);
+            assert_eq!(rig.store.steps().1["script.mode"], "traditional-taiwan");
+            assert_eq!(rig.store.steps().0, ["script"]);
+            row.set_enable_expansion(false);
+            assert!(rig.store.steps().0.is_empty());
+            assert_eq!(
+                rig.store.steps().1["script.mode"],
+                "traditional-taiwan",
+                "the choice outlives the switch"
+            );
+        });
+    }
+
+    #[test]
+    fn a_chinese_users_stored_choice_shows_on_the_row() {
+        crate::ui::on_gtk_thread(|| {
+            let rig = rig(
+                "script-stored",
+                NOTHING,
+                NOTHING,
+                "language='zh-Hant'\nprocessing-steps=['script']\n\
+                 processing-params={'script.mode': 'traditional-hongkong'}\n",
+            );
+            let (row, combo) = script_row(&rig);
+            assert!(row.enables_expansion());
+            assert_eq!(combo.selected(), 3);
         });
     }
 }
