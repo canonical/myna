@@ -32,6 +32,8 @@ pub enum Offer {
     Preparing,
     /// No daemon answers, so nothing is known about the models.
     Unknown,
+    /// Its model is being removed.
+    Removing,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -53,6 +55,8 @@ pub struct Item {
     pub example: Option<String>,
     pub details: Vec<Detail>,
     pub offer: Offer,
+    /// The entry whose model is installed and can be removed.
+    pub removable: Option<Box<Entry>>,
 }
 
 pub struct Inputs<'a> {
@@ -65,6 +69,8 @@ pub struct Inputs<'a> {
     pub installing: &'a std::collections::BTreeMap<String, Option<u8>>,
     /// Item ids installed whose models the daemon has not offered yet.
     pub preparing: &'a std::collections::BTreeSet<String>,
+    /// Item ids whose models are being removed.
+    pub removing: &'a std::collections::BTreeSet<String>,
     pub locales: &'a [String],
     /// The Steps rows as the page shows them, for what cannot apply.
     pub rows: &'a [Row],
@@ -159,6 +165,7 @@ fn built_in(id: &str, inputs: &Inputs) -> Item {
         example: example.map(|(heard, typed)| arrow(&heard, &typed)),
         details,
         offer,
+        removable: None,
     }
 }
 
@@ -191,7 +198,15 @@ fn from_entry(entry: &Entry, inputs: &Inputs) -> Item {
         example,
         details: details(entry),
         offer: offer(entry, inputs),
+        removable: removable(entry, inputs),
     }
+}
+
+/// An installed model the user may take away; never while it is going.
+fn removable(entry: &Entry, inputs: &Inputs) -> Option<Box<Entry>> {
+    let offered = inputs.daemon.is_some_and(|d| d.offers(&entry.model));
+    (offered && !inputs.removing.contains(&entry.id) && !inputs.installing.contains_key(&entry.id))
+        .then(|| Box::new(entry.clone()))
 }
 
 fn example(entry: &Entry) -> Option<String> {
@@ -247,21 +262,26 @@ pub fn quality_note(source: &str) -> String {
 
 fn offer(entry: &Entry, inputs: &Inputs) -> Offer {
     let step = &entry.step.id;
-    if added(entry, inputs) {
-        return Offer::Added;
+    if inputs.removing.contains(&entry.id) {
+        return Offer::Removing;
     }
     if let Some(percent) = inputs.installing.get(&entry.id) {
         return Offer::Installing(*percent);
     }
+    let added = added(entry, inputs);
     let Some(daemon) = inputs.daemon else {
-        return Offer::Unknown;
+        return if added { Offer::Added } else { Offer::Unknown };
     };
+    // A step switched on whose model is gone offers the same install again.
     if !daemon.offers(&entry.model) {
         return if inputs.preparing.contains(&entry.id) {
             Offer::Preparing
         } else {
             Offer::Install(Box::new(entry.clone()))
         };
+    }
+    if added {
+        return Offer::Added;
     }
     if let Some(Standing::NotApplicable(reason)) = standing(inputs, step) {
         return Offer::NotApplicable(reason.clone());
@@ -361,6 +381,7 @@ mod tests {
         daemon: Option<Offered>,
         installing: BTreeMap<String, Option<u8>>,
         preparing: BTreeSet<String>,
+        removing: BTreeSet<String>,
         locales: Vec<String>,
     }
 
@@ -372,6 +393,7 @@ mod tests {
             daemon: Offered::parse(BOTH),
             installing: BTreeMap::new(),
             preparing: BTreeSet::new(),
+            removing: BTreeSet::new(),
             locales: vec!["en_US.UTF-8".into()],
         }
     }
@@ -398,6 +420,7 @@ mod tests {
             daemon: case.daemon.as_ref(),
             installing: &case.installing,
             preparing: &case.preparing,
+            removing: &case.removing,
             locales: &case.locales,
             rows: &step_rows,
         })
@@ -444,6 +467,7 @@ mod tests {
             daemon: None,
             installing: &BTreeMap::new(),
             preparing: &BTreeSet::new(),
+            removing: &BTreeSet::new(),
             locales: &[],
             rows: &[],
         });
@@ -513,6 +537,49 @@ mod tests {
     }
 
     #[test]
+    fn only_an_installed_model_can_be_removed_and_not_while_it_is_going() {
+        let mut case = case();
+        let all = listed(&case);
+        assert_eq!(find(&all, "tidy").removable.as_ref().unwrap().id, "tidy");
+        assert_eq!(find(&all, "en-fr").removable.as_ref().unwrap().id, "en-fr");
+        assert!(find(&all, "fr-en").removable.is_none(), "not installed");
+        assert!(find(&all, "fit").removable.is_none(), "built in");
+        assert!(find(&all, "script").removable.is_none(), "built in");
+        case.removing.insert("en-fr".into());
+        let all = listed(&case);
+        assert_eq!(find(&all, "en-fr").offer, Offer::Removing);
+        assert!(find(&all, "en-fr").removable.is_none());
+        assert!(find(&all, "tidy").removable.is_some());
+        case.removing.clear();
+        case.installing.insert("en-fr".into(), None);
+        assert!(find(&listed(&case), "en-fr").removable.is_none());
+        case.installing.clear();
+        case.daemon = None;
+        assert!(find(&listed(&case), "tidy").removable.is_none());
+    }
+
+    #[test]
+    fn a_step_on_whose_model_is_gone_offers_that_entrys_install_again() {
+        let mut case = case();
+        case.enabled = vec!["tidy".into(), "translate".into()];
+        case.params
+            .insert(param_key(TRANSLATE, TRANSLATE_TO), "fr".into());
+        let all = listed(&case);
+        assert_eq!(find(&all, "tidy").offer, Offer::Added);
+        assert_eq!(find(&all, "en-fr").offer, Offer::Added);
+        case.daemon = Offered::parse(r#"{"models":[],"steps":[]}"#);
+        let all = listed(&case);
+        let Offer::Install(entry) = &find(&all, "en-fr").offer else {
+            panic!("{:?}", find(&all, "en-fr").offer);
+        };
+        assert_eq!(entry.id, "en-fr");
+        assert!(matches!(find(&all, "tidy").offer, Offer::Install(_)));
+        assert!(find(&all, "tidy").removable.is_none());
+        case.preparing.insert("en-fr".into());
+        assert_eq!(find(&listed(&case), "en-fr").offer, Offer::Preparing);
+    }
+
+    #[test]
     fn with_no_daemon_nothing_is_known_about_the_models() {
         let mut none = case();
         none.daemon = None;
@@ -563,6 +630,7 @@ mod tests {
             daemon: daemon.as_ref(),
             installing: &BTreeMap::new(),
             preparing: &BTreeSet::new(),
+            removing: &BTreeSet::new(),
             locales: &[],
             rows: &step_rows,
         });
@@ -632,6 +700,7 @@ mod tests {
             daemon: None,
             installing: &BTreeMap::new(),
             preparing: &BTreeSet::new(),
+            removing: &BTreeSet::new(),
             locales: &["en".to_owned()],
             rows: &[],
         });

@@ -62,6 +62,8 @@ enum Widgets {
     Switch {
         row: adw::SwitchRow,
         control: InstallControl,
+        /// The row's menu, with Remove model in it, while a model is installed.
+        menu: gtk::MenuButton,
     },
     Translate {
         row: adw::ExpanderRow,
@@ -93,6 +95,8 @@ struct CatalogWidgets {
     control: InstallControl,
     add: gtk::Button,
     added: gtk::Label,
+    remove_row: adw::ActionRow,
+    remove: gtk::Button,
 }
 
 pub struct StepsPage {
@@ -112,6 +116,8 @@ pub struct StepsPage {
     offered: RefCell<Option<Offered>>,
     installing: RefCell<BTreeMap<String, Option<u8>>>,
     preparing: RefCell<BTreeMap<String, Instant>>,
+    /// Catalog entry ids whose models are being removed.
+    removing: RefCell<BTreeSet<String>>,
     /// Set while the page writes a value into a widget, so the widget's
     /// signal is not taken for the user.
     updating: Cell<bool>,
@@ -166,6 +172,7 @@ impl StepsPage {
             offered: RefCell::new(None),
             installing: RefCell::new(BTreeMap::new()),
             preparing: RefCell::new(BTreeMap::new()),
+            removing: RefCell::new(BTreeSet::new()),
             updating: Cell::new(false),
             cancellation: CancellationToken::new(),
             watch: RefCell::new(None),
@@ -247,6 +254,7 @@ impl StepsPage {
         let offered = self.offered.borrow().clone();
         let rows = self.inputs_rows(offered.as_ref());
         self.render_catalog(offered.as_ref(), &rows);
+        self.show_row_menus();
         if *self.shown.borrow() == rows && !self.widgets.borrow().is_empty() {
             return;
         }
@@ -328,6 +336,8 @@ impl StepsPage {
         let row = adw::SwitchRow::builder().subtitle_lines(0).build();
         let control = self.control(id);
         row.add_suffix(&control);
+        let menu = self.row_menu(id);
+        row.add_suffix(&menu);
         row.connect_active_notify({
             let page = Rc::downgrade(self);
             let id = id.to_owned();
@@ -339,7 +349,104 @@ impl StepsPage {
                 }
             }
         });
-        Widgets::Switch { row, control }
+        Widgets::Switch { row, control, menu }
+    }
+
+    /// The menu of a step's row: Remove model, for a model that is installed.
+    fn row_menu(self: &Rc<Self>, id: &str) -> gtk::MenuButton {
+        let remove = gtk::Button::builder()
+            .label(gettextrs::gettext("Remove model"))
+            .css_classes(["flat"])
+            .build();
+        let popover = gtk::Popover::builder().child(&remove).build();
+        let menu = gtk::MenuButton::builder()
+            .icon_name("view-more-symbolic")
+            .css_classes(["flat"])
+            .valign(gtk::Align::Center)
+            .popover(&popover)
+            .visible(false)
+            .build();
+        remove.connect_clicked({
+            let page = Rc::downgrade(self);
+            let id = id.to_owned();
+            let popover = popover.downgrade();
+            move |_| {
+                if let Some(popover) = popover.upgrade() {
+                    popover.popdown();
+                }
+                if let Some(page) = page.upgrade() {
+                    page.remove_step_model(&id);
+                }
+            }
+        });
+        menu
+    }
+
+    /// Show each switch row's menu while its step has a model to remove.
+    fn show_row_menus(&self) {
+        let items = self.items.borrow();
+        let blocked = self.dictating.get() || self.busy();
+        for (id, widgets) in self.widgets.borrow().iter() {
+            let Widgets::Switch { menu, row, .. } = widgets else {
+                continue;
+            };
+            let removable = items
+                .iter()
+                .any(|item| item.step == *id && item.removable.is_some());
+            menu.set_visible(removable);
+            menu.set_sensitive(!blocked);
+            menu.update_property(&[gtk::accessible::Property::Label(
+                // TRANSLATORS: {step} is a step's name, such as "Tidy up speech".
+                &gettextrs::gettext("More actions for {step}").replace("{step}", &row.title()),
+            )]);
+        }
+    }
+
+    /// An install or a removal is running.
+    fn busy(&self) -> bool {
+        !self.installing.borrow().is_empty() || !self.removing.borrow().is_empty()
+    }
+
+    fn remove_step_model(self: &Rc<Self>, step: &str) {
+        let entry = self
+            .items
+            .borrow()
+            .iter()
+            .find(|item| item.step == step && item.removable.is_some())
+            .and_then(|item| item.removable.clone());
+        if let Some(entry) = entry {
+            self.start_remove(*entry);
+        }
+    }
+
+    /// Remove an installed model. The steps stay as they are: a step whose
+    /// model is gone says what it needs and the chain skips it.
+    fn start_remove(self: &Rc<Self>, entry: Entry) {
+        if self.dictating.get() || self.busy() {
+            return;
+        }
+        self.removing.borrow_mut().insert(entry.id.clone());
+        self.render();
+        let page = Rc::downgrade(self);
+        glib::spawn_future_local(async move {
+            let outcome = run_remove(&page, &entry).await;
+            let Some(page) = page.upgrade() else { return };
+            page.removing.borrow_mut().remove(&entry.id);
+            match outcome {
+                Ok(()) | Err(Failure::Dismissed) => {}
+                Err(Failure::Dictating) => {
+                    page.deps
+                        .overlay
+                        .add_toast(adw::Toast::new(&gettextrs::gettext(
+                            "Finish dictating, then try again.",
+                        )));
+                }
+                Err(Failure::Failed(error)) => {
+                    page.toast_failure(&gettextrs::gettext("Removing the model failed"), &error);
+                }
+            }
+            page.refresh().await;
+        });
     }
 
     fn translate_widgets(self: &Rc<Self>, id: &str) -> Widgets {
@@ -516,7 +623,7 @@ impl StepsPage {
 
     /// Install `entries` as one operation, shown under `id`.
     fn start_install(self: &Rc<Self>, id: &str, entries: &[Entry]) {
-        if self.installing.borrow().contains_key(id) {
+        if self.installing.borrow().contains_key(id) || !self.removing.borrow().is_empty() {
             return;
         }
         self.installing.borrow_mut().insert(id.to_owned(), None);
@@ -542,7 +649,9 @@ impl StepsPage {
                             "Finish dictating, then try again.",
                         )));
                 }
-                Err(Failure::Failed(error)) => page.toast_failure(&error),
+                Err(Failure::Failed(error)) => {
+                    page.toast_failure(&gettextrs::gettext("Installing the model failed"), &error);
+                }
             }
             page.refresh().await;
         });
@@ -561,6 +670,7 @@ impl StepsPage {
             .filter(|(_, since)| now.duration_since(**since) < PREPARING_FOR)
             .map(|(id, _)| id.clone())
             .collect();
+        let removing = self.removing.borrow();
         let items = step_catalog::items(&step_catalog::Inputs {
             catalog: &catalog,
             enabled: &ids,
@@ -569,6 +679,7 @@ impl StepsPage {
             daemon: offered,
             installing: &installing,
             preparing: &preparing,
+            removing: &removing,
             locales: &self.deps.locales,
             rows,
         });
@@ -592,11 +703,12 @@ impl StepsPage {
             }
             self.catalog_widgets.replace(built);
         }
-        let blocked = self.dictating.get() || !installing.is_empty();
+        let blocked = self.dictating.get() || !installing.is_empty() || !removing.is_empty();
         for ((_, widgets), item) in self.catalog_widgets.borrow().iter().zip(&items) {
             show_item(widgets, item, blocked);
         }
         drop(installing);
+        drop(removing);
         drop(catalog);
         self.items.replace(items);
     }
@@ -647,6 +759,35 @@ impl StepsPage {
                     .build(),
             );
         }
+        let remove = gtk::Button::builder()
+            .label(gettextrs::gettext("Remove"))
+            .css_classes(["flat"])
+            .valign(gtk::Align::Center)
+            .build();
+        remove.reset_relation(gtk::AccessibleRelation::LabelledBy);
+        remove.update_property(&[gtk::accessible::Property::Label(
+            // TRANSLATORS: {step} is a step's name, such as "Tidy up speech".
+            &gettextrs::gettext("Remove {step}").replace("{step}", &item.title),
+        )]);
+        let remove_row = adw::ActionRow::builder()
+            .title(gettextrs::gettext("Remove this model"))
+            .subtitle(gettextrs::gettext(
+                "The step stays switched on and shows what it needs, so it can be installed again.",
+            ))
+            .subtitle_lines(0)
+            .visible(false)
+            .build();
+        remove_row.add_suffix(&remove);
+        row.add_row(&remove_row);
+        remove.connect_clicked({
+            let page = Rc::downgrade(self);
+            let id = item.id.clone();
+            move |_| {
+                if let Some(page) = page.upgrade() {
+                    page.remove_item(&id);
+                }
+            }
+        });
         add.connect_clicked({
             let page = Rc::downgrade(self);
             let id = item.id.clone();
@@ -670,6 +811,14 @@ impl StepsPage {
             control,
             add,
             added,
+            remove_row,
+            remove,
+        }
+    }
+
+    fn remove_item(self: &Rc<Self>, id: &str) {
+        if let Some(entry) = self.item(id).and_then(|item| item.removable) {
+            self.start_remove(*entry);
         }
     }
 
@@ -700,14 +849,14 @@ impl StepsPage {
         let Offer::Install(entry) = item.offer else {
             return;
         };
-        if self.dictating.get() || !self.installing.borrow().is_empty() {
+        if self.dictating.get() || self.busy() {
             return;
         }
         self.start_install(id, std::slice::from_ref(&entry));
     }
 
-    fn toast_failure(&self, error: &crate::ports::SystemConfiguratorError) {
-        let heading = gettextrs::gettext("Installing the model failed");
+    fn toast_failure(&self, heading: &str, error: &crate::ports::SystemConfiguratorError) {
+        let heading = heading.to_owned();
         let summary = crate::backend_ui::system_failure_summary(error);
         let details = crate::backend_ui::system_error_details(error);
         let toast = adw::Toast::builder()
@@ -793,12 +942,38 @@ async fn run_install(
     Ok(())
 }
 
+/// Remove each component of `entry`.
+async fn run_remove(page: &std::rc::Weak<StepsPage>, entry: &Entry) -> Result<(), Failure> {
+    for request in plugin_catalog::requests(&[entry]) {
+        let Some(strong) = page.upgrade() else {
+            return Err(Failure::Dismissed);
+        };
+        let sleep =
+            |interval: Duration| -> std::pin::Pin<Box<dyn std::future::Future<Output = ()>>> {
+                Box::pin(glib::timeout_future(interval))
+            };
+        let follow = crate::snap_install::Follow {
+            interval: strong.deps.follow_interval,
+            sleep: &sleep,
+            cancellation: strong.cancellation.clone(),
+        };
+        let ctx = plugin_install::Context {
+            configurator: strong.deps.configurator.as_ref(),
+            daemon: strong.deps.daemon.as_ref(),
+            follow: &follow,
+        };
+        plugin_install::remove(&ctx, &request, &|_| {}).await?;
+    }
+    Ok(())
+}
+
 fn update(widgets: &Widgets, row: &Row) {
     let subtitle = escape_markup(&row.subtitle());
     match widgets {
         Widgets::Switch {
             row: widget,
             control,
+            ..
         } => {
             widget.set_title(&escape_markup(&row.title));
             widget.set_subtitle(&subtitle);
@@ -875,6 +1050,8 @@ fn show_item(widgets: &CatalogWidgets, item: &Item, blocked: bool) {
         .set_visible(matches!(item.offer, Offer::Add | Offer::NotApplicable(_)));
     widgets.add.set_sensitive(matches!(item.offer, Offer::Add));
     widgets.added.set_visible(item.offer == Offer::Added);
+    widgets.remove_row.set_visible(item.removable.is_some());
+    widgets.remove.set_sensitive(!blocked);
     let control = &widgets.control;
     control.set_visible(true);
     match &item.offer {
@@ -893,6 +1070,13 @@ fn show_item(widgets: &CatalogWidgets, item: &Item, blocked: bool) {
                 .progress()
                 .label
                 .set_label(&gettextrs::gettext("Preparing…"));
+        }
+        Offer::Removing => {
+            control.show_installing(None);
+            control
+                .progress()
+                .label
+                .set_label(&gettextrs::gettext("Removing…"));
         }
         _ => control.set_visible(false),
     }
@@ -1032,6 +1216,25 @@ mod tests {
             }
             self.daemon.replace(self.after.to_owned());
             Ok(())
+        }
+        async fn change_components(
+            &self,
+            snap: &str,
+            components: &[String],
+            install: bool,
+            _: CancellationToken,
+        ) -> Result<Option<String>, SystemConfiguratorError> {
+            let verb = if install { "install" } else { "remove" };
+            self.calls
+                .borrow_mut()
+                .push(format!("{verb} {snap} {}", components.join("+")));
+            for _ in 0..4 {
+                Nap(false).await;
+            }
+            if !install {
+                self.daemon.replace(NOTHING.to_owned());
+            }
+            Ok(None)
         }
         async fn changes_in_progress(
             &self,
@@ -1220,6 +1423,78 @@ mod tests {
         controls(rig)
             .into_iter()
             .find(|c| c.is_visible() && c.button().is_visible())
+    }
+
+    fn catalog_widgets(rig: &Rig, id: &str) -> (adw::ExpanderRow, gtk::Button, adw::ActionRow) {
+        let widgets = rig.page.catalog_widgets.borrow();
+        let (_, w) = widgets.iter().find(|(i, _)| i == id).unwrap();
+        (w.row.clone(), w.remove.clone(), w.remove_row.clone())
+    }
+
+    #[test]
+    fn removing_a_model_leaves_the_step_on_and_offers_that_installs_again() {
+        crate::ui::on_gtk_thread(|| {
+            let rig = rig("remove", TIDY, TIDY, "processing-steps=['tidy']\n");
+            pump_until("the remove row", || {
+                rig.page
+                    .catalog_widgets
+                    .borrow()
+                    .iter()
+                    .any(|(id, w)| id == "tidy" && w.remove_row.is_visible())
+            });
+            let (_, remove, _) = catalog_widgets(&rig, "tidy");
+            assert_eq!(remove.label().as_deref(), Some("Remove"));
+            remove.emit_clicked();
+            pump_until("the removal", || {
+                rig.calls.borrow().as_slice() == ["remove myna-translation tidy"]
+            });
+            pump_until("the step to need its model", || {
+                switch(&rig, "Tidy up speech")
+                    .subtitle()
+                    .is_some_and(|s| s.starts_with("Needs the Tidy up speech model"))
+            });
+            assert_eq!(rig.store.steps().0, ["tidy"], "the steps are never edited");
+            assert!(rig.page.removing.borrow().is_empty());
+            let (_, _, remove_row) = catalog_widgets(&rig, "tidy");
+            assert!(!remove_row.is_visible());
+            let again = rig.page.item("tidy").unwrap();
+            assert!(matches!(again.offer, Offer::Install(_)));
+            assert!(rig.daemon.borrow().contains("models\":[]"));
+        });
+    }
+
+    #[test]
+    fn a_removal_waits_for_the_dictation_to_end() {
+        crate::ui::on_gtk_thread(|| {
+            let rig = rig("remove-busy", TIDY, TIDY, "processing-steps=['tidy']\n");
+            pump_until("the remove row", || {
+                rig.page
+                    .catalog_widgets
+                    .borrow()
+                    .iter()
+                    .any(|(id, w)| id == "tidy" && w.remove_row.is_visible())
+            });
+            rig.page.dictating.set(true);
+            let entry = *rig.page.item("tidy").unwrap().removable.unwrap();
+            rig.page.start_remove(entry);
+            assert!(rig.calls.borrow().is_empty());
+            assert!(rig.page.removing.borrow().is_empty());
+        });
+    }
+
+    #[test]
+    fn a_step_row_has_a_menu_that_removes_its_model() {
+        crate::ui::on_gtk_thread(|| {
+            let rig = rig("row-menu", TIDY, TIDY, "processing-steps=['tidy']\n");
+            let menu =
+                || all::<gtk::MenuButton>(switch(&rig, "Tidy up speech").upcast_ref()).remove(0);
+            pump_until("the menu", || menu().is_visible());
+            rig.page.remove_step_model("tidy");
+            pump_until("the removal", || {
+                rig.calls.borrow().as_slice() == ["remove myna-translation tidy"]
+            });
+            pump_until("the menu to go", || !menu().is_visible());
+        });
     }
 
     #[test]
