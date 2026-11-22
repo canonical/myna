@@ -34,3 +34,4 @@ translate_en_<l>, the other pair slices
   Derived from FLEURS exactly like translate_en_fr above (CC-BY-4.0, same
   revision, same seeded selection and filters); the target-language inputs are:
   Pair input: translate_en_de data/de_de/test.tsv sha256 82fab72c58a347345675c238f2492bb997105a4ab45d69e2a2b34ed29082fa97
+  Pair input: translate_en_fa data/fa_ir/test.tsv sha256 2f96b4df444a63964e689db45ce9445c9759b41578d010a5f758dbd29b004579
