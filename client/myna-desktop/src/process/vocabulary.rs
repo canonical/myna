@@ -21,12 +21,7 @@ const NEAR_MAX_EDITS: usize = 1;
 
 /// What an entry is heard as and what it is typed as.
 fn split(entry: &str) -> (&str, &str) {
-    match entry.split_once(':') {
-        Some((spoken, written)) if !spoken.trim().is_empty() && !written.trim().is_empty() => {
-            (spoken.trim(), written.trim())
-        }
-        _ => (entry.trim(), entry.trim()),
-    }
+    myna_core::spoken_written(entry).unwrap_or((entry.trim(), entry.trim()))
 }
 
 /// What `entry` is typed as, and so what the speech model is told to listen
