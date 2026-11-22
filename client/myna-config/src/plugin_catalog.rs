@@ -147,8 +147,99 @@ pub fn load(snapshot_dir: &Path, snap_root: &Path) -> Catalog {
         .into_values()
         .map(|(_, entry)| entry)
         .filter(|entry| entry.curated && entry.contract <= SUPPORTED_CONTRACT)
+        .filter(|entry| {
+            let listed = entry.listable();
+            if !listed {
+                skipped.push(format!(
+                    "{}: entry skipped: not an allowed snap or component",
+                    entry.id
+                ));
+            }
+            listed
+        })
         .collect();
     Catalog { entries, skipped }
+}
+
+impl Entry {
+    /// Only the two text snaps' own components are ever installed, whatever
+    /// a catalog file claims.
+    fn listable(&self) -> bool {
+        SNAPS.contains(&self.snap.as_str())
+            && crate::adapters::snapd_client::is_valid_component_name(&self.component)
+    }
+}
+
+/// What one snapd request changes: named components of one snap.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ComponentRequest {
+    pub snap: String,
+    pub components: Vec<String>,
+    /// The model ids the components provide, for waiting on the daemon.
+    pub models: Vec<String>,
+    pub expected_bytes: u64,
+}
+
+/// The requests that install (or remove) `entries`: one per snap, each
+/// component once, in a stable order.
+pub fn requests(entries: &[&Entry]) -> Vec<ComponentRequest> {
+    let mut by_snap: BTreeMap<&str, BTreeMap<&str, &Entry>> = BTreeMap::new();
+    for entry in entries {
+        by_snap
+            .entry(&entry.snap)
+            .or_default()
+            .insert(&entry.component, entry);
+    }
+    by_snap
+        .into_iter()
+        .map(|(snap, components)| ComponentRequest {
+            snap: snap.to_owned(),
+            components: components.keys().map(|c| (*c).to_owned()).collect(),
+            models: components.values().map(|e| e.model.clone()).collect(),
+            expected_bytes: components.values().map(|e| e.download_bytes).sum(),
+        })
+        .collect()
+}
+
+/// Entries whose model the daemon does not offer yet.
+pub fn not_offered<'a>(entries: &'a [Entry], offered: &[String]) -> Vec<&'a Entry> {
+    entries
+        .iter()
+        .filter(|entry| !offered.contains(&entry.model))
+        .collect()
+}
+
+/// The entries that translate `from` to `to`: the pair itself, else its two
+/// legs through English. `None` when the catalog cannot.
+pub fn translation_legs<'a>(entries: &'a [Entry], from: &str, to: &str) -> Option<Vec<&'a Entry>> {
+    let leg = |from: &str, to: &str| {
+        entries
+            .iter()
+            .find(|e| e.step.id == "translate" && e.in_lang == from && e.out_lang == to)
+    };
+    if from == to {
+        return None;
+    }
+    if let Some(direct) = leg(from, to) {
+        return Some(vec![direct]);
+    }
+    Some(vec![leg(from, "en")?, leg("en", to)?])
+}
+
+/// Stable sort putting entries relevant to the user's locales first, in the
+/// order the locales are given, then the rest by id.
+pub fn locale_order(entries: &mut [&Entry], locales: &[String]) {
+    let rank = |entry: &Entry| {
+        locales
+            .iter()
+            .position(|locale| {
+                let language = locale.split(['_', '-', '.']).next().unwrap_or_default();
+                entry.locales.iter().any(|l| l == language)
+                    || (entry.locales.is_empty() && entry.in_lang == language)
+            })
+            .unwrap_or(locales.len())
+    };
+    entries.sort_by(|a, b| (rank(a), &a.id).cmp(&(rank(b), &b.id)));
 }
 
 /// The words a derived label key stands for, translated; `None` for a key
@@ -175,7 +266,7 @@ mod tests {
 
     fn entry(id: &str, revision: u64) -> serde_json::Value {
         serde_json::json!({
-            "id": id, "snap": "s", "component": id, "model": "m",
+            "id": id, "snap": "myna-text", "component": format!("model-{id}"), "model": format!("m-{id}"),
             "contract": 2, "entry_revision": revision, "task": "text.cleanup",
             "step": {
                 "id": "tidy", "stage": "clean-up",
@@ -388,7 +479,7 @@ mod tests {
             "myna-translation.json",
             &[with(entry("a", 1), "model", "other".into())],
         );
-        assert_eq!(load(&snapshot, &root).entries[0].model, "m");
+        assert_eq!(load(&snapshot, &root).entries[0].model, "m-a");
     }
 
     #[test]
@@ -414,5 +505,169 @@ mod tests {
     #[test]
     fn unknown_label_key_has_no_words() {
         assert_eq!(label("step.nope.name"), None);
+    }
+
+    fn pair(from: &str, to: &str, snap: &str, bytes: u64) -> serde_json::Value {
+        let mut e = entry(&format!("translate-{from}-{to}"), 1);
+        e["snap"] = snap.into();
+        e["in_lang"] = from.into();
+        e["out_lang"] = to.into();
+        e["download_bytes"] = bytes.into();
+        e["step"]["id"] = "translate".into();
+        e["locales"] = serde_json::json!([from]);
+        e
+    }
+
+    fn loaded(entries: &[serde_json::Value]) -> Vec<Entry> {
+        let (_dir, snapshot, root) = rig();
+        write(&snapshot, "myna-translation.json", entries);
+        load(&snapshot, &root).entries
+    }
+
+    #[test]
+    fn an_entry_outside_the_two_text_snaps_or_with_a_bad_component_is_dropped() {
+        let (_dir, snapshot, root) = rig();
+        write(
+            &snapshot,
+            "myna-text.json",
+            &[
+                with(entry("a", 1), "snap", "gemma4".into()),
+                with(entry("b", 1), "component", "../etc".into()),
+                with(entry("c", 1), "component", "model-".into()),
+                with(entry("d", 1), "component", "model-X".into()),
+                entry("ok", 1),
+            ],
+        );
+        let catalog = load(&snapshot, &root);
+        let ids: Vec<_> = catalog.entries.iter().map(|e| e.id.as_str()).collect();
+        assert_eq!(ids, ["ok"]);
+        assert_eq!(catalog.skipped.len(), 4);
+    }
+
+    #[test]
+    fn requests_group_components_by_snap_once_each_with_their_sizes() {
+        let entries = loaded(&[
+            pair("de", "en", "myna-translation", 10),
+            pair("en", "fr", "myna-translation", 5),
+        ]);
+        let mut doubled = entries.iter().collect::<Vec<_>>();
+        doubled.push(&entries[0]);
+        let mut other = entry("tidy", 1);
+        other["download_bytes"] = 7.into();
+        let text = loaded_text(&[other]);
+        doubled.push(&text[0]);
+        let requests = requests(&doubled);
+        assert_eq!(requests.len(), 2);
+        assert_eq!(requests[0].snap, "myna-text");
+        assert_eq!(requests[0].components, ["model-tidy"]);
+        assert_eq!(requests[0].models, ["m-tidy"]);
+        assert_eq!(requests[0].expected_bytes, 7);
+        assert_eq!(requests[1].snap, "myna-translation");
+        assert_eq!(
+            requests[1].components,
+            ["model-translate-de-en", "model-translate-en-fr"]
+        );
+        assert_eq!(requests[1].expected_bytes, 15);
+    }
+
+    fn loaded_text(entries: &[serde_json::Value]) -> Vec<Entry> {
+        let (_dir, snapshot, root) = rig();
+        write(&snapshot, "myna-text.json", entries);
+        load(&snapshot, &root).entries
+    }
+
+    #[test]
+    fn what_the_daemon_offers_is_subtracted() {
+        let entries = loaded(&[
+            pair("en", "fr", "myna-translation", 1),
+            pair("en", "de", "myna-translation", 1),
+        ]);
+        let left = not_offered(&entries, &["m-translate-en-fr".to_owned()]);
+        assert_eq!(left.len(), 1);
+        assert_eq!(left[0].out_lang, "de");
+    }
+
+    #[test]
+    fn a_pair_is_installable_directly_or_through_english() {
+        let entries = loaded(&[
+            pair("de", "en", "myna-translation", 1),
+            pair("en", "fr", "myna-translation", 1),
+            pair("en", "es", "myna-translation", 1),
+        ]);
+        let legs = |from, to| {
+            translation_legs(&entries, from, to)
+                .map(|l| l.iter().map(|e| e.id.clone()).collect::<Vec<_>>())
+        };
+        assert_eq!(legs("en", "fr").unwrap(), ["translate-en-fr"]);
+        assert_eq!(
+            legs("de", "fr").unwrap(),
+            ["translate-de-en", "translate-en-fr"]
+        );
+        assert_eq!(legs("fr", "en"), None, "no fr-en leg");
+        assert_eq!(legs("de", "es").unwrap().len(), 2);
+        assert_eq!(legs("de", "it"), None, "no en-it leg");
+        assert_eq!(legs("en", "it"), None);
+        assert_eq!(legs("en", "en"), None);
+        assert_eq!(legs("fr", "fr"), None);
+    }
+
+    #[test]
+    fn a_missing_pivot_leg_makes_the_pair_not_installable() {
+        let entries = loaded(&[pair("de", "en", "myna-translation", 1)]);
+        assert_eq!(translation_legs(&entries, "de", "fr"), None);
+    }
+
+    #[test]
+    fn entries_for_the_users_locales_come_first() {
+        let entries = loaded(&[
+            pair("de", "en", "myna-translation", 1),
+            pair("en", "fr", "myna-translation", 1),
+            pair("fr", "en", "myna-translation", 1),
+        ]);
+        let mut sorted: Vec<&Entry> = entries.iter().collect();
+        locale_order(&mut sorted, &["fr_FR.UTF-8".to_owned(), "de".to_owned()]);
+        let ids: Vec<_> = sorted.iter().map(|e| e.id.as_str()).collect();
+        assert_eq!(
+            ids,
+            ["translate-fr-en", "translate-de-en", "translate-en-fr"]
+        );
+        locale_order(&mut sorted, &[]);
+        assert_eq!(sorted[0].id, "translate-de-en");
+    }
+
+    #[test]
+    fn locales_win_over_the_input_language_and_a_mismatch_ranks_last() {
+        let mut declared = pair("de", "en", "myna-translation", 1);
+        declared["locales"] = serde_json::json!(["fr"]);
+        let mut right = pair("zz", "en", "myna-translation", 1);
+        right["locales"] = serde_json::json!(["de"]);
+        let mut bare_match = pair("de", "fr", "myna-translation", 1);
+        bare_match["id"] = "translate-zzz".into();
+        bare_match["locales"] = serde_json::json!([]);
+        let mut bare_other = pair("en", "fr", "myna-translation", 1);
+        bare_other["locales"] = serde_json::json!([]);
+        let entries = loaded(&[declared, right, bare_match, bare_other]);
+        let mut sorted: Vec<&Entry> = entries.iter().collect();
+        locale_order(&mut sorted, &["de".to_owned()]);
+        let ids: Vec<_> = sorted.iter().map(|e| e.id.as_str()).collect();
+        assert_eq!(
+            ids,
+            [
+                "translate-zz-en",
+                "translate-zzz",
+                "translate-de-en",
+                "translate-en-fr"
+            ]
+        );
+    }
+
+    #[test]
+    fn an_entry_without_locales_follows_its_input_language() {
+        let mut e = pair("de", "en", "myna-translation", 1);
+        e["locales"] = serde_json::json!([]);
+        let entries = loaded(&[e, pair("en", "fr", "myna-translation", 1)]);
+        let mut sorted: Vec<&Entry> = entries.iter().collect();
+        locale_order(&mut sorted, &["de-AT".to_owned()]);
+        assert_eq!(sorted[0].id, "translate-de-en");
     }
 }
