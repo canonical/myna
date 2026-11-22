@@ -238,6 +238,85 @@
           "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/c7c1bcf3-71f6-425a-a6ed-403bd9a0a759.spm"
         }
       ]
+    },
+    {
+      "id": "model-translate-fr-en",
+      "snap": "myna-translation",
+      "component": "model-translate-fr-en",
+      "model": "bergamot-tiny-fr-en",
+      "contract": 2,
+      "entry_revision": 1,
+      "task": "text.translate",
+      "class": "translate",
+      "needs": "dictation",
+      "params": [
+        {
+          "name": "language",
+          "kind": "language",
+          "role": "source",
+          "required": true
+        },
+        {
+          "name": "to",
+          "kind": "language",
+          "role": "target",
+          "required": true
+        }
+      ],
+      "covers": {
+        "language": "fr",
+        "to": "en"
+      },
+      "in_lang": "fr",
+      "out_lang": "en",
+      "step": {
+        "id": "translate",
+        "stage": "translate",
+        "label_key": "step.translate.name",
+        "description_key": "step.translate.description",
+        "example_key": "step.translate.example"
+      },
+      "download_bytes": 26791111,
+      "installed_bytes": 26791111,
+      "quality": {
+        "value": 0.67,
+        "source": "chrF 0.670 on 200 FLEURS pairs (translate_en_fr); vendor FLORES COMET 0.881"
+      },
+      "latency_ms": 10,
+      "latency_class": "fast",
+      "hardware": {
+        "arch": [
+          "amd64"
+        ],
+        "min_ram_mb": 512
+      },
+      "locales": [
+        "fr"
+      ],
+      "curated": false,
+      "license": "MPL-2.0",
+      "attribution": "Mozilla and contributors, Firefox Translations (tiny 1.0)",
+      "source": "https://github.com/mozilla/firefox-translations-models",
+      "files": [
+        {
+          "name": "model.fren.intgemm.alphas.bin",
+          "sha256": "185f76d24c2d400fe4ea0cb2487df77722641b97a3ef10633872e8a7fdf40e09",
+          "bytes": 17140961,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/e8e44aae-f20c-48c7-89c8-dade397a5858.bin"
+        },
+        {
+          "name": "lex.50.50.fren.s2t.bin",
+          "sha256": "3148abf21ea98a4d69d0e4504e0d68a6c060204a9b9a39b76855aee1d5b2c8ea",
+          "bytes": 8818768,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/75287f2c-8f15-4045-a435-ec1b9394d973.bin"
+        },
+        {
+          "name": "vocab.fren.spm",
+          "sha256": "4c84b95b62c930f0791466d73eb996841eef474c96d0c2f0e6c6d80640f2005a",
+          "bytes": 831382,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/3096e2ad-89fe-4f9b-aac7-57f011bd4c49.spm"
+        }
+      ]
     }
   ]
 }
