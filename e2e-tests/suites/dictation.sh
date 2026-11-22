@@ -47,6 +47,9 @@
 #  14. Past dictations is a sub-page that owns the record switch: with the
 #      record on, a dictation is listed there and Original shows what the
 #      backend heard where Result shows what was typed.
+#  15. Add step lists the catalog (built-ins and the curated translation
+#      pair, each with its facts); adding Fitted to the field switches it on
+#      and returns to the Steps list.
 set -uo pipefail
 # shellcheck source=e2e-tests/suites/lib.sh
 source "$(dirname "$0")/lib.sh"
@@ -340,6 +343,16 @@ shot waitfor:General tab:Processing "click:Past dictations" \
     "click:Keep a record of what was changed@switch" \
     "$(poll "grep -q \"processing-history=false\" $STORE")" \
     || { echo "record switch reset failed" >&2; FAILED=1; }
+
+echo "-- 15. Add step lists the catalog and adding returns to the Steps list"
+shot waitfor:General tab:Processing "waitfor:Add step" "click:Add step" \
+    "waitfor:Chinese script" "waitfor:Translate English to Français" \
+    shot:shots/dictation/15-add-step.png \
+    "click:Add Fitted to the field@push button" "waitfor:Tidy up speech@switch" \
+    "$(poll "grep -q \"processing-steps=\\['fit'\\]\" $STORE")" \
+    "click:Fitted to the field@switch" \
+    "$(poll "! grep -q \"processing-steps=\\['fit'\\]\" $STORE")" \
+    || { echo "add step run failed" >&2; FAILED=1; }
 
 dict 'mic_stop' >/dev/null 2>&1
 if [ -n "$HOSTED" ]; then
