@@ -613,6 +613,41 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn the_script_step_writes_chinese_when_on_and_leaves_english_alone() {
+        use super::super::steps::{compile, Context, StepSpec};
+        let typed = |steps: &[&str], language: &str| {
+            let steps: Vec<StepSpec> = steps.iter().map(|s| StepSpec::parse(s)).collect();
+            let compiled = compile(
+                &steps,
+                &Context {
+                    language: Some(language),
+                    ..Context::default()
+                },
+            );
+            Pipeline::new(compiled.graph, Scripted::Fails).scripted(Live::new(compiled.script))
+        };
+        let said = "软件 NASA";
+        assert_eq!(
+            typed(&["script=traditional-taiwan"], "zh")
+                .process(said.into(), &here())
+                .await,
+            "軟體 NASA"
+        );
+        assert_eq!(
+            typed(&[], "zh").process(said.into(), &here()).await,
+            said,
+            "off"
+        );
+        assert_eq!(
+            typed(&["script=traditional-taiwan"], "en")
+                .process(said.into(), &here())
+                .await,
+            said,
+            "not applicable to English"
+        );
+    }
+
+    #[tokio::test]
     async fn the_users_vocabulary_is_spelled_before_the_model_sees_it() {
         struct Echo(std::sync::Arc<Mutex<String>>);
         #[async_trait]
