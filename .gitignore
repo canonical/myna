@@ -60,6 +60,10 @@ text-snap/components/model-*/
 text-snap/wheels/
 text-snap/*.snap
 text-snap/*.comp
+translation-snap/components/model-*/
+translation-snap/wheels/
+translation-snap/*.snap
+translation-snap/*.comp
 # Coverage artifacts (feature 006)
 client/target/coverage/
 server/.coverage*

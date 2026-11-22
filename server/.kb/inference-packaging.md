@@ -30,7 +30,7 @@ The upstream source of truth for `modelctl` behaviour is https://github.com/cano
 - Keep streaming as configuration; never hardcode `--streaming` in engine launchers.
 - Validate static packaging with `server/tests/test_snap_packaging.py` and `make lint-snaps`.
 - Use the spread adapter smoke test for behavior that manifests cannot prove, including sideload connections and streaming propagation.
-- `myna-text` is the one inference snap that is not a speech backend: no modelctl, no engines, `provider.env` with `MYNA_ROLE=text` written by `myna-text --share-provider`, models found as components at run time. Its invariants are `server/tests/test_text_snap_packaging.py`; see `text-snap/AGENTS.md`.
+- `myna-text` and `myna-translation` are the inference snaps that are not speech backends: no modelctl, no engines, `provider.env` with `MYNA_ROLE=text` written by `--share-provider`, models found as components at run time, each kind registered by the snap that runs it (`myna-text` the tagger, `myna-translation` Bergamot, neither carrying the other's runtime). Their invariants are `server/tests/test_text_snap_packaging.py`; see `text-snap/AGENTS.md` and `translation-snap/AGENTS.md`.
 
 ## GPU engines
 

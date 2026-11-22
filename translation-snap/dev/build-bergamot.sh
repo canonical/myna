@@ -42,7 +42,7 @@ install -D --mode=755 --strip "$src/build/app/myna-bergamot" "$dest/bin/myna-ber
 # What the binary statically contains (from its link line and symbols), with
 # the licence text of each. A missing file fails the build: the notices are
 # part of the product.
-lic="$dest/usr/share/doc/myna-text/bergamot"
+lic="$dest/usr/share/doc/myna-translation/bergamot"
 marian=3rd_party/marian-dev
 while read -r from to; do
     [ -n "$from" ] || continue

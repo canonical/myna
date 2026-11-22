@@ -36,7 +36,7 @@ Model-specific dependencies stay behind optional extras and must not leak into `
 
 ## Packaging
 
-Each inference family has its own `*-snap/` directory. The snap packages `myna-server`, one or more engines, and model/runtime components. The `myna-snap/` package contains the client-side product.
+Each inference family has its own `*-snap/` directory. The snap packages `myna-server`, one or more engines, and model/runtime components. The `myna-snap/` package contains the client-side product. `text-snap/` (`myna-text`, generic text models) and `translation-snap/` (`myna-translation`, Bergamot and a component per language pair) are text providers, not speech backends: each serves `myna-text-v1` as its own share on the one `myna:backend` plug.
 
 # Important
 

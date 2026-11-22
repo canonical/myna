@@ -1,0 +1,140 @@
+# Translation inference snap (Myna): Firefox's Bergamot models, one component
+# per directed language pair.
+#
+# One strictly confined daemon, myna-translation, serving myna-text-v1 (JSON
+# lines over a Unix socket) to the Myna daemon through the same
+# inference-provider content share the speech snaps use. It declares
+# MYNA_ROLE=text in provider.env, so it sits beside a speech snap and
+# myna-text on `myna:backend`, each its own share.
+#
+# The runtime is myna-bergamot, built here from bergamot-translator without
+# MKL; models are components, found at run time. Weights ship as components:
+# run ./dev/download-models.sh before packing. No `network` plug.
+name: myna-translation
+base: core24
+adopt-info: version
+assumes:
+  - snapd2.68 # components support
+license: AGPL-3.0-or-later
+summary: Offline translation models for Myna dictation
+description: |
+  Local, offline translation for Myna's dictation processing, run by
+  bergamot-translator with Mozilla's Firefox Translations models. The daemon
+  answers the Myna dictation service on a Unix domain socket; it has no
+  network access and no access to the microphone or any audio hardware.
+
+  Install a language pair's component to offer it:
+
+    sudo snap install --dangerous myna-translation_*.snap
+    sudo snap install --dangerous myna-translation+model-translate-en-fr_*.comp
+    sudo snap connect myna:backend myna-translation:provider
+grade: devel
+confinement: strict
+compression: lzo
+
+platforms:
+  amd64:
+
+environment:
+  # Where the installed model components are mounted.
+  SNAP_COMPONENTS: /snap/$SNAP_INSTANCE_NAME/components/$SNAP_REVISION
+
+apps:
+  server:
+    command: bin/myna-translation --socket $SNAP_COMMON/share/provider/text.sock --share-provider --bergamot $SNAP/bin/myna-bergamot
+    daemon: simple
+    plugs:
+      # snapd's seccomp gates listen() behind this, even for Unix sockets.
+      # Models are components (no runtime download), so no `network`.
+      - network-bind
+
+# The inference-provider content share: myna-translation writes provider.env
+# beside the socket. Writable so the daemon can bind; see whisper-snap's
+# snapcraft.yaml.
+slots:
+  provider:
+    interface: content
+    content: inference-provider
+    source:
+      write: [$SNAP_COMMON/share/provider]
+
+parts:
+  # The version dev/stage-version.sh resolved from git, from dev/prepare.sh.
+  version:
+    plugin: nil
+    source: version
+    parse-info: [version.metainfo.xml]
+
+  # LICENSE (AGPL-3.0-or-later) and NOTICE (third-party notices), staged into
+  # licenses/ by dev/stage-licenses.sh from dev/prepare.sh.
+  licenses:
+    plugin: dump
+    source: licenses
+    organize:
+      "*": usr/share/doc/myna-translation/
+
+  # myna-translation in a venv. dev/prepare.sh stages the myna wheel and
+  # requirements.txt (exact versions and hashes, exported from server/uv.lock)
+  # into wheels/ before packing. No onnxruntime: translation is myna-bergamot.
+  server-app:
+    plugin: python
+    # Persistent pip cache: the build VM is thrown away each run, but the
+    # project dir is bind-mounted, so this survives.
+    build-environment:
+      - PIP_CACHE_DIR: $CRAFT_PROJECT_DIR/.pip-cache
+      # pip's 15s default read timeout trips on a stalled chunk mid-wheel.
+      - PIP_TIMEOUT: "60"
+      - PIP_RETRIES: "10"
+    source: wheels
+    python-requirements:
+      - requirements.txt
+    python-packages:
+      - ./myna-0.0.0-py3-none-any.whl
+    build-packages:
+      - python3-venv
+    override-build: |
+      craftctl default
+      site=$(echo "$CRAFT_PART_INSTALL"/lib/python3.*/site-packages)
+      # The gate also proves the runtime this snap must not carry is absent.
+      export PRUNE_GATE="import numpy, myna.translation.cli; import importlib.util as u; assert u.find_spec('onnxruntime') is None"
+      "$CRAFT_PROJECT_DIR/dev/prune-runtime.sh" "$site" "$CRAFT_PART_INSTALL/bin/python3"
+      rm -f "$CRAFT_PART_INSTALL"/bin/pip*
+
+  # bergamot-translator at one commit, with its submodules pinned by it, built
+  # by dev/build-bergamot.sh into bin/myna-bergamot and its licence texts.
+  bergamot:
+    plugin: nil
+    source: https://github.com/browsermt/bergamot-translator
+    source-type: git
+    source-commit: 9271618ebbdc5d21ac4dc4df9e72beb7ce644774
+    source-submodules:
+      - 3rd_party/marian-dev
+      - 3rd_party/ssplit-cpp
+    build-packages:
+      - build-essential
+      - cmake
+      - git
+    override-build: |
+      "$CRAFT_PROJECT_DIR/dev/build-bergamot.sh" "$CRAFT_PART_BUILD" "$CRAFT_PART_INSTALL"
+
+  # Model weights as components. Populate components/ with
+  # ./dev/download-models.sh before packing; `prime: [-*]` keeps them out of
+  # the base. Whatever that stages is what ships.
+  model-components:
+    plugin: dump
+    source: components
+    # Craft only ever adds: a file DELETED from components/ survives in this
+    # part's stage and prime dirs and ships anyway; dropping one needs
+    # `snapcraft clean model-components` first.
+    organize:
+      "model-translate-en-fr/*": (component/model-translate-en-fr)/
+    prime:
+      - -*
+
+components:
+  model-translate-en-fr:
+    type: standard
+    summary: English to French translation (Firefox Translations base-memory)
+    description: |
+      Mozilla's Firefox Translations English to French student model
+      (MPL-2.0), run by bergamot-translator. About 37 MB.

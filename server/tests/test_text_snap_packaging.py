@@ -1,9 +1,10 @@
-"""Packaging invariants of the myna-text snap.
+"""Packaging invariants of the text-provider snaps, myna-text and myna-translation.
 
-The speech snaps are held together by test_snap_packaging.py; this snap has no
-modelctl and no engines, so it gets its own few promises: it is offline, it
-shares itself as a text provider, its version is the tree's, and the components
-it declares are the ones its model manifests describe.
+The speech snaps are held together by test_snap_packaging.py; these snaps have
+no modelctl and no engines, so they get their own few promises: they are
+offline, each shares itself as a text provider, its version is the tree's, the
+components it declares are the ones its model manifests describe, and neither
+carries the other's runtime.
 """
 
 from __future__ import annotations
@@ -18,35 +19,68 @@ import yaml
 # Reads the repository outside server/ (see [tool.mutmut] in pyproject.toml).
 pytestmark = pytest.mark.repo_tree
 
-SNAP_DIR = Path(__file__).resolve().parents[2] / "text-snap"
+ROOT = Path(__file__).resolve().parents[2]
+TEXT = ROOT / "text-snap"
+TRANSLATION = ROOT / "translation-snap"
+SNAPS = {"myna-text": TEXT, "myna-translation": TRANSLATION}
+COMPONENT_IDS = {
+    "myna-text": {"myna-disfluency-en": "text.cleanup"},
+    "myna-translation": {"bergamot-base-memory-en-fr": "text.translate"},
+}
+
+
+def read(path: Path) -> str:
+    return path.read_text(encoding="utf-8")
+
+
+def recipe_of(snap_dir: Path) -> dict:
+    return yaml.safe_load(read(snap_dir / "snap/snapcraft.yaml"))
 
 
 @pytest.fixture(scope="module")
 def recipe() -> dict:
-    return yaml.safe_load((SNAP_DIR / "snap/snapcraft.yaml").read_text(encoding="utf-8"))
+    return recipe_of(TEXT)
 
 
-def test_the_snap_is_strictly_confined_and_offline(recipe):
-    assert recipe["name"] == "myna-text"
+@pytest.fixture(scope="module")
+def translation() -> dict:
+    return recipe_of(TRANSLATION)
+
+
+@pytest.fixture(params=sorted(SNAPS))
+def snap(request) -> tuple[str, Path, dict]:
+    return request.param, SNAPS[request.param], recipe_of(SNAPS[request.param])
+
+
+def test_each_snap_is_strictly_confined_and_offline(snap):
+    name, _, recipe = snap
+    assert recipe["name"] == name
     assert recipe["confinement"] == "strict"
     plugs = [p for app in recipe["apps"].values() for p in app.get("plugs", [])]
     assert "network" not in plugs
     assert "network-bind" in plugs
-    # onnxruntime's device discovery reads /sys/bus/pci/devices.
-    assert "hardware-observe" in plugs
     assert "network" not in recipe.get("plugs", {})
 
 
-def test_the_snap_takes_its_version_from_the_tree(recipe):
+def test_onnxruntime_reads_pci_so_only_the_tagger_snap_plugs_hardware_observe(recipe, translation):
+    plugs = [p for app in recipe["apps"].values() for p in app.get("plugs", [])]
+    assert "hardware-observe" in plugs
+    plugs = [p for app in translation["apps"].values() for p in app.get("plugs", [])]
+    assert "hardware-observe" not in plugs
+
+
+def test_each_snap_takes_its_version_from_the_tree(snap):
+    _, snap_dir, recipe = snap
     assert recipe["adopt-info"] == "version"
     assert "version" not in recipe
     assert recipe["parts"]["version"]["parse-info"] == ["version.metainfo.xml"]
-    assert "0.0.0" not in (SNAP_DIR / "dev/prepare.sh").read_text(encoding="utf-8").replace(
+    assert "0.0.0" not in read(snap_dir / "dev/prepare.sh").replace(
         "myna-0.0.0-py3-none-any.whl", ""
     )
 
 
-def test_the_daemon_serves_the_inference_provider_share_as_a_text_role(recipe):
+def test_each_daemon_serves_the_inference_provider_share_as_a_text_role(snap):
+    name, _, recipe = snap
     slot = recipe["slots"]["provider"]
     assert (slot["interface"], slot["content"]) == ("content", "inference-provider")
     share = slot["source"]["write"][0]
@@ -54,47 +88,88 @@ def test_the_daemon_serves_the_inference_provider_share_as_a_text_role(recipe):
     app = recipe["apps"]["server"]
     assert app["daemon"] == "simple"
     argv = shlex.split(app["command"])
-    assert argv[0] == "bin/myna-text"
+    assert argv[0] == f"bin/{name}"
     assert argv[argv.index("--socket") + 1].startswith(share + "/")
     assert "--share-provider" in argv
 
 
-def test_every_component_has_a_model_manifest_and_every_manifest_a_component(recipe):
+def test_every_component_has_a_model_manifest_and_every_manifest_a_component(snap):
+    name, snap_dir, recipe = snap
     organized = recipe["parts"]["model-components"]["organize"]
     staged = {src.split("/")[0]: dst for src, dst in organized.items()}
     assert set(staged) == set(recipe["components"])
-    for name, dst in staged.items():
-        assert dst == f"(component/{name})/"
+    for component, dst in staged.items():
+        assert dst == f"(component/{component})/"
 
     manifests = {}
-    for path in (SNAP_DIR / "models").glob("*/myna-text-model.json"):
-        manifests[path.parent.name] = json.loads(path.read_text(encoding="utf-8"))
-    assert {m["id"] for m in manifests.values()} == {
-        "myna-disfluency-en",
-        "bergamot-base-memory-en-fr",
-    }
-    assert {m["task"] for m in manifests.values()} == {"text.cleanup", "text.translate"}
-    for name in recipe["components"]:
-        assert name in (SNAP_DIR / "dev/download-models.sh").read_text(encoding="utf-8")
+    for path in (snap_dir / "models").glob("*/myna-text-model.json"):
+        manifests[path.parent.name] = json.loads(read(path))
+    assert {m["id"]: m["task"] for m in manifests.values()} == COMPONENT_IDS[name]
+    for component in recipe["components"]:
+        assert component in read(snap_dir / "dev/download-models.sh")
 
 
-def test_the_bergamot_runtime_is_built_from_a_pinned_commit_without_mkl(recipe):
-    part = recipe["parts"]["bergamot"]
+def test_the_runtimes_are_not_shared(recipe, translation):
+    # No cross-contamination: the tagger snap has no bergamot, the translation
+    # snap no onnxruntime, in code, licences, notices or packages.
+    assert "bergamot" not in recipe["parts"]
+    assert "bergamot" not in read(TEXT / "snap/snapcraft.yaml").replace("Translation lives", "")
+    assert not (TEXT / "bergamot").exists()
+    assert not (TEXT / "dev/build-bergamot.sh").exists()
+    assert "bergamot" not in read(TEXT / "NOTICE").lower()
+    assert "MPL" not in read(TEXT / "NOTICE")
+    assert "--extra text" in read(TEXT / "dev/prepare.sh")
+
+    assert "bergamot" in translation["parts"]
+    assert "onnxruntime" not in read(TRANSLATION / "NOTICE").replace("no ONNX Runtime", "")
+    assert "--extra translation" in read(TRANSLATION / "dev/prepare.sh")
+    assert "--extra text" not in read(TRANSLATION / "dev/prepare.sh")
+    gate = translation["parts"]["server-app"]["override-build"]
+    assert "find_spec('onnxruntime') is None" in gate
+    assert "myna.translation.cli" in gate
+    assert "onnxruntime" in recipe["parts"]["server-app"]["override-build"]
+    assert "myna.text.cli" in recipe["parts"]["server-app"]["override-build"]
+
+
+def test_the_bergamot_runtime_is_built_from_a_pinned_commit_without_mkl(translation):
+    part = translation["parts"]["bergamot"]
     assert len(part["source-commit"]) == 40
     assert part["source"].startswith("https://github.com/browsermt/")
-    build = (SNAP_DIR / "dev/build-bergamot.sh").read_text(encoding="utf-8")
+    build = read(TRANSLATION / "dev/build-bergamot.sh")
     assert "-DUSE_MKL=OFF" in build
     assert "-DCOMPILE_PYTHON=OFF" in build
-    notice = (SNAP_DIR / "NOTICE").read_text(encoding="utf-8")
-    assert part["source-commit"] in notice
+    assert "usr/share/doc/myna-translation/bergamot" in build
+    assert part["source-commit"] in read(TRANSLATION / "NOTICE")
+
+
+def test_the_mozilla_attribution_travels_with_the_translation_snap(translation):
+    notice = read(TRANSLATION / "NOTICE")
+    assert "Mozilla Public License 2.0" in notice
+    assert "MPL-2.0" in notice
+    component = read(TRANSLATION / "models/translate-en-fr/NOTICE")
+    for sha in (
+        "6322e296d4fecfe395a8d5723da4ec37ecbe6d7613bb1dfcf4b28e2a47498b68",
+        "2585ed98d3af0bc949865aedeb390493d591f56870814376e73e4144c41ed059",
+        "783abf3abe075afdf8d85d233994bef2c3a064e935ab1bed946820aff6ac002a",
+    ):
+        assert sha in component
+        assert sha in read(TRANSLATION / "dev/download-models.sh")
+    assert "MPL-2.0" in read(TRANSLATION / "dev/download-models.sh")
+    assert "MPL" not in read(TEXT / "models/disfluency-en/NOTICE")
 
 
 def test_the_translate_config_names_files_the_component_ships():
-    config = yaml.safe_load((SNAP_DIR / "models/translate-en-fr/config.yml").read_text())
-    script = (SNAP_DIR / "dev/download-models.sh").read_text(encoding="utf-8")
+    config = yaml.safe_load(read(TRANSLATION / "models/translate-en-fr/config.yml"))
+    script = read(TRANSLATION / "dev/download-models.sh")
     files = [*config["models"], *config["vocabs"], config["shortlist"][0]]
     assert files
     for name in files:
         assert name in script
     # Beam 1 is what the quality and latency in the manifest were measured at.
     assert config["beam-size"] == 1
+
+
+def test_the_two_snaps_are_built_by_make_and_published_by_neither():
+    makefile = read(ROOT / "Makefile")
+    assert "SNAPS := $(BACKENDS) text translation myna" in makefile
+    assert "PUBLISHED := $(filter-out fake text translation,$(SNAPS))" in makefile

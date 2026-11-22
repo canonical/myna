@@ -24,13 +24,6 @@ SENTENCES = {
         "Uh, hello, how are you doing today?",
         "We went to the the market and bought some apples.",
     ],
-    "text.translate": [
-        "Hello, how are you today?",
-        "I would like to book a table for two at eight o'clock.",
-        "The meeting is on Monday. Please bring the report.",
-        "She said that the weather would be better tomorrow.",
-        "Can you send me the address of the restaurant?",
-    ],
 }
 
 

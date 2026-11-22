@@ -6,21 +6,19 @@
 # provider.env, so it sits beside a speech snap on `myna:backend`.
 #
 # Models are components, found at run time (no modelctl: there are no engines
-# to choose between): model-disfluency-en, a MiniLM tagger on onnxruntime, and
-# model-translate-en-fr, Firefox's Bergamot student run by myna-bergamot, built
-# here without MKL. Weights ship as components: run ./dev/download-models.sh
-# before packing. No `network` plug.
+# to choose between): model-disfluency-en, a MiniLM tagger on onnxruntime.
+# Translation lives in the myna-translation snap. Weights ship as components:
+# run ./dev/download-models.sh before packing. No `network` plug.
 name: myna-text
 base: core24
 adopt-info: version
 assumes:
   - snapd2.68 # components support
 license: AGPL-3.0-or-later
-summary: Text cleanup and translation models for Myna dictation
+summary: Text cleanup models for Myna dictation
 description: |
   Local, offline text models for Myna's dictation processing: removing
-  spoken disfluencies (English) and translating (English to French). The
-  daemon answers the Myna dictation service on a Unix domain socket; it has no
+  spoken disfluencies (English). The daemon answers the Myna dictation service on a Unix domain socket; it has no
   network access and no access to the microphone or any audio hardware.
 
   Install a model component to offer its model:
@@ -41,7 +39,7 @@ environment:
 
 apps:
   server:
-    command: bin/myna-text --socket $SNAP_COMMON/share/provider/text.sock --share-provider --bergamot $SNAP/bin/myna-bergamot
+    command: bin/myna-text --socket $SNAP_COMMON/share/provider/text.sock --share-provider
     daemon: simple
     plugs:
       # snapd's seccomp gates listen() behind this, even for Unix sockets.
@@ -105,23 +103,6 @@ parts:
       "$CRAFT_PROJECT_DIR/dev/prune-runtime.sh" "$site" "$CRAFT_PART_INSTALL/bin/python3"
       rm -f "$CRAFT_PART_INSTALL"/bin/pip* "$CRAFT_PART_INSTALL"/bin/onnxruntime_test
 
-  # bergamot-translator at one commit, with its submodules pinned by it, built
-  # by dev/build-bergamot.sh into bin/myna-bergamot and its licence texts.
-  bergamot:
-    plugin: nil
-    source: https://github.com/browsermt/bergamot-translator
-    source-type: git
-    source-commit: 9271618ebbdc5d21ac4dc4df9e72beb7ce644774
-    source-submodules:
-      - 3rd_party/marian-dev
-      - 3rd_party/ssplit-cpp
-    build-packages:
-      - build-essential
-      - cmake
-      - git
-    override-build: |
-      "$CRAFT_PROJECT_DIR/dev/build-bergamot.sh" "$CRAFT_PART_BUILD" "$CRAFT_PART_INSTALL"
-
   # Model weights as components. Populate components/ with
   # ./dev/download-models.sh before packing; `prime: [-*]` keeps them out of
   # the base. Whatever that stages is what ships.
@@ -133,7 +114,6 @@ parts:
     # `snapcraft clean model-components` first.
     organize:
       "model-disfluency-en/*": (component/model-disfluency-en)/
-      "model-translate-en-fr/*": (component/model-translate-en-fr)/
     prime:
       - -*
 
@@ -145,9 +125,3 @@ components:
       myna-disfluency-en, a MiniLM-L12 word tagger fine-tuned by Canonical
       (Apache-2.0) that marks fillers, repeats and self-corrections for
       deletion. About 46 MB.
-  model-translate-en-fr:
-    type: standard
-    summary: English to French translation (Firefox Translations base-memory)
-    description: |
-      Mozilla's Firefox Translations English to French student model
-      (MPL-2.0), run by bergamot-translator. About 37 MB.

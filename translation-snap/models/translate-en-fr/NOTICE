@@ -14,4 +14,4 @@ shipped unmodified; their sha256 are:
 
 config.yml and myna-text-model.json are Canonical's own (AGPL-3.0-or-later).
 The runtime that executes the model, bergamot-translator (MPL-2.0), and its
-bundled libraries are noted in the myna-text snap's NOTICE.
+bundled libraries are noted in the myna-translation snap's NOTICE.
