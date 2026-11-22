@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-22 19:28+0000\n"
+"POT-Creation-Date: 2026-11-22 19:47+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -109,7 +109,7 @@ msgstr ""
 msgid "Model"
 msgstr ""
 
-#: data/main-window.blp:46 src/app.rs:6087 src/diagnostics.rs:582
+#: data/main-window.blp:46 src/app.rs:6088 src/diagnostics.rs:582
 #: src/myna_settings.rs:265
 msgid "Processing"
 msgstr ""
@@ -278,7 +278,7 @@ msgstr ""
 msgid "When you stop"
 msgstr ""
 
-#: src/app.rs:3959 src/app.rs:6636
+#: src/app.rs:3959 src/app.rs:6637
 msgid "Preview"
 msgstr ""
 
@@ -291,7 +291,7 @@ msgid "Changing to {model} failed"
 msgstr ""
 
 #: src/app.rs:4029 src/app.rs:4582 src/app.rs:4591 src/app.rs:4976
-#: src/app.rs:5789 src/app.rs:5795 src/processing_ui.rs:497
+#: src/app.rs:5789 src/app.rs:5795 src/processing_ui.rs:716
 #: src/backend_ui.rs:1391 src/onboarding_ui.rs:622 src/ui/status_page.rs:70
 msgid "Details"
 msgstr ""
@@ -396,19 +396,19 @@ msgid ""
 "experimental."
 msgstr ""
 
-#: src/app.rs:6142
+#: src/app.rs:6143
 msgid "Myna Settings Unavailable"
 msgstr ""
 
-#: src/app.rs:6143
+#: src/app.rs:6144
 msgid "Myna Settings could not start."
 msgstr ""
 
-#: src/app.rs:6604
+#: src/app.rs:6605
 msgid "Could not save the setting"
 msgstr ""
 
-#: src/app.rs:6641
+#: src/app.rs:6642
 msgid "Preview sound style"
 msgstr ""
 
@@ -491,23 +491,23 @@ msgstr ""
 msgid "Show more"
 msgstr ""
 
-#: src/past_dictations_ui.rs:259 src/past_dictations_ui.rs:313
+#: src/past_dictations_ui.rs:262 src/past_dictations_ui.rs:316
 msgid "Original"
 msgstr ""
 
-#: src/past_dictations_ui.rs:260 src/past_dictations_ui.rs:314
+#: src/past_dictations_ui.rs:263 src/past_dictations_ui.rs:317
 msgid "Show what Myna heard"
 msgstr ""
 
-#: src/past_dictations_ui.rs:304
+#: src/past_dictations_ui.rs:307
 msgid "What Myna heard"
 msgstr ""
 
-#: src/past_dictations_ui.rs:309
+#: src/past_dictations_ui.rs:312
 msgid "Result"
 msgstr ""
 
-#: src/past_dictations_ui.rs:310
+#: src/past_dictations_ui.rs:313
 msgid "Show what Myna typed"
 msgstr ""
 
@@ -533,21 +533,21 @@ msgstr ""
 msgid "{n} MB"
 msgstr ""
 
-#: src/processing_steps.rs:286 src/myna_settings.rs:213
+#: src/processing_steps.rs:286 src/step_catalog.rs:127 src/myna_settings.rs:213
 msgid "Fitted to the field"
 msgstr ""
 
-#: src/processing_steps.rs:287
+#: src/processing_steps.rs:287 src/step_catalog.rs:117
 msgid "Chinese script"
 msgstr ""
 
-#: src/processing_steps.rs:294
+#: src/processing_steps.rs:294 src/step_catalog.rs:129
 msgid ""
 "No capital or full stop in an address, and no capital where you carry on a "
 "sentence."
 msgstr ""
 
-#: src/processing_steps.rs:300
+#: src/processing_steps.rs:300 src/step_catalog.rs:119
 msgid "Types Chinese in the characters you choose. Other text is left alone."
 msgstr ""
 
@@ -564,7 +564,7 @@ msgid "The text is already in that language"
 msgstr ""
 
 #. TRANSLATORS: {language} is a language name, such as "English".
-#: src/processing_steps.rs:527
+#: src/processing_steps.rs:527 src/step_catalog.rs:302
 msgid "Applies when the text is {language}"
 msgstr ""
 
@@ -578,11 +578,12 @@ msgstr ""
 msgid "the {step} model"
 msgstr ""
 
-#: src/processing_steps.rs:659 src/plugin_catalog.rs:254
+#: src/processing_steps.rs:659 src/step_catalog.rs:200
+#: src/plugin_catalog.rs:266
 msgid "um so I, I think we should go"
 msgstr ""
 
-#: src/processing_steps.rs:662
+#: src/processing_steps.rs:662 src/step_catalog.rs:201
 msgid "So I think we should go."
 msgstr ""
 
@@ -591,78 +592,148 @@ msgstr ""
 msgid "Typed in {language}"
 msgstr ""
 
-#: src/processing_ui.rs:115
+#. TRANSLATORS: credits the libraries and word lists behind Chinese script conversion.
+#: src/step_catalog.rs:123
+msgid "opencc-jieba-rs (MIT); OpenCC conversion lists (Apache-2.0)"
+msgstr ""
+
+#: src/step_catalog.rs:136
+msgid "Size"
+msgstr ""
+
+#: src/step_catalog.rs:137
+msgid "Built in, nothing to install"
+msgstr ""
+
+#: src/step_catalog.rs:141 src/step_catalog.rs:232 src/diagnostics.rs:705
+msgid "License"
+msgstr ""
+
+#. TRANSLATORS: {from} and {to} are language names, such as "English" and "Français".
+#: src/step_catalog.rs:173
+msgid "Translate {from} to {to}"
+msgstr ""
+
+#: src/step_catalog.rs:204 src/plugin_catalog.rs:269
+msgid "I think we should go"
+msgstr ""
+
+#: src/step_catalog.rs:214
+msgid "Download"
+msgstr ""
+
+#: src/step_catalog.rs:219
+msgid "Quality"
+msgstr ""
+
+#: src/step_catalog.rs:242
+msgid "Not measured on a benchmark yet"
+msgstr ""
+
+#: src/processing_ui.rs:133 src/processing_ui.rs:633
 msgid "For example"
 msgstr ""
 
-#: src/processing_ui.rs:298
+#: src/processing_ui.rs:139 src/processing_ui.rs:153
+msgid "Add step"
+msgstr ""
+
+#: src/processing_ui.rs:140
+msgid "Installed and available steps"
+msgstr ""
+
+#: src/processing_ui.rs:147
+msgid ""
+"Steps your catalogs offer. Add one to switch it on; one that is not "
+"installed downloads first."
+msgstr ""
+
+#: src/processing_ui.rs:356
 msgid "Translate to"
 msgstr ""
 
-#: src/processing_ui.rs:307
+#: src/processing_ui.rs:365
 msgid "From"
 msgstr ""
 
-#: src/processing_ui.rs:308
+#: src/processing_ui.rs:366
 msgid "Your dictation language"
 msgstr ""
 
-#: src/processing_ui.rs:353
+#: src/processing_ui.rs:411
 msgid "Write Chinese as"
 msgstr ""
 
-#: src/processing_ui.rs:389
+#: src/processing_ui.rs:447
 msgid "The change could not be saved."
 msgstr ""
 
-#: src/processing_ui.rs:482
+#: src/processing_ui.rs:545
 msgid "Finish dictating, then try again."
 msgstr ""
 
-#: src/processing_ui.rs:492
+#: src/processing_ui.rs:614 src/list_editor_ui.rs:84
+msgid "Add"
+msgstr ""
+
+#. TRANSLATORS: {step} is a step's name, such as "Tidy up speech".
+#: src/processing_ui.rs:619
+msgid "Add {step}"
+msgstr ""
+
+#: src/processing_ui.rs:622
+msgid "Added"
+msgstr ""
+
+#: src/processing_ui.rs:711
 msgid "Installing the model failed"
 msgstr ""
 
-#: src/processing_ui.rs:606
+#: src/processing_ui.rs:825
 msgid "Choose a language"
 msgstr ""
 
 #. TRANSLATORS: {language} is a language name; its model is not installed yet.
-#: src/processing_ui.rs:612
+#: src/processing_ui.rs:831
 msgid "{language} (not installed)"
 msgstr ""
 
-#. TRANSLATORS: {what} names a model, such as "the French model".
-#: src/processing_ui.rs:652
-msgid "Install {what}"
+#: src/processing_ui.rs:870 src/shortcut_ui.rs:691 src/sound_preview.rs:66
+msgid "Myna is not running"
 msgstr ""
 
-#: src/processing_ui.rs:654 src/backend_ui.rs:1176
+#: src/processing_ui.rs:884 src/processing_ui.rs:909 src/backend_ui.rs:1176
 msgid "Install"
 msgstr ""
 
-#: src/processing_ui.rs:664
+#. TRANSLATORS: {step} is a step's name, such as "Translate English to French".
+#: src/processing_ui.rs:886
+msgid "Install {step}"
+msgstr ""
+
+#: src/processing_ui.rs:896 src/processing_ui.rs:919
 msgid "Preparing…"
 msgstr ""
 
-#: src/plugin_catalog.rs:250
+#. TRANSLATORS: {what} names a model, such as "the French model".
+#: src/processing_ui.rs:907
+msgid "Install {what}"
+msgstr ""
+
+#: src/plugin_catalog.rs:262
 msgid "Tidy up speech"
 msgstr ""
 
-#: src/plugin_catalog.rs:252
+#: src/plugin_catalog.rs:264
 msgid "Removes filler words and false starts, and fixes case and punctuation."
 msgstr ""
 
-#: src/plugin_catalog.rs:255
+#: src/plugin_catalog.rs:267
 msgid "Translate"
 msgstr ""
 
-#: src/plugin_catalog.rs:256
+#: src/plugin_catalog.rs:268
 msgid "Types your dictation in another language."
-msgstr ""
-
-#: src/plugin_catalog.rs:257
-msgid "I think we should go"
 msgstr ""
 
 #: src/active_backend.rs:421
@@ -717,7 +788,7 @@ msgid ""
 "succeeds."
 msgstr ""
 
-#: src/backend_ui.rs:863 src/diagnostics.rs:715
+#: src/backend_ui.rs:863 src/diagnostics.rs:720
 msgid "No model is connected. Choose one to use for dictation."
 msgstr ""
 
@@ -1127,7 +1198,7 @@ msgstr ""
 msgid "no model connected"
 msgstr ""
 
-#: src/backend_ui.rs:3461 src/diagnostics.rs:816
+#: src/backend_ui.rs:3461 src/diagnostics.rs:836
 msgid "connected"
 msgstr ""
 
@@ -1199,7 +1270,7 @@ msgstr ""
 msgid "Close Myna Settings."
 msgstr ""
 
-#: src/onboarding_ui.rs:945 src/diagnostics.rs:721
+#: src/onboarding_ui.rs:945 src/diagnostics.rs:726
 msgid ""
 "Another input method is in use, and Dictation types through IBus. Choose "
 "IBus in the system settings."
@@ -1312,16 +1383,8 @@ msgstr ""
 msgid "Not set up"
 msgstr ""
 
-#: src/shortcut_ui.rs:691 src/sound_preview.rs:66
-msgid "Myna is not running"
-msgstr ""
-
 #: src/list_editor_ui.rs:79
 msgid "Add a word or phrase"
-msgstr ""
-
-#: src/list_editor_ui.rs:84
-msgid "Add"
 msgstr ""
 
 #: src/list_editor_ui.rs:155
@@ -1372,7 +1435,7 @@ msgstr ""
 msgid "limited to"
 msgstr ""
 
-#: src/diagnostics.rs:280 src/diagnostics.rs:358 src/diagnostics.rs:833
+#: src/diagnostics.rs:280 src/diagnostics.rs:358 src/diagnostics.rs:853
 msgid "of"
 msgstr ""
 
@@ -1425,7 +1488,7 @@ msgstr ""
 msgid "Dictation will be slow. Pause the build or workload before dictating."
 msgstr ""
 
-#: src/diagnostics.rs:356 src/diagnostics.rs:831
+#: src/diagnostics.rs:356 src/diagnostics.rs:851
 msgid "reached"
 msgstr ""
 
@@ -1493,7 +1556,7 @@ msgstr ""
 msgid "GPU"
 msgstr ""
 
-#: src/diagnostics.rs:489 src/diagnostics.rs:998
+#: src/diagnostics.rs:489 src/diagnostics.rs:1018
 msgid "none"
 msgstr ""
 
@@ -1562,11 +1625,11 @@ msgstr ""
 msgid "Process"
 msgstr ""
 
-#: src/diagnostics.rs:600 src/diagnostics.rs:949
+#: src/diagnostics.rs:600 src/diagnostics.rs:969
 msgid "not running"
 msgstr ""
 
-#: src/diagnostics.rs:606 src/diagnostics.rs:961 src/diagnostics.rs:970
+#: src/diagnostics.rs:606 src/diagnostics.rs:981 src/diagnostics.rs:990
 msgid "not installed"
 msgstr ""
 
@@ -1598,168 +1661,168 @@ msgstr ""
 msgid "Text models"
 msgstr ""
 
-#: src/diagnostics.rs:679 src/diagnostics.rs:747 src/diagnostics.rs:761
+#: src/diagnostics.rs:679 src/diagnostics.rs:752 src/diagnostics.rs:766
 msgid "(none)"
 msgstr ""
 
-#: src/diagnostics.rs:706
+#: src/diagnostics.rs:711
 msgid "Status"
 msgstr ""
 
-#: src/diagnostics.rs:712
+#: src/diagnostics.rs:717
 msgid "Problems"
 msgstr ""
 
-#: src/diagnostics.rs:718
+#: src/diagnostics.rs:723
 msgid ""
 "IBus is not installed, so Myna cannot type. Install the “ibus” package, then "
 "log out and back in."
 msgstr ""
 
-#: src/diagnostics.rs:723
+#: src/diagnostics.rs:728
 msgid ""
 "IBus is not set up, so Myna cannot type. Set up Dictation to turn it on."
 msgstr ""
 
-#: src/diagnostics.rs:757
+#: src/diagnostics.rs:762
 msgid "Warnings"
 msgstr ""
 
 #. TRANSLATORS: {task} is a kind of text model such as "translation", {from} and {to} are language names.
-#: src/diagnostics.rs:786
+#: src/diagnostics.rs:806
 msgid "{task} ({from} to {to})"
 msgstr ""
 
 #. TRANSLATORS: {task} is a kind of text model such as "text cleanup", {language} the language it works on.
-#: src/diagnostics.rs:794
+#: src/diagnostics.rs:814
 msgid "{task} ({language})"
 msgstr ""
 
-#: src/diagnostics.rs:809
+#: src/diagnostics.rs:829
 msgid "not connected"
 msgstr ""
 
-#: src/diagnostics.rs:812
+#: src/diagnostics.rs:832
 msgid "connected, but no model is installed"
 msgstr ""
 
-#: src/diagnostics.rs:827
+#: src/diagnostics.rs:847
 msgid "not probed"
 msgstr ""
 
-#: src/diagnostics.rs:840
+#: src/diagnostics.rs:860
 msgid "policy allows"
 msgstr ""
 
-#: src/diagnostics.rs:847
+#: src/diagnostics.rs:867
 msgid "cores in this class"
 msgstr ""
 
-#: src/diagnostics.rs:854
+#: src/diagnostics.rs:874
 msgid "mains"
 msgstr ""
 
-#: src/diagnostics.rs:855 src/diagnostics.rs:860
+#: src/diagnostics.rs:875 src/diagnostics.rs:880
 msgid "battery"
 msgstr ""
 
-#: src/diagnostics.rs:909
+#: src/diagnostics.rs:929
 msgid "chunks dropped this session"
 msgstr ""
 
-#: src/diagnostics.rs:917
+#: src/diagnostics.rs:937
 msgid "no dictation yet"
 msgstr ""
 
-#: src/diagnostics.rs:920
+#: src/diagnostics.rs:940
 msgid "speech"
 msgstr ""
 
-#: src/diagnostics.rs:921
+#: src/diagnostics.rs:941
 msgid "no speech heard"
 msgstr ""
 
-#: src/diagnostics.rs:929
+#: src/diagnostics.rs:949
 msgid "offset"
 msgstr ""
 
-#: src/diagnostics.rs:931
+#: src/diagnostics.rs:951
 msgid "floor"
 msgstr ""
 
-#: src/diagnostics.rs:938
+#: src/diagnostics.rs:958
 msgid "Input method"
 msgstr ""
 
-#: src/diagnostics.rs:939
+#: src/diagnostics.rs:959
 msgid "Indicator host"
 msgstr ""
 
-#: src/diagnostics.rs:945
+#: src/diagnostics.rs:965
 msgid "active"
 msgstr ""
 
-#: src/diagnostics.rs:947
+#: src/diagnostics.rs:967
 msgid "set up, starts at the next login"
 msgstr ""
 
-#: src/diagnostics.rs:950
+#: src/diagnostics.rs:970
 msgid "not set up"
 msgstr ""
 
-#: src/diagnostics.rs:951
+#: src/diagnostics.rs:971
 msgid "turned off"
 msgstr ""
 
-#: src/diagnostics.rs:953
+#: src/diagnostics.rs:973
 msgid "locked by the administrator"
 msgstr ""
 
-#: src/diagnostics.rs:955
+#: src/diagnostics.rs:975
 msgid "hidden by another copy"
 msgstr ""
 
-#: src/diagnostics.rs:957
+#: src/diagnostics.rs:977
 msgid "another input method is in use"
 msgstr ""
 
-#: src/diagnostics.rs:958
+#: src/diagnostics.rs:978
 msgid "not supported on this desktop"
 msgstr ""
 
-#: src/diagnostics.rs:960
+#: src/diagnostics.rs:980
 msgid "failed"
 msgstr ""
 
-#: src/diagnostics.rs:969
+#: src/diagnostics.rs:989
 msgid "gnome-shell did not answer"
 msgstr ""
 
-#: src/diagnostics.rs:973
+#: src/diagnostics.rs:993
 msgid "installed since login, starts at the next one"
 msgstr ""
 
-#: src/diagnostics.rs:976
+#: src/diagnostics.rs:996
 msgid "installed since login, not enabled"
 msgstr ""
 
-#: src/diagnostics.rs:979
+#: src/diagnostics.rs:999
 msgid "myna-config package"
 msgstr ""
 
-#: src/diagnostics.rs:980
+#: src/diagnostics.rs:1000
 msgid "Ubuntu package"
 msgstr ""
 
-#: src/diagnostics.rs:981
+#: src/diagnostics.rs:1001
 msgid "development override"
 msgstr ""
 
-#: src/diagnostics.rs:982
+#: src/diagnostics.rs:1002
 msgid "user copy"
 msgstr ""
 
-#: src/diagnostics.rs:983
+#: src/diagnostics.rs:1003
 msgid "other system copy"
 msgstr ""
 
