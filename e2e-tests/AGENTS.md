@@ -114,6 +114,23 @@ CI runs it alone in a dispatched E2E run that `snaps.yml` starts after
 releasing a candidate to a branch. A sideloaded snap cannot test this: it
 keeps no store components and skips the old revision's refresh-mode.
 
+The `plugins` suite runs only with `E2E_PLUGIN_BLOBS` set (`# requires:`),
+a directory holding the sideloadable `myna-text` and `myna-translation` snaps
+and the `disfluency-en` and `translate-en-fr` components (what `snapcraft
+pack` leaves in `text-snap/` and `translation-snap/`); CI does not build them,
+so it is not in the matrix. From the `dictation` snapshot it drives Settings'
+Add step page over a fake speech backend: Install, add Translate and Tidy in
+stage order, dictate French, ignore a text share outside the allow-list,
+Remove (one polkit grant, no daemon restart), the degraded step, reinstall.
+Snapd refuses REST component installs for a sideloaded snap until the store
+enables components (`plugin-store-enablement`), so in `sideload` mode (the
+only one that can run today) the suite presses the real Install, asserts the
+refusal, and installs with `snap install --dangerous` plus a daemon restart
+(a component change empties the running daemon's backend mounts). The mode is
+`E2E_PLUGIN_INSTALL=auto|sideload|store`; `auto` picks `store` once the store
+knows `myna-translation`, where Settings' Install and no restart carry the
+whole flow. Delete the stand-in branches when both snapd problems are fixed.
+
 `dev/try-desktop.sh` (`make try-desktop`) reuses the provisioning above for a
 manual-test VM; it only ever copies the `installed` snapshot of an e2e VM.
 
