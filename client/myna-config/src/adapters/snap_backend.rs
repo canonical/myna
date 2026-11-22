@@ -421,11 +421,12 @@ fn read_text_models(mount_root: &Path, snap: &str) -> Vec<TextModel> {
             let text = std::fs::read_to_string(component.path().join(TEXT_MODEL_MANIFEST)).ok()?;
             let manifest: serde_json::Value = serde_json::from_str(&text).ok()?;
             let field = |key: &str| manifest.get(key)?.as_str().map(str::to_owned);
-            Some(TextModel::new(
-                field("task")?,
-                field("language")?,
-                field("to"),
-            ))
+            Some(
+                TextModel::new(field("task")?, field("language")?, field("to")).with_credit(
+                    field("license").unwrap_or_default(),
+                    field("attribution").unwrap_or_default(),
+                ),
+            )
         })
         .collect();
     models.sort_by(|a, b| (a.task(), a.language(), a.to()).cmp(&(b.task(), b.language(), b.to())));

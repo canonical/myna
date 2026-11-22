@@ -300,7 +300,7 @@ fn discovery_lists_the_models_a_text_snap_has_installed() {
     std::os::unix::fs::symlink("../escape", dir.join("mount/odd-text/current")).unwrap();
     write(
         "mount/myna-text/components/x1/model-translate-en-fr/myna-text-model.json",
-        r#"{"kind":"translate","id":"bergamot-base-memory-en-fr","task":"text.translate","language":"en","to":"fr"}"#,
+        r#"{"kind":"translate","id":"bergamot-base-memory-en-fr","task":"text.translate","language":"en","to":"fr","license":"MPL-2.0","attribution":"Mozilla"}"#,
     );
     write(
         "mount/myna-text/components/x1/model-disfluency-en/myna-text-model.json",
@@ -371,6 +371,12 @@ fn discovery_lists_the_models_a_text_snap_has_installed() {
             ("text.translate", "en", Some("fr"))
         ]
     );
+    let credit: Vec<_> = text
+        .models()
+        .iter()
+        .map(|model| (model.license(), model.attribution()))
+        .collect();
+    assert_eq!(credit, [("", ""), ("MPL-2.0", "Mozilla")]);
 }
 
 #[test]

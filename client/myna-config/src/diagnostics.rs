@@ -700,6 +700,11 @@ fn render_body(
         if !provider.models.is_empty() {
             let models: Vec<String> = provider.models.iter().map(text_model_summary).collect();
             field(&mut out, &gettextrs::gettext("Models"), &models.join(", "));
+            for model in &provider.models {
+                if let Some(credit) = text_model_credit(model) {
+                    field(&mut out, &gettextrs::gettext("License"), &credit);
+                }
+            }
         }
         field(
             &mut out,
@@ -770,6 +775,21 @@ fn render_body(
     }
 
     out
+}
+
+/// The licence and credit a model declares, one line, or `None` when it
+/// declares neither.
+fn text_model_credit(model: &crate::domain::TextModel) -> Option<String> {
+    let (license, credit) = (model.license(), model.attribution());
+    if license.is_empty() && credit.is_empty() {
+        return None;
+    }
+    let summary = text_model_summary(model);
+    Some(match (credit.is_empty(), license.is_empty()) {
+        (false, false) => format!("{summary}: {credit} ({license})"),
+        (false, true) => format!("{summary}: {credit}"),
+        _ => format!("{summary}: {license}"),
+    })
 }
 
 /// "text cleanup (English)", "translation (English to Français)".
@@ -1377,6 +1397,28 @@ mod tests {
             "{text}"
         );
         assert_eq!(field_value(section, "Status"), Some("ready"), "{text}");
+    }
+
+    #[test]
+    fn a_model_that_declares_credit_has_its_license_listed() {
+        use crate::domain::TextModel;
+        let models = vec![
+            TextModel::new("text.translate", "en", Some("fr".into()))
+                .with_credit("MPL-2.0", "Mozilla and contributors"),
+            TextModel::new("text.cleanup", "en", None).with_credit("Apache-2.0", ""),
+            TextModel::new("text.rewrite", "en", None).with_credit("", "Someone"),
+            TextModel::new("text.other", "en", None),
+        ];
+        let text = text_input(true, models, None);
+        let section = text.split("Text models:\n").nth(1).unwrap_or_default();
+        for line in [
+            "translation (English to Français): Mozilla and contributors (MPL-2.0)",
+            "text cleanup (English): Apache-2.0",
+            ": Someone",
+        ] {
+            assert!(section.contains(line), "{line} in {section}");
+        }
+        assert_eq!(section.matches("License").count(), 3, "{section}");
     }
 
     #[test]

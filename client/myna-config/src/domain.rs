@@ -240,6 +240,8 @@ pub struct TextModel {
     task: String,
     language: String,
     to: Option<String>,
+    license: String,
+    attribution: String,
 }
 
 impl TextModel {
@@ -248,7 +250,28 @@ impl TextModel {
             task: task.into(),
             language: language.into(),
             to,
+            license: String::new(),
+            attribution: String::new(),
         }
+    }
+
+    /// The licence and credit the model's manifest declares.
+    pub fn with_credit(
+        mut self,
+        license: impl Into<String>,
+        attribution: impl Into<String>,
+    ) -> Self {
+        self.license = license.into();
+        self.attribution = attribution.into();
+        self
+    }
+
+    pub fn license(&self) -> &str {
+        &self.license
+    }
+
+    pub fn attribution(&self) -> &str {
+        &self.attribution
     }
 
     /// What the model does, as the daemon names tasks: `text.cleanup`.
