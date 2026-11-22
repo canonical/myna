@@ -39,6 +39,7 @@ override_dh_auto_test:
 override_dh_auto_install:
 	install -Dm755 target/release/myna-config debian/myna-config/usr/bin/myna-config
 	install -Dm755 target/release/myna-hud-host debian/myna-config/usr/libexec/myna-config/myna-hud-host
+	install -Dm644 -t debian/myna-config/usr/share/myna-config/catalog catalog/*.json
 	sh myna-config/build/install-translations.sh myna-config/po debian/myna-config
 
 # dh_clean deletes *.orig, and cargo checks each vendored crate's
