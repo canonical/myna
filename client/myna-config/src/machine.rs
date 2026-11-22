@@ -388,6 +388,7 @@ fn parse_daemon_report(all: &gio::glib::Variant) -> DaemonReport {
         chain: crate::chain_notice::ChainState::parse(
             &text("ChainStatus").unwrap_or_default(),
             &text("ChainMissing").unwrap_or_default(),
+            &text("ChainMissingRequests").unwrap_or_default(),
         ),
         steps: None,
     }

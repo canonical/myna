@@ -1407,7 +1407,7 @@ mod tests {
                 cleanup_and_translation(),
                 Some(ChainState::Degraded(vec!["text.translate".into()]))
             ),
-            "missing a translation model"
+            "missing a model for translation"
         );
         assert_eq!(status(true, cleanup_and_translation(), None), "connected");
     }
@@ -1771,7 +1771,7 @@ mod tests {
         let text = present_diagnostics(daemon).copy_text();
         assert_eq!(
             field_value(&text, "Processing"),
-            Some("missing a translation model"),
+            Some("missing a model for translation"),
             "{text}"
         );
     }

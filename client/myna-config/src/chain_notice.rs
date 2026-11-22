@@ -15,18 +15,23 @@ impl ChainState {
     /// `None` for a daemon too old to publish the properties (empty status)
     /// and for a value this Settings does not know: say nothing rather than
     /// guess.
-    pub fn parse(status: &str, missing: &str) -> Option<Self> {
+    pub fn parse(status: &str, missing: &str, requests: &str) -> Option<Self> {
         match status {
             "ready" => Some(Self::Ready),
             "restart" => Some(Self::Restart),
-            "degraded" => Some(Self::Degraded(
-                missing
-                    .split(',')
-                    .map(str::trim)
-                    .filter(|task| !task.is_empty())
-                    .map(str::to_owned)
-                    .collect(),
-            )),
+            "degraded" => {
+                let named = named_requests(requests);
+                Some(Self::Degraded(if named.is_empty() {
+                    missing
+                        .split(',')
+                        .map(str::trim)
+                        .filter(|task| !task.is_empty())
+                        .map(str::to_owned)
+                        .collect()
+                } else {
+                    named
+                }))
+            }
             _ => None,
         }
     }
@@ -41,7 +46,7 @@ impl ChainState {
             Self::Degraded(tasks) => {
                 // TRANSLATORS: {models} names the kinds of model that are missing, such as "translation" or "text cleanup and translation".
                 let frame = gettextrs::gettext(
-                    "This needs a {models} model that is not installed. Myna types what it heard instead.",
+                    "This needs a model for {models}, which is not installed. Myna types what it heard instead.",
                 );
                 Some(frame.replace("{models}", &names(tasks)))
             }
@@ -55,15 +60,39 @@ impl ChainState {
             Self::Restart => gettextrs::gettext("restart dictation to use a new model"),
             Self::Degraded(tasks) => {
                 // TRANSLATORS: {models} names the kinds of model that are missing, such as "translation".
-                let frame = gettextrs::gettext("missing a {models} model");
+                let frame = gettextrs::gettext("missing a model for {models}");
                 frame.replace("{models}", &names(tasks))
             }
         }
     }
 }
 
+/// The tasks of the daemon's `ChainMissingRequests`, a translation with its
+/// target as `text.translate>fr`; empty for a daemon too old to say.
+fn named_requests(json: &str) -> Vec<String> {
+    let Ok(serde_json::Value::Array(requests)) = serde_json::from_str(json) else {
+        return Vec::new();
+    };
+    requests
+        .iter()
+        .filter_map(|request| {
+            let task = request.get("task")?.as_str()?;
+            let to = request.get("params")?.get("to").and_then(|to| to.as_str());
+            Some(match to {
+                Some(to) if task == "text.translate" => format!("{task}>{to}"),
+                _ => task.to_owned(),
+            })
+        })
+        .collect()
+}
+
 /// A task as the user would call it.
 pub fn word(task: &str) -> String {
+    if let Some(to) = task.strip_prefix("text.translate>") {
+        // TRANSLATORS: {language} is a language name, such as "Français".
+        let frame = gettextrs::gettext("translation to {language}");
+        return frame.replace("{language}", &crate::processing_steps::language_name(to));
+    }
     match task {
         "text.cleanup" => gettextrs::gettext("text cleanup"),
         "text.translate" => gettextrs::gettext("translation"),
@@ -88,13 +117,13 @@ mod tests {
 
     #[test]
     fn an_older_daemon_or_an_unknown_value_says_nothing() {
-        assert_eq!(ChainState::parse("", ""), None);
-        assert_eq!(ChainState::parse("sideways", "text.translate"), None);
+        assert_eq!(ChainState::parse("", "", ""), None);
+        assert_eq!(ChainState::parse("sideways", "text.translate", ""), None);
     }
 
     #[test]
     fn ready_has_no_notice() {
-        let state = ChainState::parse("ready", "").expect("ready");
+        let state = ChainState::parse("ready", "", "").expect("ready");
         assert_eq!(state, ChainState::Ready);
         assert_eq!(state.notice(), None);
         assert_eq!(state.summary(), "ready");
@@ -102,18 +131,22 @@ mod tests {
 
     #[test]
     fn a_missing_task_is_named_in_plain_words() {
-        let state = ChainState::parse("degraded", "text.translate").expect("degraded");
+        let state = ChainState::parse("degraded", "text.translate", "").expect("degraded");
         assert_eq!(
             state.notice().as_deref(),
-            Some("This needs a translation model that is not installed. Myna types what it heard instead.")
+            Some("This needs a model for translation, which is not installed. Myna types what it heard instead.")
         );
-        assert_eq!(state.summary(), "missing a translation model");
+        assert_eq!(state.summary(), "missing a model for translation");
     }
 
     #[test]
     fn several_tasks_are_listed_once_each() {
-        let state =
-            ChainState::parse("degraded", "text.cleanup, text.translate,text.translate").unwrap();
+        let state = ChainState::parse(
+            "degraded",
+            "text.cleanup, text.translate,text.translate",
+            "",
+        )
+        .unwrap();
         assert_eq!(
             state,
             ChainState::Degraded(vec![
@@ -122,20 +155,35 @@ mod tests {
                 "text.translate".into()
             ])
         );
-        assert_eq!(state.summary(), "missing a text cleanup, translation model");
+        assert_eq!(
+            state.summary(),
+            "missing a model for text cleanup, translation"
+        );
     }
 
     #[test]
     fn an_unknown_or_empty_task_reads_as_text() {
-        let unknown = ChainState::parse("degraded", "audio.denoise").unwrap();
-        assert_eq!(unknown.summary(), "missing a text model");
-        let empty = ChainState::parse("degraded", "").unwrap();
-        assert_eq!(empty.summary(), "missing a text model");
+        let unknown = ChainState::parse("degraded", "audio.denoise", "").unwrap();
+        assert_eq!(unknown.summary(), "missing a model for text");
+        let empty = ChainState::parse("degraded", "", "").unwrap();
+        assert_eq!(empty.summary(), "missing a model for text");
+    }
+
+    #[test]
+    fn the_daemons_full_request_names_the_target() {
+        let json = r#"[{"task":"text.translate","params":{"language":"en","to":"fr"}},{"task":"text.cleanup","params":{}}]"#;
+        let state = ChainState::parse("degraded", "text.translate", json).unwrap();
+        assert_eq!(
+            state.notice().as_deref(),
+            Some("This needs a model for translation to Français, text cleanup, which is not installed. Myna types what it heard instead.")
+        );
+        let broken = ChainState::parse("degraded", "text.cleanup", "not json").unwrap();
+        assert_eq!(broken.summary(), "missing a model for text cleanup");
     }
 
     #[test]
     fn restart_asks_for_a_restart() {
-        let state = ChainState::parse("restart", "text.translate").expect("restart");
+        let state = ChainState::parse("restart", "text.translate", "").expect("restart");
         assert_eq!(
             state.notice().as_deref(),
             Some("A model was connected after Myna started. Restart dictation to use it.")
