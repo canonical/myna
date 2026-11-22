@@ -181,7 +181,7 @@ def test_pair_build_adds_one_slice_pin_and_notice_line(tmp_path):
     before = (out / "translate_en_fr.jsonl").read_bytes()
     tc.cmd_build(argparse.Namespace(fleurs=fleurs, out=out, pair="en:de"))
     built = tc.load(out)
-    assert set(built.pairs) == {"fr", "de"}
+    assert set(built.pairs) == set(tc.load(tc.CORPUS_DIR).pairs) | {"de"}
     assert len(built.pairs["de"]) == 200
     assert (out / "translate_en_fr.jsonl").read_bytes() == before
     assert "translate_en_de.jsonl" in (out / tc.SUMS).read_text(encoding="utf-8")

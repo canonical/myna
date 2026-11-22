@@ -28,6 +28,7 @@ COMPONENT_IDS = {
     "myna-translation": {
         "bergamot-base-memory-en-de": "text.translate",
         "bergamot-base-memory-en-fr": "text.translate",
+        "bergamot-tiny-en-fa": "text.translate",
     },
 }
 
