@@ -12,6 +12,7 @@ pub mod graph;
 pub mod history;
 pub mod pipeline;
 pub mod rules;
+pub mod wire;
 
 /// Where a piece of text is about to land, for a graph that routes on it.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
