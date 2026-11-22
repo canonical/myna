@@ -119,34 +119,39 @@ impl SoundSet {
 }
 
 /// What is done to dictated text before it is typed (`processing-chain`):
-/// one of the chains this build knows.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub enum ProcessingChain {
-    /// Nothing: typed as heard.
-    #[default]
-    Exact,
-    /// Hesitations, false starts and repeats dropped.
-    Tidy,
-    /// Tidied, then translated from English to French.
-    TidyFrench,
-}
+/// the id of one of the presets this build knows. What a preset does is data
+/// in the daemon (`myna-desktop`'s graph); this is only its name, as stored.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct ProcessingChain(&'static str);
 
 impl ProcessingChain {
-    /// Every chain, in schema order.
-    pub const ALL: [Self; 3] = [Self::Exact, Self::Tidy, Self::TidyFrench];
+    /// Nothing: typed as heard.
+    pub const EXACT: Self = Self("exact");
+    /// Hesitations, false starts and repeats dropped.
+    pub const TIDY: Self = Self("tidy");
+    /// Tidied, then translated from English to French.
+    pub const TIDY_FRENCH: Self = Self("tidy-french");
+    /// Typed as heard, fitted to the field: no capital or full stop in an
+    /// address, no capital that continues a sentence.
+    pub const KEYWORD: Self = Self("keyword");
+
+    /// Every preset, in schema order.
+    pub const ALL: [Self; 4] = [Self::EXACT, Self::TIDY, Self::TIDY_FRENCH, Self::KEYWORD];
 
     /// The schema enum nick.
     pub fn nick(self) -> &'static str {
-        match self {
-            Self::Exact => "exact",
-            Self::Tidy => "tidy",
-            Self::TidyFrench => "tidy-french",
-        }
+        self.0
     }
 
-    /// The chain a nick names; `None` for one this build does not know.
+    /// The preset a nick names; `None` for one this build does not know.
     pub fn from_nick(nick: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|chain| chain.nick() == nick)
+    }
+}
+
+impl Default for ProcessingChain {
+    fn default() -> Self {
+        Self::EXACT
     }
 }
 
@@ -658,9 +663,9 @@ mod tests {
         let store = test_store();
         assert_eq!(
             Settings::from_store(&store).processing_chain,
-            ProcessingChain::Exact
+            ProcessingChain::EXACT
         );
-        assert_eq!(Settings::default().processing_chain, ProcessingChain::Exact);
+        assert_eq!(Settings::default().processing_chain, ProcessingChain::EXACT);
         let range = test_schema().key(KEY_PROCESSING_CHAIN).range();
         let (_, nicks) = range.get::<(String, glib::Variant)>().unwrap();
         let nicks: Vec<String> = nicks.get().unwrap();
@@ -668,7 +673,11 @@ mod tests {
             nicks,
             ProcessingChain::ALL.map(|chain| chain.nick().to_owned())
         );
-        for chain in [ProcessingChain::TidyFrench, ProcessingChain::Tidy] {
+        for chain in [
+            ProcessingChain::TIDY_FRENCH,
+            ProcessingChain::TIDY,
+            ProcessingChain::KEYWORD,
+        ] {
             assert!(store
                 .settings
                 .set_string(KEY_PROCESSING_CHAIN, chain.nick())

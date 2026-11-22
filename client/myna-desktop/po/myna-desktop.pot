@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-18 00:56+0000\n"
+"POT-Creation-Date: 2026-11-22 01:32+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -66,34 +66,34 @@ msgstr ""
 msgid "⚠️ Dictation error"
 msgstr ""
 
-#: src/controller.rs:185 src/controller.rs:922
+#: src/controller.rs:187 src/controller.rs:924
 msgid "Focus lost"
 msgstr ""
 
-#: src/controller.rs:187
+#: src/controller.rs:189
 msgid "No speech detected"
 msgstr ""
 
-#: src/controller.rs:191
+#: src/controller.rs:193
 msgid "Background noise is high"
 msgstr ""
 
-#: src/controller.rs:801
+#: src/controller.rs:803
 msgid "Text field closed"
 msgstr ""
 
-#: src/controller.rs:920
+#: src/controller.rs:922
 msgid "Password field skipped"
 msgstr ""
 
-#: src/controller.rs:921
+#: src/controller.rs:923
 msgid "No text field focused"
 msgstr ""
 
-#: src/controller.rs:923
+#: src/controller.rs:925
 msgid "Typing unavailable"
 msgstr ""
 
-#: src/controller.rs:924
+#: src/controller.rs:926
 msgid "Typing failed"
 msgstr ""

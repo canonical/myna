@@ -11,7 +11,7 @@ use myna_core::history::{append, Entry};
 use myna_core::ProcessingChain;
 
 use super::pipeline::Trace;
-use super::Processor;
+use super::{Field, Processor};
 use crate::live::Live;
 
 /// What a record says besides the text, read as each piece is recorded.
@@ -47,12 +47,12 @@ impl<P> Recorded<P> {
 
 #[async_trait]
 impl<P: Processor> Processor for Recorded<P> {
-    async fn process(&mut self, text: String) -> String {
+    async fn process(&mut self, text: String, field: &Field) -> String {
         let Some(path) = self.path.as_ref().filter(|_| self.on.get()) else {
-            return self.inner.process(text).await;
+            return self.inner.process(text, field).await;
         };
         let heard = text.clone();
-        let typed = self.inner.process(text).await;
+        let typed = self.inner.process(text, field).await;
         let entry = Entry {
             time: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -86,14 +86,14 @@ mod tests {
 
     #[async_trait]
     impl Processor for Shout {
-        async fn process(&mut self, text: String) -> String {
+        async fn process(&mut self, text: String, _: &Field) -> String {
             text.to_uppercase()
         }
     }
 
     fn context() -> Context {
         let context = Context {
-            chain: Live::new(ProcessingChain::Tidy),
+            chain: Live::new(ProcessingChain::TIDY),
             speech_model: Live::new(Some("parakeet".into())),
             version: Some("1.2.3"),
             ..Context::default()
@@ -121,8 +121,14 @@ mod tests {
     async fn records_what_was_heard_and_what_was_typed() {
         let path = scratch("on");
         let mut recorded = Recorded::new(Shout, Live::new(true), Some(path.clone()), context());
-        assert_eq!(recorded.process("um hi".into()).await, "UM HI");
-        assert_eq!(recorded.process("bye".into()).await, "BYE");
+        assert_eq!(
+            recorded.process("um hi".into(), &Field::default()).await,
+            "UM HI"
+        );
+        assert_eq!(
+            recorded.process("bye".into(), &Field::default()).await,
+            "BYE"
+        );
 
         let lines: Vec<serde_json::Value> = std::fs::read_to_string(&path)
             .unwrap()
@@ -148,11 +154,11 @@ mod tests {
         let path = scratch("off");
         let on = Live::new(false);
         let mut recorded = Recorded::new(Shout, on.clone(), Some(path.clone()), Context::default());
-        assert_eq!(recorded.process("hi".into()).await, "HI");
+        assert_eq!(recorded.process("hi".into(), &Field::default()).await, "HI");
         assert!(!path.exists());
 
         on.set(true);
-        recorded.process("hi".into()).await;
+        recorded.process("hi".into(), &Field::default()).await;
         assert_eq!(std::fs::read_to_string(&path).unwrap().lines().count(), 1);
     }
 
@@ -164,6 +170,6 @@ mod tests {
             Some(PathBuf::from("/proc/myna-nowhere/history.jsonl")),
             Context::default(),
         );
-        assert_eq!(recorded.process("hi".into()).await, "HI");
+        assert_eq!(recorded.process("hi".into(), &Field::default()).await, "HI");
     }
 }

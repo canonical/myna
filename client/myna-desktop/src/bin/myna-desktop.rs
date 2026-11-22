@@ -54,10 +54,9 @@ use myna_desktop::indicator::readiness::{Readiness, ReadinessTee};
 use myna_desktop::inject::lazy::{IbusConnect, LazyInjector};
 use myna_desktop::inject::Injector as _;
 use myna_desktop::platform::Platform;
+use myna_desktop::process::graph::{Graph, Needs};
 use myna_desktop::process::history::{Context, Recorded};
-use myna_desktop::process::pipeline::{
-    needs_of, nodes_of, steps_of, Needs, Node, Pipeline, SocketModels, Step,
-};
+use myna_desktop::process::pipeline::{Pipeline, SocketModels};
 use myna_desktop::shortcut::control::{default_socket_path, listen, send_toggle, ControlTrigger};
 use myna_desktop::sound::{
     player::{Player, Previewer},
@@ -145,7 +144,7 @@ struct Resolved {
     sound_set: SoundSet,
     commit: CommitPolicy,
     chain: myna_core::ProcessingChain,
-    nodes: Vec<Node>,
+    graph: Graph,
     history: bool,
 }
 
@@ -158,7 +157,7 @@ impl Resolved {
             choice: settings.streaming_mode,
             backend_streams,
         };
-        let nodes = nodes_of(settings.processing_chain);
+        let graph = Graph::preset(settings.processing_chain);
         Self {
             activation,
             language: args.language.clone().or_else(|| settings.language.clone()),
@@ -168,9 +167,9 @@ impl Resolved {
             auto_stop: resolve_auto_stop(activation, settings.silence_timeout),
             sounds: settings.sounds,
             sound_set: settings.sound_set,
-            commit: resolve_commit(needs_of(nodes)),
+            commit: resolve_commit(graph.needs()),
             chain: settings.processing_chain,
-            nodes: nodes.to_vec(),
+            graph,
             history: settings.processing_history,
         }
     }
@@ -257,9 +256,8 @@ struct LiveSettings {
     chain: Live<myna_core::ProcessingChain>,
     /// The model the backend said it serves; `None` until a press has asked.
     speech_model: Live<Option<String>>,
-    nodes: Live<Vec<Node>>,
-    /// The steps of `nodes`, read for each piece of text.
-    steps: Live<Vec<Step>>,
+    /// What the chosen preset does, read for each piece of text.
+    graph: Live<Graph>,
     /// Read at each commit.
     history: Live<bool>,
     sounds: Live<bool>,
@@ -279,8 +277,7 @@ impl LiveSettings {
             commit: Live::new(resolved.commit),
             chain: Live::new(resolved.chain),
             speech_model: Live::default(),
-            nodes: Live::new(resolved.nodes.clone()),
-            steps: Live::new(steps_of(&resolved.nodes)),
+            graph: Live::new(resolved.graph.clone()),
             history: Live::new(resolved.history),
             sounds: Live::new(resolved.sounds),
             sound_set,
@@ -415,15 +412,14 @@ impl LiveSettings {
             );
             self.commit.set(resolved.commit);
         }
-        if self.nodes.get() != resolved.nodes {
+        if self.chain.get() != resolved.chain {
             myna_core::info_log!(
                 "settings",
-                "processing steps -> {:?} (live, from the next text)",
-                resolved.nodes
+                "processing chain -> {} (live, from the next text)",
+                resolved.chain.nick()
             );
             self.chain.set(resolved.chain);
-            self.nodes.set(resolved.nodes.clone());
-            self.steps.set(steps_of(&resolved.nodes));
+            self.graph.set(resolved.graph.clone());
         }
         if self.history.get() != resolved.history {
             myna_core::info_log!(
@@ -811,7 +807,7 @@ async fn run_controller(
         .commit(live.commit.clone())
         .processor({
             let pipeline =
-                Pipeline::new(live.steps.clone(), SocketModels::new(text_models_socket()))
+                Pipeline::new(live.graph.clone(), SocketModels::new(text_models_socket()))
                     .written(live.vocabulary.clone());
             let context = Context {
                 chain: live.chain.clone(),
@@ -1617,7 +1613,7 @@ mod tests {
         let a = Args::default();
         assert_eq!(resolved(&a, &unset()).commit, CommitPolicy::Streaming);
         let tidy = myna_core::Settings {
-            processing_chain: myna_core::ProcessingChain::Tidy,
+            processing_chain: myna_core::ProcessingChain::TIDY,
             ..unset()
         };
         assert_eq!(
@@ -1627,17 +1623,22 @@ mod tests {
         assert_eq!(resolve_commit(Some(Needs::Dictation)), CommitPolicy::AtEnd);
 
         let live = LiveSettings::new(&resolved(&a, &unset()), Live::new(SoundSet::default()));
-        assert!(live.nodes.get().is_empty());
+        assert_eq!(live.graph.get(), Graph::passthrough());
         live.apply(&resolved(&a, &tidy), "test");
         assert_eq!(live.commit.get(), CommitPolicy::Horizon { sentences: 1 });
-        assert_eq!(live.nodes.get(), [Node::Tidy]);
+        assert_eq!(
+            live.graph.get(),
+            Graph::preset(myna_core::ProcessingChain::TIDY)
+        );
         let french = myna_core::Settings {
-            processing_chain: myna_core::ProcessingChain::TidyFrench,
+            processing_chain: myna_core::ProcessingChain::TIDY_FRENCH,
             ..unset()
         };
         live.apply(&resolved(&a, &french), "test");
-        assert_eq!(live.nodes.get(), [Node::Tidy, Node::French]);
-        assert_eq!(live.steps.get().len(), 2);
+        assert_eq!(
+            live.graph.get(),
+            Graph::preset(myna_core::ProcessingChain::TIDY_FRENCH)
+        );
 
         assert!(!live.history.get());
         let recording = myna_core::Settings {

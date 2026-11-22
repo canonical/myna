@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-22 00:17+0000\n"
+"POT-Creation-Date: 2026-11-22 01:32+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -109,7 +109,7 @@ msgstr ""
 msgid "Model"
 msgstr ""
 
-#: data/main-window.blp:46 src/app.rs:6001 src/myna_settings.rs:290
+#: data/main-window.blp:46 src/app.rs:6001 src/myna_settings.rs:297
 msgid "Processing"
 msgstr ""
 
@@ -393,7 +393,7 @@ msgid "Nothing recorded yet"
 msgstr ""
 
 #: src/app.rs:5985
-#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:47
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:48
 msgid "What Myna types"
 msgstr ""
 
@@ -1555,100 +1555,110 @@ msgstr ""
 msgid "A French translation"
 msgstr ""
 
-#: src/myna_settings.rs:239
+#: src/myna_settings.rs:224
+msgid "Fitted to the field"
+msgstr ""
+
+#: src/myna_settings.rs:240
 msgid "Typed as you speak, word for word."
 msgstr ""
 
-#: src/myna_settings.rs:242
+#: src/myna_settings.rs:243 src/myna_settings.rs:262
 msgid "um so I, I think we should move it to thursday"
 msgstr ""
 
-#: src/myna_settings.rs:246
+#: src/myna_settings.rs:247
 msgid ""
 "Hesitations, false starts and repeated words are left out. Nothing is added."
 msgstr ""
 
-#: src/myna_settings.rs:250
+#: src/myna_settings.rs:251
 msgid "So I think we should move it to Thursday."
 msgstr ""
 
-#: src/myna_settings.rs:253
+#: src/myna_settings.rs:254
 msgid "Tidied, then translated from English."
 msgstr ""
 
-#: src/myna_settings.rs:280
+#: src/myna_settings.rs:260
+msgid ""
+"Word for word, but with no capital or full stop in an address, and no "
+"capital where you carry on a sentence."
+msgstr ""
+
+#: src/myna_settings.rs:287
 msgid "Typed as heard"
 msgstr ""
 
-#: src/myna_settings.rs:282
+#: src/myna_settings.rs:289
 msgid "Heard: {heard}"
 msgstr ""
 
-#: src/myna_settings.rs:286
+#: src/myna_settings.rs:293
 msgid "Speech model"
 msgstr ""
 
-#: src/myna_settings.rs:296
+#: src/myna_settings.rs:303
 msgid "Tidying"
 msgstr ""
 
-#: src/myna_settings.rs:297
+#: src/myna_settings.rs:304
 msgid "Translation"
 msgstr ""
 
-#: src/myna_settings.rs:301
+#: src/myna_settings.rs:308
 msgid "{ms} ms"
 msgstr ""
 
-#: src/myna_settings.rs:308
+#: src/myna_settings.rs:315
 msgid "Not used ({ran}): {why}"
 msgstr ""
 
-#: src/myna_settings.rs:316
+#: src/myna_settings.rs:323
 msgid "Myna version"
 msgstr ""
 
-#: src/myna_settings.rs:329
+#: src/myna_settings.rs:336
 msgid "no model was reachable"
 msgstr ""
 
-#: src/myna_settings.rs:330
+#: src/myna_settings.rs:337
 msgid "the model could not answer"
 msgstr ""
 
-#: src/myna_settings.rs:331
+#: src/myna_settings.rs:338
 msgid "the model was too slow"
 msgstr ""
 
-#: src/myna_settings.rs:332
+#: src/myna_settings.rs:339
 msgid "the answer was empty"
 msgstr ""
 
-#: src/myna_settings.rs:333
+#: src/myna_settings.rs:340
 msgid "the answer added or moved words"
 msgstr ""
 
-#: src/myna_settings.rs:334
+#: src/myna_settings.rs:341
 msgid "the answer left out too much"
 msgstr ""
 
-#: src/myna_settings.rs:335
+#: src/myna_settings.rs:342
 msgid "the answer left out too many words in a row"
 msgstr ""
 
-#: src/myna_settings.rs:336
+#: src/myna_settings.rs:343
 msgid "the answer left out a “not”"
 msgstr ""
 
-#: src/myna_settings.rs:337
+#: src/myna_settings.rs:344
 msgid "the answer was a chat reply"
 msgstr ""
 
-#: src/myna_settings.rs:338
+#: src/myna_settings.rs:345
 msgid "the answer was far shorter or longer"
 msgstr ""
 
-#: src/myna_settings.rs:339
+#: src/myna_settings.rs:346
 msgid "for a reason this version does not know"
 msgstr ""
 
@@ -1840,91 +1850,92 @@ msgstr ""
 msgid "Installing {percent}%"
 msgstr ""
 
-#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:48
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:49
 msgid ""
 "Exactly what you say, typed as you speak; a tidied version, without the "
-"hesitations and repeats; or a French translation of it. Anything but the "
-"first is shown on screen while you speak and typed a sentence at a time."
-msgstr ""
-
-#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:58
-msgid "Keep a record of what was changed"
+"hesitations and repeats; a French translation of it; or what you say fitted "
+"to the field you type in. Anything but the first is shown on screen while "
+"you speak and typed a sentence at a time."
 msgstr ""
 
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:59
+msgid "Keep a record of what was changed"
+msgstr ""
+
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:60
 msgid ""
 "Save what was heard and what was typed, to check what Myna changed. The "
 "record holds your words and stays on this computer."
 msgstr ""
 
-#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:67
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:68
 msgid "Sounds on start, stop and error"
 msgstr ""
 
-#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:68
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:69
 msgid ""
 "Play a short sound when dictation starts listening, when it stops, and when "
 "it fails."
 msgstr ""
 
-#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:76
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:77
 msgid "Sound style"
 msgstr ""
 
-#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:77
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:78
 msgid ""
 "Which sounds play: Chime is a struck bar, Bird whistled chirps, Voice the "
 "hums people make while listening, Marimba a rising fifth, Water falling "
 "drops, Radio a walkie-talkie and Strings a plucked koto."
 msgstr ""
 
-#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:86
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:87
 msgid "When to transcribe"
 msgstr ""
 
-#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:87
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:88
 msgid ""
 "As you speak shows partial text in the field while you talk; When you stop "
 "injects the whole transcript once the utterance ends."
 msgstr ""
 
-#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:95
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:96
 msgid "Spoken language"
 msgstr ""
 
-#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:96
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:97
 msgid ""
 "A BCP-47-ish code (en, fr, zh) for the language you dictate in. The model "
 "skips language detection and decodes in this language; a code that does not "
 "match what is spoken degrades the transcript. Empty lets the model decide."
 msgstr ""
 
-#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:106
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:107
 msgid "Indicator style"
 msgstr ""
 
-#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:107
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:108
 msgid ""
 "All three render the same calibrated audio envelope: Default is a level bar "
 "in the accent colour, Ribbon a flowing GPU wave, VU meter a segmented meter."
 msgstr ""
 
-#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:117
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:118
 msgid "Stop after silence (seconds)"
 msgstr ""
 
-#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:118
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:119
 msgid ""
 "With tap-to-start activation, end the dictation session on its own after "
 "this many seconds without speech. 0 keeps it running until the next tap. "
 "Hold-to-talk always ends with the key."
 msgstr ""
 
-#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:127
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:128
 msgid "Vocabulary"
 msgstr ""
 
-#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:128
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:129
 msgid ""
 "Names and terms you use that speech recognition might get wrong, such as a "
 "colleague's name, a product or a term from your field: \"Nguyen\", "

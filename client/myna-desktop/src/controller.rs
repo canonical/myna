@@ -25,7 +25,7 @@ use tokio::sync::{mpsc, watch};
 use crate::draft::{CommitPolicy, DraftView, NoDraftView};
 use crate::indicator::{Indicator, IndicatorState, InputLevels};
 use crate::live::Live;
-use crate::process::{Processor, Unprocessed};
+use crate::process::{Field, Processor, Unprocessed};
 use async_trait::async_trait;
 use myna_orchestrator::{
     BackendError, OrchestratorEvent, SessionOutcome, StopHandle, TextSink, Trigger, TriggerEdge,
@@ -1149,6 +1149,8 @@ struct PendingWarning {
 struct CommitBuffer {
     /// Committed text not yet inserted.
     pending: String,
+    /// The last character this utterance inserted.
+    last: Option<char>,
     /// Whether this utterance has already inserted text. Streaming commits
     /// flush *separately* (spaced by liveness/unstable events), so a later
     /// flush needs a separator from the text already in the field.
@@ -1225,8 +1227,16 @@ impl CommitBuffer {
         }
         let rest = self.pending.split_off(ready);
         let heard = std::mem::replace(&mut self.pending, rest);
-        let mut text = processor.process(heard).await;
-        if target.field_purpose() == FieldPurpose::Terminal {
+        let purpose = target.field_purpose();
+        let before = if self.committed_any {
+            self.last
+        } else {
+            target.char_before_cursor()
+        };
+        let mut text = processor
+            .process(heard, &Field::after(purpose, before))
+            .await;
+        if purpose == FieldPurpose::Terminal {
             text = fold_control_chars(&text);
         }
         if text.is_empty() {
@@ -1244,6 +1254,7 @@ impl CommitBuffer {
         }
         let result = target.commit(&text).await;
         if result.is_ok() {
+            self.last = text.trim_end().chars().last().or(self.last);
             myna_core::dbg_log!("inject", "committed {} chars: {:?}", text.len(), text);
         }
         self.record(result)

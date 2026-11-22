@@ -39,6 +39,7 @@
     <value nick="exact" value="0"/>
     <value nick="tidy" value="1"/>
     <value nick="tidy-french" value="2"/>
+    <value nick="keyword" value="3"/>
   </enum>
 
   <schema id="com.canonical.Myna.Dictation" path="/com/canonical/myna/dictation/">
@@ -47,9 +48,9 @@
       <summary>What Myna types</summary>
       <description>
         Exactly what you say, typed as you speak; a tidied version, without
-        the hesitations and repeats; or a French translation of it. Anything
-        but the first is shown on screen while you speak and typed a sentence
-        at a time.
+        the hesitations and repeats; a French translation of it; or what you
+        say fitted to the field you type in. Anything but the first is shown
+        on screen while you speak and typed a sentence at a time.
       </description>
     </key>
 

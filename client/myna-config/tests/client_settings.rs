@@ -587,7 +587,7 @@ fn headless_widget_smoke_covers_every_real_schema_key() {
         .expect("processing-chain is listed");
     assert_eq!(chain.kind, WidgetKind::Options);
     assert_eq!(chain.placement, Placement::Processing);
-    assert_eq!(chain.choices, ["exact", "tidy", "tidy-french"]);
+    assert_eq!(chain.choices, ["exact", "tidy", "tidy-french", "keyword"]);
     for choice in &chain.choices {
         assert_ne!(&choice_display_label(choice), choice);
         let detail = choice_detail(choice).expect("every chain explains itself");

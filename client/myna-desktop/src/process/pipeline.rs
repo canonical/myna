@@ -1,21 +1,22 @@
-//! Steps run in order on text bound for the field.
+//! A graph of steps run on text bound for the field.
 //!
 //! A step that needs a model names a [`Request`], what it needs done, and
 //! never a model. [`Models`] answers the request with whatever fits.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use myna_core::history::Skip;
-use myna_core::ProcessingChain;
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
 
 pub use super::check::Check;
-use super::Processor;
+use super::graph::{Graph, Id, Joins, Op, Src};
+use super::{Field, Processor};
 use crate::inject::fold_control_chars;
 use crate::live::Live;
 
@@ -92,88 +93,24 @@ pub trait Models: Send {
 /// What each step did to the last piece of text, for the record.
 pub type Trace = Arc<Mutex<Vec<myna_core::history::Step>>>;
 
-#[derive(Clone)]
-pub enum Step {
-    /// A change that needs no model.
-    Rule(fn(&str) -> String),
-    /// A change a model makes, typed only if it passes `check`.
-    Ask { request: Request, check: Check },
-}
-
-/// How much of a dictation a node has to see at once.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Needs {
-    /// A finished sentence is enough.
-    Sentence,
-    /// Everything that was said.
-    Dictation,
-}
-
-/// One thing done to the text. A chain is nodes in a row.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Node {
-    /// Drop hesitations, false starts and repeats.
-    Tidy,
-    /// Type in French what was said in English.
-    French,
-}
-
-impl Node {
-    pub fn steps(self) -> Vec<Step> {
-        match self {
-            Node::Tidy => vec![Step::Ask {
-                request: Request::cleanup(None),
-                check: Check::ConservativeEdit,
-            }],
-            Node::French => vec![Step::Ask {
-                request: Request::translate("en", "fr"),
-                check: Check::Usable { translation: true },
-            }],
-        }
-    }
-
-    pub fn needs(self) -> Needs {
-        match self {
-            Node::Tidy | Node::French => Needs::Sentence,
-        }
-    }
-}
-
-/// The nodes of a chain, in the order they run.
-pub fn nodes_of(chain: ProcessingChain) -> &'static [Node] {
-    match chain {
-        ProcessingChain::Exact => &[],
-        ProcessingChain::Tidy => &[Node::Tidy],
-        ProcessingChain::TidyFrench => &[Node::Tidy, Node::French],
-    }
-}
-
-/// The most any of `nodes` has to see at once; `None` when there are none.
-pub fn needs_of(nodes: &[Node]) -> Option<Needs> {
-    nodes.iter().map(|node| node.needs()).max()
-}
-
-/// The steps of `nodes`, in order.
-pub fn steps_of(nodes: &[Node]) -> Vec<Step> {
-    nodes.iter().copied().flat_map(Node::steps).collect()
-}
-
-/// The steps between the speech model and the field, read anew for each
+/// The graph between the speech model and the field, read anew for each
 /// piece of text, so a change in Settings applies from the next one.
 pub struct Pipeline {
-    steps: Live<Vec<Step>>,
+    graph: Live<Graph>,
     models: Box<dyn Models>,
     written: Live<Vec<String>>,
     trace: Trace,
+    joins: Joins,
 }
 
 impl Pipeline {
-    pub fn new(steps: impl Into<Live<Vec<Step>>>, models: impl Models + 'static) -> Self {
+    pub fn new(graph: impl Into<Live<Graph>>, models: impl Models + 'static) -> Self {
         Self {
-            steps: steps.into(),
+            graph: graph.into(),
             models: Box::new(models),
             written: Live::new(Vec::new()),
             trace: Trace::default(),
+            joins: Joins::default(),
         }
     }
 
@@ -189,58 +126,98 @@ impl Pipeline {
     pub fn trace(&self) -> Trace {
         self.trace.clone()
     }
+
+    /// One model step: its answer if usable, else `text` as it came.
+    async fn ask(
+        &mut self,
+        request: &Request,
+        check: Check,
+        text: String,
+        trace: &mut Vec<myna_core::history::Step>,
+    ) -> String {
+        let written = self.written.get();
+        let started = Instant::now();
+        let answer = tokio::time::timeout(request.budget, self.models.run(request, &text)).await;
+        let mut model = None;
+        let mut answer_chars = 0;
+        let mut typed = None;
+        let skipped = match answer {
+            Ok(Ok(answer)) => {
+                model = answer.model;
+                let cleaned = fold_control_chars(&answer.text);
+                answer_chars = cleaned.chars().count();
+                match check.verdict(&text, &cleaned, &written) {
+                    Ok(()) => {
+                        typed = Some(cleaned);
+                        None
+                    }
+                    Err(why) => Some(why),
+                }
+            }
+            Ok(Err(err)) => Some(err.skip()),
+            Err(_) => Some(Skip::Timeout),
+        };
+        if let Some(why) = skipped {
+            // Counts only: no word of the text or the answer.
+            myna_core::info_log!(
+                "process",
+                "{} skipped: {why:?} ({} chars in, {answer_chars} out)",
+                request.task,
+                text.chars().count()
+            );
+        }
+        trace.push(myna_core::history::Step {
+            task: request.task.clone(),
+            model,
+            ms: u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
+            skipped,
+        });
+        typed.unwrap_or(text)
+    }
 }
 
 #[async_trait]
 impl Processor for Pipeline {
-    async fn process(&mut self, mut text: String) -> String {
+    async fn process(&mut self, text: String, field: &Field) -> String {
+        let graph = self.graph.get();
+        let seq = self.joins.begin();
         let mut trace = Vec::new();
-        let written = self.written.get();
-        for step in &self.steps.get() {
-            match step {
-                Step::Rule(rule) => text = rule(&text),
-                Step::Ask { request, check } => {
-                    let started = Instant::now();
-                    let answer =
-                        tokio::time::timeout(request.budget, self.models.run(request, &text)).await;
-                    let mut model = None;
-                    let mut answer_chars = 0;
-                    let skipped = match answer {
-                        Ok(Ok(answer)) => {
-                            model = answer.model;
-                            let cleaned = fold_control_chars(&answer.text);
-                            answer_chars = cleaned.chars().count();
-                            match check.verdict(&text, &cleaned, &written) {
-                                Ok(()) => {
-                                    text = cleaned;
-                                    None
-                                }
-                                Err(why) => Some(why),
-                            }
-                        }
-                        Ok(Err(err)) => Some(err.skip()),
-                        Err(_) => Some(Skip::Timeout),
-                    };
-                    if let Some(why) = skipped {
-                        // Counts only: no word of the text or the answer.
-                        myna_core::info_log!(
-                            "process",
-                            "{} skipped: {why:?} ({} chars in, {answer_chars} out)",
-                            request.task,
-                            text.chars().count()
-                        );
-                    }
-                    trace.push(myna_core::history::Step {
-                        task: request.task.clone(),
-                        model,
-                        ms: u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
-                        skipped,
-                    });
+        let mut made: HashMap<Id, String> = HashMap::new();
+        let read = |made: &HashMap<Id, String>, src: Src| match src {
+            Src::Input => text.clone(),
+            Src::Node(id) => made.get(&id).cloned().unwrap_or_default(),
+        };
+        for id in graph.plan(field) {
+            let op = graph.node(id);
+            let out = match op {
+                Op::Rule { from, rule } => rule.apply(&read(&made, *from)),
+                Op::Ask {
+                    from,
+                    request,
+                    check,
+                    ..
+                } => {
+                    let input = read(&made, *from);
+                    self.ask(request, *check, input, &mut trace).await
                 }
-            }
+                Op::Route { .. } => op
+                    .select(field)
+                    .map(|src| read(&made, src))
+                    .unwrap_or_default(),
+                Op::Join { parts, sep } => {
+                    let mut whole = None;
+                    for part in parts {
+                        let arrived = read(&made, *part);
+                        whole = self.joins.arrive(seq, id, parts, *part, arrived);
+                    }
+                    whole.map(|all| all.join(sep)).unwrap_or_default()
+                }
+            };
+            made.insert(id, out);
         }
+        self.joins.forget(seq);
         *self.trace.lock().unwrap_or_else(|p| p.into_inner()) = trace;
-        text
+        read(&made, graph.out())
     }
 }
 
@@ -302,7 +279,11 @@ impl Models for SocketModels {
 
 #[cfg(test)]
 mod tests {
+    use super::super::graph::{Builder, Needs};
     use super::*;
+    use crate::process::rules::Rule;
+    use myna_core::ProcessingChain;
+    use myna_platform::text_input::FieldPurpose;
     use tokio::net::UnixListener;
 
     /// Answers every request the same way, or never.
@@ -328,41 +309,39 @@ mod tests {
         }
     }
 
+    fn graph_of(chain: ProcessingChain) -> Graph {
+        Graph::preset(chain)
+    }
+
+    fn only(task: &str) -> Graph {
+        let mut g = Builder::default();
+        let out = match task {
+            "text.translate" => g.ask(
+                Src::Input,
+                Request::translate("en", "fr"),
+                Check::Usable { translation: true },
+                Needs::Sentence,
+            ),
+            _ => g.tidy(Src::Input),
+        };
+        g.finish(out)
+    }
+
     fn cleanup(models: Scripted) -> Pipeline {
-        Pipeline::new(steps_of(&[Node::Tidy]), models)
+        Pipeline::new(graph_of(ProcessingChain::TIDY), models)
     }
 
-    fn tasks(steps: &[Step]) -> Vec<&str> {
-        steps
-            .iter()
-            .map(|step| match step {
-                Step::Rule(_) => "rule",
-                Step::Ask { request, .. } => request.task.as_str(),
-            })
-            .collect()
-    }
-
-    #[test]
-    fn a_chain_is_its_nodes_in_order() {
-        let french = nodes_of(ProcessingChain::TidyFrench);
-        assert_eq!(tasks(&steps_of(french)), ["text.cleanup", "text.translate"]);
-        assert_eq!(needs_of(french), Some(Needs::Sentence));
-        assert_eq!(
-            tasks(&steps_of(nodes_of(ProcessingChain::Tidy))),
-            ["text.cleanup"]
-        );
-        let exact = nodes_of(ProcessingChain::Exact);
-        assert!(steps_of(exact).is_empty());
-        assert_eq!(needs_of(exact), None);
+    fn here() -> Field {
+        Field::default()
     }
 
     #[tokio::test]
-    async fn steps_changed_while_running_apply_to_the_next_text() {
-        let steps = Live::new(Vec::new());
-        let mut pipeline = Pipeline::new(steps.clone(), Scripted::Says("Bonjour."));
-        assert_eq!(pipeline.process("Hello.".into()).await, "Hello.");
-        steps.set(steps_of(&[Node::French]));
-        assert_eq!(pipeline.process("Hello.".into()).await, "Bonjour.");
+    async fn the_graph_changed_while_running_applies_to_the_next_text() {
+        let graph = Live::new(Graph::passthrough());
+        let mut pipeline = Pipeline::new(graph.clone(), Scripted::Says("Bonjour."));
+        assert_eq!(pipeline.process("Hello.".into(), &here()).await, "Hello.");
+        graph.set(only("text.translate"));
+        assert_eq!(pipeline.process("Hello.".into(), &here()).await, "Bonjour.");
     }
 
     #[test]
@@ -386,7 +365,10 @@ mod tests {
     #[tokio::test]
     async fn an_answer_made_of_words_that_were_said_is_typed() {
         let mut pipeline = cleanup(Scripted::Says("Let's meet Tuesday."));
-        assert_eq!(pipeline.process(HEARD.into()).await, "Let's meet Tuesday.");
+        assert_eq!(
+            pipeline.process(HEARD.into(), &here()).await,
+            "Let's meet Tuesday."
+        );
         let trace = traced(&pipeline);
         assert_eq!(trace.len(), 1);
         assert_eq!(trace[0].task, "text.cleanup");
@@ -401,7 +383,7 @@ mod tests {
     #[tokio::test]
     async fn an_answer_with_a_new_word_is_dropped_for_what_was_heard() {
         let mut pipeline = cleanup(Scripted::Says("Sure! Let's meet Tuesday."));
-        assert_eq!(pipeline.process(HEARD.into()).await, HEARD);
+        assert_eq!(pipeline.process(HEARD.into(), &here()).await, HEARD);
         let trace = traced(&pipeline);
         assert_eq!(trace[0].model.as_deref(), Some("scripted"));
         assert_eq!(trace[0].skipped, Some(Skip::NewWord));
@@ -412,12 +394,12 @@ mod tests {
         let written = Live::new(Vec::new());
         let mut pipeline = cleanup(Scripted::Says("Restart MySQL.")).written(written.clone());
         assert_eq!(
-            pipeline.process("restart my sequel".into()).await,
+            pipeline.process("restart my sequel".into(), &here()).await,
             "restart my sequel"
         );
         written.set(vec!["MySQL".into()]);
         assert_eq!(
-            pipeline.process("restart my sequel".into()).await,
+            pipeline.process("restart my sequel".into(), &here()).await,
             "Restart MySQL."
         );
     }
@@ -425,13 +407,13 @@ mod tests {
     #[tokio::test]
     async fn an_empty_answer_is_dropped_for_what_was_heard() {
         let mut pipeline = cleanup(Scripted::Says("  "));
-        assert_eq!(pipeline.process(HEARD.into()).await, HEARD);
+        assert_eq!(pipeline.process(HEARD.into(), &here()).await, HEARD);
     }
 
     #[tokio::test]
     async fn a_missing_model_types_what_was_heard() {
         let mut pipeline = cleanup(Scripted::Fails);
-        assert_eq!(pipeline.process(HEARD.into()).await, HEARD);
+        assert_eq!(pipeline.process(HEARD.into(), &here()).await, HEARD);
         let trace = traced(&pipeline);
         assert_eq!(trace[0].model, None);
         assert_eq!(trace[0].skipped, Some(Skip::NoModel));
@@ -440,67 +422,106 @@ mod tests {
     #[tokio::test]
     async fn a_refusal_is_recorded_as_a_code_without_the_far_sides_words() {
         let mut pipeline = cleanup(Scripted::Refuses);
-        assert_eq!(pipeline.process(HEARD.into()).await, HEARD);
+        assert_eq!(pipeline.process(HEARD.into(), &here()).await, HEARD);
         assert_eq!(traced(&pipeline)[0].skipped, Some(Skip::Refused));
     }
 
     #[tokio::test(start_paused = true)]
     async fn a_model_over_its_budget_types_what_was_heard() {
         let mut pipeline = cleanup(Scripted::Hangs);
-        assert_eq!(pipeline.process(HEARD.into()).await, HEARD);
+        assert_eq!(pipeline.process(HEARD.into(), &here()).await, HEARD);
         assert_eq!(traced(&pipeline)[0].skipped, Some(Skip::Timeout));
         // The trace is of the last text alone.
-        assert_eq!(pipeline.process(HEARD.into()).await, HEARD);
+        assert_eq!(pipeline.process(HEARD.into(), &here()).await, HEARD);
         assert_eq!(traced(&pipeline).len(), 1);
     }
 
     #[tokio::test]
     async fn model_answers_fold_control_characters_into_single_spaces() {
         let mut translate = Pipeline::new(
-            steps_of(&[Node::French]),
+            only("text.translate"),
             Scripted::Says("rm -rf /tmp/x\nsudo reboot"),
         );
         assert_eq!(
-            translate.process("delete x".into()).await,
+            translate.process("delete x".into(), &here()).await,
             "rm -rf /tmp/x sudo reboot"
         );
 
         let mut tidy = cleanup(Scripted::Says("Let's meet\r\n  Tuesday.\x1b\n"));
-        assert_eq!(tidy.process(HEARD.into()).await, "Let's meet Tuesday.");
+        assert_eq!(
+            tidy.process(HEARD.into(), &here()).await,
+            "Let's meet Tuesday."
+        );
 
         let mut control_only = cleanup(Scripted::Says("\n\r\t\x1b"));
-        assert_eq!(control_only.process(HEARD.into()).await, HEARD);
-    }
-
-    #[tokio::test]
-    async fn deterministic_rules_after_models_keep_layout_breaks_for_plain_fields() {
-        let mut pipeline = Pipeline::new(
-            vec![
-                Step::Ask {
-                    request: Request::translate("en", "fr"),
-                    check: Check::Present,
-                },
-                Step::Rule(|text| text.replace(" new paragraph ", "\n\n")),
-            ],
-            Scripted::Says("First.\nnew paragraph\r\nSecond."),
-        );
-        assert_eq!(pipeline.process("input".into()).await, "First.\n\nSecond.");
+        assert_eq!(control_only.process(HEARD.into(), &here()).await, HEARD);
     }
 
     #[tokio::test]
     async fn rules_and_models_run_in_order() {
-        let mut pipeline = Pipeline::new(
-            vec![
-                Step::Rule(|text| text.replace("Monday, no, ", "")),
-                Step::Ask {
-                    request: Request::cleanup(None),
-                    check: Check::Present,
-                },
-                Step::Rule(|text| text.to_uppercase()),
-            ],
-            Scripted::Says("done"),
+        let mut g = Builder::default();
+        let asked = g.ask(
+            Src::Input,
+            Request::cleanup(None),
+            Check::Present,
+            Needs::Sentence,
         );
-        assert_eq!(pipeline.process(HEARD.into()).await, "DONE");
+        let out = g.rule(asked, Rule::Address);
+        let mut pipeline = Pipeline::new(g.finish(out), Scripted::Says("Done."));
+        assert_eq!(pipeline.process(HEARD.into(), &here()).await, "done");
+    }
+
+    #[tokio::test]
+    async fn a_route_types_what_the_field_calls_for_and_asks_no_model_it_does_not_need() {
+        let mut pipeline = Pipeline::new(graph_of(ProcessingChain::KEYWORD), Scripted::Fails);
+        let email = Field::after(FieldPurpose::Email, None);
+        assert_eq!(pipeline.process("Maria.".into(), &email).await, "maria");
+        let go_on = Field::after(FieldPurpose::Plain, Some('s'));
+        assert_eq!(
+            pipeline.process("The end.".into(), &go_on).await,
+            "the end."
+        );
+        let fresh = Field::after(FieldPurpose::Plain, Some('.'));
+        assert_eq!(
+            pipeline.process("The end.".into(), &fresh).await,
+            "The end."
+        );
+        assert!(traced(&pipeline).is_empty());
+    }
+
+    /// The input beside its translation: one source feeding two nodes.
+    fn side_by_side() -> Graph {
+        let mut g = Builder::default();
+        let french = g.ask(
+            Src::Input,
+            Request::translate("en", "fr"),
+            Check::Present,
+            Needs::Sentence,
+        );
+        let out = g.join(vec![Src::Input, french], " / ");
+        g.finish(out)
+    }
+
+    #[tokio::test]
+    async fn a_join_types_each_piece_beside_its_own_translation() {
+        let mut pipeline = Pipeline::new(side_by_side(), Scripted::Says("Bonjour."));
+        for piece in ["Hello.", "Goodbye."] {
+            assert_eq!(
+                pipeline.process(piece.into(), &here()).await,
+                format!("{piece} / Bonjour.")
+            );
+        }
+        assert_eq!(traced(&pipeline).len(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_failed_branch_of_a_join_hands_on_what_it_was_given() {
+        let mut pipeline = Pipeline::new(side_by_side(), Scripted::Fails);
+        assert_eq!(
+            pipeline.process("Hello.".into(), &here()).await,
+            "Hello. / Hello."
+        );
+        assert_eq!(traced(&pipeline)[0].skipped, Some(Skip::NoModel));
     }
 
     #[tokio::test]

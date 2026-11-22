@@ -137,6 +137,11 @@ impl MockField {
         self.shown.lock().unwrap().purpose = purpose;
     }
 
+    /// What the field already holds ahead of the cursor.
+    pub fn set_text(&self, text: &str) {
+        self.shown.lock().unwrap().text = text.into();
+    }
+
     /// The committed text the field holds.
     pub fn text(&self) -> String {
         self.shown.lock().unwrap().text.clone()
@@ -201,6 +206,13 @@ impl MockInjector {
     /// `acquire` takes `delay`, as one waiting for a key grab to end does.
     pub fn with_acquire_delay(mut self, delay: std::time::Duration) -> Self {
         self.acquire_delay = delay;
+        self
+    }
+
+    /// Report the character before the cursor (the IBus backend's behavior
+    /// where the field sends surrounding text; default is not to).
+    pub fn with_surrounding_text(mut self) -> Self {
+        self.capabilities.surrounding_text = true;
         self
     }
 
@@ -398,6 +410,14 @@ impl Target for MockTarget {
         self.field
             .lease
             .send_modify(|lease| lease.activated |= lease.id == id);
+    }
+
+    fn char_before_cursor(&self) -> Option<char> {
+        if self.owned() && self.capabilities.surrounding_text {
+            self.field.shown.lock().unwrap().text.chars().last()
+        } else {
+            None
+        }
     }
 
     fn field_purpose(&self) -> FieldPurpose {

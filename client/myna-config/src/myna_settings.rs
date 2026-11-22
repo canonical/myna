@@ -221,6 +221,7 @@ pub fn choice_display_label(choice: &str) -> String {
         "exact" => gettextrs::gettext("Exactly what I say"),
         "tidy" => gettextrs::gettext("A tidied version"),
         "tidy-french" => gettextrs::gettext("A French translation"),
+        "keyword" => gettextrs::gettext("Fitted to the field"),
         unknown => unknown.to_owned(),
     }
 }
@@ -253,6 +254,12 @@ pub fn choice_detail(choice: &str) -> Option<ChoiceDetail> {
             gettextrs::gettext("Tidied, then translated from English."),
             // Not translated: it is what gets typed, in French.
             "Je pense donc que nous devrions le déplacer à jeudi.".to_owned(),
+        ),
+        "keyword" => (
+            gettextrs::gettext(
+                "Word for word, but with no capital or full stop in an address, and no capital where you carry on a sentence.",
+            ),
+            gettextrs::gettext("um so I, I think we should move it to thursday"),
         ),
         _ => return None,
     };

@@ -2143,7 +2143,7 @@ async fn a_warning_an_empty_utterance_could_not_show_waits_for_the_next() {
 // ── Held text: commit policies, processing and the draft view ───────────────
 
 use myna_desktop::draft::{CommitPolicy, DraftView};
-use myna_desktop::process::Processor;
+use myna_desktop::process::{Field, Processor};
 
 /// Records every draft shown, as (stable, tail).
 #[derive(Clone, Default)]
@@ -2160,7 +2160,7 @@ struct Shout;
 
 #[async_trait::async_trait]
 impl Processor for Shout {
-    async fn process(&mut self, text: String) -> String {
+    async fn process(&mut self, text: String, _: &Field) -> String {
         text.to_uppercase()
     }
 }
@@ -2350,7 +2350,7 @@ struct LayoutRule;
 
 #[async_trait::async_trait]
 impl Processor for LayoutRule {
-    async fn process(&mut self, text: String) -> String {
+    async fn process(&mut self, text: String, _: &Field) -> String {
         text.replace(" new line ", "\n").replace("new line ", "\n")
     }
 }
@@ -2388,4 +2388,72 @@ async fn terminal_fields_fold_layout_breaks_across_streaming_and_held_commits() 
     );
     builder.processor(LayoutRule).build().run().await;
     assert_eq!(plain_field.text(), "one\ntwo");
+}
+
+fn keyword() -> myna_desktop::process::pipeline::Pipeline {
+    use myna_desktop::process::{graph::Graph, pipeline::*};
+    Pipeline::new(
+        Graph::preset(myna_core::ProcessingChain::KEYWORD),
+        SocketModels::new("/nonexistent/myna-models"),
+    )
+}
+
+async fn dictate_into(
+    injector: MockInjector,
+    words: &str,
+    purpose: myna_desktop::FieldPurpose,
+    before: &str,
+) -> String {
+    let field = injector.field();
+    field.set_purpose(purpose);
+    field.set_text(before);
+    let (builder, _) = held(
+        CommitPolicy::Horizon { sentences: 0 },
+        injector,
+        events_session(
+            vec![OrchestratorEvent::Final(words.into())],
+            completed(words),
+        ),
+    );
+    builder.processor(keyword()).build().run().await;
+    field.text()
+}
+
+#[tokio::test]
+async fn the_keyword_preset_fits_what_is_typed_to_the_field() {
+    use myna_desktop::FieldPurpose::{Email, Plain};
+    assert_eq!(
+        dictate_into(MockInjector::new(), "Maria.", Email, "").await,
+        "maria"
+    );
+    assert_eq!(
+        dictate_into(
+            MockInjector::new().with_surrounding_text(),
+            "The end.",
+            Plain,
+            "see"
+        )
+        .await,
+        "see the end."
+    );
+    assert_eq!(
+        dictate_into(
+            MockInjector::new().with_surrounding_text(),
+            "The end.",
+            Plain,
+            "See it."
+        )
+        .await,
+        "See it. The end."
+    );
+    assert_eq!(
+        dictate_into(
+            MockInjector::new().with_surrounding_text(),
+            "The end.",
+            Plain,
+            ""
+        )
+        .await,
+        "The end."
+    );
 }
