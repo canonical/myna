@@ -157,11 +157,8 @@ fn parse(reply: &[u8]) -> Result<Vec<u8>, WireError> {
         if size == 0 {
             return Ok(out);
         }
-        if rest.len() < size + 2 {
-            return Err(refused("short chunk"));
-        }
-        out.extend_from_slice(&rest[..size]);
-        rest = &rest[size + 2..];
+        out.extend_from_slice(rest.get(..size).ok_or_else(|| refused("short chunk"))?);
+        rest = rest.get(size + 2..).ok_or_else(|| refused("short chunk"))?;
     }
 }
 
@@ -266,6 +263,10 @@ mod tests {
         assert!(parse(b"nonsense").is_err());
         let torn = b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n9\r\nhel";
         assert!(parse(torn).is_err());
+        let two = b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n2\r\nab\r\n3\r\ncde\r\n0\r\n\r\n";
+        assert_eq!(parse(two).unwrap(), b"abcde");
+        let unended = b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n2\r\nab\r\n";
+        assert!(parse(unended).is_err());
         let bad = b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\nzz\r\n";
         assert!(parse(bad).is_err());
     }
