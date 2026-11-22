@@ -19,6 +19,7 @@ use std::time::{Duration, Instant};
 use crate::command::CancellationToken;
 use crate::domain::{
     ActiveBackendState, BackendIdentity, BackendSnapshot, BackendSurfaceError, ConnectionSnapshot,
+    TextOffer,
 };
 use crate::ports::BackendRepository;
 use crate::presentation::{present_configuration, PresentationRow};
@@ -173,6 +174,7 @@ struct Inner {
     order: Vec<String>,
     active: ActiveBackendState,
     text_providers: Vec<BackendIdentity>,
+    text_offers: Vec<TextOffer>,
     strays: Vec<BackendIdentity>,
     discovery_generation: u64,
     latest_completed_discovery: u64,
@@ -241,6 +243,11 @@ impl BackendController {
         self.inner.borrow().pages.get(snap).map(build_page)
     }
 
+    /// The text-model snaps the last discovery found, connected or not.
+    pub fn text_offers(&self) -> Vec<TextOffer> {
+        self.inner.borrow().text_offers.clone()
+    }
+
     pub fn connection_snapshot(&self) -> ConnectionSnapshot {
         let inner = self.inner.borrow();
         ConnectionSnapshot::new(
@@ -252,6 +259,7 @@ impl BackendController {
             inner.active.clone(),
         )
         .with_companions(inner.text_providers.clone(), inner.strays.clone())
+        .with_text_offers(inner.text_offers.clone())
     }
 
     pub fn begin_discovery(&self) -> DiscoveryRequest {
@@ -443,6 +451,7 @@ impl Default for Inner {
             order: Vec::new(),
             active: ActiveBackendState::Disconnected,
             text_providers: Vec::new(),
+            text_offers: Vec::new(),
             strays: Vec::new(),
             discovery_generation: 0,
             latest_completed_discovery: 0,
@@ -542,6 +551,11 @@ fn apply_discovery(
     let text_providers = snapshot.text_providers().to_vec();
     if inner.text_providers != text_providers {
         inner.text_providers = text_providers;
+        structure_changed = true;
+    }
+    let text_offers = snapshot.text_offers().to_vec();
+    if inner.text_offers != text_offers {
+        inner.text_offers = text_offers;
         structure_changed = true;
     }
     let strays = snapshot.strays().to_vec();
@@ -1103,5 +1117,32 @@ mod tests {
         assert!(controller.complete_discovery(request, Ok(with_text.clone())));
         assert_eq!(controller.connection_snapshot(), with_text);
         assert_eq!(*events.borrow(), [ControllerEvent::DiscoveryChanged]);
+    }
+
+    #[test]
+    fn a_text_snap_that_gains_a_model_is_announced_and_kept() {
+        let controller = discovered_parakeet();
+        let events = recorded(&controller);
+        let offer = |models| {
+            discovery_connected_parakeet().with_text_offers(vec![TextOffer::new(
+                BackendIdentity::new("myna-text", "provider"),
+                true,
+                models,
+            )])
+        };
+        let cleanup = crate::domain::TextModel::new("text.cleanup", "en", None);
+        for (round, models) in [Vec::new(), vec![cleanup]].into_iter().enumerate() {
+            let at = later() + FOCUS_REDISCOVERY_INTERVAL * (round as u32 + 1);
+            let request = controller.begin_focus_discovery(at).expect("admitted");
+            assert!(controller.complete_discovery(request, Ok(offer(models.clone()))));
+            assert_eq!(controller.text_offers()[0].models(), models.as_slice());
+        }
+        assert_eq!(
+            *events.borrow(),
+            [
+                ControllerEvent::DiscoveryChanged,
+                ControllerEvent::DiscoveryChanged
+            ]
+        );
     }
 }

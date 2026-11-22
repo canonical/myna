@@ -267,6 +267,102 @@ fn discovery_reads_myna_role_from_provider_env_to_partition_speech_and_text_snap
     assert!(runner.calls().is_empty());
 }
 
+/// A text-model snap as snapd mounts it: `current` names the revision and
+/// every installed component sits under `components/<revision>/`, with its
+/// manifest in it. A component that is not installed has no directory.
+#[test]
+fn discovery_lists_the_models_a_text_snap_has_installed() {
+    let dir = std::env::temp_dir().join(format!("myna-config-text-offers-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let write = |path: &str, body: &str| {
+        let file = dir.join(path);
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(file, body).unwrap();
+    };
+    let share = "common/share/provider/provider.env";
+    write(
+        &format!("data/myna-text/{share}"),
+        "SNAP_NAME=myna-text\nMYNA_ROLE=text\n",
+    );
+    write(
+        &format!("data/idle-text/{share}"),
+        "SNAP_NAME=idle-text\nMYNA_ROLE=text\n",
+    );
+    write(
+        "mount/myna-text/components/x1/model-translate-en-fr/myna-text-model.json",
+        r#"{"kind":"translate","id":"bergamot-base-memory-en-fr","task":"text.translate","language":"en","to":"fr"}"#,
+    );
+    write(
+        "mount/myna-text/components/x1/model-disfluency-en/myna-text-model.json",
+        r#"{"kind":"disfluency-tagger","id":"myna-disfluency-en","task":"text.cleanup","language":"en","tau":0.9}"#,
+    );
+    write(
+        "mount/myna-text/components/x1/model-broken/myna-text-model.json",
+        "not json",
+    );
+    std::fs::create_dir_all(dir.join("mount/myna-text/components/x0/model-old")).unwrap();
+    std::os::unix::fs::symlink("x1", dir.join("mount/myna-text/current")).unwrap();
+    let slot = |snap: &str, connected: bool| {
+        serde_json::json!({
+            "snap": snap,
+            "slot": "provider",
+            "interface": "content",
+            "attrs": {
+                "content": "inference-provider",
+                "source": { "write": ["$SNAP_COMMON/share/provider"] }
+            },
+            "connections": if connected {
+                serde_json::json!([{ "snap": "myna", "plug": "backend" }])
+            } else {
+                serde_json::json!([])
+            }
+        })
+    };
+    let connections: ContentConnections = serde_json::from_value(serde_json::json!({
+        "slots": [slot("myna-text", true), slot("idle-text", false)]
+    }))
+    .unwrap();
+    let snapd = Arc::new(FakeSnapd::answering(Ok(Vec::new()), Ok(connections)));
+    let repository = SnapBackendRepository::with_snap_root(
+        Arc::new(FakeCommandRunner::default()),
+        snapd,
+        dir.join("data"),
+    )
+    .with_mount_root(dir.join("mount"));
+
+    let discovered =
+        block_on(repository.discover(CancellationToken::new())).expect("discovery succeeds");
+    let _ = std::fs::remove_dir_all(&dir);
+
+    let offers = discovered.text_offers();
+    assert_eq!(offers.len(), 2, "{offers:?}");
+    let idle = &offers[0];
+    assert_eq!(
+        idle.identity(),
+        &BackendIdentity::new("idle-text", "provider")
+    );
+    assert!(!idle.connected());
+    assert!(idle.models().is_empty());
+    let text = &offers[1];
+    assert_eq!(
+        text.identity(),
+        &BackendIdentity::new("myna-text", "provider")
+    );
+    assert!(text.connected());
+    let models: Vec<_> = text
+        .models()
+        .iter()
+        .map(|model| (model.task(), model.language(), model.to()))
+        .collect();
+    assert_eq!(
+        models,
+        [
+            ("text.cleanup", "en", None),
+            ("text.translate", "en", Some("fr"))
+        ]
+    );
+}
+
 #[test]
 fn no_installed_backends_is_a_successful_empty_discovery() {
     let (repository, _, _) = snapd_repository(FakeSnapd::answering(

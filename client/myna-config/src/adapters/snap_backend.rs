@@ -14,16 +14,22 @@ use crate::domain::{
     connection_snapshot_with_roles, parse_engine_options, parse_model_options,
     parse_modelctl_config, parse_status, BackendIdentity, BackendSnapshot, BackendSurface,
     BackendSurfaceError, ConnectionSnapshot, ContentConnections, ContentSlot, ParseError,
+    TextModel,
 };
 use crate::ports::BackendRepository;
 
 const DEFAULT_SNAP_ROOT: &str = "/var/snap";
+const DEFAULT_MOUNT_ROOT: &str = "/snap";
+/// The manifest a text-model component carries at its root.
+const TEXT_MODEL_MANIFEST: &str = "myna-text-model.json";
 const MAX_MODELCTL_CANDIDATES: usize = 4;
 
 pub struct SnapBackendRepository {
     runner: Arc<dyn CommandRunner>,
     snapd: Arc<dyn SnapdReads>,
     snap_root: PathBuf,
+    /// Where snapd mounts each snap and its components.
+    mount_root: Option<PathBuf>,
     modelctl_cache: Mutex<ModelctlCache>,
 }
 
@@ -46,7 +52,7 @@ enum ModelctlResolution {
 
 impl SnapBackendRepository {
     pub fn new(runner: Arc<dyn CommandRunner>, snapd: Arc<dyn SnapdReads>) -> Self {
-        Self::with_snap_root(runner, snapd, DEFAULT_SNAP_ROOT)
+        Self::with_snap_root(runner, snapd, DEFAULT_SNAP_ROOT).with_mount_root(DEFAULT_MOUNT_ROOT)
     }
 
     pub fn with_snap_root(
@@ -58,8 +64,15 @@ impl SnapBackendRepository {
             runner,
             snapd,
             snap_root: snap_root.into(),
+            mount_root: None,
             modelctl_cache: Mutex::new(ModelctlCache::default()),
         }
+    }
+
+    /// Where snapd mounts snaps, `/snap`. Left unset, no text model is found.
+    pub fn with_mount_root(mut self, mount_root: impl Into<PathBuf>) -> Self {
+        self.mount_root = Some(mount_root.into());
+        self
     }
 
     async fn command(
@@ -296,15 +309,18 @@ impl BackendRepository for SnapBackendRepository {
             ));
         }
         let snap_root = self.snap_root.clone();
-        gio::spawn_blocking(move || snapshot_reading_provider_roles(&connections, &snap_root))
-            .await
-            .map_err(|_| {
-                BackendSurfaceError::new(
-                    BackendSurface::Connections,
-                    "provider role discovery task panicked",
-                    "",
-                )
-            })
+        let mount_root = self.mount_root.clone();
+        gio::spawn_blocking(move || {
+            snapshot_reading_provider_roles(&connections, &snap_root, mount_root.as_deref())
+        })
+        .await
+        .map_err(|_| {
+            BackendSurfaceError::new(
+                BackendSurface::Connections,
+                "provider role discovery task panicked",
+                "",
+            )
+        })
     }
 
     async fn read_snapshot(
@@ -363,6 +379,7 @@ impl BackendRepository for SnapBackendRepository {
 fn snapshot_reading_provider_roles(
     connections: &ContentConnections,
     snap_root: &Path,
+    mount_root: Option<&Path>,
 ) -> ConnectionSnapshot {
     let mut roles = BTreeMap::new();
     for slot in connections.slots() {
@@ -376,7 +393,43 @@ fn snapshot_reading_provider_roles(
             );
         }
     }
-    connection_snapshot_with_roles(connections, &roles)
+    connection_snapshot_with_roles(connections, &roles).reading_text_models(|backend| {
+        mount_root.map_or_else(Vec::new, |root| read_text_models(root, backend.snap_name()))
+    })
+}
+
+/// The models a text snap has installed: each component's manifest, under
+/// the revision `current` points at. A component that is not installed has no
+/// directory, and one whose manifest does not read is not a model.
+fn read_text_models(mount_root: &Path, snap: &str) -> Vec<TextModel> {
+    if !is_single_normal_component(snap) {
+        return Vec::new();
+    }
+    let snap_dir = mount_root.join(snap);
+    let Ok(revision) = std::fs::read_link(snap_dir.join("current")) else {
+        return Vec::new();
+    };
+    if !is_single_normal_component(&revision.to_string_lossy()) {
+        return Vec::new();
+    }
+    let Ok(components) = std::fs::read_dir(snap_dir.join("components").join(revision)) else {
+        return Vec::new();
+    };
+    let mut models: Vec<TextModel> = components
+        .filter_map(Result::ok)
+        .filter_map(|component| {
+            let text = std::fs::read_to_string(component.path().join(TEXT_MODEL_MANIFEST)).ok()?;
+            let manifest: serde_json::Value = serde_json::from_str(&text).ok()?;
+            let field = |key: &str| manifest.get(key)?.as_str().map(str::to_owned);
+            Some(TextModel::new(
+                field("task")?,
+                field("language")?,
+                field("to"),
+            ))
+        })
+        .collect();
+    models.sort_by(|a, b| (a.task(), a.language(), a.to()).cmp(&(b.task(), b.language(), b.to())));
+    models
 }
 
 fn read_slot_role(snap_root: &Path, slot: &ContentSlot) -> Option<DeclaredRole> {

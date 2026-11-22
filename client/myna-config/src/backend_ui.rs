@@ -2157,6 +2157,12 @@ impl BackendUi {
                 .iter()
                 .map(|page| backend_diagnostic_from(page, &snaps))
                 .collect(),
+            text_providers: self
+                .controller
+                .text_offers()
+                .iter()
+                .map(|offer| text_provider_from(offer, &snaps))
+                .collect(),
             problems: self
                 .inventory_failure
                 .borrow()
@@ -3134,6 +3140,23 @@ fn service_state_label(state: &ServiceState) -> String {
         ServiceState::Unknown(value) => {
             format!("{} ({value})", gettextrs::gettext("Unknown"))
         }
+    }
+}
+
+fn text_provider_from(
+    offer: &crate::domain::TextOffer,
+    snaps: &[InstalledSnap],
+) -> diagnostics::TextProviderDiagnostic {
+    let snap_name = offer.identity().snap_name().to_owned();
+    diagnostics::TextProviderDiagnostic {
+        version: snaps
+            .iter()
+            .find(|snap| snap.name == snap_name)
+            .map(|snap| snap.version.clone())
+            .unwrap_or_default(),
+        snap_name,
+        connected: offer.connected(),
+        models: offer.models().to_vec(),
     }
 }
 

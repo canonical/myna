@@ -63,7 +63,7 @@ impl ChainState {
 }
 
 /// A task as the user would call it.
-fn word(task: &str) -> String {
+pub fn word(task: &str) -> String {
     match task {
         "text.cleanup" => gettextrs::gettext("text cleanup"),
         "text.translate" => gettextrs::gettext("translation"),

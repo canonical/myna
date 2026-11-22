@@ -230,7 +230,73 @@ pub struct ConnectionSnapshot {
     backends: Vec<BackendIdentity>,
     active_state: ActiveBackendState,
     text_providers: Vec<BackendIdentity>,
+    text_offers: Vec<TextOffer>,
     strays: Vec<BackendIdentity>,
+}
+
+/// One model a text-model snap carries, as its component's manifest says.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TextModel {
+    task: String,
+    language: String,
+    to: Option<String>,
+}
+
+impl TextModel {
+    pub fn new(task: impl Into<String>, language: impl Into<String>, to: Option<String>) -> Self {
+        Self {
+            task: task.into(),
+            language: language.into(),
+            to,
+        }
+    }
+
+    /// What the model does, as the daemon names tasks: `text.cleanup`.
+    pub fn task(&self) -> &str {
+        &self.task
+    }
+
+    /// The language it works on.
+    pub fn language(&self) -> &str {
+        &self.language
+    }
+
+    /// The language it translates into, for a translation model.
+    pub fn to(&self) -> Option<&str> {
+        self.to.as_deref()
+    }
+}
+
+/// A text-model snap that Diagnostics describes: one that declares itself for
+/// text, or any non-speech provider `myna:backend` is connected to.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TextOffer {
+    identity: BackendIdentity,
+    connected: bool,
+    models: Vec<TextModel>,
+}
+
+impl TextOffer {
+    pub fn new(identity: BackendIdentity, connected: bool, models: Vec<TextModel>) -> Self {
+        Self {
+            identity,
+            connected,
+            models,
+        }
+    }
+
+    pub fn identity(&self) -> &BackendIdentity {
+        &self.identity
+    }
+
+    pub fn connected(&self) -> bool {
+        self.connected
+    }
+
+    /// The models its installed components provide.
+    pub fn models(&self) -> &[TextModel] {
+        &self.models
+    }
 }
 
 impl ConnectionSnapshot {
@@ -239,8 +305,30 @@ impl ConnectionSnapshot {
             backends,
             active_state,
             text_providers: Vec::new(),
+            text_offers: Vec::new(),
             strays: Vec::new(),
         }
+    }
+
+    pub fn with_text_offers(mut self, offers: Vec<TextOffer>) -> Self {
+        self.text_offers = offers;
+        self
+    }
+
+    /// Reads the models each text offer's snap carries.
+    pub fn reading_text_models(
+        mut self,
+        read: impl Fn(&BackendIdentity) -> Vec<TextModel>,
+    ) -> Self {
+        for offer in &mut self.text_offers {
+            offer.models = read(&offer.identity);
+        }
+        self
+    }
+
+    /// The text-model snaps Diagnostics describes, connected or not.
+    pub fn text_offers(&self) -> &[TextOffer] {
+        &self.text_offers
     }
 
     pub fn with_companions(
@@ -384,6 +472,7 @@ pub fn connection_snapshot_with_roles(
     let mut discovered = BTreeSet::new();
     let mut connected = BTreeSet::new();
     let mut text_providers = BTreeSet::new();
+    let mut text_offers = BTreeSet::new();
     let mut strays = BTreeSet::new();
     for slot in &connections.slots {
         let backend = BackendIdentity::new(&slot.snap, &slot.slot);
@@ -399,8 +488,13 @@ pub fn connection_snapshot_with_roles(
                 connected.insert(backend.clone());
             }
             discovered.insert(backend);
-        } else if slot.feeds_myna() {
-            text_providers.insert(backend);
+        } else {
+            if declared == Some(DeclaredRole::Text) || slot.feeds_myna() {
+                text_offers.insert((backend.clone(), slot.feeds_myna()));
+            }
+            if slot.feeds_myna() {
+                text_providers.insert(backend);
+            }
         }
     }
 
@@ -414,6 +508,10 @@ pub fn connection_snapshot_with_roles(
         backends: discovered.into_iter().collect(),
         active_state,
         text_providers: text_providers.into_iter().collect(),
+        text_offers: text_offers
+            .into_iter()
+            .map(|(backend, connected)| TextOffer::new(backend, connected, Vec::new()))
+            .collect(),
         strays: strays.into_iter().collect(),
     }
 }
