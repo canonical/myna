@@ -132,6 +132,9 @@ OPTIONS:
                        list of steps: disfluency, vocabulary, cleanup,
                        translate=FR (or EN:FR), address, continue, script=NICK.
                        `exact` is always run too, as the baseline.
+    --steps <list>     like --graph, but a comma list of steps in any order:
+                       fit, tidy, translate=LANG, script=NICK. They run in
+                       the daemon's stage order for --language (repeatable).
     --sweep <steps>    run every ordered subset of the comma list (3 steps are
                        15 graphs; at most 5 steps)
     --field <kind>     the field typed into: plain (default), url, email, terminal
@@ -165,6 +168,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
     let mut mode = None;
     let mut graphs: Vec<String> = Vec::new();
     let mut sweep: Option<String> = None;
+    let mut steps: Vec<String> = Vec::new();
     let mut purpose = myna_desktop::inject::FieldPurpose::Plain;
     let mut mid_sentence = false;
     let mut text: Vec<String> = Vec::new();
@@ -210,6 +214,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
             "--realtime" => realtime = true,
             "--graph" => graphs.push(next(&mut it, "--graph")?),
             "--sweep" => sweep = Some(next(&mut it, "--sweep")?),
+            "--steps" => steps.push(next(&mut it, "--steps")?),
             "--field" => {
                 use myna_desktop::inject::FieldPurpose as P;
                 purpose = match next(&mut it, "--field")?.as_str() {
@@ -282,7 +287,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
     if ws_path.is_some() && dialect != Dialect::Ie115 {
         return Err("--ws-path only applies to --dialect ie115".into());
     }
-    let wants_lab = !graphs.is_empty() || sweep.is_some() || !text.is_empty();
+    let wants_lab = !graphs.is_empty() || !steps.is_empty() || sweep.is_some() || !text.is_empty();
     if !wants_lab
         && (json.is_some() || mid_sentence || purpose != myna_desktop::inject::FieldPurpose::Plain)
     {
@@ -303,16 +308,22 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
         if let Some(items) = &sweep {
             labels.extend(spec::sweep(items)?);
         }
-        if labels.is_empty() {
+        if labels.is_empty() && steps.is_empty() {
             labels.push("tidy".into());
         }
         if !labels.iter().any(|l| l.trim() == "exact") {
             labels.insert(0, "exact".into());
         }
-        let specs = labels
+        let mut specs = labels
             .iter()
             .map(|l| spec::parse(l).map_err(|e| format!("--graph {l}: {e}")))
             .collect::<Result<Vec<_>, _>>()?;
+        for list in &steps {
+            specs.push(
+                spec::parse_steps(list, language.as_deref())
+                    .map_err(|e| format!("--steps {list}: {e}"))?,
+            );
+        }
         let search = match &backend {
             Some(BackendSocket::Search(dir)) => Some(dir.as_path()),
             _ => None,
@@ -1063,6 +1074,30 @@ mod tests {
         assert_eq!(sweep.specs.len(), 1 + 4);
         let only_exact = parse(&["--graph", "exact"]).unwrap().lab.unwrap();
         assert_eq!(only_exact.specs.len(), 1);
+    }
+
+    #[test]
+    fn steps_are_a_graph_in_the_language_of_the_dictation() {
+        let lab = parse(&["--steps", "translate=de,tidy", "--language", "fr"])
+            .unwrap()
+            .lab
+            .unwrap();
+        let labels: Vec<_> = lab.specs.iter().map(|s| s.label.as_str()).collect();
+        assert_eq!(labels, ["exact", "steps: translate=de,tidy"]);
+        assert_eq!(
+            lab.specs[1].graph.requests().len(),
+            1,
+            "tidy is English only"
+        );
+        let both = parse(&["--graph", "tidy", "--steps", "tidy"])
+            .unwrap()
+            .lab
+            .unwrap();
+        assert_eq!(both.specs.len(), 3);
+        assert!(parse(&["--steps", "shout"])
+            .err()
+            .unwrap()
+            .contains("--steps"));
     }
 
     #[test]

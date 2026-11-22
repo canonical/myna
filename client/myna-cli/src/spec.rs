@@ -7,6 +7,7 @@ use myna_desktop::process::disfluency::Lang;
 use myna_desktop::process::graph::{Builder, Graph, Needs, Src};
 use myna_desktop::process::pipeline::{Check, Request};
 use myna_desktop::process::rules::Rule;
+use myna_desktop::process::steps::{compile, Context, StepSpec, StepState};
 
 /// What a spec names: the graph, and how Chinese is written after it.
 #[derive(Clone, Debug)]
@@ -14,6 +15,40 @@ pub struct Spec {
     pub label: String,
     pub graph: Graph,
     pub script: ChineseScript,
+}
+
+/// `--steps`: a comma list of step ids (`fit, tidy, translate=fr,
+/// script=simplified`) compiled in stage order for dictation in `language`,
+/// by the same compiler the daemon runs.
+pub fn parse_steps(list: &str, language: Option<&str>) -> Result<Spec, String> {
+    let steps: Vec<_> = list
+        .split(',')
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+        .map(StepSpec::parse)
+        .collect();
+    let compiled = compile(
+        &steps,
+        &Context {
+            language,
+            ..Context::default()
+        },
+    );
+    if let Some(bad) = compiled
+        .report
+        .iter()
+        .find(|r| r.state == StepState::Unknown)
+    {
+        return Err(format!(
+            "unknown step {:?} (want fit, tidy, translate=LANG, script=NICK)",
+            bad.id
+        ));
+    }
+    Ok(Spec {
+        label: format!("steps: {}", list.trim()),
+        graph: compiled.graph,
+        script: compiled.script,
+    })
 }
 
 /// The steps a list may name, for the usage text and error messages.
@@ -174,6 +209,30 @@ mod tests {
     fn a_translation_names_its_languages() {
         let graph = parse("translate=de:es").unwrap().graph;
         assert_eq!(graph.requests(), [Request::translate("de", "es")]);
+    }
+
+    #[test]
+    fn steps_are_compiled_in_stage_order_like_the_daemon() {
+        for list in [
+            "tidy,translate=fr",
+            "translate=fr,tidy",
+            " tidy , translate=FR ",
+        ] {
+            assert_eq!(
+                parse_steps(list, None).unwrap().graph,
+                Graph::preset(ProcessingChain::TIDY_FRENCH),
+                "{list}"
+            );
+        }
+        let fr = parse_steps("tidy,translate=de", Some("fr")).unwrap();
+        assert_eq!(fr.graph.requests(), [Request::translate("fr", "de")]);
+        assert_eq!(fr.label, "steps: tidy,translate=de");
+        let zh = parse_steps("script=simplified", Some("zh")).unwrap();
+        assert_eq!(zh.script, ChineseScript::Simplified);
+        assert_eq!(parse_steps("", None).unwrap().graph, Graph::passthrough());
+        assert!(parse_steps("tidy,shout", None)
+            .unwrap_err()
+            .contains("shout"));
     }
 
     #[test]
