@@ -165,6 +165,16 @@ The Parquet files carry their own `schema_version` (`_parquet.EXPORT_SCHEMA_VERS
 - Samples (`SAMPLES_SCHEMA`, lines 61-74): `unit_id` (63), `ok` (71) and `error` (72, the backend's error code; the message is `error_message`). `request_class` (65) carries our `category` under AIB's name; `consumer_id`, token counts and `ttft_ms` (64, 66-70) have no ASR meaning and are absent. Every other row field ships under its JSONL name, plus `phase`, `repeat`, `edits_sub`/`_del`/`_ins`.
 - Load (`LOAD_SCHEMA`, lines 76-86): `unit_id`, `t_offset_s` (the trace's `t`), `ram_bytes` (`rss_mb` x 1e6), `gpu_pct` (mean utilisation over GPUs), `vram_bytes` (`vram_mb` x 2^20, nvidia-smi MiB) and `power_w` (sum over every GPU, null if any went unread; AIB reads GPU 0 alone) keep AIB's names; `cpu_pct` is null. Ours: `cpu_mhz` (per core), `cpu_temp_c`, `cpu_energy_j`, `cpu_throttle_count` and `gpus`, each reading as sampled.
 
+## Text suite
+
+`myna-bench text --system <identity|reference-rule|module:factory>` scores a text system (cleanup, translation) on the vendored corpus in `src/myna/benchmarker/textcorpus/`, which needs no snap, network or root. The slices are `clean_en` (200 FLEURS en_us sentences), `disfluent_en` (hand-authored heard/intended/category pairs) and `translate_en_fr` (200 FLEURS id-aligned pairs); `NOTICE` has the provenance and `SHA256SUMS` pins them, checked on every load. `myna-bench build-text-corpus` regenerates the two FLEURS slices from the cached `test.tsv` files, deterministically; the disfluent slice is edited by hand, then the pins rewritten with `text_corpus.write_sums`.
+
+Gates (DECISIONS section 5): `clean_en` unnecessary edit rate (a sentence changed in any character, case and punctuation included) <= 1%; `disfluent_en` case+punct char edit-distance reduction >= 50%, zero polarity flips (a negation dropped or invented), and `ConservativeEdit` false-reject rate <= 5% on the corpus's own gold edits; `translate_en_fr` chrF >= 0.58 (corpus level, identical to sacrebleu's default, on a 0..1 scale) and warm p95 < 400 ms. A gate on a task the system lacks is `pending`, never a pass; the exit status is 1 on a failed gate (and on a pending one with `--strict`). A system is a `text_suite.System(name, tidy=, translate=)`; `reference-rule` is a small classical baseline for the harness, not the shipping Rust rule.
+
+`text_metrics.conservative_edit_violation` is the reference form of `Check::ConservativeEdit`. A deleted run is judged over every legal alignment of output to input, because "not on Monday, no, on Tuesday" -> "on Tuesday" keeps either "on". The deletion cap `max(2, n / 2)` rejects a short sentence's legitimate repair (`we shouldn't, wait, we should` is five words and three deletions), so the corpus's repairs are longer than that; keep new ones so, or the false-reject gate measures sentence length.
+
+The Rust side reads the same JSONL in `client/myna-core/tests/text_corpus.rs`, so `Rule` and `Check` tests can iterate the pairs without a model.
+
 ## Metric definitions
 
 WER and CER are micro-averaged. Speed is audio duration divided by decode time. Final latency measures end-of-audio to committed text; cold load measures session open to ready. Incomplete rows sort behind successful rows because partial metrics are not comparable.
