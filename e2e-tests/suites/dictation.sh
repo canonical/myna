@@ -44,6 +44,9 @@
 #  13. Chinese script is a step row, not a section: dimmed for English, and
 #      once the dictation language is Chinese its switch and "Write Chinese as"
 #      combo store the step and its mode, which the daemon reads.
+#  14. Past dictations is a sub-page that owns the record switch: with the
+#      record on, a dictation is listed there and Original shows what the
+#      backend heard where Result shows what was typed.
 set -uo pipefail
 # shellcheck source=e2e-tests/suites/lib.sh
 source "$(dirname "$0")/lib.sh"
@@ -317,6 +320,26 @@ shot waitfor:General tab:Processing "waitfor:Chinese script@switch" \
     "$(poll "! grep -q \"processing-steps=\\['script'\\]\" $STORE")" \
     || { echo "script reset failed" >&2; FAILED=1; }
 on "snap run myna.config set language ''" >/dev/null 2>&1
+
+echo "-- 14. Past dictations lists the dictation, Original and Result compare"
+shot waitfor:General tab:Processing "waitfor:Past dictations" \
+    "click:Past dictations" "waitfor:Keep a record of what was changed@switch" \
+    "click:Keep a record of what was changed@switch" \
+    "$(poll "grep -q \"processing-history=true\" $STORE")" \
+    || { echo "record switch run failed" >&2; FAILED=1; }
+assert_dict "the field is cleared" 'field_clear'
+assert_dict "the plain field is focused afresh" 'field_focus other && field_focus plain'
+dict dictation_toggle
+assert_dict "recording" 'wait_until 10 dictation_state_is recording'
+dict dictation_toggle
+assert_dict "idle after the stop" 'wait_until 10 dictation_state_is idle'
+shot waitfor:General tab:Processing "click:Past dictations" \
+    "waitfor:$FULL" shot:shots/dictation/14-past-dictations.png \
+    || { echo "past dictations run failed" >&2; FAILED=1; }
+shot waitfor:General tab:Processing "click:Past dictations" \
+    "click:Keep a record of what was changed@switch" \
+    "$(poll "grep -q \"processing-history=false\" $STORE")" \
+    || { echo "record switch reset failed" >&2; FAILED=1; }
 
 dict 'mic_stop' >/dev/null 2>&1
 if [ -n "$HOSTED" ]; then
