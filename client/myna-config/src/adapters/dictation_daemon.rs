@@ -10,7 +10,35 @@ const BUS: &str = "com.canonical.Myna.Dictation";
 const PATH: &str = "/com/canonical/Myna/Dictation";
 const TIMEOUT_MS: i32 = 2_000;
 
-pub struct SessionBusDaemon;
+/// The daemon on the session bus, or on the bus at `address` (tests).
+#[derive(Default)]
+pub struct SessionBusDaemon {
+    address: Option<String>,
+}
+
+impl SessionBusDaemon {
+    pub fn on_bus(address: &str) -> Self {
+        Self {
+            address: Some(address.to_owned()),
+        }
+    }
+
+    async fn connection(&self) -> Result<gio::DBusConnection, String> {
+        match &self.address {
+            None => gio::bus_get_future(gio::BusType::Session).await,
+            Some(address) => {
+                gio::DBusConnection::for_address_future(
+                    address,
+                    gio::DBusConnectionFlags::AUTHENTICATION_CLIENT
+                        | gio::DBusConnectionFlags::MESSAGE_BUS_CONNECTION,
+                    None,
+                )
+                .await
+            }
+        }
+        .map_err(|error| error.to_string())
+    }
+}
 
 /// Whether `error` says no daemon owns the name, which is no failure.
 fn not_running(error: &glib::Error) -> bool {
@@ -27,13 +55,12 @@ fn not_running(error: &glib::Error) -> bool {
 }
 
 async fn call(
+    daemon: &SessionBusDaemon,
     interface: &str,
     method: &str,
     parameters: glib::Variant,
 ) -> Result<Option<glib::Variant>, String> {
-    let connection = gio::bus_get_future(gio::BusType::Session)
-        .await
-        .map_err(|error| error.to_string())?;
+    let connection = daemon.connection().await?;
     match connection
         .call_future(
             Some(BUS),
@@ -53,8 +80,9 @@ async fn call(
     }
 }
 
-async fn property(name: &str) -> Result<Option<String>, String> {
+async fn property(daemon: &SessionBusDaemon, name: &str) -> Result<Option<String>, String> {
     let Some(all) = call(
+        daemon,
         "org.freedesktop.DBus.Properties",
         "GetAll",
         (BUS,).to_variant(),
@@ -91,17 +119,19 @@ pub fn parse_offered(json: &str) -> Vec<String> {
 #[async_trait(?Send)]
 impl DictationDaemon for SessionBusDaemon {
     async fn state(&self) -> Result<Option<String>, String> {
-        property("State").await
+        property(self, "State").await
     }
 
     async fn offered_models(&self) -> Result<Option<Vec<String>>, String> {
-        Ok(property("InstalledSteps")
+        Ok(property(self, "InstalledSteps")
             .await?
             .map(|json| parse_offered(&json)))
     }
 
     async fn rescan(&self) -> Result<(), String> {
-        call(BUS, "RescanModels", ().to_variant()).await.map(|_| ())
+        call(self, BUS, "RescanModels", ().to_variant())
+            .await
+            .map(|_| ())
     }
 }
 
