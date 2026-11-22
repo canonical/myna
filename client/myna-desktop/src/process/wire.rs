@@ -40,12 +40,15 @@ pub enum Call<'a> {
 #[derive(Debug, Deserialize)]
 pub struct Capabilities {
     pub protocol: String,
+    /// The contract number the provider speaks; absent means 1.
+    #[serde(default)]
+    pub contract: Option<u32>,
     #[serde(default)]
     pub models: Vec<Capability>,
 }
 
 /// One model of a provider, and the requests it covers.
-#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
 pub struct Capability {
     pub id: String,
     pub task: String,
@@ -61,6 +64,31 @@ pub struct Capability {
     /// 0..1, the provider's own estimate; only compared across its models
     /// and, failing that, across providers.
     pub quality: Option<f64>,
+    /// What kind of step it is (`edit`, `translate`, `rewrite`); the client
+    /// derives the output check from it. Absent: the task's default class.
+    pub class: Option<String>,
+    /// `sentence` or `dictation`: how much text one call wants.
+    pub needs: Option<String>,
+    /// What a picker needs to offer the step's parameters.
+    #[serde(default)]
+    pub params: Vec<ParamSpec>,
+    pub license: Option<String>,
+    pub attribution: Option<String>,
+    pub download_bytes: Option<u64>,
+    /// Where the model came from.
+    pub source: Option<String>,
+}
+
+/// One parameter of a step, as a provider describes it.
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+pub struct ParamSpec {
+    pub name: String,
+    /// `language` or `text`.
+    pub kind: String,
+    /// `source`, `target` or `free`.
+    pub role: String,
+    #[serde(default)]
+    pub required: bool,
 }
 
 impl Capability {
@@ -262,6 +290,43 @@ mod tests {
             }
             seen
         })
+    }
+
+    #[test]
+    fn contract_two_fields_are_read_and_all_are_optional() {
+        let old = capability(json!({"id": "m", "task": "text.cleanup"}));
+        assert_eq!(
+            old,
+            Capability {
+                id: "m".into(),
+                task: "text.cleanup".into(),
+                ..Capability::default()
+            }
+        );
+        let new = capability(json!({
+            "id": "m", "task": "text.translate", "class": "translate",
+            "needs": "dictation", "license": "MPL-2.0", "attribution": "Mozilla",
+            "download_bytes": 33353728, "source": "https://example.org/m",
+            "params": [{"name": "to", "kind": "language", "role": "target",
+                        "required": true},
+                       {"name": "instruction", "kind": "text", "role": "free"}],
+            "future": 1
+        }));
+        assert_eq!(new.class.as_deref(), Some("translate"));
+        assert_eq!(new.needs.as_deref(), Some("dictation"));
+        assert_eq!(new.license.as_deref(), Some("MPL-2.0"));
+        assert_eq!(new.attribution.as_deref(), Some("Mozilla"));
+        assert_eq!(new.download_bytes, Some(33_353_728));
+        assert_eq!(new.source.as_deref(), Some("https://example.org/m"));
+        assert_eq!(new.params.len(), 2);
+        assert!(new.params[0].required && !new.params[1].required);
+        assert_eq!(new.params[0].role, "target");
+        let caps: Capabilities =
+            serde_json::from_value(json!({"protocol": "myna-text-v1", "contract": 2})).unwrap();
+        assert_eq!(caps.contract, Some(2));
+        let caps: Capabilities =
+            serde_json::from_value(json!({"protocol": "myna-text-v1"})).unwrap();
+        assert_eq!(caps.contract, None);
     }
 
     #[tokio::test]

@@ -45,7 +45,13 @@ pub struct Request {
 }
 
 impl Request {
-    fn new(task: &str, params: Params, run_budget: Duration) -> Self {
+    /// A request built from data: the task and its parameters, as a step
+    /// declares them. The run budget follows the task.
+    pub fn of(task: &str, params: Params) -> Self {
+        let run_budget = match task {
+            "text.cleanup" => Duration::from_secs(1),
+            _ => Duration::from_secs(10),
+        };
         Self {
             task: task.into(),
             params,
@@ -60,7 +66,7 @@ impl Request {
             .map(|l| ("language".to_owned(), l.into()))
             .into_iter()
             .collect();
-        Self::new("text.cleanup", params, Duration::from_secs(1))
+        Self::of("text.cleanup", params)
     }
 
     /// A dictation typed at once is translated at once, so the budget is a
@@ -70,7 +76,7 @@ impl Request {
             .into_iter()
             .map(|(k, v)| (k.to_owned(), v.into()))
             .collect();
-        Self::new("text.translate", params, Duration::from_secs(10))
+        Self::of("text.translate", params)
     }
 
     /// What a binding is cached under: everything that picks a model and
@@ -382,6 +388,29 @@ mod tests {
         assert_eq!(request.params["language"], "en");
         assert_eq!(request.params["to"], "fr");
         assert!(Request::cleanup(None).params.is_empty());
+    }
+
+    #[test]
+    fn a_request_built_from_data_is_the_one_the_constructors_build() {
+        let params = |pairs: &[(&str, &str)]| -> Params {
+            pairs
+                .iter()
+                .map(|(k, v)| ((*k).to_owned(), (*v).into()))
+                .collect()
+        };
+        let cleanup = Request::of("text.cleanup", params(&[("language", "en")]));
+        assert_eq!(cleanup, Request::cleanup(Some("en".into())));
+        assert_eq!(cleanup.run_budget, Duration::from_secs(1));
+        let translate = Request::of(
+            "text.translate",
+            params(&[("language", "en"), ("to", "fr")]),
+        );
+        assert_eq!(translate, Request::translate("en", "fr"));
+        assert_eq!(translate.key(), Request::translate("en", "fr").key());
+        let rewrite = Request::of("text.rewrite", params(&[("style", "formal")]));
+        assert_eq!(rewrite.run_budget, Duration::from_secs(10));
+        assert_eq!(rewrite.prefer, Prefer::Latency);
+        assert_eq!(rewrite.bind_budget, BIND_BUDGET);
     }
 
     const HEARD: &str = "Let's meet Monday, no, Tuesday.";

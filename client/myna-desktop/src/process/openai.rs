@@ -76,6 +76,7 @@ pub fn capabilities(model: &str) -> Vec<Capability> {
                 accepts,
                 latency_ms: Some(1400),
                 quality: Some(r.quality),
+                ..Capability::default()
             }
         })
         .collect()

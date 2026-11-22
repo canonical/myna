@@ -20,6 +20,7 @@ use tokio::sync::watch;
 
 use super::openai;
 use super::pipeline::{Answer, ModelError, Models, Prefer, Request};
+use super::step;
 use super::wire::{self, Capability, WireError};
 
 /// Where text model shares are searched: the backend directory, and the
@@ -211,12 +212,27 @@ impl Resolver {
                 }
             };
             match found {
-                Ok((via, models)) => out.extend(models.into_iter().map(|capability| Candidate {
-                    via,
-                    socket: provider.socket.clone(),
-                    share: share.clone(),
-                    capability,
-                })),
+                Ok((via, models)) => out.extend(
+                    models
+                        .into_iter()
+                        .filter(|capability| {
+                            let known = step::check_of(capability).is_some();
+                            if !known {
+                                myna_core::info_log!(
+                                    "process",
+                                    "{share}/{}: unknown class, not offered",
+                                    capability.id
+                                );
+                            }
+                            known
+                        })
+                        .map(|capability| Candidate {
+                            via,
+                            socket: provider.socket.clone(),
+                            share: share.clone(),
+                            capability,
+                        }),
+                ),
                 Err(e) => myna_core::info_log!("process", "{share}: no models ({e:?})"),
             }
         }
@@ -747,6 +763,31 @@ mod tests {
         resolver.settle(&requests).await;
         assert!(seen.has_changed().unwrap());
         assert_eq!(*resolver.status().borrow(), ChainStatus::Ready);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_model_of_an_unknown_class_is_uncovered_and_one_of_a_known_class_is_not() {
+        let dir = root("class");
+        let mut odd = model("odd", "text.cleanup", 1);
+        odd["class"] = json!("passthrough");
+        let mut known = model("known", "text.cleanup", 50);
+        known["class"] = json!("edit");
+        share(&dir, "odd", json!([odd]), Mode::Works);
+        let resolver = Resolver::new(vec![dir.clone()]);
+        let request = Request::cleanup(None);
+        resolver.settle(std::slice::from_ref(&request)).await;
+        assert_eq!(bound(&resolver, &request), None);
+        assert_eq!(
+            *resolver.status().borrow(),
+            ChainStatus::Degraded {
+                missing_tasks: vec!["text.cleanup".into()],
+                needs_restart: false
+            }
+        );
+        share(&dir, "known", json!([known]), Mode::Works);
+        resolver.settle(std::slice::from_ref(&request)).await;
+        assert_eq!(bound(&resolver, &request).as_deref(), Some("known/known"));
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
