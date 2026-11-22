@@ -12,6 +12,7 @@ use myna_core::history::Skip;
 
 pub use super::check::Check;
 use super::graph::{Graph, Id, Joins, Op, Src};
+use super::vocabulary::Vocabulary;
 use super::wire::Params;
 use super::{Field, Processor};
 use crate::inject::fold_control_chars;
@@ -127,6 +128,8 @@ pub struct Pipeline {
     graph: Live<Graph>,
     models: Box<dyn Models>,
     written: Live<Vec<String>>,
+    /// `written` compiled, until it changes.
+    vocabulary: (Vec<String>, Vocabulary),
     trace: Trace,
     joins: Joins,
 }
@@ -137,13 +140,14 @@ impl Pipeline {
             graph: graph.into(),
             models: Box::new(models),
             written: Live::new(Vec::new()),
+            vocabulary: (Vec::new(), Vocabulary::default()),
             trace: Trace::default(),
             joins: Joins::default(),
         }
     }
 
-    /// The user's vocabulary, which a cleanup may write in place of what
-    /// the speech model misheard.
+    /// The user's vocabulary: the spelling rule applies it, and a cleanup
+    /// may write it in place of what the speech model misheard.
     #[must_use]
     pub fn written(mut self, words: Live<Vec<String>>) -> Self {
         self.written = words;
@@ -213,6 +217,10 @@ impl Processor for Pipeline {
 
     async fn process(&mut self, text: String, field: &Field) -> String {
         let graph = self.graph.get();
+        let entries = self.written.get();
+        if self.vocabulary.0 != entries {
+            self.vocabulary = (entries.clone(), Vocabulary::new(&entries));
+        }
         let seq = self.joins.begin();
         let mut trace = Vec::new();
         let mut made: HashMap<Id, String> = HashMap::new();
@@ -223,7 +231,7 @@ impl Processor for Pipeline {
         for id in graph.plan(field) {
             let op = graph.node(id);
             let out = match op {
-                Op::Rule { from, rule } => rule.apply(&read(&made, *from)),
+                Op::Rule { from, rule } => rule.apply_with(&read(&made, *from), &self.vocabulary.1),
                 Op::Ask {
                     from,
                     request,
@@ -402,6 +410,50 @@ mod tests {
         assert_eq!(
             pipeline.process("restart my sequel".into(), &here()).await,
             "Restart MySQL."
+        );
+    }
+
+    #[tokio::test]
+    async fn the_users_vocabulary_is_spelled_before_the_model_sees_it() {
+        struct Echo(std::sync::Arc<Mutex<String>>);
+        #[async_trait]
+        impl Models for Echo {
+            async fn run(&mut self, _: &Request, text: &str) -> Result<Answer, ModelError> {
+                *self.0.lock().unwrap() = text.to_owned();
+                Ok(Answer {
+                    text: text.to_owned(),
+                    model: None,
+                })
+            }
+        }
+        let seen = Arc::new(Mutex::new(String::new()));
+        let written = Live::new(vec!["my sequel:MySQL".to_owned()]);
+        let mut pipeline = Pipeline::new(graph_of(ProcessingChain::TIDY), Echo(seen.clone()))
+            .written(written.clone());
+        let said = "I run my sequel";
+        assert_eq!(
+            pipeline.process(said.into(), &here()).await,
+            "I run MySQL",
+            "the model echoing its input passes the check with the term"
+        );
+        assert_eq!(*seen.lock().unwrap(), "I run MySQL");
+        written.set(vec!["Postgres".to_owned()]);
+        assert_eq!(pipeline.process(said.into(), &here()).await, said);
+    }
+
+    #[tokio::test]
+    async fn a_term_keeps_its_capitals_in_the_keyword_preset() {
+        let mut pipeline = Pipeline::new(graph_of(ProcessingChain::KEYWORD), Scripted::Fails)
+            .written(Live::new(vec!["my sequel:MySQL".to_owned()]));
+        let mid = Field::after(FieldPurpose::Plain, Some('a'));
+        assert_eq!(
+            pipeline.process("The my sequel dump.".into(), &mid).await,
+            "the MySQL dump."
+        );
+        let email = Field::after(FieldPurpose::Email, None);
+        assert_eq!(
+            pipeline.process("My sequel.".into(), &email).await,
+            "my sequel"
         );
     }
 

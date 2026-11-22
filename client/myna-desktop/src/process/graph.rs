@@ -188,11 +188,13 @@ impl Graph {
         let out = match chain {
             ProcessingChain::TIDY => {
                 let plain = g.rule(Src::Input, Rule::Disfluency(Lang::Any));
-                g.tidy(plain)
+                let spelled = g.rule(plain, Rule::Vocabulary);
+                g.tidy(spelled)
             }
             ProcessingChain::TIDY_FRENCH => {
                 let plain = g.rule(Src::Input, Rule::Disfluency(Lang::Any));
-                let tidy = g.tidy(plain);
+                let spelled = g.rule(plain, Rule::Vocabulary);
+                let tidy = g.tidy(spelled);
                 g.ask(
                     tidy,
                     Request::translate("en", "fr"),
@@ -203,6 +205,10 @@ impl Graph {
             ProcessingChain::KEYWORD => {
                 let address = g.rule(Src::Input, Rule::Address);
                 let go_on = g.rule(Src::Input, Rule::Continue);
+                // After the recasing, so a term keeps its capitals; an
+                // address is no prose and keeps none of them.
+                let go_on = g.rule(go_on, Rule::Vocabulary);
+                let heard = g.rule(Src::Input, Rule::Vocabulary);
                 g.route(
                     vec![
                         (
@@ -211,7 +217,7 @@ impl Graph {
                         ),
                         (When::MidSentence, go_on),
                     ],
-                    Src::Input,
+                    heard,
                 )
             }
             _ => Src::Input,
@@ -367,13 +373,21 @@ mod tests {
         assert!(tasks(&exact, &field).is_empty());
 
         let tidy = Graph::preset(ProcessingChain::TIDY);
-        assert_eq!(tasks(&tidy, &field), ["Disfluency(Any)", "text.cleanup"]);
+        assert_eq!(
+            tasks(&tidy, &field),
+            ["Disfluency(Any)", "Vocabulary", "text.cleanup"]
+        );
         assert_eq!(tidy.needs(), Some(Needs::Sentence));
 
         let french = Graph::preset(ProcessingChain::TIDY_FRENCH);
         assert_eq!(
             tasks(&french, &field),
-            ["Disfluency(Any)", "text.cleanup", "text.translate"]
+            [
+                "Disfluency(Any)",
+                "Vocabulary",
+                "text.cleanup",
+                "text.translate"
+            ]
         );
         assert_eq!(french.needs(), Some(Needs::Sentence));
     }
@@ -438,15 +452,15 @@ mod tests {
         );
         assert_eq!(
             tasks(&keyword, &after(FieldPurpose::Plain, Some('x'))),
-            ["Continue", "route"]
+            ["Continue", "Vocabulary", "route"]
         );
         assert_eq!(
             tasks(&keyword, &after(FieldPurpose::Plain, Some('.'))),
-            ["route"]
+            ["Vocabulary", "route"]
         );
         assert_eq!(
             tasks(&keyword, &after(FieldPurpose::Plain, None)),
-            ["route"]
+            ["Vocabulary", "route"]
         );
         assert_eq!(keyword.needs(), Some(Needs::Sentence));
     }

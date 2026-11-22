@@ -71,7 +71,10 @@ fn droppable(run: &[String]) -> Result<(), Skip> {
 
 /// The words of the user's vocabulary a misheard run may become.
 fn written_words(written: &[String]) -> HashSet<String> {
-    written.iter().flat_map(|entry| words(entry)).collect()
+    written
+        .iter()
+        .flat_map(|entry| words(super::vocabulary::written(entry)))
+        .collect()
 }
 
 /// The longest run of heard words one written word may stand in for:
@@ -303,6 +306,14 @@ mod tests {
             Ok(())
         );
         assert_eq!(tidy("a b c d", "MySQL"), Err(Skip::NewWord));
+        let spoken = ["my sequel:MySQL".to_owned()];
+        let tidy = |heard, answer| Check::ConservativeEdit.verdict(heard, answer, &spoken);
+        assert_eq!(tidy("restart my sequel", "Restart MySQL."), Ok(()));
+        assert_eq!(
+            tidy("restart now", "Restart my now."),
+            Err(Skip::NewWord),
+            "the spoken side of an entry is not a written word"
+        );
         // The cheapest reading wins: "MySQL" for "m s q" drops two words,
         // "MySQL" for "m" alone would drop four, past the budget of three.
         assert_eq!(tidy("x y m s q k", "MySQL k"), Ok(()));

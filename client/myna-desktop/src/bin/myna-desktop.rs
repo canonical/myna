@@ -683,7 +683,7 @@ fn make_session(
             // backend socket is: a value changed after login applies at the
             // next press, without a restart.
             language: language.get(),
-            keywords: vocabulary.get(),
+            keywords: myna_desktop::process::vocabulary::keywords(&vocabulary.get()),
             ..Default::default()
         };
         // --dbus: pump the capture level meter onto com.canonical.Myna.Dictation for the
