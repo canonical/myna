@@ -42,10 +42,7 @@ impl SessionBusDaemon {
 
 /// Whether `error` says no daemon owns the name, which is no failure.
 fn not_running(error: &glib::Error) -> bool {
-    matches!(
-        error.kind::<gio::DBusError>(),
-        Some(gio::DBusError::ServiceUnknown | gio::DBusError::NameHasNoOwner)
-    ) || gio::DBusError::remote_error(error).is_some_and(|name| {
+    gio::DBusError::remote_error(error).is_some_and(|name| {
         matches!(
             name.as_str(),
             "org.freedesktop.DBus.Error.ServiceUnknown"
