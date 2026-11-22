@@ -21,6 +21,9 @@ from myna.text.protocol import Model, Params, Refused
 
 Spawn = Callable[[list[str]], Any]
 
+#: What a warm-up translates: the first sentence is the slow one.
+WARM_TEXT = "Hello."
+
 
 def _spawn(argv: list[str]) -> Any:
     return subprocess.Popen(
@@ -109,7 +112,6 @@ class TranslateModel(Model):
         config = directory / str(meta["config"])
         self._worker = Worker([os.fspath(binary), "--model-config-paths", os.fspath(config)], spawn)
         self._lock = threading.Lock()
-        self._probe = str(meta.get("warm_text", "Hello."))
 
     def _ready(self, deadline_s: float) -> None:
         if not self._worker.alive:
@@ -130,8 +132,7 @@ class TranslateModel(Model):
         with self._lock:
             started = time.monotonic()
             self._ready(deadline_s)
-            # The first sentence is the slow one (it sets up buffers).
-            self._translate(self._probe, max(deadline_s - (time.monotonic() - started), 0.001))
+            self._translate(WARM_TEXT, max(deadline_s - (time.monotonic() - started), 0.001))
 
     def run(self, text: str, deadline_s: float) -> str:
         if not text.strip():

@@ -85,11 +85,9 @@ def test_share_refuses_to_guess_a_missing_snap_identity(tmp_path, missing):
 def test_a_text_provider_declares_its_own_role(tmp_path):
     socket = tmp_path / "text.sock"
 
-    written = provider_env.share(
-        socket, {"SNAP_NAME": "myna-text", "SNAP_INSTANCE_NAME": "myna-text"}, role="text"
-    )
+    environ = {"SNAP_NAME": "myna-text", "SNAP_INSTANCE_NAME": "myna-text"}
+    written = provider_env.share(socket, environ, role="text")
 
     assert written.read_text() == (
-        "SNAP_NAME=myna-text\nSNAP_INSTANCE_NAME=myna-text\nUNIX_SOCKET=text.sock\n"
-        "MYNA_ROLE=text\n"
+        "SNAP_NAME=myna-text\nSNAP_INSTANCE_NAME=myna-text\nUNIX_SOCKET=text.sock\nMYNA_ROLE=text\n"
     )

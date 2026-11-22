@@ -51,3 +51,50 @@ def test_a_component_that_cannot_be_used_is_skipped_and_named_in_the_log(tmp_pat
     for name in ("a-nofiles", "b-nokey", "c-kind", "d-notjson", "e-list"):
         assert name in caplog.text
     assert "mystery" in caplog.text
+
+
+def test_a_directory_without_a_manifest_does_not_end_the_search(tmp_path):
+    (tmp_path / "a-gpu-nvidia").mkdir()
+    write_component(tmp_path, "b-translate", TRANSLATE_META, ("config.yml",))
+
+    assert [m.id for m in find_models(tmp_path, BINARY)] == ["bergamot-base-memory-en-fr"]
+
+
+def test_each_file_a_component_needs_is_checked(tmp_path):
+    write_component(tmp_path, "a-onnx-only", TAGGER_META, ("tagger.onnx",))
+    write_component(tmp_path, "b-tokenizer-only", TAGGER_META, ("tokenizer.json",))
+    write_component(tmp_path, "c-no-config", TRANSLATE_META, ())
+
+    assert find_models(tmp_path, BINARY) == []
+
+
+def test_the_model_is_given_its_component_directory_and_the_translator_binary(tmp_path):
+    write_component(tmp_path, "a-tagger", TAGGER_META, ("tagger.onnx", "tokenizer.json"))
+    write_component(tmp_path, "b-translate", TRANSLATE_META, ("config.yml",))
+
+    tagger, translate = find_models(tmp_path, BINARY)
+
+    assert tagger._dir == tmp_path / "a-tagger"
+    assert translate._worker._argv == [
+        str(BINARY),
+        "--model-config-paths",
+        str(tmp_path / "b-translate" / "config.yml"),
+    ]
+
+
+def test_the_log_names_the_component_and_why(tmp_path, caplog):
+    write_component(tmp_path, "c-kind", {"kind": "mystery"}, ())
+    write_component(tmp_path, "d-nofile", TAGGER_META, ())
+    write_component(tmp_path, "e-nokey", {"kind": "translate"}, ())
+    (tmp_path / "f-bad").mkdir()
+    (tmp_path / "f-bad" / "myna-text-model.json").write_text("{")
+
+    with caplog.at_level(logging.WARNING, logger="myna.text"):
+        find_models(tmp_path, BINARY)
+
+    assert sorted(r.getMessage() for r in caplog.records) == [
+        "c-kind: unknown kind 'mystery'",
+        "d-nofile: not a usable model component (FileNotFoundError)",
+        "e-nokey: not a usable model component (KeyError)",
+        "f-bad: unreadable myna-text-model.json (JSONDecodeError)",
+    ]

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import logging
 import re
+import time
 from pathlib import Path
 
 import pytest
@@ -215,3 +217,88 @@ def test_the_ops_and_fields_the_client_sends_are_the_ones_served():
     assert re.findall(r"(\w+): &", sent["run"]) == ["model", "task", "params", "text"]
     assert "deadline_ms" in call.group(1)
     assert re.findall(r"(\w+): &", sent["warm"]) == ["model", "task", "params"]
+
+
+def _call(op, **extra):
+    return {"op": op, "model": "echo", "task": "text.cleanup", "params": {}, **extra}
+
+
+@pytest.mark.parametrize(
+    ("extra", "warm_s", "run_s"),
+    [
+        ({"deadline_ms": 250}, 0.25, 0.25),
+        ({}, 30.0, 10.0),
+        ({"deadline_ms": 0}, 30.0, 10.0),
+        ({"deadline_ms": -5}, 30.0, 10.0),
+        ({"deadline_ms": True}, 30.0, 10.0),
+        ({"deadline_ms": "250"}, 30.0, 10.0),
+        ({"deadline_ms": 1}, 0.001, 0.001),
+    ],
+)
+def test_the_model_gets_the_deadline_the_daemon_set_in_seconds(extra, warm_s, run_s):
+    model = EchoModel()
+    p = provider(model)
+
+    p.handle(_call("warm", **extra))
+    p.handle(_call("run", text="a", **extra))
+
+    assert model.deadlines == [("warm", warm_s), ("run", run_s)]
+
+
+def test_a_known_model_is_served_without_looking_for_components_again():
+    looked = []
+
+    def find():
+        looked.append(1)
+        return [EchoModel()]
+
+    p = Provider(find)
+    p.handle({"op": "capabilities"})
+    p.handle(_call("warm"))
+    p.handle(_call("run", text="a"))
+
+    assert len(looked) == 1
+
+
+def test_an_unknown_model_makes_it_look_once_more():
+    looked = []
+    p = Provider(lambda: looked.append(1) or [])
+
+    assert p.handle(_call("run", text="a")) == {"error": "no such model"}
+    assert len(looked) == 1
+
+
+def test_calls_are_logged_with_the_model_and_outcome_but_never_the_text(caplog):
+    p = provider(EchoModel())
+    with caplog.at_level(logging.INFO, logger="myna.text"):
+        p.handle(_call("warm"))
+        p.handle(_call("run", text="my secret words"))
+        p.handle(_call("run", text="refuse"))
+        p.handle(_call("run", text="crash"))
+        p.handle([1, 2])
+
+    messages = [r.getMessage() for r in caplog.records]
+    assert [m.rsplit(" in ", 1)[0] for m in messages if " -> " in m] == [
+        "warm echo -> ok",
+        "run echo -> text",
+        "run echo -> nope",
+        "run echo -> RuntimeError",
+        "None - -> unknown op",
+    ]
+    assert all(re.fullmatch(r".* in \d+ ms|run failed", m) for m in messages)
+    assert not any("secret" in m or "refuse" in m.split("->")[0] for m in messages)
+    assert any(r.exc_info for r in caplog.records)
+    assert "run failed" in messages
+
+
+def test_the_logged_duration_is_in_milliseconds(caplog):
+    class Slow(EchoModel):
+        def run(self, text, deadline_s):
+            time.sleep(0.06)
+            return text
+
+    with caplog.at_level(logging.INFO, logger="myna.text"):
+        provider(Slow()).handle(_call("run", text="a"))
+
+    took = int(re.search(r" in (\d+) ms", caplog.messages[-1]).group(1))
+    assert 55 <= took < 1000

@@ -25,11 +25,14 @@ class EchoModel(Model):
         self.quality = 0.5
         self.warmed = 0
         self.closed = 0
+        self.deadlines: list[tuple[str, float]] = []
 
     def warm(self, deadline_s: float) -> None:
         self.warmed += 1
+        self.deadlines.append(("warm", deadline_s))
 
     def run(self, text: str, deadline_s: float) -> str:
+        self.deadlines.append(("run", deadline_s))
         if text == "refuse":
             raise Refused("nope")
         if text == "crash":

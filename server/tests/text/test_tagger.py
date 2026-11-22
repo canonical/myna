@@ -5,6 +5,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
 
 from myna.text import tagger
 from myna.text.tagger import CAP, DELETE, KEEP, STRIP, Tagger, TaggerModel, decode, pick
@@ -185,3 +186,87 @@ def test_the_model_loads_once_on_first_use_and_again_after_close(monkeypatch, tm
     model.close()
     assert model.run("a b", 1.0) == "a b"
     assert len(loads) == 2
+
+
+def test_decode_ends_a_quoted_sentence_before_the_next_opens():
+    assert decode(['"Go."', "um", "we", "stay."], [KEEP, DELETE, KEEP, KEEP]) == '"Go." We stay.'
+
+
+def test_only_what_follows_a_deletion_at_a_sentence_start_is_capitalised():
+    toks = ["um", "we", "go.", "so", "ok."]
+
+    assert decode(toks, [DELETE, KEEP, KEEP, KEEP, KEEP]) == "We go. so ok."
+
+
+def test_the_stop_of_a_deleted_last_word_lands_on_the_last_kept_word():
+    assert decode(["we", "go", "home", "uh."], [KEEP, KEEP, KEEP, DELETE]) == "we go home."
+    assert decode(["we", "ok.", "uh."], [KEEP, KEEP, DELETE]) == "we ok."
+    assert decode(["we", "ok;", "uh?"], [KEEP, KEEP, DELETE]) == "we ok?"
+
+
+def test_decode_refuses_tags_that_do_not_match_the_words():
+    with pytest.raises(ValueError, match="shorter"):
+        decode(["a", "b"], [KEEP])
+
+
+def test_a_single_word_and_no_words_at_all():
+    session = FakeSession({0: DELETE})
+    t = Tagger(session, FakeTokenizer(), tau=0.9)
+
+    assert t.tag([]) == []
+    assert session.lengths == []
+    assert t.tag(["w0"]) == [DELETE]
+
+
+def test_every_word_of_a_long_text_takes_the_window_that_centres_it_best():
+    class WindowStart(FakeSession):
+        """Tags every word of a window with the number of that window."""
+
+        def run(self, outputs, feeds):
+            ids = feeds["input_ids"][0]
+            start = int(ids[1]) - 1
+            logits = np.zeros((1, len(ids), 4), dtype=np.float32)
+            logits[0, 1:-1, start // tagger.STRIDE] = 9.0
+            self.lengths.append((len(ids) - 2) // SUBWORDS)
+            return [logits]
+
+    count = 150
+    t = Tagger(WindowStart({}), FakeTokenizer(), tau=0.0)
+    starts = [0, 40, 80, 120]
+
+    def centre(start):
+        return (start + min(count, start + tagger.WINDOW) - 1) / 2
+
+    expected = [
+        min((s for s in starts if s <= i < s + tagger.WINDOW), key=lambda s: abs(i - centre(s)))
+        // tagger.STRIDE
+        for i in range(count)
+    ]
+    assert t.tag(words(count)) == expected
+
+
+def test_a_model_loads_from_its_own_directory(monkeypatch, tmp_path):
+    seen = []
+    monkeypatch.setattr(
+        Tagger,
+        "load",
+        staticmethod(
+            lambda d, tau: seen.append(d) or Tagger(FakeSession({}), FakeTokenizer(), tau)
+        ),
+    )
+
+    TaggerModel(tmp_path, manifest()).warm(1.0)
+
+    assert seen == [tmp_path]
+
+
+def test_a_deleted_word_ending_in_a_quote_still_passes_its_stop_on():
+    assert decode(["we", "go", 'uh."'], [KEEP, KEEP, DELETE]) == "we go."
+
+
+def test_a_one_letter_word_that_opens_a_sentence_is_capitalised():
+    assert decode(["um", "a", "dog."], [DELETE, KEEP, KEEP]) == "A dog."
+
+
+def test_the_stop_goes_after_a_last_word_that_ends_in_a_capital_x():
+    assert decode(["the", "FAX", "uh."], [KEEP, KEEP, DELETE]) == "the FAX."

@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import socket
 import stat
+import sys
 import threading
 from pathlib import Path
 
@@ -202,3 +204,107 @@ def test_main_stops_on_sigterm(tmp_path, monkeypatch):
 
     handlers[signal.SIGTERM](signal.SIGTERM, None)
     assert served[0].is_set()
+
+
+def test_a_request_of_the_greatest_length_is_served_and_one_byte_more_is_not(served):
+    head = b'{"op": "capabilities", "pad": "'
+    tail = b'"}\n'
+    # MAX_LINE bytes of request and then the line end.
+    fits = head + b"x" * (MAX_LINE - len(head) - len(tail) + 1) + tail
+    assert len(fits) == MAX_LINE + 1
+    with connect(served) as s:
+        s.sendall(fits)
+        assert json.loads(s.makefile("rb").readline())["protocol"] == "myna-text-v1"
+    with connect(served) as s:
+        s.sendall(fits[:-3] + b"x" + tail)
+        assert json.loads(s.makefile("rb").readline()) == {"error": "request too long"}
+
+
+def test_a_request_that_is_exactly_the_limit_without_a_line_end_is_unreadable_not_too_long(served):
+    with connect(served) as s:
+        s.sendall(b"x" * MAX_LINE)
+        s.shutdown(socket.SHUT_WR)
+        assert json.loads(s.makefile("rb").readline()) == {"error": "unreadable request"}
+
+
+def test_the_socket_directory_is_created_when_it_is_missing(tmp_path):
+    path = tmp_path / "a" / "b" / "text.sock"
+
+    server = Server(path, Provider(list))
+    try:
+        assert path.exists()
+    finally:
+        server.server_close()
+
+
+def test_the_daemon_applies_the_socket_mode_and_the_translator_it_was_given(tmp_path, monkeypatch):
+    seen = {}
+    monkeypatch.setattr(
+        cli.components, "finder", lambda root, binary: seen.update(root=root, binary=binary) or list
+    )
+    sock, stop, thread = run_daemon(
+        tmp_path, {}, "--socket-mode", "0600", "--bergamot", str(tmp_path / "myna-bergamot")
+    )
+    try:
+        wait_for(sock)
+        mode = stat.S_IMODE(sock.stat().st_mode)
+    finally:
+        stop.set()
+        thread.join(10)
+
+    assert mode == 0o600
+    assert seen == {"root": tmp_path / "components", "binary": tmp_path / "myna-bergamot"}
+
+
+def test_the_translator_is_the_one_beside_python_else_the_one_on_the_path(tmp_path, monkeypatch):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    monkeypatch.setattr(sys, "executable", str(bin_dir / "python3"))
+    monkeypatch.setattr(shutil, "which", lambda name: "/usr/bin/" + name)
+
+    assert cli._bergamot(None) == Path("/usr/bin/myna-bergamot")
+    (bin_dir / "myna-bergamot").write_text("")
+    assert cli._bergamot(None) == bin_dir / "myna-bergamot"
+    monkeypatch.setattr(shutil, "which", lambda name: None)
+    (bin_dir / "myna-bergamot").unlink()
+    assert cli._bergamot(None) == bin_dir / "myna-bergamot"
+
+
+def test_the_parser_wants_a_socket_and_defaults_the_mode_to_world_connectable():
+    with pytest.raises(SystemExit):
+        cli.build_parser().parse_args([])
+
+    args = cli.build_parser().parse_args(["--socket", "/x/text.sock"])
+
+    assert (args.socket_mode, args.share_provider, args.components) == ("0666", False, None)
+
+
+def test_replies_carry_accents_as_utf8_not_escapes(tmp_path):
+    class French(EchoModel):
+        def run(self, text, deadline_s):
+            return "Bonjour, comment allez-vous aujourd'hui ? \u00e9t\u00e9"
+
+    path = tmp_path / "text.sock"
+    server = Server(path, Provider(lambda: [French()]))
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        with connect(path) as s:
+            s.sendall(
+                json.dumps(
+                    {
+                        "op": "run",
+                        "model": "echo",
+                        "task": "text.cleanup",
+                        "params": {},
+                        "text": "a",
+                    }
+                ).encode()
+                + b"\n"
+            )
+            line = s.makefile("rb").readline()
+    finally:
+        server.shutdown()
+        server.server_close()
+
+    assert "été".encode() in line
+    assert b"\\u" not in line
