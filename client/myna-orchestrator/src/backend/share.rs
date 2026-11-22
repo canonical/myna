@@ -525,6 +525,21 @@ impl BackendSocket {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_the_listed_snaps_are_curated() {
+        let provider = |name: &str| TextProvider {
+            socket: "/s".into(),
+            snap_name: name.into(),
+            kind: TextShareKind::Unlabelled,
+        };
+        for name in ["myna-text", "myna-translation", "gemma4"] {
+            assert!(provider(name).is_curated(), "{name}");
+        }
+        for name in ["qwen3", "myna-text2", "", "Gemma4"] {
+            assert!(!provider(name).is_curated(), "{name}");
+        }
+    }
     use std::os::unix::net::UnixListener;
 
     fn tmpdir() -> PathBuf {

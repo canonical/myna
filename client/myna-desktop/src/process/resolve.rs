@@ -227,6 +227,12 @@ impl Resolver {
         Self::with_open(Vec::new(), dirs)
     }
 
+    /// The resolver the daemon runs: the backend directory (curated) and the
+    /// colon separated `extra` directories (`MYNA_TEXT_SHARES`, open).
+    pub fn from_env(backend: Option<&std::path::Path>, extra: Option<std::ffi::OsString>) -> Self {
+        Self::with_open(share_dirs(backend, None), share_dirs(None, extra))
+    }
+
     /// [`Resolver::new`] for `dirs`, and every share under `open_dirs`.
     pub fn with_open(dirs: Vec<PathBuf>, open_dirs: Vec<PathBuf>) -> Self {
         Self(Arc::new(Inner {
@@ -1630,6 +1636,44 @@ mod tests {
         let request = Request::cleanup(None);
         resolver.settle(std::slice::from_ref(&request)).await;
         assert_eq!(resolver.bound_to(&request).as_deref(), Some("myna-text/t"));
+        assert!(resolver.0.ignored.lock().unwrap().contains("evil"));
+    }
+
+    #[tokio::test]
+    async fn a_late_share_in_a_curated_dir_asks_for_a_restart() {
+        let dir = root("curated-restart");
+        std::fs::create_dir_all(dir.join("late")).unwrap();
+        let resolver = Resolver::new(vec![dir.clone()]);
+        resolver.settle(&[Request::cleanup(None)]).await;
+        assert!(matches!(
+            *resolver.status().borrow(),
+            ChainStatus::Degraded {
+                needs_restart: true,
+                ..
+            }
+        ));
+    }
+
+    #[tokio::test]
+    async fn the_daemons_resolver_curates_the_backend_dir_and_opens_the_extra_ones() {
+        let backend = root("env-backend");
+        let extra = root("env-extra");
+        share(
+            &backend,
+            "evil",
+            json!([model("e", "text.cleanup", 1)]),
+            Mode::Works,
+        );
+        share(
+            &extra,
+            "mine",
+            json!([model("m", "text.cleanup", 2)]),
+            Mode::Works,
+        );
+        let resolver = Resolver::from_env(Some(&backend), Some(extra.clone().into()));
+        let request = Request::cleanup(None);
+        resolver.settle(std::slice::from_ref(&request)).await;
+        assert_eq!(resolver.bound_to(&request).as_deref(), Some("mine/m"));
         assert!(resolver.0.ignored.lock().unwrap().contains("evil"));
     }
 }

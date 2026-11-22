@@ -193,21 +193,6 @@ impl Resolved {
     }
 }
 
-/// Where text model shares are searched: the backend directory, and any
-/// directory of shares `MYNA_TEXT_SHARES` adds (colon separated, for a
-/// provider run by hand).
-fn text_share_dirs(args: &Args) -> (Vec<PathBuf>, Vec<PathBuf>) {
-    let backend = match &args.backend {
-        Some(BackendSocket::Search(dir)) => Some(dir.as_path()),
-        _ => None,
-    };
-    use myna_desktop::process::resolve::share_dirs;
-    (
-        share_dirs(backend, None),
-        share_dirs(None, std::env::var_os("MYNA_TEXT_SHARES")),
-    )
-}
-
 /// Binds the text models of the chosen chain at start, when the chain
 /// changes or `RescanModels` is called, when a share changes on disk, and
 /// again while any is unbound. Speech start only has to bind what this has
@@ -876,8 +861,11 @@ async fn run_controller(
         .auto_stop(live.auto_stop.clone())
         .commit(live.commit.clone())
         .processor({
-            let (curated, open) = text_share_dirs(&args);
-            let resolver = Resolver::with_open(curated, open);
+            let backend = match &args.backend {
+                Some(BackendSocket::Search(dir)) => Some(dir.as_path()),
+                _ => None,
+            };
+            let resolver = Resolver::from_env(backend, std::env::var_os("MYNA_TEXT_SHARES"));
             if let Some(bus) = pump_bus.clone() {
                 tokio::spawn(myna_desktop::dbus::chain::run(
                     bus,
