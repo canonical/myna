@@ -37,6 +37,10 @@
 #      non-empty attribute list (#18): the Shell logs no IBusAttrList double
 #      free through two GJS collections and is still the same process.
 #  11. (Xubuntu, Plasma) logging out ends the HUD host and its HUD.
+#  12. the Processing tab's step switches are the daemon's step list: Tidy
+#      switched on in Myna Settings is stored as the step 'tidy' and the next
+#      dictation still lands whole (the rules fail open with no text snap);
+#      Translate switched on says what it lacks instead of a silent failure.
 set -uo pipefail
 # shellcheck source=e2e-tests/suites/lib.sh
 source "$(dirname "$0")/lib.sh"
@@ -265,6 +269,31 @@ if [ "$DESKTOP" = gnome ]; then
 fi
 evidence 10
 dict 'fake_streaming false; daemon_debug off' >/dev/null 2>&1
+
+echo "-- 12. the Processing tab's switches drive the steps"
+# shellcheck disable=SC2016 # expands in the VM
+STORE='$HOME/snap/myna/common/.config/glib-2.0/settings/keyfile'
+shot waitfor:General tab:Processing "waitfor:Tidy up speech@switch" \
+    "click:Tidy up speech@switch" \
+    "$(poll "grep -q \"processing-steps=\\['tidy'\\]\" $STORE")" \
+    "click:Translate@switch" "waitfor:Needs the" shot:shots/dictation/12-processing.png \
+    || { echo "processing run failed" >&2; FAILED=1; }
+assert_on "the switches are stored as steps" "grep -q \"processing-steps=\\['tidy', 'translate'\\]\" $STORE"
+assert_dict "the daemon reads the steps" \
+    "wait_until 20 sh -c 'snap run myna --status 2>&1 | grep -q \"step tidy\"'"
+assert_dict "the field is cleared" 'field_clear'
+assert_dict "the plain field is focused afresh" 'field_focus other && field_focus plain'
+dict dictation_toggle
+assert_dict "recording" 'wait_until 10 dictation_state_is recording'
+dict dictation_toggle
+assert_dict "idle after the stop" 'wait_until 10 dictation_state_is idle'
+assert_dict "the dictation lands whole with a step missing its model" \
+    "wait_until 10 field_is plain '$FULL'"
+evidence 12
+shot waitfor:General tab:Processing "waitfor:Tidy up speech@switch" \
+    "click:Tidy up speech@switch" "click:Translate@switch" \
+    "$(poll "! grep -q processing-steps $STORE || grep -q \"processing-steps=\\[\\]\" $STORE")" \
+    || { echo "processing reset failed" >&2; FAILED=1; }
 
 dict 'mic_stop' >/dev/null 2>&1
 if [ -n "$HOSTED" ]; then
