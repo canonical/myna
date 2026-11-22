@@ -70,7 +70,7 @@ TRANSLATE_META = {
     "task": "text.translate",
     "language": "en",
     "to": "fr",
-    "latency_ms": 20,
+    "latency_ms": 25,
     "quality": 0.7,
     "config": "config.yml",
 }

@@ -56,6 +56,10 @@ parakeet-snap/wheels/
 parakeet-snap/wheelhouse-cuda/
 parakeet-snap/*.snap
 parakeet-snap/*.comp
+text-snap/components/model-*/
+text-snap/wheels/
+text-snap/*.snap
+text-snap/*.comp
 # Coverage artifacts (feature 006)
 client/target/coverage/
 server/.coverage*

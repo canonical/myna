@@ -1,0 +1,17 @@
+model-translate-en-fr: the Firefox Translations English to French student
+model "base-memory" (version 2.0), Copyright Mozilla and contributors,
+licensed under the Mozilla Public License 2.0 (LICENSE in this component).
+
+Source: Mozilla's Firefox Translations models,
+https://github.com/mozilla/firefox-translations-models (the files themselves
+are served from the Remote Settings collection "translations-models" of
+https://firefox.settings.services.mozilla.com). The three model files are
+shipped unmodified; their sha256 are:
+
+  model.enfr.intgemm.alphas.bin  6322e296d4fecfe395a8d5723da4ec37ecbe6d7613bb1dfcf4b28e2a47498b68
+  lex.50.50.enfr.s2t.bin         2585ed98d3af0bc949865aedeb390493d591f56870814376e73e4144c41ed059
+  vocab.enfr.spm                 783abf3abe075afdf8d85d233994bef2c3a064e935ab1bed946820aff6ac002a
+
+config.yml and myna-text-model.json are Canonical's own (AGPL-3.0-or-later).
+The runtime that executes the model, bergamot-translator (MPL-2.0), and its
+bundled libraries are noted in the myna-text snap's NOTICE.

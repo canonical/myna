@@ -1,0 +1,9 @@
+{
+  "kind": "disfluency-tagger",
+  "id": "myna-disfluency-en",
+  "task": "text.cleanup",
+  "language": "en",
+  "latency_ms": 10,
+  "quality": 0.95,
+  "tau": 0.9
+}

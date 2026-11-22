@@ -1,0 +1,50 @@
+Third-party notices for the myna-text snap
+==========================================
+
+Model components
+----------------
+
+model-disfluency-en: a MiniLM-based disfluency tagger fine-tuned by Canonical
+Ltd (Apache-2.0) from Microsoft's MiniLM-L12-H384-uncased (MIT) on text
+derived from SODA and Synthetic-Persona-Chat (both CC-BY-4.0). The component
+carries the full attribution (NOTICE) and the Apache-2.0 text (LICENSE).
+
+model-translate-en-fr: Mozilla's Firefox Translations English to French
+"base-memory" student (MPL-2.0), shipped unmodified. The component carries
+the attribution with the source and the sha256 of each file (NOTICE) and the
+MPL-2.0 text (LICENSE).
+
+Runtimes
+--------
+
+myna-bergamot (bin/myna-bergamot): built in this snap from
+bergamot-translator, https://github.com/browsermt/bergamot-translator, at
+commit 9271618ebbdc5d21ac4dc4df9e72beb7ce644774 (Mozilla Public License 2.0),
+with the sources of its submodules at the commits that one pins, without Intel
+MKL, plus one file of ours (bergamot/myna-bergamot.cpp in the Myna source
+tree, a line-at-a-time front end; MPL-2.0 does not apply to it, AGPL-3.0-or-
+later does). bergamot-translator is MPL-2.0 and its source is at the URL and
+commit above. What is linked into the binary, with the licence text of each
+under usr/share/doc/myna-text/bergamot/:
+
+- bergamot-translator: MPL-2.0
+- marian-dev (Marian, with Mozilla's changes): MIT
+- SentencePiece: Apache-2.0
+- intgemm: MIT
+- ruy: Apache-2.0
+- yaml-cpp: MIT
+- CLI11: BSD-3-Clause
+- spdlog: MIT
+- pathie-cpp: BSD-2-Clause
+- cnpy: MIT
+- mio: MIT
+- phf: MIT
+- zlib: zlib licence
+- ssplit-cpp: Apache-2.0 (its LGPL-2.1 nonbreaking-prefix data files are
+  read at run time and not part of the binary; this snap does not ship them)
+- PCRE2, built from ssplit-cpp's copy: BSD-3-Clause
+
+The Python runtime of the daemon (onnxruntime, tokenizers, numpy and their
+dependencies) is installed from PyPI at the versions and hashes pinned in the
+Myna source tree's server/uv.lock; their licence files travel in their
+distributions.

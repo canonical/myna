@@ -19,7 +19,7 @@ The upstream source of truth for `modelctl` behaviour is https://github.com/cano
 - Expose `$SNAP_COMMON/share/provider` as the `provider` slot with `write`, not `read`: a named-socket `connect()` through the bind mount needs the rw AppArmor rule.
 - `myna-server --share-provider` is the only writer of `provider.env` (`SNAP_NAME`, `SNAP_INSTANCE_NAME`, `UNIX_SOCKET`, `MYNA_ROLE=speech`). Every launcher passes it; none passes `modelctl run --share-provider`, whose file lacks `UNIX_SOCKET` and would replace ours.
 - Grant `network-bind` for Unix-socket `listen()`, but do not add the `network` plug for runtime downloads.
-- Grant `hardware-observe` only to apps and hooks that perform hardware discovery.
+- Grant `hardware-observe` only to apps and hooks that perform hardware discovery. That includes any server that creates an onnxruntime environment: ORT 1.27 reads `/sys/bus/pci/devices` and each device's `vendor` at start, and there is no switch to stop it.
 - Grant `system-observe` only to a server that reads PSI (`/proc/pressure/memory`), today parakeet's memory-pressure monitor. ONNX Runtime and CTranslate2 size their pools from `sched_getaffinity` and `/sys/devices/system/cpu/{online,possible}`, which the base template allows; neither opens a cgroup file, and `system-observe` would not grant the service's quota files anyway.
 - Ensure installation selects a usable engine where a deterministic choice exists.
 - An install hook's cpu fallback must not depend on the store: whisper's cpu default (tiny) cannot be fetched on a sideload or offline, so the hook seeds modelctl's `cache.active-model` with the first installed model, default first. It reads `engines/` and `models/` itself because `modelctl engine`/`engines` score hardware and `models` needs an active engine, none of which works before the first selection without hardware-observe.
@@ -30,6 +30,7 @@ The upstream source of truth for `modelctl` behaviour is https://github.com/cano
 - Keep streaming as configuration; never hardcode `--streaming` in engine launchers.
 - Validate static packaging with `server/tests/test_snap_packaging.py` and `make lint-snaps`.
 - Use the spread adapter smoke test for behavior that manifests cannot prove, including sideload connections and streaming propagation.
+- `myna-text` is the one inference snap that is not a speech backend: no modelctl, no engines, `provider.env` with `MYNA_ROLE=text` written by `myna-text --share-provider`, models found as components at run time. Its invariants are `server/tests/test_text_snap_packaging.py`; see `text-snap/AGENTS.md`.
 
 ## GPU engines
 

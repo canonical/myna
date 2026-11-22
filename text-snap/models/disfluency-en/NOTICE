@@ -1,0 +1,17 @@
+model-disfluency-en: myna-disfluency-en, a disfluency tagger fine-tuned by
+Canonical Ltd, Apache-2.0 (LICENSE in this component).
+
+Base model: microsoft/MiniLM-L12-H384-uncased (MIT License, Copyright (c)
+Microsoft Corporation), https://huggingface.co/microsoft/MiniLM-L12-H384-uncased
+revision 44acabbec0ef496f6dbc93adadea57f376b7c0ec.
+
+Training text derives from (CC-BY-4.0; changes made: sentence extraction and
+synthetic disfluency injection):
+
+- SODA, Kim et al., https://huggingface.co/datasets/allenai/soda
+  (revision fdc848ab0183208ea7808206c91c724414d0a071)
+- Synthetic-Persona-Chat, Jandaghi et al., Google,
+  https://huggingface.co/datasets/google/Synthetic-Persona-Chat
+  (revision a520ad7f999ca7e6dfdc25fed9f5070bf6f87b42)
+
+CC-BY-4.0: https://creativecommons.org/licenses/by/4.0/

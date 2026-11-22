@@ -18,7 +18,9 @@ SHELL := /bin/bash
 # backends they cover; a new one has to be added there by hand, and nothing
 # fails when it is forgotten. Derive them from here, or check them against it.
 BACKENDS := whisper parakeet funasr nemotron indicconformer fake
-SNAPS := $(BACKENDS) myna
+# myna-text is no speech backend (no bench or sweep target applies to it), but
+# it is built and packed like one.
+SNAPS := $(BACKENDS) text myna
 
 # Conventions, with the exceptions stated once each:
 #
@@ -338,8 +340,9 @@ run-config: ## Launch Myna Settings (myna-config) from the workspace
 ##@ Snaps
 
 # What the store carries, and where publish-<snap> releases a fresh build and
-# its components.
-PUBLISHED := $(filter-out fake,$(SNAPS))
+# its components. text is left out: its first upload waits for Charles (the tagger
+# has no public home yet).
+PUBLISHED := $(filter-out fake text,$(SNAPS))
 CHANNEL ?= latest/edge
 
 define snap_rule

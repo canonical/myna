@@ -33,6 +33,7 @@ The client pushes PCM to a backend; inference snaps never access the microphone.
 - `client/` - Rust workspace for the dictation client and desktop integration.
 - `server/` - Python inference server, adapters, testbed, and benchmarker.
 - `*-snap/` - Snap packaging for the client and each inference family.
+- `text-snap/` - The `myna-text` snap: disfluency and translation models served as `myna-text-v1`; read `text-snap/AGENTS.md`.
 - `myna-config-deb/` - Debian packaging for Myna Settings, which ships outside the snap.
 - `extensions/` - GNOME Shell integration.
 - `dev/` - Development, packaging, benchmark, and quality-gate scripts.
@@ -55,4 +56,5 @@ The client pushes PCM to a backend; inference snaps never access the microphone.
 - `server/AGENTS.md` - Python server, inference, packaging, and benchmark knowledge.
 - `e2e-tests/AGENTS.md` - How the desktop end-to-end suites run and the rules for writing them.
 - `docs/AGENTS.md` - Scope and maintenance rules for human test documentation.
+- `text-snap/AGENTS.md` - The text-model snap, its components and the `myna-text-v1` provider.
 - `myna-config-deb/AGENTS.md` - Deb packaging, version scheme, and sbuild constraints for Myna Settings.
