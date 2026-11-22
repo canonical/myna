@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Sequence
-from functools import cache
 
 from myna.testbed.metrics import normalize
 
