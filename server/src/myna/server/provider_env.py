@@ -15,12 +15,12 @@ FILENAME = "provider.env"
 ROLE = "speech"
 
 
-def render(snap_name: str, instance_name: str, socket_name: str) -> str:
+def render(snap_name: str, instance_name: str, socket_name: str, role: str = ROLE) -> str:
     fields = {
         "SNAP_NAME": snap_name,
         "SNAP_INSTANCE_NAME": instance_name,
         "UNIX_SOCKET": socket_name,
-        "MYNA_ROLE": ROLE,
+        "MYNA_ROLE": role,
     }
     for key, value in fields.items():
         if "\n" in value or "\r" in value:
@@ -36,13 +36,13 @@ def write(path: Path, content: str) -> None:
     os.replace(tmp, path)
 
 
-def share(socket: Path, environ: Mapping[str, str]) -> Path:
+def share(socket: Path, environ: Mapping[str, str], role: str = ROLE) -> Path:
     """Write provider.env beside ``socket`` from the snap's identity."""
     for name in ("SNAP_NAME", "SNAP_INSTANCE_NAME"):
         if not environ.get(name):
             raise SystemExit(f"--share-provider needs {name} in the environment")
     path = socket.parent / FILENAME
-    content = render(environ["SNAP_NAME"], environ["SNAP_INSTANCE_NAME"], socket.name)
+    content = render(environ["SNAP_NAME"], environ["SNAP_INSTANCE_NAME"], socket.name, role)
     path.parent.mkdir(parents=True, exist_ok=True)
     write(path, content)
     return path
