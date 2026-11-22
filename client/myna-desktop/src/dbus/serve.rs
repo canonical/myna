@@ -84,6 +84,10 @@ struct ServedState {
     chain_status: String,
     /// Tasks of the chosen chain no installed model covers, comma separated.
     chain_missing: String,
+    /// The same as JSON requests with their parameters.
+    chain_missing_requests: String,
+    /// JSON of every connected model and each step's state.
+    installed_steps: String,
 }
 
 impl ServedState {
@@ -99,6 +103,8 @@ impl ServedState {
                 .hud_style
                 .unwrap_or_else(|| myna_core::settings::DEFAULT_HUD_STYLE.to_string()),
             chain_status: crate::dbus::chain::READY.into(),
+            chain_missing_requests: "[]".into(),
+            installed_steps: r#"{"models":[],"steps":[]}"#.into(),
             input_offset: f64::NAN,
             input_noise_floor: f64::NAN,
             input_speech_level: f64::NAN,
@@ -166,6 +172,7 @@ struct DictationObject {
     trigger: Option<crate::shortcut::control::Poke>,
     preview: Option<Previewer>,
     clients: Arc<ClientRegistry>,
+    rescan: Arc<tokio::sync::Notify>,
 }
 
 /// Why `PreviewSounds` played nothing, as
@@ -228,6 +235,13 @@ impl DictationObject {
         let result = preview_sounds(&state, set, self.preview.as_ref());
         myna_core::info_log!("dbus", "PreviewSounds {set} -> {result:?}");
         result
+    }
+
+    /// `RescanModels`: read every text share's capabilities again and bind
+    /// what is now covered, without waiting for the next poll.
+    async fn rescan_models(&self) {
+        myna_core::info_log!("dbus", "RescanModels");
+        self.rescan.notify_one();
     }
 
     /// `RegisterClient`: a HUD client announces itself. The sender's unique
@@ -422,6 +436,29 @@ impl DictationObject {
             .clone()
     }
 
+    /// `ChainMissingRequests`: JSON list of `{task, params}` no connected
+    /// model covers; `[]` while the chain is `ready`.
+    #[zbus(property)]
+    async fn chain_missing_requests(&self) -> String {
+        self.served
+            .lock()
+            .expect("served state poisoned")
+            .chain_missing_requests
+            .clone()
+    }
+
+    /// `InstalledSteps`: JSON `{models, steps}`: every model of every
+    /// connected text share (share, task, class, parameters and their
+    /// values, quality, latency) and what became of each step of the chain.
+    #[zbus(property)]
+    async fn installed_steps(&self) -> String {
+        self.served
+            .lock()
+            .expect("served state poisoned")
+            .installed_steps
+            .clone()
+    }
+
     /// `ChainMissing`: the tasks (`text.translate`) no connected model
     /// covers, comma separated; empty while the chain is `ready`.
     #[zbus(property)]
@@ -450,7 +487,7 @@ impl ZbusBus {
     /// and the caller falls back to `NotifyIndicator` (P15);
     /// [`ServeError::AlreadyRunning`] means a second daemon and is fatal.
     pub async fn serve() -> Result<Self, ServeError> {
-        Self::serve_with(None, None).await
+        Self::serve_with(None, None, Arc::default()).await
     }
 
     /// Like [`serve`](Self::serve), with `Toggle` poking `trigger` and
@@ -458,6 +495,7 @@ impl ZbusBus {
     pub async fn serve_with(
         trigger: Option<crate::shortcut::control::Poke>,
         preview: Option<Previewer>,
+        rescan: Arc<tokio::sync::Notify>,
     ) -> Result<Self, ServeError> {
         let conn = connect_session().await?;
         let served = Arc::new(Mutex::new(ServedState::new()));
@@ -470,6 +508,7 @@ impl ZbusBus {
                     trigger,
                     preview,
                     clients: Arc::clone(&clients),
+                    rescan,
                 },
             )
             .await?;
@@ -666,6 +705,10 @@ impl Bus for ZbusBus {
                     ("DraftTail", PropertyValue::Str(s)) => served.draft_tail = s.clone(),
                     ("ChainStatus", PropertyValue::Str(s)) => served.chain_status = s.clone(),
                     ("ChainMissing", PropertyValue::Str(s)) => served.chain_missing = s.clone(),
+                    ("ChainMissingRequests", PropertyValue::Str(s)) => {
+                        served.chain_missing_requests = s.clone()
+                    }
+                    ("InstalledSteps", PropertyValue::Str(s)) => served.installed_steps = s.clone(),
                     _ => {
                         myna_core::dbg_log!("dbus", "ignoring unknown property set: {name}");
                         return Ok(());
@@ -698,6 +741,8 @@ impl Bus for ZbusBus {
                 "DraftTail" => iface.draft_tail_changed(emitter).await,
                 "ChainStatus" => iface.chain_status_changed(emitter).await,
                 "ChainMissing" => iface.chain_missing_changed(emitter).await,
+                "ChainMissingRequests" => iface.chain_missing_requests_changed(emitter).await,
+                "InstalledSteps" => iface.installed_steps_changed(emitter).await,
                 _ => Ok(()),
             }
         }

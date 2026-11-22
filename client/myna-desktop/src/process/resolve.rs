@@ -9,7 +9,7 @@
 //! never.
 
 use std::cmp::Reverse;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -19,9 +19,10 @@ use myna_orchestrator::backend::share::{resolve_text_shares, TextProvider, TextS
 use tokio::sync::watch;
 
 use super::openai;
-use super::pipeline::{Answer, ModelError, Models, Prefer, Request};
+use super::pipeline::{Answer, ModelError, Models, Prefer, Request, BIND_BUDGET};
 use super::step;
-use super::wire::{self, Capability, WireError};
+use super::steps::StepReport;
+use super::wire::{self, Capability, Params, WireError};
 
 /// Where text model shares are searched: the backend directory, and the
 /// colon separated directories `extra` adds (`MYNA_TEXT_SHARES`, for a
@@ -87,12 +88,74 @@ pub enum ChainStatus {
     Ready,
     /// Some step has no model: the steps are skipped, the text is typed.
     Degraded {
-        /// Tasks no connected share covers, sorted.
-        missing_tasks: Vec<String>,
+        /// Requests no connected share covers, in key order.
+        missing: Vec<Missing>,
         /// A share was connected after this process started, so only a
         /// fresh daemon can see it.
         needs_restart: bool,
     },
+}
+
+/// A request no connected model covers: what to install, never any text.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Missing {
+    pub task: String,
+    pub params: Params,
+}
+
+impl Missing {
+    pub fn of(request: &Request) -> Self {
+        Self {
+            task: request.task.clone(),
+            params: request.params.clone(),
+        }
+    }
+}
+
+impl ChainStatus {
+    /// The tasks with no model, sorted and without repeats.
+    pub fn missing_tasks(&self) -> Vec<String> {
+        match self {
+            Self::Ready => Vec::new(),
+            Self::Degraded { missing, .. } => missing
+                .iter()
+                .map(|m| m.task.clone())
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect(),
+        }
+    }
+
+    /// Whether no model covers `request`.
+    pub fn lacks(&self, request: &Request) -> bool {
+        matches!(self, Self::Degraded { missing, .. }
+            if missing.iter().any(|m| m.task == request.task && m.params == request.params))
+    }
+}
+
+/// What the daemon publishes for Settings besides the status: every model
+/// of every connected share, and what became of each step.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Catalog {
+    pub models: Vec<Candidate>,
+    pub steps: Vec<StepReport>,
+}
+
+/// How often the binder looks for a changed share, and how often it retries
+/// a request that is still unbound.
+#[derive(Clone, Copy, Debug)]
+pub struct Cadence {
+    pub poll: Duration,
+    pub retry: Duration,
+}
+
+impl Default for Cadence {
+    fn default() -> Self {
+        Self {
+            poll: Duration::from_secs(2),
+            retry: Duration::from_secs(5),
+        }
+    }
 }
 
 /// What a chat model is warmed with: a short dictation like the real ones.
@@ -140,6 +203,7 @@ struct Inner {
     /// retry a bind that just failed; the background binder is not held to it.
     failed: Mutex<HashMap<String, Instant>>,
     status: watch::Sender<ChainStatus>,
+    catalog: watch::Sender<Catalog>,
 }
 
 /// Resolves requests against connected text shares. Cloning shares the
@@ -155,11 +219,83 @@ impl Resolver {
             binding: tokio::sync::Mutex::new(()),
             failed: Mutex::default(),
             status: watch::channel(ChainStatus::Ready).0,
+            catalog: watch::channel(Catalog::default()).0,
         }))
     }
 
     pub fn status(&self) -> watch::Receiver<ChainStatus> {
         self.0.status.subscribe()
+    }
+
+    pub fn catalog(&self) -> watch::Receiver<Catalog> {
+        self.0.catalog.subscribe()
+    }
+
+    /// Publish what became of each step; the daemon compiles them.
+    pub fn set_steps(&self, steps: Vec<StepReport>) {
+        self.0.catalog.send_if_modified(|now| {
+            let changed = now.steps != steps;
+            now.steps = steps;
+            changed
+        });
+    }
+
+    /// What the shares look like on disk: the modification times of each
+    /// share directory and its entries (`provider.env`, the socket). A
+    /// connect, a disconnect, a refresh or a component install moves one.
+    pub fn signature(&self) -> Vec<(PathBuf, Option<std::time::SystemTime>)> {
+        let mtime =
+            |path: &std::path::Path| std::fs::metadata(path).and_then(|m| m.modified()).ok();
+        let mut seen = Vec::new();
+        for dir in &self.0.dirs {
+            seen.push((dir.clone(), mtime(dir)));
+            let Ok(shares) = std::fs::read_dir(dir) else {
+                continue;
+            };
+            for share in shares.flatten().map(|e| e.path()) {
+                seen.push((share.clone(), mtime(&share)));
+                let Ok(entries) = std::fs::read_dir(&share) else {
+                    continue;
+                };
+                seen.extend(entries.flatten().map(|e| (e.path(), mtime(&e.path()))));
+            }
+        }
+        seen.sort();
+        seen
+    }
+
+    /// Bind what `wanted` names and publish the status, again whenever
+    /// `wake` fires (a chain change, `RescanModels`), a share changes on disk,
+    /// or a request is still unbound after `cadence.retry`. `after` runs
+    /// after each settle. Never returns.
+    pub async fn keep_bound(
+        &self,
+        wake: &tokio::sync::Notify,
+        cadence: Cadence,
+        wanted: impl Fn() -> Vec<Request>,
+        after: impl Fn(&Self),
+    ) {
+        loop {
+            self.settle(&wanted()).await;
+            after(self);
+            let seen = self.signature();
+            let since = Instant::now();
+            let woken = wake.notified();
+            tokio::pin!(woken);
+            loop {
+                tokio::select! {
+                    () = &mut woken => break,
+                    () = tokio::time::sleep(cadence.poll) => {
+                        let degraded = *self.0.status.borrow() != ChainStatus::Ready;
+                        if self.signature() != seen
+                            || (degraded && since.elapsed() >= cadence.retry)
+                        {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /// The `share/model` a request is bound to, if it is.
@@ -184,9 +320,10 @@ impl Resolver {
             .remove(key);
     }
 
-    /// Every candidate of every connected Myna text share, and whether a
-    /// share is connected that this process cannot see yet.
-    async fn candidates(&self, within: Duration) -> (Vec<Candidate>, bool) {
+    /// Every candidate of every connected Myna text share, whether a
+    /// share is connected that this process cannot see yet, and the shares
+    /// that answered.
+    async fn candidates(&self, within: Duration) -> (Vec<Candidate>, bool, BTreeSet<String>) {
         let mut providers: Vec<TextProvider> = Vec::new();
         let mut needs_restart = false;
         for dir in &self.0.dirs {
@@ -195,6 +332,7 @@ impl Resolver {
             providers.extend(shares.providers);
         }
         let mut out = Vec::new();
+        let mut answered = BTreeSet::new();
         for provider in providers {
             let share = provider.snap_name.clone();
             let found = match provider.kind {
@@ -212,31 +350,34 @@ impl Resolver {
                 }
             };
             match found {
-                Ok((via, models)) => out.extend(
-                    models
-                        .into_iter()
-                        .filter(|capability| {
-                            if step::check_of(capability).is_some() {
-                                return true;
-                            }
-                            myna_core::info_log!(
-                                "process",
-                                "{share}/{}: unknown class, not offered",
-                                capability.id
-                            );
-                            false
-                        })
-                        .map(|capability| Candidate {
-                            via,
-                            socket: provider.socket.clone(),
-                            share: share.clone(),
-                            capability,
-                        }),
-                ),
+                Ok((via, models)) => {
+                    answered.insert(share.clone());
+                    out.extend(
+                        models
+                            .into_iter()
+                            .filter(|capability| {
+                                if step::check_of(capability).is_some() {
+                                    return true;
+                                }
+                                myna_core::info_log!(
+                                    "process",
+                                    "{share}/{}: unknown class, not offered",
+                                    capability.id
+                                );
+                                false
+                            })
+                            .map(|capability| Candidate {
+                                via,
+                                socket: provider.socket.clone(),
+                                share: share.clone(),
+                                capability,
+                            }),
+                    )
+                }
                 Err(e) => myna_core::info_log!("process", "{share}: no models ({e:?})"),
             }
         }
-        (out, needs_restart)
+        (out, needs_restart, answered)
     }
 
     /// Bind `request`: warm the best-ranked model, and the next one only if
@@ -272,7 +413,7 @@ impl Resolver {
         if let Some(done) = self.bound(&key) {
             return (Some(done), false);
         }
-        let (candidates, needs_restart) = self.candidates(request.bind_budget).await;
+        let (candidates, needs_restart, _) = self.candidates(request.bind_budget).await;
         for candidate in rank(request, candidates).into_iter().take(2) {
             let warmed = match candidate.via {
                 Via::Myna => {
@@ -338,24 +479,47 @@ impl Resolver {
         (None, needs_restart)
     }
 
+    /// Unbind what a share that answered no longer offers (a removed
+    /// component), so the request reads as missing and binds again if the
+    /// model returns.
+    fn forget_withdrawn(&self, models: &[Candidate], answered: &BTreeSet<String>) {
+        self.0
+            .bound
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .retain(|_, b| {
+                !answered.contains(&b.share)
+                    || models
+                        .iter()
+                        .any(|c| c.share == b.share && c.capability.id == b.model)
+            });
+    }
+
     /// Bind whatever of `requests` is unbound and publish whether all of
     /// them are. Called at daemon start, on a chain change, and when a share
     /// may have appeared.
     pub async fn settle(&self, requests: &[Request]) {
-        let mut missing = BTreeSet::new();
+        let (models, _, answered) = self.candidates(BIND_BUDGET).await;
+        self.forget_withdrawn(&models, &answered);
+        self.0.catalog.send_if_modified(|now| {
+            let changed = now.models != models;
+            now.models = models;
+            changed
+        });
+        let mut missing = BTreeMap::new();
         let mut needs_restart = false;
         for request in requests {
             let (binding, restart) = self.bind(request).await;
             needs_restart |= restart;
             if binding.is_none() {
-                missing.insert(request.task.clone());
+                missing.insert(request.key(), Missing::of(request));
             }
         }
         let status = if missing.is_empty() {
             ChainStatus::Ready
         } else {
             ChainStatus::Degraded {
-                missing_tasks: missing.into_iter().collect(),
+                missing: missing.into_values().collect(),
                 needs_restart,
             }
         };
@@ -438,6 +602,7 @@ impl Models for Resolver {
 
 #[cfg(test)]
 mod tests {
+    use super::super::steps::StepReport;
     use super::*;
     use serde_json::{json, Value};
     use std::path::Path;
@@ -513,6 +678,7 @@ mod tests {
         dir: PathBuf,
         warms: Arc<AtomicUsize>,
         runs: Arc<AtomicUsize>,
+        models: Arc<Mutex<Value>>,
     }
 
     #[derive(Clone, Copy)]
@@ -542,12 +708,14 @@ mod tests {
         let listener = UnixListener::bind(dir.join("text.sock")).unwrap();
         let (warms, runs) = (Arc::new(AtomicUsize::new(0)), Arc::new(AtomicUsize::new(0)));
         let (w, r) = (warms.clone(), runs.clone());
+        let models = Arc::new(Mutex::new(models));
+        let served = models.clone();
         tokio::spawn(async move {
             loop {
                 let Ok((stream, _)) = listener.accept().await else {
                     return;
                 };
-                let (models, w, r) = (models.clone(), w.clone(), r.clone());
+                let (models, w, r) = (served.clone(), w.clone(), r.clone());
                 tokio::spawn(async move {
                     let (read, mut write) = stream.into_split();
                     let mut line = String::new();
@@ -555,7 +723,7 @@ mod tests {
                     let call: Value = serde_json::from_str(&line).unwrap();
                     let reply = match call["op"].as_str().unwrap() {
                         "capabilities" => {
-                            json!({"protocol": "myna-text-v1", "models": models})
+                            json!({"protocol": "myna-text-v1", "models": *models.lock().unwrap()})
                         }
                         "warm" => {
                             w.fetch_add(1, Ordering::SeqCst);
@@ -586,7 +754,12 @@ mod tests {
                 });
             }
         });
-        Share { dir, warms, runs }
+        Share {
+            dir,
+            warms,
+            runs,
+            models,
+        }
     }
 
     fn model(id: &str, task: &str, latency: u64) -> Value {
@@ -745,7 +918,7 @@ mod tests {
         assert_eq!(
             *resolver.status().borrow(),
             ChainStatus::Degraded {
-                missing_tasks: vec!["text.translate".into()],
+                missing: vec![Missing::of(&requests[1])],
                 needs_restart: false
             }
         );
@@ -781,7 +954,7 @@ mod tests {
         assert_eq!(
             *resolver.status().borrow(),
             ChainStatus::Degraded {
-                missing_tasks: vec!["text.cleanup".into()],
+                missing: vec![Missing::of(&request)],
                 needs_restart: false
             }
         );
@@ -800,7 +973,7 @@ mod tests {
         assert_eq!(
             *resolver.status().borrow(),
             ChainStatus::Degraded {
-                missing_tasks: vec!["text.cleanup".into()],
+                missing: vec![Missing::of(&Request::cleanup(None))],
                 needs_restart: true
             }
         );
@@ -1037,6 +1210,219 @@ mod tests {
         resolver.evict(&faster.key());
         let answer = resolver.run(&faster, "hello").await.unwrap();
         assert_eq!(answer.model.as_deref(), Some("marian/m"));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn the_catalog_unions_every_share_and_missing_names_full_requests() {
+        let dir = root("catalog");
+        share(
+            &dir,
+            "myna-text",
+            json!([model("tagger", "text.cleanup", 5)]),
+            Mode::Works,
+        );
+        share(
+            &dir,
+            "myna-translation",
+            json!([model("fr", "text.translate", 10)]),
+            Mode::Works,
+        );
+        let resolver = Resolver::new(vec![dir.clone()]);
+        let want = [
+            Request::cleanup(Some("en".into())),
+            Request::translate("en", "fr"),
+            Request::translate("en", "de"),
+            Request::translate("en", "es"),
+        ];
+        resolver.settle(&want).await;
+        let shares: Vec<String> = resolver
+            .catalog()
+            .borrow()
+            .models
+            .iter()
+            .map(|c| format!("{}/{}", c.share, c.capability.id))
+            .collect();
+        assert_eq!(shares, ["myna-text/tagger", "myna-translation/fr"]);
+        let status = resolver.status().borrow().clone();
+        let ChainStatus::Degraded { missing, .. } = &status else {
+            panic!("{status:?}");
+        };
+        let targets: BTreeSet<&str> = missing
+            .iter()
+            .map(|m| m.params["to"].as_str().unwrap())
+            .collect();
+        assert_eq!(targets, BTreeSet::from(["de", "es"]));
+        assert_eq!(status.missing_tasks(), ["text.translate"]);
+        assert!(status.lacks(&want[2]));
+        assert!(!status.lacks(&want[1]));
+        assert!(!status.lacks(&want[0]));
+        assert!(!ChainStatus::Ready.lacks(&want[2]));
+        assert!(ChainStatus::Ready.missing_tasks().is_empty());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_model_a_share_withdraws_is_unbound_and_one_it_cannot_answer_for_is_kept() {
+        let dir = root("withdrawn");
+        let s = share(
+            &dir,
+            "myna-text",
+            json!([model("tagger", "text.cleanup", 5)]),
+            Mode::Works,
+        );
+        let resolver = Resolver::new(vec![dir.clone()]);
+        let request = Request::cleanup(Some("en".into()));
+        resolver.settle(std::slice::from_ref(&request)).await;
+        assert!(bound(&resolver, &request).is_some());
+        // The share cannot be reached: its binding stands.
+        std::fs::remove_file(dir.join("myna-text/provider.env")).unwrap();
+        resolver.settle(std::slice::from_ref(&request)).await;
+        assert!(bound(&resolver, &request).is_some());
+        std::fs::write(
+            dir.join("myna-text/provider.env"),
+            "SNAP_NAME=myna-text\nMYNA_ROLE=text\nUNIX_SOCKET=text.sock\n",
+        )
+        .unwrap();
+        *s.models.lock().unwrap() = json!([]);
+        resolver.settle(std::slice::from_ref(&request)).await;
+        assert_eq!(bound(&resolver, &request), None);
+        assert!(resolver.status().borrow().lacks(&request));
+        *s.models.lock().unwrap() = json!([model("tagger", "text.cleanup", 5)]);
+        resolver.settle(std::slice::from_ref(&request)).await;
+        assert!(bound(&resolver, &request).is_some());
+        assert_eq!(*resolver.status().borrow(), ChainStatus::Ready);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn the_signature_moves_with_a_share_and_steps_publish_once() {
+        let dir = root("signature");
+        let resolver = Resolver::new(vec![dir.clone()]);
+        let empty = resolver.signature();
+        assert_eq!(resolver.signature(), empty);
+        let s = share(&dir, "a", json!([]), Mode::Works);
+        let one = resolver.signature();
+        assert_ne!(one, empty);
+        std::thread::sleep(Duration::from_millis(20));
+        std::fs::write(
+            s.dir.join("provider.env"),
+            "SNAP_NAME=a\nMYNA_ROLE=text\nUNIX_SOCKET=text.sock\n# x\n",
+        )
+        .unwrap();
+        assert_ne!(resolver.signature(), one);
+        assert!(Resolver::new(vec![dir.join("none")]).signature().len() == 1);
+
+        let mut seen = resolver.catalog();
+        seen.borrow_and_update();
+        let steps = vec![StepReport {
+            id: "tidy".into(),
+            state: super::super::steps::StepState::Applicable,
+        }];
+        resolver.set_steps(steps.clone());
+        assert!(seen.has_changed().unwrap());
+        seen.borrow_and_update();
+        resolver.set_steps(steps);
+        assert!(!seen.has_changed().unwrap());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_component_appearing_flips_the_chain_to_ready_without_a_call() {
+        let dir = root("watch");
+        let s = share(&dir, "myna-translation", json!([]), Mode::Works);
+        let resolver = Resolver::new(vec![dir.clone()]);
+        let wake = Arc::new(tokio::sync::Notify::new());
+        let ran = Arc::new(AtomicUsize::new(0));
+        let watcher = {
+            let (resolver, wake, ran) = (resolver.clone(), wake.clone(), ran.clone());
+            tokio::spawn(async move {
+                let cadence = Cadence {
+                    poll: Duration::from_millis(20),
+                    retry: Duration::from_secs(600),
+                };
+                resolver
+                    .keep_bound(
+                        &wake,
+                        cadence,
+                        || vec![Request::translate("en", "fr")],
+                        |_| {
+                            ran.fetch_add(1, Ordering::SeqCst);
+                        },
+                    )
+                    .await
+            })
+        };
+        let mut status = resolver.status();
+        let mut until = async |ready: bool| {
+            tokio::time::timeout(Duration::from_secs(3), async {
+                while (*status.borrow_and_update() == ChainStatus::Ready) != ready {
+                    status.changed().await.unwrap();
+                }
+            })
+            .await
+            .expect("the status followed the share")
+        };
+        until(false).await;
+        let settled = ran.load(Ordering::SeqCst);
+        // Idle and degraded within the retry window: nothing re-settles.
+        tokio::time::sleep(Duration::from_millis(150)).await;
+        assert_eq!(ran.load(Ordering::SeqCst), settled);
+        std::thread::sleep(Duration::from_millis(20));
+        *s.models.lock().unwrap() = json!([model("fr", "text.translate", 10)]);
+        std::fs::write(
+            s.dir.join("provider.env"),
+            "SNAP_NAME=myna-translation\nMYNA_ROLE=text\nUNIX_SOCKET=text.sock\n# new\n",
+        )
+        .unwrap();
+        until(true).await;
+        // A wake settles again whatever the disk says.
+        let before = ran.load(Ordering::SeqCst);
+        wake.notify_one();
+        tokio::time::timeout(Duration::from_secs(3), async {
+            while ran.load(Ordering::SeqCst) == before {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("a wake settles");
+        watcher.abort();
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_still_unbound_request_is_retried_after_the_retry_interval() {
+        let dir = root("retry");
+        let resolver = Resolver::new(vec![dir.clone()]);
+        let wake = Arc::new(tokio::sync::Notify::new());
+        let ran = Arc::new(AtomicUsize::new(0));
+        let watcher = {
+            let (resolver, wake, ran) = (resolver.clone(), wake.clone(), ran.clone());
+            tokio::spawn(async move {
+                let cadence = Cadence {
+                    poll: Duration::from_millis(10),
+                    retry: Duration::from_millis(60),
+                };
+                resolver
+                    .keep_bound(
+                        &wake,
+                        cadence,
+                        || vec![Request::cleanup(None)],
+                        |_| {
+                            ran.fetch_add(1, Ordering::SeqCst);
+                        },
+                    )
+                    .await
+            })
+        };
+        tokio::time::timeout(Duration::from_secs(3), async {
+            while ran.load(Ordering::SeqCst) < 3 {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("retried while degraded");
+        watcher.abort();
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

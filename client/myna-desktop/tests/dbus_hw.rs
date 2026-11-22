@@ -188,7 +188,7 @@ async fn served_toggle_method_feeds_the_trigger() {
 
     let mut trigger = myna_desktop::shortcut::control::ControlTrigger::new();
     name_is_free().await;
-    let _owner = ZbusBus::serve_with(Some(trigger.poke()), None)
+    let _owner = ZbusBus::serve_with(Some(trigger.poke()), None, Default::default())
         .await
         .expect("serve_with owns the name");
 
@@ -283,17 +283,86 @@ async fn the_published_last_error_is_readable_on_the_bus() {
     assert!(time(get("LastErrorTime").await) > 0);
 }
 
+/// A fake `myna-text-v1` share: `provider.env`, a socket, and the models it
+/// answers `capabilities` with, which the case may change while it runs.
+struct FakeShare {
+    dir: std::path::PathBuf,
+    models: std::sync::Arc<std::sync::Mutex<serde_json::Value>>,
+}
+
+impl FakeShare {
+    fn start(root: &std::path::Path, name: &str, models: serde_json::Value) -> Self {
+        use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
+        let dir = root.join(name);
+        std::fs::create_dir_all(&dir).unwrap();
+        let share = Self {
+            dir: dir.clone(),
+            models: std::sync::Arc::new(std::sync::Mutex::new(models)),
+        };
+        share.touch();
+        let listener = tokio::net::UnixListener::bind(dir.join("text.sock")).unwrap();
+        let models = share.models.clone();
+        tokio::spawn(async move {
+            while let Ok((stream, _)) = listener.accept().await {
+                let models = models.clone();
+                tokio::spawn(async move {
+                    let (read, mut write) = stream.into_split();
+                    let mut line = String::new();
+                    let _ = tokio::io::BufReader::new(read).read_line(&mut line).await;
+                    let call: serde_json::Value = serde_json::from_str(&line).unwrap();
+                    let reply = match call["op"].as_str().unwrap() {
+                        "capabilities" => serde_json::json!({
+                            "protocol": "myna-text-v1",
+                            "models": models.lock().unwrap().clone(),
+                        }),
+                        "warm" => serde_json::json!({"ok": true}),
+                        _ => serde_json::json!({"text": "ok"}),
+                    };
+                    let _ = write.write_all(format!("{reply}\n").as_bytes()).await;
+                });
+            }
+        });
+        share
+    }
+
+    /// Rewrite `provider.env`, as a snap refresh does when it installs a
+    /// component.
+    fn touch(&self) {
+        let name = self.dir.file_name().unwrap().to_string_lossy().into_owned();
+        std::fs::write(
+            self.dir.join("provider.env"),
+            format!(
+                "SNAP_NAME={name}\nMYNA_ROLE=text\nUNIX_SOCKET=text.sock\n# {:?}\n",
+                std::time::SystemTime::now()
+            ),
+        )
+        .unwrap();
+    }
+
+    fn offer(&self, models: serde_json::Value) {
+        *self.models.lock().unwrap() = models;
+        self.touch();
+    }
+}
+
 /// A chain with no model for a step is told to Settings: ready until it is
-/// not, then the missing tasks, then ready again once they are covered.
+/// not, then the missing requests, then ready again once a model appears in
+/// a share's capabilities, with no restart and no call.
 #[tokio::test]
 async fn the_chains_status_follows_the_models_on_the_bus() {
     use myna_desktop::dbus::{chain, OBJECT_PATH};
-    use myna_desktop::process::resolve::ChainStatus;
+    use myna_desktop::process::pipeline::Request;
+    use myna_desktop::process::resolve::{Cadence, Resolver};
+    use serde_json::{json, Value};
+    use std::time::Duration;
 
     skip_unless_dbus!();
     let _serial = exclusive().await;
     name_is_free().await;
-    let owner = ZbusBus::serve().await.expect("serve owns the name");
+    let wake = std::sync::Arc::new(tokio::sync::Notify::new());
+    let owner = ZbusBus::serve_with(None, None, wake.clone())
+        .await
+        .expect("serve owns the name");
     let conn = zbus::Connection::session().await.expect("session bus");
     let properties = zbus::fdo::PropertiesProxy::builder(&conn)
         .destination(BUS_NAME)
@@ -313,28 +382,147 @@ async fn the_chains_status_follows_the_models_on_the_bus() {
     };
     assert_eq!(get("ChainStatus").await, "ready");
     assert_eq!(get("ChainMissing").await, "");
+    assert_eq!(get("ChainMissingRequests").await, "[]");
 
-    let (tx, rx) = tokio::sync::watch::channel(ChainStatus::Degraded {
-        missing_tasks: vec!["text.translate".into()],
-        needs_restart: false,
-    });
+    let root = std::env::temp_dir().join(format!("myna-dbus-chain-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let tagger = FakeShare::start(
+        &root,
+        "myna-text",
+        json!([{"id": "tagger", "task": "text.cleanup", "covers": {"language": ["en"]}}]),
+    );
+    let translation = FakeShare::start(&root, "myna-translation", json!([]));
+
+    let resolver = Resolver::new(vec![root.clone()]);
     let bus = std::sync::Arc::new(tokio::sync::Mutex::new(owner));
-    let forwarder = tokio::spawn(chain::run(bus.clone(), rx));
-    let until = |name: &'static str, want: &'static str| async move {
-        for _ in 0..100 {
-            if get(name).await == want {
-                return;
+    let forwarder = tokio::spawn(chain::run(
+        bus.clone(),
+        resolver.status(),
+        resolver.catalog(),
+    ));
+    let binder = {
+        let (resolver, wake) = (resolver.clone(), wake.clone());
+        tokio::spawn(async move {
+            let cadence = Cadence {
+                poll: Duration::from_millis(100),
+                retry: Duration::from_secs(60),
+            };
+            resolver
+                .keep_bound(
+                    &wake,
+                    cadence,
+                    || {
+                        vec![
+                            Request::cleanup(Some("en".into())),
+                            Request::translate("en", "fr"),
+                        ]
+                    },
+                    |_| {},
+                )
+                .await
+        })
+    };
+    let until = |name: &'static str, want: &'static str| {
+        let get = &get;
+        async move {
+            for _ in 0..150 {
+                if get(name).await == want {
+                    return;
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
             }
-            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+            panic!("{name} never became {want:?}");
         }
-        panic!("{name} never became {want:?}");
     };
     until("ChainStatus", "degraded").await;
     assert_eq!(get("ChainMissing").await, "text.translate");
-    tx.send(ChainStatus::Ready).unwrap();
+    let missing: Value = serde_json::from_str(&get("ChainMissingRequests").await).unwrap();
+    assert_eq!(missing[0]["task"], "text.translate");
+    assert_eq!(missing[0]["params"]["to"], "fr");
+    let installed: Value = serde_json::from_str(&get("InstalledSteps").await).unwrap();
+    assert_eq!(installed["models"][0]["share"], "myna-text");
+    assert_eq!(installed["models"][0]["class"], "edit");
+
+    // The component lands: the share's capabilities grow and its env is
+    // rewritten. Nothing calls anything, and the daemon is not restarted.
+    let started = std::time::Instant::now();
+    translation.offer(json!([{"id": "bergamot-en-fr", "task": "text.translate",
+        "covers": {"language": ["en"], "to": ["fr"]}, "class": "translate",
+        "params": [{"name": "to", "kind": "language", "role": "target"}]}]));
     until("ChainStatus", "ready").await;
+    assert!(
+        started.elapsed() < Duration::from_secs(3),
+        "{:?}",
+        started.elapsed()
+    );
     assert_eq!(get("ChainMissing").await, "");
+    assert_eq!(get("ChainMissingRequests").await, "[]");
+    let installed: Value = serde_json::from_str(&get("InstalledSteps").await).unwrap();
+    let shares: Vec<&str> = installed["models"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| m["share"].as_str().unwrap())
+        .collect();
+    assert_eq!(shares, ["myna-text", "myna-translation"]);
+    assert_eq!(installed["models"][1]["params"][0]["name"], "to");
+    assert_eq!(installed["models"][1]["params"][0]["role"], "target");
+    assert_eq!(installed["models"][1]["params"][1]["values"][0], "en");
+
+    // `RescanModels` alone wakes the binder, whatever is on disk: the
+    // share loses its model without its files changing mtime.
+    *tagger.models.lock().unwrap() = json!([]);
+    conn.call_method(
+        Some(BUS_NAME),
+        OBJECT_PATH,
+        Some(BUS_NAME),
+        "RescanModels",
+        &(),
+    )
+    .await
+    .expect("RescanModels");
+    until("ChainStatus", "degraded").await;
+    assert_eq!(get("ChainMissing").await, "text.cleanup");
+
+    binder.abort();
     forwarder.abort();
+    std::fs::remove_dir_all(&root).unwrap();
+}
+
+/// `RescanModels` on the bus rings the bell the binder waits on.
+#[tokio::test]
+async fn rescan_models_wakes_the_binder() {
+    use myna_desktop::dbus::OBJECT_PATH;
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    skip_unless_dbus!();
+    let _serial = exclusive().await;
+    name_is_free().await;
+    let rescan = Arc::new(tokio::sync::Notify::new());
+    let _owner = ZbusBus::serve_with(None, None, rescan.clone())
+        .await
+        .expect("serve_with owns the name");
+    let conn = zbus::Connection::session().await.expect("session bus");
+    let waiting = rescan.notified();
+    tokio::pin!(waiting);
+    assert!(
+        tokio::time::timeout(Duration::from_millis(50), &mut waiting)
+            .await
+            .is_err()
+    );
+    conn.call_method(
+        Some(BUS_NAME),
+        OBJECT_PATH,
+        Some(BUS_NAME),
+        "RescanModels",
+        &(),
+    )
+    .await
+    .expect("RescanModels");
+    tokio::time::timeout(Duration::from_secs(2), waiting)
+        .await
+        .expect("the call woke the binder");
 }
 
 /// What the toast fallback said to the notification server, one line a call.

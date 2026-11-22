@@ -203,18 +203,32 @@ fn text_share_dirs(args: &Args) -> Vec<PathBuf> {
     myna_desktop::process::resolve::share_dirs(backend, std::env::var_os("MYNA_TEXT_SHARES"))
 }
 
-/// How often the binder looks again for a share that was not there.
-const REBIND_EVERY: Duration = Duration::from_secs(5);
-
 /// Binds the text models of the chosen chain at start, when the chain
-/// changes, and again while any is unbound. Speech start only has to bind
-/// what this has not.
-fn spawn_binder(resolver: Resolver, graph: Live<Graph>, changed: Arc<tokio::sync::Notify>) {
+/// changes or `RescanModels` is called, when a share changes on disk, and
+/// again while any is unbound. Speech start only has to bind what this has
+/// not. Also publishes what became of each step of the chain.
+fn spawn_binder(
+    resolver: Resolver,
+    graph: Live<Graph>,
+    chain: Live<myna_core::ProcessingChain>,
+    language: Live<Option<String>>,
+    wake: Arc<tokio::sync::Notify>,
+) {
     tokio::spawn(async move {
-        loop {
-            resolver.settle(&graph.get().requests()).await;
-            let _ = tokio::time::timeout(REBIND_EVERY, changed.notified()).await;
-        }
+        let wanted = || graph.get().requests();
+        let after = |resolver: &Resolver| {
+            let status = resolver.status().borrow().clone();
+            let language = language.get();
+            let ctx = myna_desktop::process::steps::Context {
+                language: language.as_deref(),
+                unavailable: &|request| status.lacks(request),
+            };
+            let steps = myna_desktop::process::steps::preset_steps(chain.get());
+            resolver.set_steps(myna_desktop::process::steps::compile(&steps, &ctx).report);
+        };
+        resolver
+            .keep_bound(&wake, Default::default(), wanted, after)
+            .await;
     });
 }
 
@@ -417,6 +431,7 @@ impl LiveSettings {
                 resolved.language.as_deref().unwrap_or("(backend default)")
             );
             self.language.set(resolved.language.clone());
+            self.graph_changed.notify_one();
         }
         if self.vocabulary.get() != resolved.vocabulary {
             myna_core::info_log!(
@@ -776,6 +791,8 @@ impl Sounds {
 struct Handles {
     trigger: ControlTrigger,
     sounds: Sounds,
+    /// Wakes the text model binder: `RescanModels` rings it.
+    rescan: Arc<tokio::sync::Notify>,
 }
 
 impl Handles {
@@ -783,6 +800,7 @@ impl Handles {
         Self {
             trigger: ControlTrigger::new(),
             sounds: Sounds::spawn(resolved),
+            rescan: Arc::default(),
         }
     }
 }
@@ -823,8 +841,13 @@ async fn run_controller(
     bus_lost: Option<BoxFuture<'static, ()>>,
     handles: Handles,
 ) -> ExitCode {
-    let Handles { trigger, sounds } = handles;
-    let live = LiveSettings::new(&resolved, sounds.set);
+    let Handles {
+        trigger,
+        sounds,
+        rescan,
+    } = handles;
+    let mut live = LiveSettings::new(&resolved, sounds.set);
+    live.graph_changed = rescan;
     // Held for the controller's whole life, and no longer: the subscription
     // exists to serve this controller, and dropping the handle stops it.
     let _settings_watch = live.follow(&args, pump_bus.clone());
@@ -850,11 +873,17 @@ async fn run_controller(
         .processor({
             let resolver = Resolver::new(text_share_dirs(&args));
             if let Some(bus) = pump_bus.clone() {
-                tokio::spawn(myna_desktop::dbus::chain::run(bus, resolver.status()));
+                tokio::spawn(myna_desktop::dbus::chain::run(
+                    bus,
+                    resolver.status(),
+                    resolver.catalog(),
+                ));
             }
             spawn_binder(
                 resolver.clone(),
                 live.graph.clone(),
+                live.chain.clone(),
+                live.language.clone(),
                 live.graph_changed.clone(),
             );
             let pipeline = Pipeline::new(live.graph.clone(), resolver)
@@ -1211,6 +1240,9 @@ fn print_status(args: &Args) -> ExitCode {
                     "  {:<15} {} {}",
                     "chain", status.chain_status, status.chain_missing
                 );
+                for line in installed_lines(&status.chain_requests, &status.installed_steps) {
+                    println!("{line}");
+                }
             }
         }
         // Not running is the common case for someone debugging, and it is an
@@ -1218,6 +1250,61 @@ fn print_status(args: &Args) -> ExitCode {
         Err(e) => println!("  {:<15} not reachable ({e})", "state"),
     }
     ExitCode::SUCCESS
+}
+
+/// The models and steps the daemon publishes, one line each.
+fn installed_lines(requests: &str, installed: &str) -> Vec<String> {
+    let mut lines = Vec::new();
+    use serde_json::Value;
+    let parse = |text: &str| serde_json::from_str::<Value>(text).unwrap_or(Value::Null);
+    let word = |v: &Value, key: &str| v[key].as_str().unwrap_or("?").to_owned();
+    let params = |v: &Value| {
+        v.as_object()
+            .map(|o| {
+                o.iter()
+                    .map(|(k, v)| format!("{k}={}", v.as_str().unwrap_or("?")))
+                    .collect::<Vec<_>>()
+                    .join(",")
+            })
+            .unwrap_or_default()
+    };
+    for r in parse(requests).as_array().into_iter().flatten() {
+        lines.push(format!(
+            "  {:<15} {} {}",
+            "missing",
+            word(r, "task"),
+            params(&r["params"])
+        ));
+    }
+    let installed = parse(installed);
+    for m in installed["models"].as_array().into_iter().flatten() {
+        lines.push(format!(
+            "  {:<15} {}/{} {} ({})",
+            "model",
+            word(m, "share"),
+            word(m, "model"),
+            word(m, "task"),
+            word(m, "class")
+        ));
+    }
+    for s in installed["steps"].as_array().into_iter().flatten() {
+        let detail = match &s["detail"] {
+            Value::String(reason) => format!(" ({reason})"),
+            Value::Object(_) => format!(
+                " (needs {} {})",
+                word(&s["detail"], "task"),
+                params(&s["detail"]["params"])
+            ),
+            _ => String::new(),
+        };
+        lines.push(format!(
+            "  {:<15} {} {}{detail}",
+            "step",
+            word(s, "id"),
+            word(s, "state")
+        ));
+    }
+    lines
 }
 
 /// Which plane a resolved value came from - the same order as [`Resolved`].
@@ -1372,7 +1459,11 @@ fn run_headless(args: Args, resolved: Resolved) -> ExitCode {
 /// `com.canonical.Myna.Hud` singletons). `--no-dbus` forces the notification
 /// path.
 async fn run_headless_dbus(args: Args, resolved: Resolved, handles: Handles) -> ExitCode {
-    let served = ZbusBus::serve_with(Some(handles.trigger.poke()), handles.sounds.previewer());
+    let served = ZbusBus::serve_with(
+        Some(handles.trigger.poke()),
+        handles.sounds.previewer(),
+        handles.rescan.clone(),
+    );
     match served.await {
         Ok(bus) => {
             let clients = bus.client_registry();
@@ -2236,5 +2327,35 @@ mod tests {
     fn control_toggle_hint_asks_whether_the_daemon_is_running() {
         let hint = toggle_hint_for(Activation::Control).join(" ");
         assert!(hint.contains("--socket"), "{hint}");
+    }
+
+    #[test]
+    fn status_lists_models_missing_requests_and_steps_and_nothing_from_an_old_daemon() {
+        assert!(installed_lines("", "").is_empty());
+        let lines = installed_lines(
+            r#"[{"task":"text.translate","params":{"to":"fr"}}]"#,
+            r#"{"models":[{"share":"myna-text","model":"tagger","task":"text.cleanup","class":"edit"}],
+               "steps":[{"id":"tidy","state":"applicable","detail":null},
+                        {"id":"script","state":"not-applicable","detail":"Applies when the text is Chinese"},
+                        {"id":"translate","state":"unavailable","detail":{"task":"text.translate","params":{"to":"fr"}}}]}"#,
+        );
+        let text = lines.join("\n");
+        assert!(
+            text.contains("missing         text.translate to=fr"),
+            "{text}"
+        );
+        assert!(
+            text.contains("model           myna-text/tagger text.cleanup (edit)"),
+            "{text}"
+        );
+        assert!(text.contains("step            tidy applicable\n"), "{text}");
+        assert!(
+            text.contains("script not-applicable (Applies when the text is Chinese)"),
+            "{text}"
+        );
+        assert!(
+            text.contains("translate unavailable (needs text.translate to=fr)"),
+            "{text}"
+        );
     }
 }
