@@ -878,8 +878,10 @@ fn the_installed_snaps_are_read_as_json() {
     let snaps = block_on(fake.client().installed_snaps(CancellationToken::new())).unwrap();
 
     let names: Vec<_> = snaps.iter().map(|snap| snap.name.as_str()).collect();
-    assert_eq!(names, ["myna-parakeet", "myna-whisper", "myna", "snapd"]);
-    assert_eq!(snaps[2].version, "0.2.1");
+    // snapd lists them in a different order on every read, so the client
+    // sorts them: a reader comparing two reads must not see a change.
+    assert_eq!(names, ["myna", "myna-parakeet", "myna-whisper", "snapd"]);
+    assert_eq!(snaps[0].version, "0.2.1");
     let calls = fake.calls.lock().unwrap().clone();
     assert_eq!(calls.len(), 1);
     assert!(calls[0].starts_with("GET /v2/snaps HTTP/1.1\r\n"));

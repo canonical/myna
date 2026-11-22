@@ -72,6 +72,36 @@ impl ModelRow {
     }
 }
 
+/// Makes `buffer` read `text` by replacing only the span between their common
+/// start and common end. A selection or the scroll anchor outside that span
+/// stays where it is; `set_text` would drop both.
+fn replace_changed_text(buffer: &gtk::TextBuffer, text: &str) {
+    let old = buffer
+        .text(&buffer.start_iter(), &buffer.end_iter(), false)
+        .to_string();
+    if old == text {
+        return;
+    }
+    let (old, new): (Vec<char>, Vec<char>) = (old.chars().collect(), text.chars().collect());
+    let start = old.iter().zip(&new).take_while(|(a, b)| a == b).count();
+    let end = old[start..]
+        .iter()
+        .rev()
+        .zip(new[start..].iter().rev())
+        .take_while(|(a, b)| a == b)
+        .count();
+    let offset = |at: usize| i32::try_from(at).unwrap_or(i32::MAX);
+    let mut from = buffer.iter_at_offset(offset(start));
+    let mut to = buffer.iter_at_offset(offset(old.len() - end));
+    buffer.delete(&mut from, &mut to);
+    let mut at = buffer.iter_at_offset(offset(start));
+    buffer.insert(
+        &mut at,
+        &new[start..new.len() - end].iter().collect::<String>(),
+    );
+    buffer.remove_all_tags(&buffer.start_iter(), &buffer.end_iter());
+}
+
 /// Indents each line's wrapped continuation to `columns[line]` characters of
 /// the view's monospace font, so a long value wraps under itself.
 fn hang_continuations(view: &gtk::TextView, columns: &[usize]) {
@@ -427,6 +457,11 @@ pub struct BackendUi {
     operation_coordinator: OperationCoordinator,
     active_backend: ActiveBackendController,
     diagnostics_page: RefCell<Option<adw::NavigationPage>>,
+    /// What the Diagnostics page shows now: the report, and whether a
+    /// discovery was loading, which greys Refresh.
+    diagnostics_shown: RefCell<Option<(diagnostics::DiagnosticReport, bool)>>,
+    /// The warning rows on that page, which a changed report replaces.
+    diagnostics_warnings: RefCell<Vec<adw::ActionRow>>,
     backend_pages: RefCell<BTreeMap<String, ui::BackendPage>>,
     apply_state: RefCell<BTreeMap<String, PendingChange>>,
     /// The active-backend state the Model tab last rendered.
@@ -452,13 +487,6 @@ pub struct BackendUi {
     follow_interval: std::cell::Cell<std::time::Duration>,
     /// Sizes each family's download for the engine its install hook picks.
     nvidia_gpu: bool,
-}
-
-#[derive(Clone, Copy)]
-enum DiagnosticsFocus {
-    Copy,
-    Refresh,
-    Report,
 }
 
 struct BackendFocus {
@@ -633,6 +661,8 @@ impl BackendUi {
             ),
             operation_coordinator,
             diagnostics_page: RefCell::new(Some(diagnostics_page)),
+            diagnostics_shown: RefCell::new(None),
+            diagnostics_warnings: RefCell::new(Vec::new()),
             backend_pages: RefCell::new(BTreeMap::new()),
             apply_state: RefCell::new(BTreeMap::new()),
             shown_state: RefCell::new(None),
@@ -2009,55 +2039,35 @@ impl BackendUi {
         }
     }
 
+    /// Brings the Diagnostics page up to what discovery last found. The page
+    /// is built once and then edited in place, and only when the report
+    /// differs from the one it shows: replacing it would throw away the
+    /// reader's scroll position and selection on every focus change.
     fn rebuild_diagnostics_page(self: &Rc<Self>) {
-        let focus = self.diagnostics_focus();
-        let page = self.build_diagnostics_page();
-        *self.diagnostics_page.borrow_mut() = Some(page.clone());
-        self.diagnostics_nav.replace(&[page]);
-        self.restore_diagnostics_focus(focus);
-    }
-
-    fn diagnostics_focus(&self) -> Option<DiagnosticsFocus> {
+        let report = present_diagnostics(self.diagnostic_input());
+        let loading = self.controller.discovery_loading();
+        let shown = (report, loading);
         let page = self
             .diagnostics_page
             .borrow()
-            .as_ref()?
-            .clone()
-            .downcast::<ui::DiagnosticsPage>()
-            .ok()?;
-        let window = self.overlay.root()?.downcast::<gtk::Window>().ok()?;
-        let focus = gtk::prelude::GtkWindowExt::focus(&window)?;
-        if focus == page.copy_button().upcast::<gtk::Widget>() {
-            Some(DiagnosticsFocus::Copy)
-        } else if focus == page.refresh_button().upcast::<gtk::Widget>() {
-            Some(DiagnosticsFocus::Refresh)
-        } else if focus == page.report_view().upcast::<gtk::Widget>() {
-            Some(DiagnosticsFocus::Report)
-        } else {
-            None
-        }
-    }
-
-    fn restore_diagnostics_focus(&self, target: Option<DiagnosticsFocus>) {
-        let Some(target) = target else {
-            return;
-        };
-        let Some(page) = self
-            .diagnostics_page
-            .borrow()
             .as_ref()
-            .and_then(|page| page.clone().downcast::<ui::DiagnosticsPage>().ok())
-        else {
-            return;
-        };
-        match target {
-            DiagnosticsFocus::Copy => page.copy_button().grab_focus(),
-            DiagnosticsFocus::Refresh if page.refresh_button().is_sensitive() => {
-                page.refresh_button().grab_focus()
+            .and_then(|page| page.clone().downcast::<ui::DiagnosticsPage>().ok());
+        match page {
+            Some(page) => {
+                if self.diagnostics_shown.borrow().as_ref() == Some(&shown) {
+                    return;
+                }
+                self.fill_diagnostics_page(&page, &shown.0, shown.1);
+                *self.diagnostics_shown.borrow_mut() = Some(shown);
             }
-            DiagnosticsFocus::Refresh => page.copy_button().grab_focus(),
-            DiagnosticsFocus::Report => page.report_view().grab_focus(),
-        };
+            None => {
+                let page = self.build_diagnostics_page();
+                self.fill_diagnostics_page(&page, &shown.0, shown.1);
+                *self.diagnostics_shown.borrow_mut() = Some(shown);
+                *self.diagnostics_page.borrow_mut() = Some(page.clone().upcast());
+                self.diagnostics_nav.replace(&[page.upcast()]);
+            }
+        }
     }
 
     /// Opens a new GitHub issue with the diagnostics already in it, so the
@@ -2174,18 +2184,10 @@ impl BackendUi {
         }
     }
 
-    fn build_diagnostics_page(self: &Rc<Self>) -> adw::NavigationPage {
+    fn build_diagnostics_page(self: &Rc<Self>) -> ui::DiagnosticsPage {
         let widget = ui::DiagnosticsPage::new();
 
-        let discovery_loading = self.controller.discovery_loading();
-
-        let report = present_diagnostics(self.diagnostic_input());
-
-        // Header buttons: refresh + copy.
         let refresh_button = widget.refresh_button();
-        let copy_button = widget.copy_button();
-
-        refresh_button.set_sensitive(!discovery_loading);
         refresh_button.set_tooltip_text(Some(&gettextrs::gettext("Refresh diagnostics")));
         refresh_button.update_property(&[gtk::accessible::Property::Label(&gettextrs::gettext(
             "Refresh diagnostics",
@@ -2199,25 +2201,55 @@ impl BackendUi {
             }
         });
 
+        let copy_button = widget.copy_button();
         copy_button.set_tooltip_text(Some(&gettextrs::gettext("Copy privacy-safe diagnostics")));
         copy_button.update_property(&[gtk::accessible::Property::Label(&gettextrs::gettext(
             "Copy diagnostics",
         ))]);
-        {
-            let text = report.copy_text();
-            let overlay = self.overlay.clone();
-            copy_button.connect_clicked(move |button| {
-                let display = button.display();
-                display.clipboard().set_text(&text);
-                overlay.add_toast(adw::Toast::new(&gettextrs::gettext(
+        copy_button.connect_clicked({
+            let ui = Rc::downgrade(self);
+            move |button| {
+                let Some(ui) = ui.upgrade() else {
+                    return;
+                };
+                let text = ui
+                    .diagnostics_shown
+                    .borrow()
+                    .as_ref()
+                    .map(|(report, _)| report.copy_text())
+                    .unwrap_or_default();
+                button.display().clipboard().set_text(&text);
+                ui.overlay.add_toast(adw::Toast::new(&gettextrs::gettext(
                     "Diagnostics copied to clipboard",
                 )));
-            });
-        }
+            }
+        });
+
+        widget
+            .report_view()
+            .update_property(&[gtk::accessible::Property::Label(&gettextrs::gettext(
+                "Diagnostic report",
+            ))]);
+        widget
+    }
+
+    /// Shows `report` on `page`, changing only what differs from what the
+    /// page shows.
+    fn fill_diagnostics_page(
+        &self,
+        page: &ui::DiagnosticsPage,
+        report: &diagnostics::DiagnosticReport,
+        loading: bool,
+    ) {
+        page.refresh_button().set_sensitive(!loading);
 
         // Warnings first: the page exists to say why dictation is slow.
-        let warnings_group = widget.warnings_group();
+        let warnings_group = page.warnings_group();
         warnings_group.set_visible(!report.warnings().is_empty());
+        let mut rows = self.diagnostics_warnings.borrow_mut();
+        for row in rows.drain(..) {
+            warnings_group.remove(&row);
+        }
         for warning in report.warnings() {
             let row = adw::ActionRow::builder()
                 .title(escape_markup(&warning.cause))
@@ -2227,15 +2259,12 @@ impl BackendUi {
             icon.add_css_class("warning");
             row.add_prefix(&icon);
             warnings_group.add(&row);
+            rows.push(row);
         }
 
-        // Fill the read-only report view.
-        let report_view = widget.report_view();
-        report_view.buffer().set_text(&report.copy_text());
-        hang_continuations(&report_view, report.continuation_columns());
-        report_view.update_property(&[gtk::accessible::Property::Label(&gettextrs::gettext(
-            "Diagnostic report",
-        ))]);
+        let view = page.report_view();
+        replace_changed_text(&view.buffer(), &report.copy_text());
+        hang_continuations(&view, report.continuation_columns());
 
         // What is missing installs from the wizard, never from a terminal.
         let missing = match report.onboarding() {
@@ -2246,13 +2275,11 @@ impl BackendUi {
             | OnboardingState::Ready
             | OnboardingState::Unavailable => None,
         };
-        let setup_group = widget.setup_group();
+        let setup_group = page.setup_group();
         setup_group.set_visible(missing.is_some());
         if let Some(title) = missing {
             setup_group.set_title(&title);
         }
-
-        widget.upcast()
     }
 
     fn on_diagnostics_page_shown(self: &Rc<Self>) {
@@ -3651,6 +3678,8 @@ mod tests {
             ),
             operation_coordinator,
             diagnostics_page: RefCell::new(Some(page("Diagnostics"))),
+            diagnostics_shown: RefCell::new(None),
+            diagnostics_warnings: RefCell::new(Vec::new()),
             backend_pages: RefCell::new(BTreeMap::new()),
             apply_state: RefCell::new(BTreeMap::new()),
             shown_state: RefCell::new(None),
@@ -3763,6 +3792,174 @@ mod tests {
 
             rediscover_as(&ui, NEITHER_CONNECTED);
             assert!(row.root().is_none(), "left on a page with nothing active");
+        });
+    }
+
+    /// Diagnostics over thirty models, so the report outgrows its view, shown
+    /// on screen at a size that scrolls.
+    fn long_diagnostics() -> (Rc<BackendUi>, gtk::Window) {
+        ui::register_resources();
+        let backends: Vec<BackendIdentity> = (0..30)
+            .map(|index| BackendIdentity::new(format!("model-{index:02}"), "provider"))
+            .collect();
+        let controller = BackendController::new(Rc::new(UnansweredRepository));
+        let request = controller.begin_discovery();
+        controller.complete_discovery(
+            request,
+            Ok(crate::domain::ConnectionSnapshot::new(
+                backends.clone(),
+                crate::domain::ActiveBackendState::Connected(backends[0].clone()),
+            )),
+        );
+        let TestUi { ui, view_stack } = test_ui(controller);
+        *ui.installed_snaps.borrow_mut() = vec![InstalledSnap {
+            name: "model-00".into(),
+            version: "1.0".into(),
+        }];
+        ui.inventory_complete.set(true);
+        view_stack.set_visible_child_name("diagnostics");
+        let window = gtk::Window::builder()
+            .default_width(700)
+            .default_height(400)
+            .child(&view_stack)
+            .build();
+        window.present();
+        ui.rebuild_diagnostics_page();
+        let view = ui.diagnostics_report_view();
+        let adjustment = report_scroller(&view).vadjustment();
+        settle(|| view.is_mapped() && adjustment.upper() > adjustment.page_size() + 100.0);
+        (ui, window)
+    }
+
+    impl BackendUi {
+        fn diagnostics_report_view(&self) -> gtk::TextView {
+            self.diagnostics_page
+                .borrow()
+                .as_ref()
+                .and_then(|page| page.clone().downcast::<ui::DiagnosticsPage>().ok())
+                .expect("a Diagnostics page")
+                .report_view()
+        }
+    }
+
+    fn report_scroller(view: &gtk::TextView) -> gtk::ScrolledWindow {
+        view.ancestor(gtk::ScrolledWindow::static_type())
+            .and_then(|widget| widget.downcast().ok())
+            .expect("the report is scrolled")
+    }
+
+    /// What a user reading the bottom of a long report does: scrolls there
+    /// and selects its last lines to copy them.
+    fn read_the_bottom(view: &gtk::TextView) -> (f64, String) {
+        let scroller = report_scroller(view);
+        let adjustment = scroller.vadjustment();
+        adjustment.set_value(adjustment.upper() - adjustment.page_size());
+        settle(|| adjustment.value() > 0.0);
+        let buffer = view.buffer();
+        let start = buffer.iter_at_line(buffer.line_count() - 4).unwrap();
+        buffer.select_range(&start, &buffer.end_iter());
+        let (from, to) = buffer.selection_bounds().expect("a selection");
+        (
+            adjustment.value(),
+            buffer.text(&from, &to, false).to_string(),
+        )
+    }
+
+    #[test]
+    fn a_changed_report_swaps_its_warnings_and_greys_refresh_in_place() {
+        on_gtk_thread(|| {
+            let (ui, _window) = long_diagnostics();
+            let page = ui
+                .diagnostics_page
+                .borrow()
+                .clone()
+                .and_then(|page| page.downcast::<ui::DiagnosticsPage>().ok())
+                .unwrap();
+            let report = |offset_db, installed: bool| {
+                present_diagnostics(DiagnosticInput {
+                    inventory_complete: true,
+                    installed_snaps: installed
+                        .then(|| InstalledSnap {
+                            name: "myna".into(),
+                            version: "1".into(),
+                        })
+                        .into_iter()
+                        .collect(),
+                    daemon_report: Some(crate::machine::DaemonReport {
+                        input: Some(crate::machine::InputReport::Levels(
+                            crate::machine::InputLevels {
+                                offset_db,
+                                floor_db: -60,
+                                speech_db: None,
+                                snr_db: None,
+                            },
+                        )),
+                        ..Default::default()
+                    }),
+                    ..DiagnosticInput::default()
+                })
+            };
+
+            ui.fill_diagnostics_page(&page, &report(-13, false), true);
+            assert!(page.warnings_group().is_visible());
+            assert_eq!(ui.diagnostics_warnings.borrow().len(), 1);
+            assert!(!page.refresh_button().is_sensitive());
+            assert_eq!(page.setup_group().title(), "Dictation is not installed");
+
+            ui.fill_diagnostics_page(&page, &report(-80, true), false);
+            assert!(!page.warnings_group().is_visible());
+            assert!(ui.diagnostics_warnings.borrow().is_empty());
+            assert!(page.refresh_button().is_sensitive());
+            assert_eq!(page.setup_group().title(), "No model installed");
+        });
+    }
+
+    #[test]
+    fn a_refresh_that_changes_nothing_leaves_diagnostics_alone() {
+        on_gtk_thread(|| {
+            let (ui, _window) = long_diagnostics();
+            let before = ui.diagnostics_page.borrow().clone().unwrap();
+            let view = ui.diagnostics_report_view();
+            let (scrolled, selected) = read_the_bottom(&view);
+            assert!(scrolled > 0.0, "the report did not scroll");
+
+            ui.rebuild_diagnostics_page();
+            while glib::MainContext::default().iteration(false) {}
+
+            assert_eq!(ui.diagnostics_page.borrow().clone().unwrap(), before);
+            assert_eq!(ui.diagnostics_report_view(), view);
+            assert_eq!(report_scroller(&view).vadjustment().value(), scrolled);
+            let buffer = view.buffer();
+            let (from, to) = buffer.selection_bounds().expect("the selection stays");
+            assert_eq!(buffer.text(&from, &to, false).to_string(), selected);
+        });
+    }
+
+    #[test]
+    fn a_changed_report_keeps_the_scroll_and_the_selection() {
+        on_gtk_thread(|| {
+            let (ui, _window) = long_diagnostics();
+            let view = ui.diagnostics_report_view();
+            let (scrolled, selected) = read_the_bottom(&view);
+
+            // A line near the top reads differently.
+            ui.installed_snaps.borrow_mut()[0].version = "1.1-longer".into();
+            ui.rebuild_diagnostics_page();
+            while glib::MainContext::default().iteration(false) {}
+
+            assert!(view
+                .buffer()
+                .text(
+                    &view.buffer().start_iter(),
+                    &view.buffer().end_iter(),
+                    false
+                )
+                .contains("model-00 1.1-longer"));
+            assert_eq!(ui.diagnostics_report_view(), view, "the page was replaced");
+            assert_eq!(report_scroller(&view).vadjustment().value(), scrolled);
+            let buffer = view.buffer();
+            let (from, to) = buffer.selection_bounds().expect("the selection stays");
+            assert_eq!(buffer.text(&from, &to, false).to_string(), selected);
         });
     }
 

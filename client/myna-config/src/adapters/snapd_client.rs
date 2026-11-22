@@ -409,6 +409,7 @@ pub trait SnapdClient {
 /// the user.
 #[async_trait(?Send)]
 pub trait SnapdReads {
+    /// Sorted by name: snapd lists them in a different order on each read.
     async fn installed_snaps(
         &self,
         cancellation: CancellationToken,
@@ -562,7 +563,9 @@ impl SnapdReads for UnixSocketSnapdClient {
         let handle = gio::spawn_blocking(move || {
             blocking_read(&socket_path, timeouts, SNAPS, "the snaps", &cancellation)
         });
-        handle.await.map_err(worker_panicked)?
+        let mut snaps: Vec<InstalledSnap> = handle.await.map_err(worker_panicked)??;
+        snaps.sort_by(|a, b| a.name.cmp(&b.name));
+        Ok(snaps)
     }
 
     async fn content_connections(
