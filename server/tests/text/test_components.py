@@ -116,3 +116,32 @@ def test_a_snap_serves_only_the_kinds_it_registered(tmp_path, caplog):
         "a-tagger: unknown kind 'disfluency-tagger'",
         "b-translate: unknown kind 'translate'",
     ]
+
+
+def test_the_contract_two_fields_of_a_manifest_reach_the_capability(tmp_path):
+    meta = {
+        **TRANSLATE_META,
+        "contract": 2,
+        "class": "translate",
+        "needs": "dictation",
+        "license": "MPL-2.0",
+    }
+    write_component(tmp_path, "a", meta, ("config.yml",))
+    write_component(tmp_path, "b", TAGGER_META, ("tagger.onnx", "tokenizer.json"))
+
+    translate, tagger = (m.capability() for m in find_models(tmp_path, KINDS))
+
+    assert (translate["needs"], translate["license"]) == ("dictation", "MPL-2.0")
+    assert "needs" not in tagger
+    assert tagger["class"] == "edit"
+
+
+def test_a_manifest_of_a_newer_contract_or_a_bad_field_is_skipped_and_named(tmp_path, caplog):
+    write_component(tmp_path, "a-newer", {**TRANSLATE_META, "contract": 3}, ("config.yml",))
+    write_component(tmp_path, "b-bad", {**TRANSLATE_META, "needs": "x"}, ("config.yml",))
+
+    with caplog.at_level(logging.WARNING, logger="myna.text"):
+        assert find_models(tmp_path, KINDS) == []
+
+    assert "a-newer" in caplog.text
+    assert "b-bad" in caplog.text

@@ -18,7 +18,7 @@ from typing import Any
 import numpy as np
 
 from myna.text.components import Builder, require
-from myna.text.protocol import Model, Params
+from myna.text.protocol import Model, Params, declared
 
 KEEP, DELETE, STRIP, CAP = 0, 1, 2, 3
 STOPS = ".!?"
@@ -163,6 +163,7 @@ class TaggerModel(Model):
         self.covers = {"language": [str(meta["language"])]}
         self.latency_ms = int(meta["latency_ms"])
         self.quality = float(meta["quality"])
+        self.declared = declared(meta)
         self._tau = float(meta["tau"])
         self._tagger: Tagger | None = None
         self._lock = threading.Lock()

@@ -173,3 +173,27 @@ def test_the_two_snaps_are_built_by_make_and_published_by_neither():
     makefile = read(ROOT / "Makefile")
     assert "SNAPS := $(BACKENDS) text translation myna" in makefile
     assert "PUBLISHED := $(filter-out fake text translation,$(SNAPS))" in makefile
+
+
+def test_every_shipped_manifest_declares_contract_2_and_lists_as_the_client_reads_it(snap):
+    from myna.text.protocol import declared
+
+    name, snap_dir, _ = snap
+    for path in (snap_dir / "models").glob("*/myna-text-model.json"):
+        meta = json.loads(read(path))
+        assert meta["contract"] == 2
+        fields = declared(meta)
+        assert {
+            "class",
+            "needs",
+            "params",
+            "license",
+            "attribution",
+            "download_bytes",
+            "source",
+        } <= set(fields)
+        # in_lang is covers.language and out_lang covers.to: no second copy.
+        assert "in_lang" not in meta
+        assert "out_lang" not in meta
+        named = {p["name"] for p in fields["params"]}
+        assert {"language"} | ({"to"} if meta["task"] == "text.translate" else set()) == named

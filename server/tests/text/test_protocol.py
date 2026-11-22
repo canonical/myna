@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 from conftest import EchoModel
 
-from myna.text.protocol import PROTOCOL, Provider
+from myna.text.protocol import PROTOCOL, Provider, declared
 
 WIRE_RS = Path(__file__).resolve().parents[3] / "client/myna-desktop/src/process/wire.rs"
 
@@ -24,10 +24,12 @@ def test_capabilities_name_the_protocol_and_every_field_the_client_reads():
 
     assert reply == {
         "protocol": "myna-text-v1",
+        "contract": 2,
         "models": [
             {
                 "id": "echo",
                 "task": "text.cleanup",
+                "class": "edit",
                 "covers": {"language": ["en"]},
                 "accepts": ["instruction"],
                 "latency_ms": 5,
@@ -190,16 +192,100 @@ def _rust_struct_fields(source: str, name: str) -> list[str]:
     return re.findall(r"^\s+pub (\w+):", body.group(1), re.M)
 
 
+FULL = {
+    "contract": 2,
+    "class": "translate",
+    "needs": "dictation",
+    "params": [{"name": "to", "kind": "language", "role": "target", "required": True}],
+    "license": "MPL-2.0",
+    "attribution": "Mozilla",
+    "download_bytes": 33353728,
+    "source": "https://example.org/m",
+}
+
+
+def declaring(meta):
+    model = EchoModel()
+    model.declared = declared(meta)
+    return model
+
+
 @pytest.mark.repo_tree
 def test_capabilities_carry_exactly_the_fields_the_client_deserialises():
     source = WIRE_RS.read_text(encoding="utf-8")
-    capability = EchoModel().capability()
+    capability = declaring(FULL).capability()
 
     assert sorted(capability) == sorted(_rust_struct_fields(source, "Capability"))
     assert sorted(provider(EchoModel()).handle({"op": "capabilities"})) == sorted(
         _rust_struct_fields(source, "Capabilities")
     )
+    assert sorted(capability["params"][0]) == sorted(_rust_struct_fields(source, "ParamSpec"))
     assert re.search(r'caps\.protocol == "myna-text-v1"', source)
+
+
+def test_a_model_declaring_nothing_lists_only_the_old_fields_and_its_tasks_class():
+    cap = EchoModel().capability()
+
+    assert cap["class"] == "edit"
+    assert not {"needs", "params", "license", "attribution", "download_bytes", "source"} & set(cap)
+    other = EchoModel(task="text.mystery").capability()
+    assert "class" not in other
+    assert EchoModel(task="text.translate").capability()["class"] == "translate"
+    assert EchoModel(task="text.rewrite").capability()["class"] == "rewrite"
+
+
+def test_a_declared_model_lists_what_its_manifest_says_and_the_class_wins():
+    cap = declaring(FULL).capability()
+
+    assert cap["class"] == "translate"
+    assert {k: cap[k] for k in FULL if k != "contract"} == {
+        k: v for k, v in FULL.items() if k != "contract"
+    }
+
+
+def test_a_class_the_provider_does_not_know_is_passed_on_for_the_client_to_refuse():
+    assert declaring({"class": "passthrough"}).capability()["class"] == "passthrough"
+
+
+def test_the_declared_fields_of_a_manifest_are_checked():
+    assert declared({}) == {}
+    assert declared({"contract": 1}) == {}
+    assert declared(FULL) == {k: v for k, v in FULL.items() if k != "contract"}
+    assert declared({"params": [{"name": "x", "kind": "text", "role": "free"}]}) == {
+        "params": [{"name": "x", "kind": "text", "role": "free", "required": False}]
+    }
+    assert declared({"needs": "sentence"}) == {"needs": "sentence"}
+    assert declared({"download_bytes": 0}) == {"download_bytes": 0}
+
+
+@pytest.mark.parametrize(
+    "meta",
+    [
+        {"contract": 3},
+        {"contract": 0},
+        {"contract": "2"},
+        {"contract": True},
+        {"class": ""},
+        {"class": 3},
+        {"license": 3},
+        {"attribution": ""},
+        {"source": None},
+        {"needs": "paragraph"},
+        {"download_bytes": -1},
+        {"download_bytes": "9"},
+        {"download_bytes": True},
+        {"params": "to"},
+        {"params": ["to"]},
+        {"params": [{"kind": "text", "role": "free"}]},
+        {"params": [{"name": "", "kind": "text", "role": "free"}]},
+        {"params": [{"name": "x", "kind": "number", "role": "free"}]},
+        {"params": [{"name": "x", "kind": "text", "role": "middle"}]},
+        {"params": [{"name": "x", "kind": "text", "role": "free", "required": "yes"}]},
+    ],
+)
+def test_a_manifest_that_misdeclares_is_refused(meta):
+    with pytest.raises(ValueError):
+        declared(meta)
 
 
 @pytest.mark.repo_tree

@@ -176,6 +176,7 @@ def test_the_model_loads_once_on_first_use_and_again_after_close(monkeypatch, tm
         "task": "text.cleanup",
         "covers": {"language": ["en"]},
         "accepts": [],
+        "class": "edit",
         "latency_ms": 10,
         "quality": 0.9,
     }

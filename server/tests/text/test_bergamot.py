@@ -109,6 +109,7 @@ def test_the_model_covers_one_language_pair_and_declares_its_measured_latency(tm
         "task": "text.translate",
         "covers": {"language": ["en"], "to": ["fr"]},
         "accepts": [],
+        "class": "translate",
         "latency_ms": 25,
         "quality": 0.7,
     }

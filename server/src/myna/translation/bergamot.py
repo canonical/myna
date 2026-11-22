@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from myna.text.components import Builder, require
-from myna.text.protocol import Model, Params, Refused
+from myna.text.protocol import Model, Params, Refused, declared
 
 Spawn = Callable[[list[str]], Any]
 
@@ -110,6 +110,7 @@ class TranslateModel(Model):
         self.covers = {"language": [str(meta["language"])], "to": [str(meta["to"])]}
         self.latency_ms = int(meta["latency_ms"])
         self.quality = float(meta["quality"])
+        self.declared = declared(meta)
         config = directory / str(meta["config"])
         self._worker = Worker([os.fspath(binary), "--model-config-paths", os.fspath(config)], spawn)
         self._lock = threading.Lock()

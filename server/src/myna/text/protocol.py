@@ -15,6 +15,22 @@ from typing import Any
 
 PROTOCOL = "myna-text-v1"
 
+#: The manifest and capabilities contract this provider speaks (see
+#: ``.kb/text-plugin-contract.md``); a manifest naming a higher one is skipped.
+CONTRACT = 2
+
+#: The class of a model whose manifest names none. A class this client does
+#: not know makes the model uncovered, so the table only fills the gap.
+DEFAULT_CLASS = {
+    "text.cleanup": "edit",
+    "text.translate": "translate",
+    "text.rewrite": "rewrite",
+}
+
+NEEDS = ("sentence", "dictation")
+PARAM_KINDS = ("language", "text")
+PARAM_ROLES = ("source", "target", "free")
+
 log = logging.getLogger("myna.text")
 
 Params = Mapping[str, Any]
@@ -22,6 +38,57 @@ Params = Mapping[str, Any]
 
 class Refused(Exception):
     """A call the provider will not carry out; the message is the reply's error."""
+
+
+def declared(meta: Params) -> dict[str, Any]:
+    """The contract 2 fields of a manifest, checked; absent ones are left out.
+
+    Raises ``ValueError`` for a manifest of a newer contract or a field of the
+    wrong shape, so the component is skipped rather than offered wrongly.
+    """
+    contract = meta.get("contract", 1)
+    if not isinstance(contract, int) or isinstance(contract, bool) or not 1 <= contract <= CONTRACT:
+        raise ValueError("contract")
+    out: dict[str, Any] = {}
+    for key in ("class", "license", "attribution", "source"):
+        if key in meta:
+            if not isinstance(meta[key], str) or not meta[key]:
+                raise ValueError(key)
+            out[key] = meta[key]
+    if "needs" in meta:
+        if meta["needs"] not in NEEDS:
+            raise ValueError("needs")
+        out["needs"] = meta["needs"]
+    if "download_bytes" in meta:
+        size = meta["download_bytes"]
+        if not isinstance(size, int) or isinstance(size, bool) or size < 0:
+            raise ValueError("download_bytes")
+        out["download_bytes"] = size
+    if "params" in meta:
+        out["params"] = [_param(p) for p in _list(meta["params"])]
+    return out
+
+
+def _list(value: object) -> list[Any]:
+    if not isinstance(value, list):
+        raise ValueError("params")
+    return value
+
+
+def _param(spec: object) -> dict[str, Any]:
+    if not isinstance(spec, dict):
+        raise ValueError("params")
+    name, kind, role = spec.get("name"), spec.get("kind"), spec.get("role")
+    required = spec.get("required", False)
+    if (
+        not isinstance(name, str)
+        or not name
+        or kind not in PARAM_KINDS
+        or role not in PARAM_ROLES
+        or not isinstance(required, bool)
+    ):
+        raise ValueError("params")
+    return {"name": name, "kind": kind, "role": role, "required": required}
 
 
 class Model(abc.ABC):
@@ -38,9 +105,16 @@ class Model(abc.ABC):
     latency_ms: int
     #: 0..1, this provider's own estimate; only compared with its other models.
     quality: float
+    #: The contract 2 fields its manifest names (see :func:`declared`).
+    declared: Mapping[str, Any] = {}
 
     def capability(self) -> dict[str, Any]:
-        return {
+        """The model as ``capabilities`` lists it.
+
+        ``in_lang`` of a step is ``covers["language"]`` and ``out_lang`` is
+        ``covers["to"]``, or ``covers["language"]`` when there is no ``to``.
+        """
+        cap: dict[str, Any] = {
             "id": self.id,
             "task": self.task,
             "covers": {key: list(values) for key, values in self.covers.items()},
@@ -48,6 +122,11 @@ class Model(abc.ABC):
             "latency_ms": self.latency_ms,
             "quality": self.quality,
         }
+        default = DEFAULT_CLASS.get(self.task)
+        if default is not None:
+            cap["class"] = default
+        cap.update(self.declared)
+        return cap
 
     def covers_request(self, task: str, params: Params) -> bool:
         """The rule the daemon applies in ``Capability::covers``."""
@@ -126,6 +205,7 @@ class Provider:
             self._refresh()
             return {
                 "protocol": PROTOCOL,
+                "contract": CONTRACT,
                 "models": [m.capability() for m in self._models.values()],
             }
         if op not in ("warm", "run"):
