@@ -380,6 +380,38 @@ mod tests {
     }
 
     #[test]
+    fn a_tie_keeps_the_first_entry_read() {
+        let (_dir, snapshot, root) = rig();
+        write(&snapshot, "myna-text.json", &[entry("a", 1)]);
+        write(
+            &snapshot,
+            "myna-translation.json",
+            &[with(entry("a", 1), "model", "other".into())],
+        );
+        assert_eq!(load(&snapshot, &root).entries[0].model, "m");
+    }
+
+    #[test]
+    fn a_missing_contract_means_the_first() {
+        let (_dir, snapshot, root) = rig();
+        let mut old = entry("a", 1);
+        old.as_object_mut().unwrap().remove("contract");
+        write(&snapshot, "myna-text.json", &[old]);
+        assert_eq!(load(&snapshot, &root).entries[0].contract, 1);
+    }
+
+    #[test]
+    fn every_step_label_has_words() {
+        for step in ["tidy", "translate"] {
+            for part in ["name", "description", "example"] {
+                let words = label(&format!("step.{step}.{part}")).unwrap();
+                assert!(!words.is_empty());
+            }
+        }
+        assert_ne!(label("step.tidy.name"), label("step.tidy.description"));
+    }
+
+    #[test]
     fn unknown_label_key_has_no_words() {
         assert_eq!(label("step.nope.name"), None);
     }
