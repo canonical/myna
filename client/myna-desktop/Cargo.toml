@@ -31,6 +31,8 @@ serde_json = { workspace = true }
 # Vocabulary: longest-match phrases, and near-misses gated on edit distance.
 aho-corasick = "1"
 strsim = "0.11"
+# Chinese script conversion: OpenCC dictionaries with Jieba word segmentation.
+opencc-jieba-rs = "0.9"
 # D-Bus: the IBus engine object and the served dictation interface.
 zbus = "5"
 # Publisher-owned D-Bus status labels use the shared `myna` gettext domain.

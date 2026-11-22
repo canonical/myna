@@ -146,6 +146,9 @@ struct Resolved {
     commit: CommitPolicy,
     chain: myna_core::ProcessingChain,
     graph: Graph,
+    /// The script Chinese is converted to, or as recognised where the
+    /// language is not Chinese.
+    script: myna_core::ChineseScript,
     history: bool,
 }
 
@@ -159,18 +162,31 @@ impl Resolved {
             backend_streams,
         };
         let graph = Graph::preset(settings.processing_chain);
+        let language = args.language.clone().or_else(|| settings.language.clone());
+        let script =
+            if myna_desktop::process::script::applies(settings.chinese_script, language.as_deref())
+            {
+                settings.chinese_script
+            } else {
+                myna_core::ChineseScript::AsRecognised
+            };
+        // Conversion reads a sentence at a time and no more.
+        let needs = graph
+            .needs()
+            .max((script != myna_core::ChineseScript::AsRecognised).then_some(Needs::Sentence));
         Self {
             activation,
-            language: args.language.clone().or_else(|| settings.language.clone()),
+            language,
             vocabulary: settings.vocabulary.clone(),
             preedit: resolve_preedit(args.preedit, mode.effective().mode),
             mode,
             auto_stop: resolve_auto_stop(activation, settings.silence_timeout),
             sounds: settings.sounds,
             sound_set: settings.sound_set,
-            commit: resolve_commit(graph.needs()),
+            commit: resolve_commit(needs),
             chain: settings.processing_chain,
             graph,
+            script,
             history: settings.processing_history,
         }
     }
@@ -277,6 +293,8 @@ struct LiveSettings {
     speech_model: Live<Option<String>>,
     /// What the chosen preset does, read for each piece of text.
     graph: Live<Graph>,
+    /// How Chinese is written, read for each piece of text.
+    script: Live<myna_core::ChineseScript>,
     /// Wakes the text model binder.
     graph_changed: Arc<tokio::sync::Notify>,
     /// Read at each commit.
@@ -289,6 +307,9 @@ struct LiveSettings {
 
 impl LiveSettings {
     fn new(resolved: &Resolved, sound_set: Live<SoundSet>) -> Self {
+        if resolved.script != myna_core::ChineseScript::AsRecognised {
+            myna_desktop::process::script::warm();
+        }
         Self {
             preedit: Live::new(resolved.preedit),
             mode: Arc::new(std::sync::Mutex::new(resolved.mode)),
@@ -299,6 +320,7 @@ impl LiveSettings {
             chain: Live::new(resolved.chain),
             speech_model: Live::default(),
             graph: Live::new(resolved.graph.clone()),
+            script: Live::new(resolved.script),
             graph_changed: Arc::default(),
             history: Live::new(resolved.history),
             sounds: Live::new(resolved.sounds),
@@ -443,6 +465,17 @@ impl LiveSettings {
             self.chain.set(resolved.chain);
             self.graph.set(resolved.graph.clone());
             self.graph_changed.notify_one();
+        }
+        if self.script.get() != resolved.script {
+            myna_core::info_log!(
+                "settings",
+                "chinese script -> {} (live, from the next text)",
+                resolved.script.nick()
+            );
+            if resolved.script != myna_core::ChineseScript::AsRecognised {
+                myna_desktop::process::script::warm();
+            }
+            self.script.set(resolved.script);
         }
         if self.history.get() != resolved.history {
             myna_core::info_log!(
@@ -838,8 +871,9 @@ async fn run_controller(
                 live.graph.clone(),
                 live.graph_changed.clone(),
             );
-            let pipeline =
-                Pipeline::new(live.graph.clone(), resolver).written(live.vocabulary.clone());
+            let pipeline = Pipeline::new(live.graph.clone(), resolver)
+                .written(live.vocabulary.clone())
+                .scripted(live.script.clone());
             let context = Context {
                 chain: live.chain.clone(),
                 trace: pipeline.trace(),
@@ -1684,6 +1718,35 @@ mod tests {
         };
         live.apply(&resolved(&a, &recording), "test");
         assert!(live.history.get());
+    }
+
+    /// A script holds exact dictation to a sentence, never the whole of it,
+    /// and only where the language may be Chinese.
+    #[test]
+    fn a_chinese_script_streams_by_sentence_and_only_for_chinese() {
+        use myna_core::ChineseScript::{AsRecognised, Traditional};
+        let a = Args::default();
+        let with = |language: Option<&str>, chain, script| myna_core::Settings {
+            language: language.map(str::to_owned),
+            processing_chain: chain,
+            chinese_script: script,
+            ..unset()
+        };
+        let exact = myna_core::ProcessingChain::EXACT;
+        let r = resolved(&a, &with(None, exact, Traditional));
+        assert_eq!(r.script, Traditional);
+        assert_eq!(r.commit, CommitPolicy::Horizon { sentences: 1 });
+        let r = resolved(&a, &with(Some("zh"), exact, Traditional));
+        assert_eq!(r.commit, CommitPolicy::Horizon { sentences: 1 });
+        let r = resolved(&a, &with(Some("en"), exact, Traditional));
+        assert_eq!(r.script, AsRecognised);
+        assert_eq!(r.commit, CommitPolicy::Streaming);
+        let r = resolved(&a, &with(None, exact, AsRecognised));
+        assert_eq!(r.commit, CommitPolicy::Streaming);
+        let live = LiveSettings::new(&r, Live::default());
+        live.apply(&resolved(&a, &with(None, exact, Traditional)), "test");
+        assert_eq!(live.script.get(), Traditional);
+        assert_eq!(live.commit.get(), CommitPolicy::Horizon { sentences: 1 });
     }
 
     #[test]

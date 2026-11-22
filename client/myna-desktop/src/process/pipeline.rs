@@ -9,9 +9,11 @@ use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use myna_core::history::Skip;
+use myna_core::ChineseScript;
 
 pub use super::check::Check;
 use super::graph::{Graph, Id, Joins, Op, Src};
+use super::script;
 use super::vocabulary::Vocabulary;
 use super::wire::Params;
 use super::{Field, Processor};
@@ -128,6 +130,8 @@ pub struct Pipeline {
     graph: Live<Graph>,
     models: Box<dyn Models>,
     written: Live<Vec<String>>,
+    /// How Chinese is written once the graph is done; none to change.
+    script: Live<ChineseScript>,
     /// `written` compiled, until it changes.
     vocabulary: (Vec<String>, Vocabulary),
     trace: Trace,
@@ -140,6 +144,7 @@ impl Pipeline {
             graph: graph.into(),
             models: Box::new(models),
             written: Live::new(Vec::new()),
+            script: Live::new(ChineseScript::AsRecognised),
             vocabulary: (Vec::new(), Vocabulary::default()),
             trace: Trace::default(),
             joins: Joins::default(),
@@ -151,6 +156,14 @@ impl Pipeline {
     #[must_use]
     pub fn written(mut self, words: Live<Vec<String>>) -> Self {
         self.written = words;
+        self
+    }
+
+    /// The script Chinese is written in, applied to what the graph makes
+    /// whichever graph it is, a piece at a time.
+    #[must_use]
+    pub fn scripted(mut self, script: Live<ChineseScript>) -> Self {
+        self.script = script;
         self
     }
 
@@ -258,7 +271,7 @@ impl Processor for Pipeline {
         }
         self.joins.forget(seq);
         *self.trace.lock().unwrap_or_else(|p| p.into_inner()) = trace;
-        read(&made, graph.out())
+        script::convert(&read(&made, graph.out()), self.script.get())
     }
 }
 
@@ -411,6 +424,25 @@ mod tests {
             pipeline.process("restart my sequel".into(), &here()).await,
             "Restart MySQL."
         );
+    }
+
+    #[tokio::test]
+    async fn chinese_is_written_in_the_chosen_script_in_any_graph() {
+        let script = Live::new(ChineseScript::AsRecognised);
+        let mut pipeline =
+            Pipeline::new(Graph::passthrough(), Scripted::Fails).scripted(script.clone());
+        assert_eq!(
+            pipeline.process("头发 NASA".into(), &here()).await,
+            "头发 NASA"
+        );
+        script.set(ChineseScript::Traditional);
+        assert_eq!(
+            pipeline.process("头发 NASA".into(), &here()).await,
+            "頭髮 NASA"
+        );
+        let mut tidy = Pipeline::new(graph_of(ProcessingChain::TIDY), Scripted::Says("我们出发"))
+            .scripted(script);
+        assert_eq!(tidy.process("我们出发".into(), &here()).await, "我們出發");
     }
 
     #[tokio::test]

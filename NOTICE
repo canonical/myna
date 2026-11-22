@@ -24,3 +24,18 @@ dialog-information-symbolic.svg: from adwaita-icon-theme 51.0
 Project, unmodified. Upstream offers them under the GNU LGPL, version 3, or
 CC-BY-SA 3.0; Myna takes them under the LGPL-3.0. They are compiled into the
 myna-hud binary, so they ship inside the myna snap.
+
+client/myna-desktop (opencc-jieba-rs 0.9)
+-----------------------------------------
+
+The Chinese script conversion links opencc-jieba-rs (MIT), which embeds the
+OpenCC lexicons (https://github.com/BYVoid/OpenCC), Copyright OpenCC
+contributors, Apache License 2.0, and a vendored jieba-rs
+(https://github.com/messense/jieba-rs), Copyright (c) 2018-2019 messense and
+Paul Meng, MIT License, with the jieba word dictionary
+(https://github.com/fxsjy/jieba), Copyright (c) 2013 Sun Junyi, MIT
+License. The OpenCC lexicons are repackaged compressed inside the crate and
+unchanged in content. Both are compiled into the myna-desktop binary, so
+they ship inside the myna snap; the licence texts are
+third-party-licenses/OpenCC-Apache-2.0.txt and Jieba-MIT.txt, staged beside
+this file.
