@@ -6,10 +6,13 @@
 use async_trait::async_trait;
 use myna_platform::text_input::FieldPurpose;
 
+pub use landing::Landing;
+
 mod check;
 pub mod disfluency;
 pub mod graph;
 pub mod history;
+pub mod landing;
 pub mod openai;
 pub mod pipeline;
 pub mod resolve;
@@ -46,6 +49,10 @@ pub trait Processor: Send {
     /// Never fails: a step that cannot run, is too slow or returns nonsense
     /// passes its input through, so a dictation is never lost to processing.
     async fn process(&mut self, text: String, field: &Field) -> String;
+
+    /// A piece that went through `process` (or would have) has landed or been
+    /// lost; the controller calls this once per piece.
+    fn landed(&mut self, _: Landing) {}
 }
 
 /// Types what was heard.

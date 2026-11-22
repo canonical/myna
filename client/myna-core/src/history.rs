@@ -28,6 +28,32 @@ pub struct Entry {
     /// The Myna build that typed it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,
+    /// How it ended; a record written before this was kept typed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outcome: Option<Outcome>,
+    /// Stop edge to the text being ready to process, in milliseconds. The
+    /// three timings are monotonic and only set for text that landed after
+    /// the stop edge.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub asr_tail_ms: Option<u64>,
+    /// How long the field took to take the text, in milliseconds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inject_ms: Option<u64>,
+    /// Stop edge to the text being in the field, in milliseconds: what the
+    /// user waited through.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dead_air_ms: Option<u64>,
+}
+
+/// How a dictation ended.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Outcome {
+    /// The text reached the field.
+    Typed,
+    /// Focus left the field first, so `typed` is what would have been typed
+    /// and `heard` is what can be recovered.
+    FocusLost,
 }
 
 /// One step of a chain, as it went for one piece of text.
@@ -253,6 +279,28 @@ mod tests {
         };
         append(&path, &full).unwrap();
         assert_eq!(recent(&path, 10), [full, entry(1, "one")]);
+    }
+
+    #[test]
+    fn timings_and_outcome_are_kept_and_absent_ones_stay_out_of_the_line() {
+        let path = scratch("timings");
+        let timed = Entry {
+            outcome: Some(Outcome::FocusLost),
+            asr_tail_ms: Some(120),
+            inject_ms: Some(3),
+            dead_air_ms: Some(480),
+            ..entry(2, "two")
+        };
+        append(&path, &timed).unwrap();
+        append(&path, &entry(1, "one")).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        let lines: Vec<&str> = text.lines().collect();
+        assert!(lines[0].contains("\"outcome\":\"focus-lost\""));
+        assert!(lines[0].contains("\"dead_air_ms\":480"));
+        for key in ["outcome", "asr_tail_ms", "inject_ms", "dead_air_ms"] {
+            assert!(!lines[1].contains(key), "{key} written when unknown");
+        }
+        assert_eq!(recent(&path, 10), [entry(1, "one"), timed]);
     }
 
     #[test]

@@ -2457,3 +2457,128 @@ async fn the_keyword_preset_fits_what_is_typed_to_the_field() {
         "The end."
     );
 }
+
+// ── What became of each piece, for the record of dictations ──────────────────
+
+#[derive(Clone, Default)]
+struct Landings(Arc<Mutex<Vec<myna_desktop::process::Landing>>>);
+
+struct Tally(Landings);
+
+#[async_trait::async_trait]
+impl Processor for Tally {
+    async fn process(&mut self, text: String, _: &Field) -> String {
+        text.to_uppercase()
+    }
+
+    fn landed(&mut self, landing: myna_desktop::process::Landing) {
+        (self.0).0.lock().unwrap().push(landing);
+    }
+}
+
+async fn landings_of(
+    policy: CommitPolicy,
+    injector: MockInjector,
+    edges: impl IntoIterator<Item = TriggerEdge>,
+    session: impl myna_desktop::SessionFactory + 'static,
+) -> Vec<myna_desktop::process::Landing> {
+    let seen = Landings::default();
+    DesktopController::builder()
+        .trigger(ScriptedTrigger::new(edges))
+        .injector(injector)
+        .indicator(MockIndicator::new())
+        .session(session)
+        .commit(policy)
+        .processor(Tally(seen.clone()))
+        .build()
+        .run()
+        .await;
+    let landed = seen.0.lock().unwrap().clone();
+    landed
+}
+
+#[tokio::test]
+async fn text_that_lands_after_the_stop_edge_is_timed() {
+    use myna_core::history::Outcome;
+    for policy in [CommitPolicy::AtEnd, CommitPolicy::Streaming] {
+        let landed = landings_of(
+            policy,
+            MockInjector::new(),
+            [TriggerEdge::Press, TriggerEdge::Release],
+            two_segment_focus_session(completed("first second")),
+        )
+        .await;
+        let last = landed.last().expect("a piece landed");
+        assert_eq!(last.outcome, Outcome::Typed, "{policy:?}");
+        let timing = last.timing.expect("timed after the stop edge");
+        assert!(timing.dead_air >= timing.inject, "{policy:?}");
+        assert!(timing.dead_air >= timing.asr_tail, "{policy:?}");
+        // The session waits for the stop edge before it ends, so the text
+        // cannot have been ready before the edge.
+        assert!(timing.asr_tail > Duration::ZERO, "{policy:?}");
+    }
+}
+
+#[tokio::test]
+async fn streamed_text_is_reported_as_heard_without_processing() {
+    let landed = landings_of(
+        CommitPolicy::Streaming,
+        MockInjector::new(),
+        [TriggerEdge::Press, TriggerEdge::Release],
+        two_segment_focus_session(completed("first second")),
+    )
+    .await;
+    assert!(!landed.is_empty());
+    for piece in &landed {
+        assert_eq!(piece.heard, piece.typed, "streaming types what it heard");
+    }
+}
+
+#[tokio::test]
+async fn processed_text_is_reported_with_what_it_became() {
+    let landed = landings_of(
+        CommitPolicy::AtEnd,
+        MockInjector::new(),
+        [TriggerEdge::Press, TriggerEdge::Release],
+        two_segment_focus_session(completed("first second")),
+    )
+    .await;
+    assert_eq!(landed.len(), 1);
+    assert_eq!(landed[0].heard, "first second");
+    assert_eq!(landed[0].typed, "FIRST SECOND");
+}
+
+#[tokio::test]
+async fn text_dropped_for_lost_focus_is_reported_untimed() {
+    use myna_core::history::Outcome;
+    let landed = landings_of(
+        CommitPolicy::Streaming,
+        MockInjector::new().with_focus_event(myna_desktop::FocusEvent::FocusOut),
+        [TriggerEdge::Press],
+        two_segment_focus_session(completed("first second")),
+    )
+    .await;
+    assert!(!landed.is_empty());
+    assert!(landed.iter().all(|p| p.outcome == Outcome::FocusLost));
+    assert!(landed.iter().all(|p| p.timing.is_none()));
+    assert!(landed.iter().any(|p| p.heard.contains("first")));
+}
+
+#[tokio::test]
+async fn text_the_field_refuses_is_reported_as_lost() {
+    use myna_core::history::Outcome;
+    let landed = landings_of(
+        CommitPolicy::AtEnd,
+        MockInjector::new().with_focus_event_during_commit(myna_desktop::FocusEvent::FocusOut),
+        [TriggerEdge::Press, TriggerEdge::Release],
+        events_session(
+            vec![OrchestratorEvent::Final("tail".into())],
+            completed("tail"),
+        ),
+    )
+    .await;
+    assert_eq!(landed.len(), 1);
+    assert_eq!(landed[0].outcome, Outcome::FocusLost);
+    assert_eq!(landed[0].heard, "tail");
+    assert!(landed[0].timing.is_none(), "it never landed");
+}

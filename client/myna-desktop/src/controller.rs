@@ -15,16 +15,18 @@
 //! capabilities a backend reports.
 
 use std::collections::BTreeSet;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use futures_util::stream::{BoxStream, StreamExt};
 use gettextrs::gettext;
 use myna_audio::AudioStats;
+use myna_core::history::Outcome;
 use tokio::sync::{mpsc, watch};
 
 use crate::draft::{CommitPolicy, DraftView, NoDraftView};
 use crate::indicator::{Indicator, IndicatorState, InputLevels};
 use crate::live::Live;
+use crate::process::landing::{Landing, Timing};
 use crate::process::{Field, Processor, Unprocessed};
 use async_trait::async_trait;
 use myna_orchestrator::{
@@ -608,12 +610,12 @@ impl DesktopController {
         let policy = self.commit.get();
         // Text typed as it arrives is typed as heard: with nothing held,
         // behaviour is exactly today's.
-        let mut unprocessed = Unprocessed;
         self.processor.prepare();
+        let mut asheard = AsHeard(self.processor.as_mut());
         let processor: &mut dyn Processor = if policy.streams() {
-            &mut unprocessed
+            &mut asheard
         } else {
-            self.processor.as_mut()
+            &mut *asheard.0
         };
         let draft = self.draft.as_mut();
 
@@ -695,6 +697,7 @@ impl DesktopController {
                         Some(TriggerEdge::Release) => {
                             myna_core::info_log!("ctrl", "release: graceful stop, finalizing");
                             stop.stop();
+                            utterance.buffer.stopped.get_or_insert_with(Instant::now);
                             enter_finalizing(state, indicator.as_mut()).await;
                             // Stop reading the trigger for this utterance: any
                             // further edges (the next push-to-talk cycle) belong to
@@ -705,6 +708,7 @@ impl DesktopController {
                         None => {
                             trigger_open = false;
                             stop.stop();
+                            utterance.buffer.stopped.get_or_insert_with(Instant::now);
                             enter_finalizing(state, indicator.as_mut()).await;
                         }
                     }
@@ -719,6 +723,7 @@ impl DesktopController {
                     } else if auto_stop_due(&stats.borrow(), auto_stop.get()) {
                         myna_core::info_log!("ctrl", "silence timeout: graceful stop, finalizing");
                         stop.stop();
+                        utterance.buffer.stopped.get_or_insert_with(Instant::now);
                         enter_finalizing(state, indicator.as_mut()).await;
                         trigger.resync().await;
                         trigger_open = false;
@@ -1107,6 +1112,21 @@ async fn route_event(
     ending
 }
 
+/// Passes text through untouched, whatever the processor behind it would
+/// do, and still tells it what became of each piece.
+struct AsHeard<'a>(&'a mut dyn Processor);
+
+#[async_trait]
+impl Processor for AsHeard<'_> {
+    async fn process(&mut self, text: String, _: &Field) -> String {
+        text
+    }
+
+    fn landed(&mut self, landing: Landing) {
+        self.0.landed(landing);
+    }
+}
+
 /// What holding text back needs at each event: when it may be written, what
 /// processes it on the way, and where it is shown until then.
 struct Held<'a> {
@@ -1158,6 +1178,9 @@ struct CommitBuffer {
     committed_any: bool,
     /// Whether buffered text was discarded or refused (see [`Self::dropped`]).
     dropped: bool,
+    /// When the trigger asked capture to stop, if it has: the start of the
+    /// wait the user feels.
+    stopped: Option<Instant>,
 }
 
 impl CommitBuffer {
@@ -1219,15 +1242,23 @@ impl CommitBuffer {
             return Ending::None;
         }
         if !allowed {
-            self.pending.clear();
+            let heard = std::mem::take(&mut self.pending);
             self.dropped = true;
+            processor.landed(Landing {
+                heard,
+                typed: String::new(),
+                outcome: Outcome::FocusLost,
+                timing: None,
+            });
             return Ending::None;
         }
         if ready == 0 {
             return Ending::None;
         }
+        let ready_at = Instant::now();
         let rest = self.pending.split_off(ready);
         let heard = std::mem::replace(&mut self.pending, rest);
+        let said = heard.clone();
         let purpose = target.field_purpose();
         let before = if self.committed_any {
             self.last
@@ -1243,6 +1274,7 @@ impl CommitBuffer {
         if text.is_empty() {
             return Ending::None;
         }
+        let typed = text.clone();
         let separate = if self.committed_any {
             !text.starts_with(char::is_whitespace)
         } else {
@@ -1253,10 +1285,29 @@ impl CommitBuffer {
         if separate {
             text.insert(0, ' ');
         }
+        let injecting = Instant::now();
         let result = target.commit(&text).await;
+        let landed = Instant::now();
         if result.is_ok() {
             self.last = text.trim_end().chars().last().or(self.last);
             myna_core::dbg_log!("inject", "committed {} chars: {:?}", text.len(), text);
+        }
+        let outcome = match &result {
+            Ok(()) => Some(Outcome::Typed),
+            Err(InjectError::FocusLost) => Some(Outcome::FocusLost),
+            Err(_) => None,
+        };
+        if let Some(outcome) = outcome {
+            let landed_now = outcome == Outcome::Typed;
+            processor.landed(Landing {
+                heard: said,
+                typed,
+                outcome,
+                timing: self
+                    .stopped
+                    .filter(|_| landed_now)
+                    .map(|stopped| Timing::between(stopped, ready_at, injecting, landed)),
+            });
         }
         self.record(result)
     }
