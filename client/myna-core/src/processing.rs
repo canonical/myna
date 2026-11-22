@@ -402,7 +402,7 @@ mod tests {
     fn each_legacy_shape_becomes_its_steps() {
         let steps = "processing-steps=['tidy']";
         let french = "processing-steps=['tidy', 'translate']";
-        let table: [(&str, &[&str]); 14] = [
+        let table: [(&str, &[&str]); 15] = [
             ("processing-chain='exact'\n", &[]),
             ("processing-chain='tidy'\n", &[steps]),
             (
@@ -414,6 +414,8 @@ mod tests {
                 &["processing-steps=['fit']"],
             ),
             ("processing-chain='summary'\n", &[]),
+            // A chain this build does not know still outranks the older keys.
+            ("processing-chain='summary'\nprocessing-tidy=true\n", &[]),
             ("processing=false\nprocessing-tidy=true\n", &[]),
             ("processing=true\nprocessing-tidy=true\n", &[steps]),
             (
