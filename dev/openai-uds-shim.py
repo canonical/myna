@@ -35,9 +35,7 @@ async def relay(port: int, client_r: asyncio.StreamReader, client_w: asyncio.Str
     except OSError:
         client_w.close()
         return
-    await asyncio.gather(
-        pipe(client_r, server_w), pipe(server_r, client_w), return_exceptions=True
-    )
+    await asyncio.gather(pipe(client_r, server_w), pipe(server_r, client_w), return_exceptions=True)
 
 
 async def main() -> None:
@@ -56,9 +54,7 @@ async def main() -> None:
     (share / "provider.env").write_text(f"SNAP_NAME={args.name}\nUNIX_SOCKET=chat.sock\n")
     sock = share / "chat.sock"
     sock.unlink(missing_ok=True)
-    server = await asyncio.start_unix_server(
-        lambda r, w: relay(args.port, r, w), path=str(sock)
-    )
+    server = await asyncio.start_unix_server(lambda r, w: relay(args.port, r, w), path=str(sock))
     sock.chmod(0o600)
     print(f"relaying {sock} to 127.0.0.1:{args.port}")
     async with server:
