@@ -27,3 +27,4 @@ One strictly confined snap, no `network` plug, serving `myna-text-v1` to the Myn
 # Documents
 
 - `README.md` - What the snap serves, how to build and install it.
+- `../.kb/text-plugin-contract.md` - The manifest and capabilities contract this snap's models follow.

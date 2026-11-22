@@ -53,6 +53,7 @@ The client pushes PCM to a backend; inference snaps never access the microphone.
 - `.kb/versioning.md` - The single version source, how each artifact receives it, and why the manifests say `0.0.0`.
 - `.kb/releasing.md` - Cutting a release: version choice, notes in the tag, what is published from it.
 - `.kb/verification.md` - What done means: the gates, patch coverage, red/green tests and scoped mutation testing.
+- `.kb/text-plugin-contract.md` - The text plugin contract: manifest and capabilities fields, class to check, versioning rules.
 - `client/AGENTS.md` - Rust client architecture and local knowledge.
 - `server/AGENTS.md` - Python server, inference, packaging, and benchmark knowledge.
 - `e2e-tests/AGENTS.md` - How the desktop end-to-end suites run and the rules for writing them.
