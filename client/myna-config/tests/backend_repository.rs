@@ -289,6 +289,16 @@ fn discovery_lists_the_models_a_text_snap_has_installed() {
         "SNAP_NAME=idle-text\nMYNA_ROLE=text\n",
     );
     write(
+        &format!("data/odd-text/{share}"),
+        "SNAP_NAME=odd-text\nMYNA_ROLE=text\n",
+    );
+    write(
+        "mount/escape/components/model-x/myna-text-model.json",
+        r#"{"task":"text.cleanup","language":"en"}"#,
+    );
+    std::fs::create_dir_all(dir.join("mount/odd-text")).unwrap();
+    std::os::unix::fs::symlink("../escape", dir.join("mount/odd-text/current")).unwrap();
+    write(
         "mount/myna-text/components/x1/model-translate-en-fr/myna-text-model.json",
         r#"{"kind":"translate","id":"bergamot-base-memory-en-fr","task":"text.translate","language":"en","to":"fr"}"#,
     );
@@ -319,7 +329,7 @@ fn discovery_lists_the_models_a_text_snap_has_installed() {
         })
     };
     let connections: ContentConnections = serde_json::from_value(serde_json::json!({
-        "slots": [slot("myna-text", true), slot("idle-text", false)]
+        "slots": [slot("myna-text", true), slot("idle-text", false), slot("odd-text", false)]
     }))
     .unwrap();
     let snapd = Arc::new(FakeSnapd::answering(Ok(Vec::new()), Ok(connections)));
@@ -335,7 +345,7 @@ fn discovery_lists_the_models_a_text_snap_has_installed() {
     let _ = std::fs::remove_dir_all(&dir);
 
     let offers = discovered.text_offers();
-    assert_eq!(offers.len(), 2, "{offers:?}");
+    assert_eq!(offers.len(), 3, "{offers:?}");
     let idle = &offers[0];
     assert_eq!(
         idle.identity(),

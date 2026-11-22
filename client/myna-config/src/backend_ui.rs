@@ -3915,6 +3915,66 @@ mod tests {
     }
 
     #[test]
+    fn diagnostics_lists_the_text_snap_and_copies_what_it_shows() {
+        on_gtk_thread(|| {
+            ui::register_resources();
+            let speech = BackendIdentity::new("myna-parakeet", "provider");
+            let controller = BackendController::new(Rc::new(UnansweredRepository));
+            let request = controller.begin_discovery();
+            controller.complete_discovery(
+                request,
+                Ok(crate::domain::ConnectionSnapshot::new(
+                    vec![speech.clone()],
+                    crate::domain::ActiveBackendState::Connected(speech),
+                )
+                .with_text_offers(vec![crate::domain::TextOffer::new(
+                    BackendIdentity::new("myna-text", "provider"),
+                    true,
+                    vec![crate::domain::TextModel::new("text.cleanup", "en", None)],
+                )])),
+            );
+            let TestUi { ui, view_stack } = test_ui(controller);
+            *ui.installed_snaps.borrow_mut() = vec![InstalledSnap {
+                name: "myna-text".into(),
+                version: "0.3.3".into(),
+            }];
+            view_stack.set_visible_child_name("diagnostics");
+            let window = gtk::Window::builder().child(&view_stack).build();
+            window.present();
+            ui.rebuild_diagnostics_page();
+
+            let view = ui.diagnostics_report_view();
+            let buffer = view.buffer();
+            let shown = buffer
+                .text(&buffer.start_iter(), &buffer.end_iter(), false)
+                .to_string();
+            assert!(
+                shown.contains("Text models:\n  myna-text 0.3.3 - Connected"),
+                "{shown}"
+            );
+            assert!(shown.contains("text cleanup (English)"), "{shown}");
+
+            let page = ui
+                .diagnostics_page
+                .borrow()
+                .clone()
+                .and_then(|page| page.downcast::<ui::DiagnosticsPage>().ok())
+                .unwrap();
+            page.copy_button().emit_clicked();
+            let copied = Rc::new(RefCell::new(None));
+            let slot = copied.clone();
+            page.display()
+                .clipboard()
+                .read_text_async(gio::Cancellable::NONE, move |text| {
+                    *slot.borrow_mut() = Some(text)
+                });
+            settle(|| copied.borrow().is_some());
+            let text = copied.borrow_mut().take().expect("the clipboard answered");
+            assert_eq!(text.unwrap().unwrap().as_str(), shown);
+        });
+    }
+
+    #[test]
     fn a_refresh_that_changes_nothing_leaves_diagnostics_alone() {
         on_gtk_thread(|| {
             let (ui, _window) = long_diagnostics();
