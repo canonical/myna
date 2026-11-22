@@ -682,6 +682,39 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn cleanup_and_translate_bind_from_two_snaps_under_one_backend_dir() {
+        let dir = root("two-snaps");
+        let text = share(
+            &dir,
+            "myna-text",
+            json!([model("myna-disfluency-en", "text.cleanup", 10)]),
+            Mode::Works,
+        );
+        let translation = share(
+            &dir,
+            "myna-translation",
+            json!([model("bergamot-base-memory-en-fr", "text.translate", 25)]),
+            Mode::Works,
+        );
+        let resolver = Resolver::new(vec![dir.clone()]);
+        let cleanup = Request::cleanup(Some("en".into()));
+        let translate = Request::translate("en", "fr");
+        resolver.settle(&[cleanup.clone(), translate.clone()]).await;
+        assert_eq!(
+            bound(&resolver, &cleanup).as_deref(),
+            Some("myna-text/myna-disfluency-en")
+        );
+        assert_eq!(
+            bound(&resolver, &translate).as_deref(),
+            Some("myna-translation/bergamot-base-memory-en-fr")
+        );
+        assert_eq!(text.warms.load(Ordering::SeqCst), 1);
+        assert_eq!(translation.warms.load(Ordering::SeqCst), 1);
+        assert_eq!(*resolver.status().borrow(), ChainStatus::Ready);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[tokio::test]
     async fn an_uncovered_task_is_reported_missing_until_a_share_covers_it() {
         let dir = root("missing");
         share(
