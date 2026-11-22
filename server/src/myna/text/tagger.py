@@ -17,6 +17,7 @@ from typing import Any
 
 import numpy as np
 
+from myna.text.components import Builder, require
 from myna.text.protocol import Model, Params
 
 KEEP, DELETE, STRIP, CAP = 0, 1, 2, 3
@@ -182,3 +183,12 @@ class TaggerModel(Model):
     def close(self) -> None:
         with self._lock:
             self._tagger = None
+
+
+def _build(directory: Path, meta: dict[str, Any]) -> Model:
+    require(directory, "tagger.onnx", "tokenizer.json")
+    return TaggerModel(directory, meta)
+
+
+#: The component kinds this runtime serves (see :mod:`myna.text.components`).
+KINDS: dict[str, Builder] = {"disfluency-tagger": _build}

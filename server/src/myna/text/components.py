@@ -1,30 +1,33 @@
-"""Find the model components installed beside the ``myna-text`` snap.
+"""Find the model components installed beside a text-provider snap.
 
 Each ``model-*`` component carries a ``myna-text-model.json`` naming what it
 is (``kind``), what it serves and what its files are. The ids, tasks and
 languages come from there, so installing a component is all it takes to offer
-a model.
+a model. A snap registers the kinds it can run: a component of another kind is
+skipped and named in the log.
 """
 
 from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
 from myna.text.protocol import Model
-from myna.text.tagger import TaggerModel
-from myna.text.translate import TranslateModel
 
 MANIFEST = "myna-text-model.json"
+
+#: Builds the model of one component directory from its manifest; raises
+#: ``OSError``, ``KeyError``, ``TypeError`` or ``ValueError`` if it is unusable.
+Builder = Callable[[Path, dict[str, Any]], Model]
 
 log = logging.getLogger("myna.text")
 
 
-def find_models(root: Path, binary: Path) -> list[Model]:
-    """The models of every readable component under ``root``."""
+def find_models(root: Path, kinds: Mapping[str, Builder]) -> list[Model]:
+    """The models of every readable component of a registered kind under ``root``."""
     models: list[Model] = []
     try:
         directories = sorted(p for p in root.iterdir() if p.is_dir())
@@ -39,7 +42,8 @@ def find_models(root: Path, binary: Path) -> list[Model]:
             log.warning("%s: unreadable %s (%s)", directory.name, MANIFEST, type(e).__name__)
             continue
         try:
-            model = _build(directory, meta, binary)
+            build = kinds.get(meta["kind"])
+            model = build(directory, meta) if build else None
         except (OSError, KeyError, TypeError, ValueError) as e:
             log.warning("%s: not a usable model component (%s)", directory.name, type(e).__name__)
             continue
@@ -50,22 +54,12 @@ def find_models(root: Path, binary: Path) -> list[Model]:
     return models
 
 
-def _build(directory: Path, meta: dict[str, Any], binary: Path) -> Model | None:
-    kind = meta["kind"]
-    if kind == "disfluency-tagger":
-        _require(directory, "tagger.onnx", "tokenizer.json")
-        return TaggerModel(directory, meta)
-    if kind == "translate":
-        _require(directory, str(meta["config"]))
-        return TranslateModel(directory, meta, binary)
-    return None
-
-
-def _require(directory: Path, *names: str) -> None:
+def require(directory: Path, *names: str) -> None:
+    """Raise ``FileNotFoundError`` unless every named file is in ``directory``."""
     for name in names:
         if not (directory / name).is_file():
             raise FileNotFoundError(name)
 
 
-def finder(root: Path, binary: Path) -> Callable[[], list[Model]]:
-    return lambda: find_models(root, binary)
+def finder(root: Path, kinds: Mapping[str, Builder]) -> Callable[[], list[Model]]:
+    return lambda: find_models(root, kinds)

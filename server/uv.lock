@@ -1374,7 +1374,7 @@ requires-dist = [
     { name = "tokenizers", marker = "extra == 'text'", specifier = ">=0.22,<0.23" },
     { name = "websockets", specifier = ">=16.0" },
 ]
-provides-extras = ["whisper", "parakeet", "nemotron", "indicconformer", "funasr", "text", "benchmarker", "parquet"]
+provides-extras = ["whisper", "parakeet", "nemotron", "indicconformer", "funasr", "text", "translation", "benchmarker", "parquet"]
 
 [package.metadata.requires-dev]
 dev = [

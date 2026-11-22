@@ -14,9 +14,12 @@ from pathlib import Path
 import pytest
 from conftest import TAGGER_META, TRANSLATE_META, EchoModel, write_component
 
-from myna.text import cli
+from myna.text import cli, daemon
 from myna.text.protocol import Provider
 from myna.text.server import MAX_LINE, Server
+from myna.text.tagger import KINDS as TAGGER_KINDS
+from myna.translation import cli as translation_cli
+from myna.translation.bergamot import kinds as bergamot_kinds
 
 
 def connect(path: Path) -> socket.socket:
@@ -101,8 +104,12 @@ def test_a_client_that_leaves_before_the_reply_does_not_hurt_the_daemon(served):
         assert ask(t, {"op": "capabilities"})["protocol"] == "myna-text-v1"
 
 
+BINARY = Path("/snap/myna-translation/current/bin/myna-bergamot")
+KINDS = {**TAGGER_KINDS, **bergamot_kinds(BINARY)}
+
+
 def args_for(tmp_path, *extra):
-    return cli.build_parser().parse_args(
+    return daemon.build_parser("myna-text", None).parse_args(
         [
             "--socket",
             str(tmp_path / "share" / "text.sock"),
@@ -116,7 +123,7 @@ def args_for(tmp_path, *extra):
 def run_daemon(tmp_path, environ, *extra):
     stop = threading.Event()
     args = args_for(tmp_path, *extra)
-    thread = threading.Thread(target=cli.serve, args=(args, environ, stop))
+    thread = threading.Thread(target=daemon.serve, args=(args, environ, stop, KINDS))
     thread.start()
     return args.socket, stop, thread
 
@@ -180,16 +187,25 @@ def test_without_a_components_directory_the_daemon_will_not_guess(tmp_path):
     args = cli.build_parser().parse_args(["--socket", str(tmp_path / "text.sock")])
 
     with pytest.raises(SystemExit, match="SNAP_COMPONENTS"):
-        cli.serve(args, {}, threading.Event())
+        daemon.serve(args, {}, threading.Event(), KINDS)
 
 
-def test_components_default_to_the_snaps_and_the_translator_to_the_one_beside_python(tmp_path):
-    assert cli._components(None, {"SNAP_COMPONENTS": "/snap/x/components/1"}) == Path(
+def test_components_default_to_the_snaps(tmp_path):
+    assert daemon.components_dir(None, {"SNAP_COMPONENTS": "/snap/x/components/1"}) == Path(
         "/snap/x/components/1"
     )
-    assert cli._components(tmp_path, {"SNAP_COMPONENTS": "/elsewhere"}) == tmp_path
-    assert cli._bergamot(tmp_path / "b") == tmp_path / "b"
-    assert cli._bergamot(None).name == "myna-bergamot"
+    assert daemon.components_dir(tmp_path, {"SNAP_COMPONENTS": "/elsewhere"}) == tmp_path
+
+
+def test_each_daemon_serves_its_own_kinds_and_the_translator_takes_a_binary(tmp_path):
+    assert cli._kinds(cli.build_parser().parse_args(["--socket", "s"])) is TAGGER_KINDS
+    parser = translation_cli.build_parser()
+    args = parser.parse_args(["--socket", "s", "--bergamot", str(tmp_path / "b")])
+    assert set(translation_cli._kinds(args)) == {"translate"}
+    assert translation_cli._bergamot(args.bergamot) == tmp_path / "b"
+    assert translation_cli._bergamot(None).name == "myna-bergamot"
+    with pytest.raises(SystemExit):
+        cli.build_parser().parse_args(["--socket", "s", "--bergamot", "b"])
 
 
 def test_main_stops_on_sigterm(tmp_path, monkeypatch):
@@ -198,7 +214,7 @@ def test_main_stops_on_sigterm(tmp_path, monkeypatch):
     handlers = {}
     monkeypatch.setattr(signal, "signal", lambda sig, fn: handlers.setdefault(sig, fn))
     served = []
-    monkeypatch.setattr(cli, "serve", lambda args, environ, stop: served.append(stop))
+    monkeypatch.setattr(daemon, "serve", lambda args, environ, stop, kinds: served.append(stop))
 
     assert cli.main(["--socket", str(tmp_path / "text.sock"), "--components", str(tmp_path)]) == 0
 
@@ -237,14 +253,14 @@ def test_the_socket_directory_is_created_when_it_is_missing(tmp_path):
         server.server_close()
 
 
-def test_the_daemon_applies_the_socket_mode_and_the_translator_it_was_given(tmp_path, monkeypatch):
+def test_the_daemon_applies_the_socket_mode_and_scans_the_components_it_was_given(
+    tmp_path, monkeypatch
+):
     seen = {}
     monkeypatch.setattr(
-        cli.components, "finder", lambda root, binary: seen.update(root=root, binary=binary) or list
+        daemon.components, "finder", lambda root, kinds: seen.update(root=root, kinds=kinds) or list
     )
-    sock, stop, thread = run_daemon(
-        tmp_path, {}, "--socket-mode", "0600", "--bergamot", str(tmp_path / "myna-bergamot")
-    )
+    sock, stop, thread = run_daemon(tmp_path, {}, "--socket-mode", "0600")
     try:
         wait_for(sock)
         mode = stat.S_IMODE(sock.stat().st_mode)
@@ -253,7 +269,7 @@ def test_the_daemon_applies_the_socket_mode_and_the_translator_it_was_given(tmp_
         thread.join(10)
 
     assert mode == 0o600
-    assert seen == {"root": tmp_path / "components", "binary": tmp_path / "myna-bergamot"}
+    assert seen == {"root": tmp_path / "components", "kinds": KINDS}
 
 
 def test_the_translator_is_the_one_beside_python_else_the_one_on_the_path(tmp_path, monkeypatch):
@@ -262,12 +278,12 @@ def test_the_translator_is_the_one_beside_python_else_the_one_on_the_path(tmp_pa
     monkeypatch.setattr(sys, "executable", str(bin_dir / "python3"))
     monkeypatch.setattr(shutil, "which", lambda name: "/usr/bin/" + name)
 
-    assert cli._bergamot(None) == Path("/usr/bin/myna-bergamot")
+    assert translation_cli._bergamot(None) == Path("/usr/bin/myna-bergamot")
     (bin_dir / "myna-bergamot").write_text("")
-    assert cli._bergamot(None) == bin_dir / "myna-bergamot"
+    assert translation_cli._bergamot(None) == bin_dir / "myna-bergamot"
     monkeypatch.setattr(shutil, "which", lambda name: None)
     (bin_dir / "myna-bergamot").unlink()
-    assert cli._bergamot(None) == bin_dir / "myna-bergamot"
+    assert translation_cli._bergamot(None) == bin_dir / "myna-bergamot"
 
 
 def test_the_parser_wants_a_socket_and_defaults_the_mode_to_world_connectable():

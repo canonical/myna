@@ -10,7 +10,7 @@ import pytest
 from conftest import FAKE_BERGAMOT, TRANSLATE_META
 
 from myna.text.protocol import Refused
-from myna.text.translate import TranslateModel, Worker, _spawn
+from myna.translation.bergamot import TranslateModel, Worker, _spawn
 
 
 @pytest.fixture

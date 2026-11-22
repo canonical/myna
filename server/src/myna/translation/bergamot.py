@@ -17,6 +17,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from myna.text.components import Builder, require
 from myna.text.protocol import Model, Params, Refused
 
 Spawn = Callable[[list[str]], Any]
@@ -145,3 +146,13 @@ class TranslateModel(Model):
     def close(self) -> None:
         with self._lock:
             self._worker.close()
+
+
+def kinds(binary: Path) -> dict[str, Builder]:
+    """The component kinds this runtime serves, translating through ``binary``."""
+
+    def build(directory: Path, meta: dict[str, Any]) -> Model:
+        require(directory, str(meta["config"]))
+        return TranslateModel(directory, meta, binary)
+
+    return {"translate": build}
