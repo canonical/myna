@@ -251,6 +251,7 @@ fn the_vocabulary_editor_adds_refuses_and_removes_words_when_enabled() {
         "vocabulary-length: refused",
         "vocabulary-full: refused",
         "vocabulary-remove: persisted",
+        "vocabulary-spoken: shown as two sides",
     ] {
         assert!(stdout.contains(line), "vocabulary probe missing: {line}");
     }

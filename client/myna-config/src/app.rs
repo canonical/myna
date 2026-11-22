@@ -2069,6 +2069,27 @@ fn vocabulary_probe() -> glib::ExitCode {
         return glib::ExitCode::FAILURE;
     }
     println!("vocabulary-remove: persisted");
+
+    let mut spoken = preset.clone();
+    spoken.push("my sequel:MySQL".into());
+    submit("my sequel:MySQL");
+    let spoken_row = || {
+        descendants(group.upcast_ref(), &|w| {
+            w.is::<adw::ActionRow>() && !w.is::<adw::EntryRow>()
+        })
+        .into_iter()
+        .filter_map(|row| row.downcast::<adw::ActionRow>().ok())
+        .find(|row| row.title() == "MySQL")
+    };
+    let subtitle =
+        gettextrs::gettext("Typed when you say “{spoken}”").replace("{spoken}", "my sequel");
+    if !wait_for_store(&spoken)
+        || spoken_row().and_then(|row| row.subtitle()).as_deref() != Some(subtitle.as_str())
+    {
+        eprintln!("the spoken form was not stored whole and shown as two sides");
+        return glib::ExitCode::FAILURE;
+    }
+    println!("vocabulary-spoken: shown as two sides");
     glib::ExitCode::SUCCESS
 }
 

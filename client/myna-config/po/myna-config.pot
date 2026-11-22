@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-22 03:11+0000\n"
+"POT-Creation-Date: 2026-11-22 03:26+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -81,7 +81,7 @@ msgid "Read-only privacy-safe diagnostic text."
 msgstr ""
 
 #: data/install-control.blp:54 data/onboarding-components.blp:60
-#: src/app.rs:4366
+#: src/app.rs:4387
 msgid "Installed"
 msgstr ""
 
@@ -104,12 +104,12 @@ msgid "General"
 msgstr ""
 
 #: data/main-window.blp:39 data/myna-page.blp:71 src/app.rs:1459
-#: src/app.rs:3551 src/app.rs:3989 src/backend_apply.rs:384
+#: src/app.rs:3572 src/app.rs:4010 src/backend_apply.rs:384
 #: src/diagnostics.rs:637 src/presentation.rs:157
 msgid "Model"
 msgstr ""
 
-#: data/main-window.blp:46 src/app.rs:6101 src/diagnostics.rs:571
+#: data/main-window.blp:46 src/app.rs:6122 src/diagnostics.rs:571
 #: src/myna_settings.rs:311
 msgid "Processing"
 msgstr ""
@@ -147,32 +147,32 @@ msgstr ""
 msgid "Cancel"
 msgstr ""
 
-#: data/myna-page.blp:67 data/onboarding-window.blp:7 src/app.rs:2202
-#: src/app.rs:5600 src/onboarding_ui.rs:1426 src/shortcut_ui.rs:591
+#: data/myna-page.blp:67 data/onboarding-window.blp:7 src/app.rs:2223
+#: src/app.rs:5621 src/onboarding_ui.rs:1426 src/shortcut_ui.rs:591
 msgid "Dictation"
 msgstr ""
 
-#: data/onboarding-components.blp:18 src/app.rs:4312 src/onboarding_ui.rs:1427
+#: data/onboarding-components.blp:18 src/app.rs:4333 src/onboarding_ui.rs:1427
 msgid "Install components"
 msgstr ""
 
-#: data/onboarding-components.blp:27 src/app.rs:4316
+#: data/onboarding-components.blp:27 src/app.rs:4337
 msgid ""
 "Dictation requires some additional components, including the optimal speech-"
 "to-text model for your computer. Installation might take a few minutes."
 msgstr ""
 
-#: data/onboarding-components.blp:44 src/app.rs:513 src/app.rs:4394
-#: src/app.rs:4458 src/app.rs:4864
+#: data/onboarding-components.blp:44 src/app.rs:513 src/app.rs:4415
+#: src/app.rs:4479 src/app.rs:4885
 msgid "Install all components"
 msgstr ""
 
-#: data/onboarding-components.blp:52 src/app.rs:4383
+#: data/onboarding-components.blp:52 src/app.rs:4404
 #: src/ui/install_control.rs:134
 msgid "Installing…"
 msgstr ""
 
-#: data/onboarding-shortcut.blp:18 src/app.rs:5332 src/onboarding_ui.rs:1428
+#: data/onboarding-shortcut.blp:18 src/app.rs:5353 src/onboarding_ui.rs:1428
 msgid "How to dictate"
 msgstr ""
 
@@ -216,7 +216,7 @@ msgstr ""
 msgid "Close"
 msgstr ""
 
-#: data/operation-error-dialog.blp:34 src/app.rs:4534
+#: data/operation-error-dialog.blp:34 src/app.rs:4555
 msgid "Copy Details"
 msgstr ""
 
@@ -224,11 +224,11 @@ msgstr ""
 msgid "Copy the full failure details to the clipboard"
 msgstr ""
 
-#: data/status-page.blp:8 src/app.rs:1454 src/app.rs:5901
+#: data/status-page.blp:8 src/app.rs:1454 src/app.rs:5922
 msgid "Loading Myna Settings"
 msgstr ""
 
-#: data/status-page.blp:9 src/app.rs:1455 src/app.rs:5902
+#: data/status-page.blp:9 src/app.rs:1455 src/app.rs:5923
 msgid "Reading the installed settings schema…"
 msgstr ""
 
@@ -248,7 +248,7 @@ msgstr ""
 msgid "Diagnostics appear once Myna finds your models."
 msgstr ""
 
-#: src/app.rs:1879 src/app.rs:5948
+#: src/app.rs:1879 src/app.rs:5969
 msgid "Clear"
 msgstr ""
 
@@ -258,169 +258,173 @@ msgid_plural "{count} words or phrases"
 msgstr[0] ""
 msgstr[1] ""
 
-#: src/app.rs:3589 src/backend_ui.rs:3912 src/model_family.rs:27
+#: src/app.rs:2085 src/list_editor_ui.rs:150
+msgid "Typed when you say “{spoken}”"
+msgstr ""
+
+#: src/app.rs:3610 src/backend_ui.rs:3912 src/model_family.rs:27
 msgid "Fastest and most accurate in its 25 languages"
 msgstr ""
 
-#: src/app.rs:3593 src/backend_ui.rs:4420 src/model_family.rs:31
+#: src/app.rs:3614 src/backend_ui.rs:4420 src/model_family.rs:31
 msgid "Most languages, with uneven accuracy"
 msgstr ""
 
-#: src/app.rs:3726 src/myna_settings.rs:213
+#: src/app.rs:3747 src/myna_settings.rs:213
 msgid "As you speak"
 msgstr ""
 
-#: src/app.rs:3727 src/myna_settings.rs:214
+#: src/app.rs:3748 src/myna_settings.rs:214
 msgid "When you stop"
 msgstr ""
 
-#: src/app.rs:3867 src/app.rs:6734
+#: src/app.rs:3888 src/app.rs:6755
 msgid "Preview"
 msgstr ""
 
-#: src/app.rs:3881 src/sound_preview.rs:69
+#: src/app.rs:3902 src/sound_preview.rs:69
 msgid "Could not preview sounds"
 msgstr ""
 
-#: src/app.rs:3936 src/backend_ui.rs:763
+#: src/app.rs:3957 src/backend_ui.rs:763
 msgid "Changing to {model} failed"
 msgstr ""
 
-#: src/app.rs:3937 src/app.rs:4490 src/app.rs:4499 src/app.rs:4884
-#: src/app.rs:5697 src/app.rs:5703 src/backend_ui.rs:1361
+#: src/app.rs:3958 src/app.rs:4511 src/app.rs:4520 src/app.rs:4905
+#: src/app.rs:5718 src/app.rs:5724 src/backend_ui.rs:1361
 #: src/onboarding_ui.rs:622 src/ui/status_page.rs:70
 msgid "Details"
 msgstr ""
 
 #. TRANSLATORS: {setting} is a setting's name on the Model tab, such as "Unload when idle (seconds)".
-#: src/app.rs:4056 src/backend_ui.rs:1767
+#: src/app.rs:4077 src/backend_ui.rs:1767
 msgid "Changing “{setting}” failed"
 msgstr ""
 
-#: src/app.rs:4058 src/presentation.rs:178
+#: src/app.rs:4079 src/presentation.rs:178
 msgid "Unload when idle (seconds)"
 msgstr ""
 
 #. TRANSLATORS: {size} is a download size, such as "4.2 GB".
-#: src/app.rs:4356 src/onboarding_ui.rs:928
+#: src/app.rs:4377 src/onboarding_ui.rs:928
 msgid "Up to {size}"
 msgstr ""
 
-#: src/app.rs:4491 src/onboarding_ui.rs:1087
+#: src/app.rs:4512 src/onboarding_ui.rs:1087
 msgid "Could not let Myna run in the background"
 msgstr ""
 
-#: src/app.rs:4518 src/app.rs:4666 src/backend_ui.rs:2532
+#: src/app.rs:4539 src/app.rs:4687 src/backend_ui.rs:2532
 msgid "Executable:"
 msgstr ""
 
-#: src/app.rs:4519 src/app.rs:4667 src/backend_ui.rs:2536
+#: src/app.rs:4540 src/app.rs:4688 src/backend_ui.rs:2536
 msgid "Arguments:"
 msgstr ""
 
-#: src/app.rs:4520 src/app.rs:4668 src/backend_ui.rs:2545
+#: src/app.rs:4541 src/app.rs:4689 src/backend_ui.rs:2545
 #: src/backend_ui.rs:2623 src/backend_ui.rs:3388
 msgid "Exit status:"
 msgstr ""
 
-#: src/app.rs:4521 src/app.rs:4669 src/app.rs:4896 src/backend_ui.rs:2590
+#: src/app.rs:4542 src/app.rs:4690 src/app.rs:4917 src/backend_ui.rs:2590
 msgid "Message:"
 msgstr ""
 
-#: src/app.rs:4586 src/onboarding_ui.rs:1066
+#: src/app.rs:4607 src/onboarding_ui.rs:1066
 msgid "Enabling user daemons support"
 msgstr ""
 
-#: src/app.rs:4608 src/onboarding_ui.rs:1067
+#: src/app.rs:4629 src/onboarding_ui.rs:1067
 msgid "Installing Dictation app"
 msgstr ""
 
 #. TRANSLATORS: {step} is what is installing, such as "Installing speech-to-text model", and {percent} how much of its download has arrived.
-#: src/app.rs:4618 src/app.rs:4681 src/app.rs:4786 src/onboarding_ui.rs:1075
+#: src/app.rs:4639 src/app.rs:4702 src/app.rs:4807 src/onboarding_ui.rs:1075
 msgid "{step} ({percent}%)"
 msgstr ""
 
-#: src/app.rs:4632 src/onboarding_ui.rs:1068
+#: src/app.rs:4653 src/onboarding_ui.rs:1068
 msgid "Installing speech-to-text model"
 msgstr ""
 
-#: src/app.rs:4646 src/onboarding_ui.rs:1089
+#: src/app.rs:4667 src/onboarding_ui.rs:1089
 msgid "Installing the speech-to-text model failed"
 msgstr ""
 
-#: src/app.rs:4709 src/onboarding_ui.rs:1070
+#: src/app.rs:4730 src/onboarding_ui.rs:1070
 msgid "Setting up the dictation indicator"
 msgstr ""
 
-#: src/app.rs:4882 src/onboarding_ui.rs:1092
+#: src/app.rs:4903 src/onboarding_ui.rs:1092
 msgid "Setting up the dictation indicator failed"
 msgstr ""
 
-#: src/app.rs:4895 src/backend_ui.rs:2576
+#: src/app.rs:4916 src/backend_ui.rs:2576
 msgid "D-Bus call:"
 msgstr ""
 
-#: src/app.rs:5347 src/shortcut_ui.rs:669
+#: src/app.rs:5368 src/shortcut_ui.rs:669
 msgid "You can trigger Dictation anytime by using the keyboard shortcut:"
 msgstr ""
 
-#: src/app.rs:5696 src/onboarding_ui.rs:743 src/onboarding_ui.rs:750
+#: src/app.rs:5717 src/onboarding_ui.rs:743 src/onboarding_ui.rs:750
 #: src/onboarding_ui.rs:1001
 msgid "Could not set up Dictation"
 msgstr ""
 
-#: src/app.rs:5729 src/onboarding_ui.rs:952
+#: src/app.rs:5750 src/onboarding_ui.rs:952
 msgid "Dictation is not set up yet. Select Next to try again."
 msgstr ""
 
-#: src/app.rs:5906
+#: src/app.rs:5927
 msgid "No Myna Settings"
 msgstr ""
 
-#: src/app.rs:5907
+#: src/app.rs:5928
 msgid "The installed schema does not declare any settings."
 msgstr ""
 
-#: src/app.rs:5953
+#: src/app.rs:5974
 msgid "Past dictations"
 msgstr ""
 
-#: src/app.rs:5955
+#: src/app.rs:5976
 msgid "What Myna typed and, where it changed something, what it heard."
 msgstr ""
 
-#: src/app.rs:6009
+#: src/app.rs:6030
 msgid "Nothing recorded yet"
 msgstr ""
 
-#: src/app.rs:6077
+#: src/app.rs:6098
 #: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:56
 msgid "What Myna types"
 msgstr ""
 
-#: src/app.rs:6079
+#: src/app.rs:6100
 msgid ""
 "Anything but the first is shown on screen while you speak and typed a "
 "sentence at a time. This is experimental."
 msgstr ""
 
-#: src/app.rs:6083
+#: src/app.rs:6104
 msgid "Chinese"
 msgstr ""
 
-#: src/app.rs:6156
+#: src/app.rs:6177
 msgid "Myna Settings Unavailable"
 msgstr ""
 
-#: src/app.rs:6157
+#: src/app.rs:6178
 msgid "Myna Settings could not start."
 msgstr ""
 
-#: src/app.rs:6702
+#: src/app.rs:6723
 msgid "Could not save the setting"
 msgstr ""
 
-#: src/app.rs:6739
+#: src/app.rs:6760
 msgid "Preview sound style"
 msgstr ""
 
@@ -1131,11 +1135,11 @@ msgstr ""
 msgid "Add"
 msgstr ""
 
-#: src/list_editor_ui.rs:150
+#: src/list_editor_ui.rs:155
 msgid "Remove"
 msgstr ""
 
-#: src/list_editor_ui.rs:156
+#: src/list_editor_ui.rs:161
 msgid "Remove {word}"
 msgstr ""
 
@@ -2032,7 +2036,9 @@ msgstr ""
 msgid ""
 "Names and terms you use that speech recognition might get wrong, such as a "
 "colleague's name, a product or a term from your field: \"Nguyen\", "
-"\"Kubernetes\", \"ibuprofen\". Up to 100 words or short phrases."
+"\"Kubernetes\", \"ibuprofen\". To choose how something is written, type what "
+"you say, a colon, then what to write: \"my sequel:MySQL\". Up to 100 words "
+"or short phrases."
 msgstr ""
 
 #: data/com.canonical.Myna.Config.metainfo.xml:9
