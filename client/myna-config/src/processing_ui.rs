@@ -614,6 +614,8 @@ impl StepsPage {
             .label(gettextrs::gettext("Add"))
             .valign(gtk::Align::Center)
             .build();
+        // A button is labelled by its label child, over any name set.
+        add.reset_relation(gtk::AccessibleRelation::LabelledBy);
         add.update_property(&[gtk::accessible::Property::Label(
             // TRANSLATORS: {step} is a step's name, such as "Tidy up speech".
             &gettextrs::gettext("Add {step}").replace("{step}", &item.title),

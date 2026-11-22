@@ -548,10 +548,11 @@ mod tests {
         let catalog = vec![
             entry("fr-en", "translate", "translate", "fr", "en"),
             entry("en-de", "translate", "translate", "en", "de"),
+            entry("xx-de", "translate", "translate", "xx", "de"),
         ];
         let source = Source::of_setting("fr");
         let daemon = Offered::parse(
-            r#"{"models":[{"model":"m-fr-en","task":"text.translate"},{"model":"m-en-de","task":"text.translate"}],"steps":[]}"#,
+            r#"{"models":[{"model":"m-fr-en","task":"text.translate"},{"model":"m-en-de","task":"text.translate"},{"model":"m-xx-de","task":"text.translate"}],"steps":[]}"#,
         );
         let step_rows = Vec::new();
         let all = items(&Inputs {
@@ -567,6 +568,25 @@ mod tests {
         });
         assert_eq!(find(&all, "en-de").offer, Offer::Add);
         assert_eq!(find(&all, "fr-en").offer, Offer::Add);
+        assert_eq!(
+            find(&all, "xx-de").offer,
+            Offer::NotApplicable("Applies when the text is xx".into())
+        );
+    }
+
+    #[test]
+    fn only_the_french_pair_has_a_worked_example() {
+        let examples: Vec<(&str, bool)> = [("en", "fr"), ("en", "de"), ("de", "fr"), ("fr", "en")]
+            .iter()
+            .map(|(from, to)| {
+                let e = entry("x", "translate", "translate", from, to);
+                (*to, example(&e).is_some())
+            })
+            .collect();
+        assert_eq!(
+            examples,
+            [("fr", true), ("de", false), ("fr", false), ("en", false)]
+        );
     }
 
     #[test]
@@ -593,6 +613,33 @@ mod tests {
         assert_eq!(
             params.get("script.mode").map(String::as_str),
             Some("traditional-taiwan")
+        );
+    }
+
+    #[test]
+    fn items_of_one_rank_follow_the_stage_order_not_the_ids() {
+        let catalog = vec![
+            entry("a-late", "later", "target-language", "en", "en"),
+            entry("m-clean", "tidy", "clean-up", "en", "en"),
+            entry("z-translate", "translate", "translate", "en", "fr"),
+        ];
+        let source = Source::of_setting("en");
+        let all = items(&Inputs {
+            catalog: &catalog,
+            enabled: &[],
+            params: &Params::new(),
+            source: &source,
+            daemon: None,
+            installing: &BTreeMap::new(),
+            preparing: &BTreeSet::new(),
+            locales: &["en".to_owned()],
+            rows: &[],
+        });
+        let ids: Vec<_> = all.iter().map(|i| i.id.as_str()).collect();
+        assert_eq!(
+            ids,
+            ["m-clean", "z-translate", "a-late", "fit", "script"],
+            "{ids:?}"
         );
     }
 
