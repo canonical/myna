@@ -1194,6 +1194,25 @@ mod tests {
     }
 
     #[test]
+    fn only_switching_the_script_on_stores_a_mode() {
+        crate::ui::on_gtk_thread(|| {
+            let rig = rig(
+                "script-mode-only",
+                NOTHING,
+                TIDY,
+                "language='zh'\nprocessing-steps=['script']\n",
+            );
+            let (row, _) = script_row(&rig);
+            row.set_enable_expansion(false);
+            assert!(rig.store.steps().0.is_empty());
+            assert!(rig.store.steps().1.is_empty(), "off stores no mode");
+            let tidy = switch(&rig, "Tidy up speech");
+            tidy.set_active(true);
+            assert!(rig.store.steps().1.is_empty(), "another step stores none");
+        });
+    }
+
+    #[test]
     fn a_chinese_users_stored_choice_shows_on_the_row() {
         crate::ui::on_gtk_thread(|| {
             let rig = rig(
