@@ -283,7 +283,10 @@ pub struct PastDictation {
 pub const PAST_DICTATIONS_SHOWN: usize = 20;
 
 pub fn past_dictation(entry: &myna_core::history::Entry) -> PastDictation {
-    let detail = if entry.heard.trim() == entry.typed.trim() {
+    let lost = entry.outcome == Some(myna_core::history::Outcome::FocusLost);
+    let detail = if lost {
+        gettextrs::gettext("Not typed: focus left the field")
+    } else if entry.heard.trim() == entry.typed.trim() {
         gettextrs::gettext("Typed as heard")
     } else {
         gettextrs::gettext("Heard: {heard}").replace("{heard}", entry.heard.trim())
@@ -319,11 +322,22 @@ pub fn past_dictation(entry: &myna_core::history::Entry) -> PastDictation {
         };
         made_by.push((label, value));
     }
+    if let Some(dead_air) = entry.dead_air_ms {
+        // Translators: the wait after you stopped speaking until the text
+        // appeared, then how much of it was hearing and typing, in ms.
+        let wait = gettextrs::gettext("{total} ms ({heard} ms to hear, {typed} ms to type)")
+            .replace("{total}", &dead_air.to_string())
+            .replace("{heard}", &entry.asr_tail_ms.unwrap_or(0).to_string())
+            .replace("{typed}", &entry.inject_ms.unwrap_or(0).to_string());
+        made_by.push((gettextrs::gettext("Wait after you stopped"), wait));
+    }
     if let Some(version) = &entry.version {
         made_by.push((gettextrs::gettext("Myna version"), version.clone()));
     }
+    // What was said is all there is to recover when nothing was typed.
+    let shown = if lost { &entry.heard } else { &entry.typed };
     PastDictation {
-        typed: entry.typed.trim().to_owned(),
+        typed: shown.trim().to_owned(),
         detail,
         made_by,
     }

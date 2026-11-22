@@ -1828,9 +1828,20 @@ fn processing_probe() -> glib::ExitCode {
         heard: "um so I think".into(),
         typed: "So I think.".into(),
         speech_model: Some("a speech model".into()),
+        dead_air_ms: Some(480),
+        asr_tail_ms: Some(120),
+        inject_ms: Some(3),
         ..Default::default()
     };
-    if let Err(error) = myna_core::history::append(&path, &entry) {
+    let lost = myna_core::history::Entry {
+        time: 2,
+        heard: "words from a lost field".into(),
+        outcome: Some(myna_core::history::Outcome::FocusLost),
+        ..Default::default()
+    };
+    if let Err(error) = myna_core::history::append(&path, &entry)
+        .and_then(|()| myna_core::history::append(&path, &lost))
+    {
         eprintln!("myna-config processing probe could not record: {error}");
         return glib::ExitCode::FAILURE;
     }
@@ -1839,6 +1850,12 @@ fn processing_probe() -> glib::ExitCode {
         "made-by: {}",
         descendants_subtitles(root).contains(&"a speech model".to_owned())
     );
+
+    println!(
+        "waited: {}",
+        descendants_subtitles(root).contains(&"480 ms (120 ms to hear, 3 ms to type)".to_owned())
+    );
+    println!("lost: {}", shows("words from a lost field", true));
 
     let clear = typed_descendants::<gtk::Button>(root)
         .into_iter()

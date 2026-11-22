@@ -501,6 +501,7 @@ fn a_past_dictation_says_what_made_it() {
         ],
         speech_model: Some("parakeet-tdt".into()),
         version: Some("0.3.3+git22".into()),
+        ..Default::default()
     };
     let made_by: Vec<(String, String)> = past_dictation(&entry).made_by;
     let pair = |label: &str, value: &str| (label.to_owned(), value.to_owned());
@@ -515,6 +516,39 @@ fn a_past_dictation_says_what_made_it() {
             pair("Myna version", "0.3.3+git22"),
         ]
     );
+}
+
+#[test]
+fn a_past_dictation_shows_the_wait_after_the_stop() {
+    let entry = myna_core::history::Entry {
+        heard: "hi".into(),
+        typed: "Hi.".into(),
+        asr_tail_ms: Some(120),
+        inject_ms: Some(3),
+        dead_air_ms: Some(480),
+        ..Default::default()
+    };
+    assert_eq!(
+        past_dictation(&entry).made_by,
+        [(
+            "Wait after you stopped".to_owned(),
+            "480 ms (120 ms to hear, 3 ms to type)".to_owned()
+        )]
+    );
+    let older = myna_core::history::Entry::default();
+    assert!(past_dictation(&older).made_by.is_empty());
+}
+
+#[test]
+fn a_dictation_lost_with_the_focus_shows_what_can_be_recovered() {
+    let entry = myna_core::history::Entry {
+        heard: " um hello there ".into(),
+        outcome: Some(myna_core::history::Outcome::FocusLost),
+        ..Default::default()
+    };
+    let shown = past_dictation(&entry);
+    assert_eq!(shown.typed, "um hello there");
+    assert_eq!(shown.detail, "Not typed: focus left the field");
 }
 
 #[test]

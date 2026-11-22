@@ -192,6 +192,8 @@ fn the_processing_tab_follows_the_record_and_the_chosen_chain_when_enabled() {
     assert!(stdout.contains("notice-follows: true true"), "{stdout}");
     assert!(stdout.contains("recorded: true"), "{stdout}");
     assert!(stdout.contains("made-by: true"), "{stdout}");
+    assert!(stdout.contains("waited: true"), "{stdout}");
+    assert!(stdout.contains("lost: true"), "{stdout}");
     assert!(stdout.contains("cleared: true"), "{stdout}");
 }
 
