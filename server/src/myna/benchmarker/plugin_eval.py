@@ -47,6 +47,9 @@ from myna.benchmarker.text_gate import (
 LICENSES = ("Apache-2.0", "MIT", "MPL-2.0", "CC-BY-4.0")
 COMMON_LICENSES = Path("/usr/share/common-licenses")
 SCHEMA = 1
+# The declared latency is rounded up to this step so load jitter on a shared
+# host does not churn every manifest (and so every snap revision).
+LATENCY_STEP_MS = 5
 HOST = "chug"
 
 
@@ -275,7 +278,7 @@ def measured_json(
         score = round(reduction, 3)
         source = f"cleanup reduction {reduction:.3f}, UER {uer:.4f} on the text corpus"
     return {
-        "latency_ms": max(1, math.ceil(p95)),
+        "latency_ms": LATENCY_STEP_MS * max(1, math.ceil(p95 / LATENCY_STEP_MS)),
         "quality": score,
         "quality_source": source,
         "gate": results["gate"],

@@ -54,7 +54,7 @@ def sha(data: bytes) -> str:
 
 
 def make_repo(
-    tmp_path: Path, extra: str = '[gate]\nvendor_comet = 0.87\nchrf_min = 0.9\n'
+    tmp_path: Path, extra: str = "[gate]\nvendor_comet = 0.87\nchrf_min = 0.9\n"
 ) -> tuple[Path, Path]:
     """A tiny repo tree with one translation plugin and its generated outputs."""
     src = tmp_path / "upstream"
@@ -374,20 +374,22 @@ def test_results_say_pass_only_when_every_gate_passed():
         assert bad["gate"] == "fail" and bad["measured"]["vendor_comet"] is None
 
 
-def test_measured_json_rounds_latency_up_and_records_the_gate_and_results_hash():
+def test_measured_json_rounds_latency_up_to_a_step_and_records_the_gate_and_results_hash():
     gate = GateConfig(vendor_comet=0.87)
     results = pe.build_results(PLUGIN, translate_report(), ["translate_en_fr"], gate, {})
     slim = pe.measured_json(results, gate, ["translate_en_fr"], "abc")
     assert slim == {
-        "latency_ms": 19,
+        "latency_ms": 20,
         "quality": 0.701,
         "quality_source": "chrF 0.701 on 200 FLEURS pairs (translate_en_fr); vendor FLORES COMET 0.87",
         "gate": "pass",
         "results_sha256": "abc",
     }
+    exact = pe.build_results(PLUGIN, translate_report(p95=20.0), ["translate_en_fr"], gate, {})
+    assert pe.measured_json(exact, gate, ["translate_en_fr"], "")["latency_ms"] == 20
     fast = translate_report(p95=0.2)
     results = pe.build_results(PLUGIN, fast, ["translate_en_fr"], gate, {})
-    assert pe.measured_json(results, gate, ["translate_en_fr"], "")["latency_ms"] == 1
+    assert pe.measured_json(results, gate, ["translate_en_fr"], "")["latency_ms"] == 5
 
 
 def test_measured_json_of_a_cleanup_plugin_reports_reduction_and_uer():
@@ -404,7 +406,7 @@ def test_measured_json_of_a_cleanup_plugin_reports_reduction_and_uer():
     results = pe.build_results(plugin, report_of(gates, detail), suites, None, {})
     assert results["measured"] == {}
     slim = pe.measured_json(results, None, suites, "h")
-    assert slim["latency_ms"] == 7 and slim["quality"] == 0.812
+    assert slim["latency_ms"] == 10 and slim["quality"] == 0.812
     assert slim["quality_source"] == "cleanup reduction 0.812, UER 0.0050 on the text corpus"
 
 

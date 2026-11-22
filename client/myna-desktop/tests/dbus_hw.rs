@@ -502,27 +502,38 @@ async fn the_catalog_and_missing_requests_are_announced_when_they_change() {
     name_is_free().await;
     let mut owner = ZbusBus::serve().await.expect("serve owns the name");
     let conn = zbus::Connection::session().await.expect("session bus");
-    let proxy = zbus::Proxy::new(&conn, BUS_NAME, OBJECT_PATH, BUS_NAME)
+    let properties = zbus::fdo::PropertiesProxy::builder(&conn)
+        .destination(BUS_NAME)
+        .unwrap()
+        .path(OBJECT_PATH)
+        .unwrap()
+        .build()
         .await
-        .expect("proxy");
+        .expect("properties proxy");
+    let mut signals = properties
+        .receive_properties_changed()
+        .await
+        .expect("PropertiesChanged stream");
     for (name, value) in [
         ("InstalledSteps", r#"{"models":[],"steps":[]}x"#),
         ("ChainMissingRequests", r#"[{"task":"text.translate"}]"#),
     ] {
-        let mut changes = proxy.receive_property_changed::<String>(name).await;
         owner
             .set_property(name, PropertyValue::Str(value.into()))
             .await;
         let announced = async {
-            while let Some(change) = changes.next().await {
-                if change.get().await.unwrap() == value {
-                    return;
+            while let Some(signal) = signals.next().await {
+                let args = signal.args().unwrap();
+                if let Some(sent) = args.changed_properties().get(name) {
+                    return String::try_from(sent.try_clone().unwrap()).unwrap();
                 }
             }
+            unreachable!("stream ended")
         };
-        tokio::time::timeout(Duration::from_secs(2), announced)
+        let sent = tokio::time::timeout(Duration::from_secs(2), announced)
             .await
             .unwrap_or_else(|_| panic!("{name} was never announced"));
+        assert_eq!(sent, value);
     }
 }
 
