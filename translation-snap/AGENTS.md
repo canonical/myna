@@ -18,6 +18,7 @@ One strictly confined snap, no `network` plug, serving `myna-text-v1` to the Myn
 - The MPL-2.0 attribution (Mozilla, source link, unmodified-file hashes) and the bergamot link-set licence texts live here; `dev/build-bergamot.sh` fails if a licence text is missing.
 - Pack with `umask 022`: a 077 shell leaves files in local snaps unreadable to the daemon.
 - No `hardware-observe` plug: without onnxruntime nothing reads `/sys/bus/pci`.
+- A new language pair is one toml plus `dev/plugin-pipeline.sh <id>` on chug; the pipeline writes `measured.json`, never type it. Listing needs the gate and a native-speaker `[spot_check]` (`../.kb/text-plugin-contract.md`).
 - Publishing is Charles' call (`plugin-store-enablement`); everything is sideloaded until then.
 
 # Directory
