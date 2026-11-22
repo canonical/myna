@@ -232,3 +232,70 @@ def percentile(values: Sequence[float], q: float) -> float:
     ordered = sorted(values)
     rank = max(1, -(-len(ordered) * q // 100))
     return ordered[int(rank) - 1]
+
+
+# Degeneracy of a translator's output, scored per slice. They catch a model
+# that scores a passable chrF while emitting nothing, looping or echoing.
+_LOOP_REPEATS = 4
+_LOOP_MAX_UNIT = 6
+_LOOP_MIN_CHARS = 6
+
+
+def _folded(text: str) -> str:
+    return " ".join(normalize(text).split())
+
+
+def empty_rate(outputs: Sequence[str]) -> float:
+    """Share of outputs with no letter or digit in them."""
+    if not outputs:
+        return 0.0
+    return sum(1 for o in outputs if not any(c.isalnum() for c in o)) / len(outputs)
+
+
+def has_repeat_loop(text: str) -> bool:
+    """Whether some run of one to six words (characters, in an unspaced
+    script) repeats four or more times back to back, as ``the the the the``
+    or a decoder stuck on a phrase does."""
+    units = text.split()
+    min_units = 0
+    if len(units) < 2:
+        units, min_units = list(text.strip()), _LOOP_MIN_CHARS
+    for size in range(1, _LOOP_MAX_UNIT + 1):
+        copies = max(_LOOP_REPEATS, -(-min_units // size))
+        for start in range(len(units) - size * copies + 1):
+            block = units[start : start + size]
+            if all(
+                units[start + k * size : start + (k + 1) * size] == block for k in range(1, copies)
+            ):
+                return True
+    return False
+
+
+def repeat_loop_rate(outputs: Sequence[str]) -> float:
+    if not outputs:
+        return 0.0
+    return sum(1 for o in outputs if has_repeat_loop(o)) / len(outputs)
+
+
+def median_length_ratio(outputs: Sequence[str], references: Sequence[str]) -> float:
+    """Median of len(output) / len(reference) in characters. Against the
+    reference translation, not the source, so a script that is naturally
+    shorter or longer than English (Chinese, Thai) does not skew it."""
+    ratios = sorted(
+        len(o.strip()) / len(r.strip())
+        for o, r in zip(outputs, references, strict=True)
+        if r.strip()
+    )
+    if not ratios:
+        return 0.0
+    mid = len(ratios) // 2
+    return ratios[mid] if len(ratios) % 2 else (ratios[mid - 1] + ratios[mid]) / 2
+
+
+def copy_through_rate(outputs: Sequence[str], sources: Sequence[str]) -> float:
+    """Share of outputs that are the untranslated source (case and
+    punctuation aside)."""
+    if not outputs:
+        return 0.0
+    same = sum(1 for o, s in zip(outputs, sources, strict=True) if _folded(o) == _folded(s))
+    return same / len(outputs)

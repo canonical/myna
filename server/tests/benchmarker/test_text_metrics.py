@@ -233,3 +233,59 @@ def test_the_reference_check_agrees_with_the_products_on_every_shared_case():
         != c["verdict"]
     ]
     assert not wrong, f"{len(wrong)} of {len(cases)} differ, first: {wrong[:3]}"
+
+
+from myna.benchmarker.text_metrics import (  # noqa: E402
+    copy_through_rate,
+    empty_rate,
+    has_repeat_loop,
+    median_length_ratio,
+    repeat_loop_rate,
+)
+
+
+def test_empty_rate_counts_outputs_with_no_letter_or_digit():
+    assert empty_rate(["Bonjour.", "", "  ", "...", "42"]) == pytest.approx(3 / 5)
+    assert empty_rate([]) == 0.0
+    assert empty_rate(["日本語"]) == 0.0
+
+
+@pytest.mark.parametrize(
+    ("text", "loops"),
+    [
+        ("the the the the", True),
+        ("the the the", False),
+        ("I said yes. I said yes. I said yes. I said yes.", True),
+        ("a b c d e f a b c d e f a b c d e f a b c d e f", True),
+        ("a b c d e f g a b c d e f g a b c d e f g a b c d e f g", False),
+        ("Nobody repeats themselves here at all.", False),
+        ("the the the then the", False),
+        ("ははははははは", True),
+        ("ああああ", False),
+        ("abab", False),
+        ("", False),
+    ],
+)
+def test_repeat_loops_need_four_back_to_back_copies(text, loops):
+    assert has_repeat_loop(text) is loops
+
+
+def test_repeat_loop_rate_is_the_share_of_looping_outputs():
+    assert repeat_loop_rate(["ok", "x x x x", "fine", "fine"]) == 0.25
+    assert repeat_loop_rate([]) == 0.0
+
+
+def test_median_length_ratio_is_against_the_reference_and_ignores_empty_references():
+    assert median_length_ratio(["aa", "bbbb", "c"], ["aa", "bb", "cc"]) == pytest.approx(1.0)
+    assert median_length_ratio(["a", "bbbb"], ["aa", "bb"]) == pytest.approx(1.25)
+    assert median_length_ratio(["xx"], ["  "]) == 0.0
+    assert median_length_ratio(["xx", "  yyyy  "], ["xx", "yy"]) == pytest.approx(1.5)
+
+
+def test_copy_through_ignores_case_and_punctuation():
+    outs = ["Hello, world!", "Bonjour le monde.", "hello world"]
+    srcs = ["hello world", "Hello world.", "Hello World."]
+    assert copy_through_rate(outs, srcs) == pytest.approx(2 / 3)
+    assert copy_through_rate([], []) == 0.0
+    with pytest.raises(ValueError):
+        copy_through_rate(["a"], [])

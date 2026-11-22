@@ -22,7 +22,7 @@ def test_corpus_matches_its_sha256_pins():
 
 
 def test_a_modified_slice_is_refused(tmp_path):
-    for name in (*(f"{n}.jsonl" for n in tc.SLICES), tc.SUMS):
+    for name in (*(f"{n}.jsonl" for n in tc.slice_names()), tc.SUMS):
         shutil.copy(tc.CORPUS_DIR / name, tmp_path / name)
     path = tmp_path / "clean_en.jsonl"
     path.write_text(path.read_text(encoding="utf-8") + "\n", encoding="utf-8")
@@ -45,7 +45,7 @@ def test_translate_pairs_are_200_and_aligned_by_fleurs_id(corpus):
     assert len(rows) == 200
     assert len({r.id for r in rows}) == 200
     assert all(re.fullmatch(r"fleurs-\d+", r.id) for r in rows)
-    assert all(r.en and r.fr and r.en != r.fr for r in rows)
+    assert all(r.en and r.target and r.en != r.target for r in rows)
 
 
 def test_disfluent_en_spans_the_required_categories(corpus):
@@ -96,8 +96,10 @@ def test_repeat_pairs_hold_a_tandem_repeat_of_their_length(corpus):
 
 
 def test_corpus_stays_small():
-    total = sum((tc.CORPUS_DIR / f"{n}.jsonl").stat().st_size for n in tc.SLICES)
-    assert total < 160_000
+    base = sum((tc.CORPUS_DIR / f"{n}.jsonl").stat().st_size for n in tc.SLICES)
+    assert base < 160_000
+    for name in tc.slice_names():
+        assert (tc.CORPUS_DIR / f"{name}.jsonl").stat().st_size < 90_000
 
 
 def _tsv(rows):
@@ -158,3 +160,87 @@ def test_build_command_writes_slices_and_pins(tmp_path):
     first = (out / "clean_en.jsonl").read_bytes()
     tc.cmd_build(argparse.Namespace(fleurs=fleurs, out=out))
     assert (out / "clean_en.jsonl").read_bytes() == first
+
+
+def _pair_fixture(tmp_path):
+    fleurs, out = tmp_path / "fleurs", tmp_path / "out"
+    fleurs.mkdir()
+    out.mkdir()
+    english = [(i, f"This is the English sentence number {i} for testing.") for i in range(260)]
+    german = [(i, f"Das ist der deutsche Satz Nummer {i} zum Testen.") for i in range(240)]
+    for locale, rows in (("en_us", english), ("de_de", german)):
+        (fleurs / locale).mkdir()
+        (fleurs / locale / "test.tsv").write_text(_tsv(rows), encoding="utf-8")
+    for name in (*(f"{n}.jsonl" for n in tc.slice_names()), tc.SUMS, tc.NOTICE):
+        shutil.copy(tc.CORPUS_DIR / name, out / name)
+    return fleurs, out
+
+
+def test_pair_build_adds_one_slice_pin_and_notice_line(tmp_path):
+    fleurs, out = _pair_fixture(tmp_path)
+    before = (out / "translate_en_fr.jsonl").read_bytes()
+    tc.cmd_build(argparse.Namespace(fleurs=fleurs, out=out, pair="en:de"))
+    built = tc.load(out)
+    assert set(built.pairs) == {"fr", "de"}
+    assert len(built.pairs["de"]) == 200
+    assert (out / "translate_en_fr.jsonl").read_bytes() == before
+    assert "translate_en_de.jsonl" in (out / tc.SUMS).read_text(encoding="utf-8")
+    first = (out / "translate_en_de.jsonl").read_bytes(), (out / tc.NOTICE).read_bytes()
+    tc.cmd_build(argparse.Namespace(fleurs=fleurs, out=out, pair="en:de"))
+    assert ((out / "translate_en_de.jsonl").read_bytes(), (out / tc.NOTICE).read_bytes()) == first
+    notice = (out / tc.NOTICE).read_text(encoding="utf-8")
+    assert notice.count("Pair input: translate_en_de data/de_de/test.tsv sha256 ") == 1
+    assert notice.count(tc.PAIR_HEADING[0]) == 1
+
+
+def test_pair_rows_are_keyed_by_the_language_and_aligned(tmp_path):
+    fleurs, out = _pair_fixture(tmp_path)
+    tc.cmd_build(argparse.Namespace(fleurs=fleurs, out=out, pair="en:de"))
+    rows = tc.load_pair("de", out)
+    assert all(f"number {r.id.split('-')[1]} " in r.en for r in rows)
+    assert all(f"Nummer {r.id.split('-')[1]} " in r.target for r in rows)
+    assert all(int(r.id.split("-")[1]) < 240 for r in rows)
+
+
+def test_pair_build_refuses_a_bad_spec_a_noneval_language_and_a_thin_slice(tmp_path):
+    fleurs, out = _pair_fixture(tmp_path)
+    for spec in ("de", "fr:de", "en:"):
+        with pytest.raises(tc.CorpusError, match="en:<language>"):
+            tc.cmd_build(argparse.Namespace(fleurs=fleurs, out=out, pair=spec))
+    from myna.benchmarker.fleurs_codes import NoEvalError
+
+    with pytest.raises(NoEvalError):
+        tc.cmd_build(argparse.Namespace(fleurs=fleurs, out=out, pair="en:nn"))
+    (fleurs / "de_de" / "test.tsv").write_text(_tsv([(1, "Ein Satz.")]), encoding="utf-8")
+    with pytest.raises(tc.CorpusError, match="too few"):
+        tc.cmd_build(argparse.Namespace(fleurs=fleurs, out=out, pair="en:de"))
+
+
+def test_a_pinned_slice_that_is_missing_or_changed_is_refused(tmp_path):
+    fleurs, out = _pair_fixture(tmp_path)
+    tc.cmd_build(argparse.Namespace(fleurs=fleurs, out=out, pair="en:de"))
+    (out / "translate_en_de.jsonl").write_text("{}\n", encoding="utf-8")
+    with pytest.raises(tc.CorpusError, match="translate_en_de.jsonl does not match"):
+        tc.load(out)
+    sums = out / tc.SUMS
+    sums.write_text(
+        sums.read_text(encoding="utf-8") + f"{'0' * 64}  ghost.jsonl\n", encoding="utf-8"
+    )
+    (out / "translate_en_de.jsonl").unlink()
+    tc.write_sums(out)
+    sums.write_text(
+        sums.read_text(encoding="utf-8") + f"{'0' * 64}  ghost.jsonl\n", encoding="utf-8"
+    )
+    with pytest.raises(tc.CorpusError, match="ghost.jsonl is pinned"):
+        tc.verify(out)
+
+
+def test_loading_a_missing_pair_names_the_build_command():
+    with pytest.raises(tc.CorpusError, match="--pair en:xx"):
+        tc.load_pair("xx")
+
+
+def test_the_shipped_german_slice_is_a_real_aligned_pair(corpus):
+    rows = corpus.pairs["de"]
+    assert len(rows) == 200 and len({r.id for r in rows}) == 200
+    assert all(r.en and r.target and r.en != r.target for r in rows)
