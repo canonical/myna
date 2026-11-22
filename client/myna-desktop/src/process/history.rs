@@ -47,6 +47,10 @@ impl<P> Recorded<P> {
 
 #[async_trait]
 impl<P: Processor> Processor for Recorded<P> {
+    fn prepare(&mut self) {
+        self.inner.prepare();
+    }
+
     async fn process(&mut self, text: String, field: &Field) -> String {
         let Some(path) = self.path.as_ref().filter(|_| self.on.get()) else {
             return self.inner.process(text, field).await;

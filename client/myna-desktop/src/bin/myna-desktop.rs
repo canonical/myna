@@ -56,7 +56,8 @@ use myna_desktop::inject::Injector as _;
 use myna_desktop::platform::Platform;
 use myna_desktop::process::graph::{Graph, Needs};
 use myna_desktop::process::history::{Context, Recorded};
-use myna_desktop::process::pipeline::{Pipeline, SocketModels};
+use myna_desktop::process::pipeline::Pipeline;
+use myna_desktop::process::resolve::Resolver;
 use myna_desktop::shortcut::control::{default_socket_path, listen, send_toggle, ControlTrigger};
 use myna_desktop::sound::{
     player::{Player, Previewer},
@@ -186,15 +187,33 @@ fn resolve_commit(needs: Option<Needs>) -> CommitPolicy {
     }
 }
 
-/// Where the text models are reached: `MYNA_TEXT_MODELS`, or a socket in
-/// the runtime directory.
-fn text_models_socket() -> PathBuf {
-    std::env::var_os("MYNA_TEXT_MODELS")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            let runtime = std::env::var_os("XDG_RUNTIME_DIR").unwrap_or_else(|| "/tmp".into());
-            PathBuf::from(runtime).join("myna-text-models.sock")
-        })
+/// Where text model shares are searched: the backend directory, and any
+/// directory of shares `MYNA_TEXT_SHARES` adds (colon separated, for a
+/// provider run by hand).
+fn text_share_dirs(args: &Args) -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+    if let Some(BackendSocket::Search(dir)) = &args.backend {
+        dirs.push(dir.clone());
+    }
+    if let Some(extra) = std::env::var_os("MYNA_TEXT_SHARES") {
+        dirs.extend(std::env::split_paths(&extra).filter(|p| !p.as_os_str().is_empty()));
+    }
+    dirs
+}
+
+/// How often the binder looks again for a share that was not there.
+const REBIND_EVERY: Duration = Duration::from_secs(5);
+
+/// Binds the text models of the chosen chain at start, when the chain
+/// changes, and again while any is unbound. Speech start only has to bind
+/// what this has not.
+fn spawn_binder(resolver: Resolver, graph: Live<Graph>, changed: Arc<tokio::sync::Notify>) {
+    tokio::spawn(async move {
+        loop {
+            resolver.settle(&graph.get().requests()).await;
+            let _ = tokio::time::timeout(REBIND_EVERY, changed.notified()).await;
+        }
+    });
 }
 
 /// What the transcription mode resolves from. They arrive separately - the
@@ -258,6 +277,8 @@ struct LiveSettings {
     speech_model: Live<Option<String>>,
     /// What the chosen preset does, read for each piece of text.
     graph: Live<Graph>,
+    /// Wakes the text model binder.
+    graph_changed: Arc<tokio::sync::Notify>,
     /// Read at each commit.
     history: Live<bool>,
     sounds: Live<bool>,
@@ -278,6 +299,7 @@ impl LiveSettings {
             chain: Live::new(resolved.chain),
             speech_model: Live::default(),
             graph: Live::new(resolved.graph.clone()),
+            graph_changed: Arc::default(),
             history: Live::new(resolved.history),
             sounds: Live::new(resolved.sounds),
             sound_set,
@@ -420,6 +442,7 @@ impl LiveSettings {
             );
             self.chain.set(resolved.chain);
             self.graph.set(resolved.graph.clone());
+            self.graph_changed.notify_one();
         }
         if self.history.get() != resolved.history {
             myna_core::info_log!(
@@ -806,9 +829,14 @@ async fn run_controller(
         .auto_stop(live.auto_stop.clone())
         .commit(live.commit.clone())
         .processor({
+            let resolver = Resolver::new(text_share_dirs(&args));
+            spawn_binder(
+                resolver.clone(),
+                live.graph.clone(),
+                live.graph_changed.clone(),
+            );
             let pipeline =
-                Pipeline::new(live.graph.clone(), SocketModels::new(text_models_socket()))
-                    .written(live.vocabulary.clone());
+                Pipeline::new(live.graph.clone(), resolver).written(live.vocabulary.clone());
             let context = Context {
                 chain: live.chain.clone(),
                 trace: pipeline.trace(),

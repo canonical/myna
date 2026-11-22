@@ -144,6 +144,20 @@ impl Graph {
             .max()
     }
 
+    /// Every distinct request any node makes, in node order.
+    pub fn requests(&self) -> Vec<Request> {
+        let mut seen = std::collections::HashSet::new();
+        self.nodes
+            .iter()
+            .filter_map(|op| match op {
+                Op::Ask { request, .. } => Some(request),
+                _ => None,
+            })
+            .filter(|r| seen.insert(r.key()))
+            .cloned()
+            .collect()
+    }
+
     /// The nodes to run for a piece going to `field`, in order: those the
     /// output depends on, with each route reduced to the source it picks.
     pub fn plan(&self, field: &Field) -> Vec<Id> {

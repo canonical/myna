@@ -609,6 +609,7 @@ impl DesktopController {
         // Text typed as it arrives is typed as heard: with nothing held,
         // behaviour is exactly today's.
         let mut unprocessed = Unprocessed;
+        self.processor.prepare();
         let processor: &mut dyn Processor = if policy.streams() {
             &mut unprocessed
         } else {

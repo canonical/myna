@@ -2391,10 +2391,10 @@ async fn terminal_fields_fold_layout_breaks_across_streaming_and_held_commits() 
 }
 
 fn keyword() -> myna_desktop::process::pipeline::Pipeline {
-    use myna_desktop::process::{graph::Graph, pipeline::*};
+    use myna_desktop::process::{graph::Graph, pipeline::*, resolve::Resolver};
     Pipeline::new(
         Graph::preset(myna_core::ProcessingChain::KEYWORD),
-        SocketModels::new("/nonexistent/myna-models"),
+        Resolver::new(Vec::new()),
     )
 }
 

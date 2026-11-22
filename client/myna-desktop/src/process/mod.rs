@@ -11,6 +11,7 @@ pub mod disfluency;
 pub mod graph;
 pub mod history;
 pub mod pipeline;
+pub mod resolve;
 pub mod rules;
 pub mod wire;
 
@@ -38,6 +39,9 @@ impl Field {
 /// Turns heard text into the text to type.
 #[async_trait]
 pub trait Processor: Send {
+    /// A dictation is starting: get whatever `process` will need ready.
+    fn prepare(&mut self) {}
+
     /// Never fails: a step that cannot run, is too slow or returns nonsense
     /// passes its input through, so a dictation is never lost to processing.
     async fn process(&mut self, text: String, field: &Field) -> String;

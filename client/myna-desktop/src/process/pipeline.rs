@@ -4,59 +4,83 @@
 //! never a model. [`Models`] answers the request with whatever fits.
 
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use myna_core::history::Skip;
-use serde::{Deserialize, Serialize};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::net::UnixStream;
 
 pub use super::check::Check;
 use super::graph::{Graph, Id, Joins, Op, Src};
+use super::wire::Params;
 use super::{Field, Processor};
 use crate::inject::fold_control_chars;
 use crate::live::Live;
 
-/// What a step asks of a model.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+/// Whether a step would rather have the faster model or the better one.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Prefer {
+    #[default]
+    Latency,
+    Accuracy,
+}
+
+/// What a step asks of a model: a purpose, never a model.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Request {
     /// What to do with the text: `text.cleanup`, `text.translate`.
     pub task: String,
-    /// The language of the text, when known.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub language: Option<String>,
-    /// The language to answer in, for a translation.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub to: Option<String>,
-    /// How long the answer may take before the step is skipped.
-    #[serde(skip)]
-    pub budget: Duration,
+    /// What the task is about: `language`, `to`, a written `instruction`.
+    /// Ordered, so equal requests make equal keys.
+    pub params: Params,
+    pub prefer: Prefer,
+    /// How long one answer may take before the step is skipped.
+    pub run_budget: Duration,
+    /// How long finding and loading a model may take before the next
+    /// candidate is tried.
+    pub bind_budget: Duration,
 }
 
 impl Request {
-    pub fn cleanup(language: Option<String>) -> Self {
+    fn new(task: &str, params: Params, run_budget: Duration) -> Self {
         Self {
-            task: "text.cleanup".into(),
-            language,
-            to: None,
-            budget: Duration::from_secs(1),
+            task: task.into(),
+            params,
+            prefer: Prefer::default(),
+            run_budget,
+            bind_budget: BIND_BUDGET,
         }
+    }
+
+    pub fn cleanup(language: Option<String>) -> Self {
+        let params = language
+            .map(|l| ("language".to_owned(), l.into()))
+            .into_iter()
+            .collect();
+        Self::new("text.cleanup", params, Duration::from_secs(1))
     }
 
     /// A dictation typed at once is translated at once, so the budget is a
     /// long dictation's: a sentence takes a model 60-260 ms.
     pub fn translate(from: &str, to: &str) -> Self {
-        Self {
-            task: "text.translate".into(),
-            language: Some(from.into()),
-            to: Some(to.into()),
-            budget: Duration::from_secs(10),
-        }
+        let params = [("language", from), ("to", to)]
+            .into_iter()
+            .map(|(k, v)| (k.to_owned(), v.into()))
+            .collect();
+        Self::new("text.translate", params, Duration::from_secs(10))
+    }
+
+    /// What a binding is cached under: everything that picks a model and
+    /// nothing that does not (the run budget).
+    pub fn key(&self) -> String {
+        let params = serde_json::to_string(&self.params).unwrap_or_default();
+        format!("{}|{:?}|{params}", self.task, self.prefer)
     }
 }
+
+/// A model that takes longer to load than this is not the one to dictate
+/// with: the next candidate is tried.
+pub const BIND_BUDGET: Duration = Duration::from_secs(5);
 
 /// Why a model gave no usable answer. The far side's reason is kept for
 /// tests and never logged or recorded: it may quote the text.
@@ -88,6 +112,10 @@ pub struct Answer {
 #[async_trait]
 pub trait Models: Send {
     async fn run(&mut self, request: &Request, text: &str) -> Result<Answer, ModelError>;
+
+    /// Speech is starting: bind in the background whatever of `requests` is
+    /// not bound, so a model evicted since the last text is found again.
+    fn prepare(&mut self, _requests: &[Request]) {}
 }
 
 /// What each step did to the last piece of text, for the record.
@@ -137,7 +165,8 @@ impl Pipeline {
     ) -> String {
         let written = self.written.get();
         let started = Instant::now();
-        let answer = tokio::time::timeout(request.budget, self.models.run(request, &text)).await;
+        let answer =
+            tokio::time::timeout(request.run_budget, self.models.run(request, &text)).await;
         let mut model = None;
         let mut answer_chars = 0;
         let mut typed = None;
@@ -178,6 +207,10 @@ impl Pipeline {
 
 #[async_trait]
 impl Processor for Pipeline {
+    fn prepare(&mut self) {
+        self.models.prepare(&self.graph.get().requests());
+    }
+
     async fn process(&mut self, text: String, field: &Field) -> String {
         let graph = self.graph.get();
         let seq = self.joins.begin();
@@ -221,62 +254,6 @@ impl Processor for Pipeline {
     }
 }
 
-/// Models behind a Unix socket: one JSON line out (the request and the
-/// text), one back (`text` or `error`). The far side chooses the model.
-pub struct SocketModels {
-    path: PathBuf,
-}
-
-impl SocketModels {
-    pub fn new(path: impl Into<PathBuf>) -> Self {
-        Self { path: path.into() }
-    }
-}
-
-#[derive(Serialize)]
-struct Ask<'a> {
-    #[serde(flatten)]
-    request: &'a Request,
-    text: &'a str,
-}
-
-#[derive(Deserialize)]
-struct Reply {
-    text: Option<String>,
-    error: Option<String>,
-    model: Option<String>,
-}
-
-#[async_trait]
-impl Models for SocketModels {
-    async fn run(&mut self, request: &Request, text: &str) -> Result<Answer, ModelError> {
-        let unavailable = |e: std::io::Error| ModelError::Unavailable(e.to_string());
-        let stream = UnixStream::connect(&self.path).await.map_err(unavailable)?;
-        let (read, mut write) = stream.into_split();
-        let mut line = serde_json::to_string(&Ask { request, text })
-            .map_err(|e| ModelError::Unavailable(e.to_string()))?;
-        line.push('\n');
-        write
-            .write_all(line.as_bytes())
-            .await
-            .map_err(unavailable)?;
-        let mut reply = String::new();
-        BufReader::new(read)
-            .read_line(&mut reply)
-            .await
-            .map_err(unavailable)?;
-        let reply: Reply = serde_json::from_str(&reply)
-            .map_err(|_| ModelError::Refused("unreadable reply".into()))?;
-        match (reply.text, reply.error) {
-            (Some(text), _) => Ok(Answer {
-                text,
-                model: reply.model,
-            }),
-            (None, error) => Err(ModelError::Refused(error.unwrap_or_default())),
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::super::graph::{Builder, Needs};
@@ -284,7 +261,6 @@ mod tests {
     use crate::process::rules::Rule;
     use myna_core::ProcessingChain;
     use myna_platform::text_input::FieldPurpose;
-    use tokio::net::UnixListener;
 
     /// Answers every request the same way, or never.
     enum Scripted {
@@ -345,19 +321,32 @@ mod tests {
     }
 
     #[test]
+    fn a_requests_key_is_what_picks_its_model() {
+        let key = Request::translate("en", "fr").key();
+        assert_eq!(key, Request::translate("en", "fr").key());
+        assert_ne!(key, Request::translate("en", "de").key());
+        assert_ne!(key, Request::translate("fr", "en").key());
+        assert_ne!(key, Request::cleanup(Some("en".into())).key());
+        let mut quick = Request::translate("en", "fr");
+        quick.run_budget = Duration::from_secs(1);
+        assert_eq!(key, quick.key());
+        quick.prefer = Prefer::Accuracy;
+        assert_ne!(key, quick.key());
+        let mut written = Request::cleanup(None);
+        let plain = written.key();
+        written
+            .params
+            .insert("instruction".into(), "be brief".into());
+        assert_ne!(plain, written.key());
+    }
+
+    #[test]
     fn a_translation_names_both_languages() {
         let request = Request::translate("en", "fr");
-        let sent = serde_json::to_value(Ask {
-            request: &request,
-            text: "Hello.",
-        })
-        .unwrap();
-        assert_eq!(
-            sent,
-            serde_json::json!({
-                "task": "text.translate", "language": "en", "to": "fr", "text": "Hello."
-            })
-        );
+        assert_eq!(request.task, "text.translate");
+        assert_eq!(request.params["language"], "en");
+        assert_eq!(request.params["to"], "fr");
+        assert!(Request::cleanup(None).params.is_empty());
     }
 
     const HEARD: &str = "Let's meet Monday, no, Tuesday.";
@@ -534,57 +523,5 @@ mod tests {
             "Hello. / Hello."
         );
         assert_eq!(traced(&pipeline)[0].skipped, Some(Skip::NoModel));
-    }
-
-    #[tokio::test]
-    async fn socket_models_send_the_request_and_read_the_answer() {
-        let dir = std::env::temp_dir().join(format!("myna-models-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("s");
-        let _ = std::fs::remove_file(&path);
-        let listener = UnixListener::bind(&path).unwrap();
-        let server = tokio::spawn(async move {
-            let mut seen = Vec::new();
-            for reply in [
-                "{\"text\":\"Hi.\",\"model\":\"fdt\"}\n",
-                "{\"text\":\"Hi.\"}\n",
-                "{\"error\":\"no model fits\"}\n",
-            ] {
-                let (stream, _) = listener.accept().await.unwrap();
-                let (read, mut write) = stream.into_split();
-                let mut line = String::new();
-                BufReader::new(read).read_line(&mut line).await.unwrap();
-                seen.push(line);
-                write.write_all(reply.as_bytes()).await.unwrap();
-            }
-            seen
-        });
-
-        let mut models = SocketModels::new(&path);
-        let request = Request::cleanup(Some("en".into()));
-        let named = models.run(&request, "um hi").await.unwrap();
-        assert_eq!(named.text, "Hi.");
-        assert_eq!(named.model.as_deref(), Some("fdt"));
-        assert_eq!(models.run(&request, "um hi").await.unwrap().model, None);
-        assert!(matches!(
-            models.run(&request, "um hi").await,
-            Err(ModelError::Refused(reason)) if reason == "no model fits"
-        ));
-        let seen = server.await.unwrap();
-        let sent: serde_json::Value = serde_json::from_str(&seen[0]).unwrap();
-        assert_eq!(
-            sent,
-            serde_json::json!({"task": "text.cleanup", "language": "en", "text": "um hi"})
-        );
-        std::fs::remove_dir_all(&dir).unwrap();
-    }
-
-    #[tokio::test]
-    async fn socket_models_with_nothing_listening_are_unavailable() {
-        let mut models = SocketModels::new("/nonexistent/myna-models");
-        assert!(matches!(
-            models.run(&Request::cleanup(None), "hi").await,
-            Err(ModelError::Unavailable(_))
-        ));
     }
 }
