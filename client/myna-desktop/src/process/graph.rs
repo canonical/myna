@@ -14,6 +14,7 @@ use std::collections::HashMap;
 use myna_core::ProcessingChain;
 use myna_platform::text_input::FieldPurpose;
 
+use super::disfluency::Lang;
 use super::pipeline::{Check, Request};
 use super::rules::Rule;
 use super::Field;
@@ -171,9 +172,13 @@ impl Graph {
     pub fn preset(chain: ProcessingChain) -> Self {
         let mut g = Builder::default();
         let out = match chain {
-            ProcessingChain::TIDY => g.tidy(Src::Input),
+            ProcessingChain::TIDY => {
+                let plain = g.rule(Src::Input, Rule::Disfluency(Lang::Any));
+                g.tidy(plain)
+            }
             ProcessingChain::TIDY_FRENCH => {
-                let tidy = g.tidy(Src::Input);
+                let plain = g.rule(Src::Input, Rule::Disfluency(Lang::Any));
+                let tidy = g.tidy(plain);
                 g.ask(
                     tidy,
                     Request::translate("en", "fr"),
@@ -348,11 +353,14 @@ mod tests {
         assert!(tasks(&exact, &field).is_empty());
 
         let tidy = Graph::preset(ProcessingChain::TIDY);
-        assert_eq!(tasks(&tidy, &field), ["text.cleanup"]);
+        assert_eq!(tasks(&tidy, &field), ["Disfluency(Any)", "text.cleanup"]);
         assert_eq!(tidy.needs(), Some(Needs::Sentence));
 
         let french = Graph::preset(ProcessingChain::TIDY_FRENCH);
-        assert_eq!(tasks(&french, &field), ["text.cleanup", "text.translate"]);
+        assert_eq!(
+            tasks(&french, &field),
+            ["Disfluency(Any)", "text.cleanup", "text.translate"]
+        );
         assert_eq!(french.needs(), Some(Needs::Sentence));
     }
 

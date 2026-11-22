@@ -1,5 +1,7 @@
 //! Deterministic changes to a piece of text: no model, no budget.
 
+use super::disfluency::{self, Lang};
+
 /// Words that take a capital only at the start of a sentence, whatever the
 /// text around them.
 const FUNCTION_WORDS: &[&str] = &[
@@ -15,6 +17,8 @@ pub enum Rule {
     /// Continue a sentence: a function word needs no capital after the
     /// words before it.
     Continue,
+    /// Drop stutters and unambiguous filled pauses.
+    Disfluency(Lang),
 }
 
 impl Rule {
@@ -24,6 +28,7 @@ impl Rule {
                 let bare = text.trim().trim_end_matches(['.', '!', '?', '\u{2026}']);
                 decapitalise(bare, |_| true)
             }
+            Rule::Disfluency(lang) => disfluency::clean(text, lang),
             Rule::Continue => decapitalise(text, |word| {
                 FUNCTION_WORDS.contains(&word.to_lowercase().as_str())
             }),

@@ -360,7 +360,7 @@ mod tests {
         );
     }
 
-    const HEARD: &str = "Um, let's meet Monday, no, Tuesday.";
+    const HEARD: &str = "Let's meet Monday, no, Tuesday.";
 
     #[tokio::test]
     async fn an_answer_made_of_words_that_were_said_is_typed() {
@@ -374,6 +374,18 @@ mod tests {
         assert_eq!(trace[0].task, "text.cleanup");
         assert_eq!(trace[0].model.as_deref(), Some("scripted"));
         assert_eq!(trace[0].skipped, None);
+    }
+
+    #[tokio::test]
+    async fn a_missing_model_still_loses_the_stutters_and_pauses() {
+        let mut pipeline = cleanup(Scripted::Fails);
+        assert_eq!(
+            pipeline
+                .process("Um, I I think we, uh, ship.".into(), &here())
+                .await,
+            "I think we ship."
+        );
+        assert_eq!(traced(&pipeline)[0].skipped, Some(Skip::NoModel));
     }
 
     fn traced(pipeline: &Pipeline) -> Vec<myna_core::history::Step> {
