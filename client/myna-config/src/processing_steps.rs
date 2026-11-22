@@ -1,0 +1,908 @@
+//! What the Processing page shows, GTK-free: one row per step in stage
+//! order, each with the state it is in and what it needs. Rows come from the
+//! merged catalogs and what the daemon offers, not from a compiled list, so a
+//! plugin's step appears without a Settings change.
+
+use std::collections::{BTreeMap, BTreeSet};
+
+use myna_core::processing::{in_stage_order, param_key, Params};
+
+use crate::plugin_catalog::{self, Entry};
+
+/// The one step with a parameter Settings renders itself.
+pub const TRANSLATE: &str = "translate";
+pub const TRANSLATE_TO: &str = "to";
+
+/// A step the client carries itself, in no catalog.
+const FIT: &str = "fit";
+
+/// The stages in the order the steps run (`.kb/text-plugin-contract.md`).
+const STAGES: [&str; 4] = ["field-fit", "clean-up", "translate", "target-language"];
+
+/// What the daemon says about the models it offers and the steps it compiled.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Offered {
+    pub models: Vec<String>,
+    /// `(language, to)` of every translation model offered, catalogued or not.
+    pub translations: Vec<(String, String)>,
+    /// Per enabled step id, what the compiler made of it.
+    pub steps: BTreeMap<String, DaemonStep>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum DaemonStep {
+    Applicable,
+    NotApplicable,
+    /// In the graph, but no model answers its request.
+    Unavailable,
+    Unknown,
+}
+
+impl Offered {
+    /// An `InstalledSteps` value; `None` for a daemon too old to publish it.
+    pub fn parse(json: &str) -> Option<Self> {
+        let value: serde_json::Value = serde_json::from_str(json).ok()?;
+        let models = value.get("models")?.as_array()?;
+        let mut offered = Self::default();
+        for model in models {
+            if let Some(id) = model.get("model").and_then(|m| m.as_str()) {
+                offered.models.push(id.to_owned());
+            }
+            if model.get("task").and_then(|t| t.as_str()) == Some("text.translate") {
+                let covered = |name: &str| {
+                    model
+                        .get("params")?
+                        .as_array()?
+                        .iter()
+                        .find(|p| p.get("name").and_then(|n| n.as_str()) == Some(name))?
+                        .get("values")?
+                        .as_array()?
+                        .first()?
+                        .as_str()
+                        .map(str::to_owned)
+                };
+                if let Some((from, to)) = covered("language").zip(covered("to")) {
+                    offered.translations.push((from, to));
+                }
+            }
+        }
+        for step in value.get("steps").and_then(|s| s.as_array())? {
+            let Some(id) = step.get("id").and_then(|i| i.as_str()) else {
+                continue;
+            };
+            let state = match step.get("state").and_then(|s| s.as_str()) {
+                Some("applicable") => DaemonStep::Applicable,
+                Some("not-applicable") => DaemonStep::NotApplicable,
+                Some("unavailable") => DaemonStep::Unavailable,
+                _ => DaemonStep::Unknown,
+            };
+            offered.steps.insert(id.to_owned(), state);
+        }
+        Some(offered)
+    }
+
+    fn offers(&self, model: &str) -> bool {
+        self.models.iter().any(|offered| offered == model)
+    }
+}
+
+/// The language a dictation is in, as far as Settings can tell.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Source {
+    /// One language, as its bare code.
+    One(String),
+    /// More than one, or the model decides: translation has no source.
+    Unknown,
+}
+
+impl Source {
+    /// From the `language` setting. Empty is English, as the daemon treats it.
+    pub fn of_setting(language: &str) -> Self {
+        let language = language.trim();
+        if language.is_empty() {
+            return Self::One("en".into());
+        }
+        if language.contains([',', ' ', ';']) || matches!(language, "auto" | "multi") {
+            return Self::Unknown;
+        }
+        Self::One(primary(language))
+    }
+}
+
+/// `fr` for `fr-CA`; `zh-Hans` stays whole, as the models name it.
+fn primary(tag: &str) -> String {
+    let tag = tag.replace('_', "-");
+    if tag.starts_with("zh-") {
+        let mut parts = tag.splitn(3, '-');
+        return format!("zh-{}", parts.nth(1).unwrap_or_default());
+    }
+    tag.split('-')
+        .next()
+        .unwrap_or_default()
+        .to_ascii_lowercase()
+}
+
+/// A language as a person calls it.
+pub fn language_name(code: &str) -> String {
+    let bare = code.split('-').next().unwrap_or(code);
+    match (code, myna_core::language::endonym(bare)) {
+        ("zh-Hans", _) => gettextrs::gettext("Chinese (Simplified)"),
+        ("zh-Hant", _) => gettextrs::gettext("Chinese (Traditional)"),
+        (_, Some(name)) => name.to_owned(),
+        _ => code.to_owned(),
+    }
+}
+
+/// What a step needs before it can run.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Need {
+    /// "the French model", for the row's subtitle.
+    pub what: String,
+    /// The catalog entries that provide it, not yet offered.
+    pub entries: Vec<Entry>,
+    pub bytes: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Standing {
+    /// Runs when switched on.
+    Ready,
+    /// Skipped because of the text at this point; no fault. The reason shows.
+    NotApplicable(String),
+    /// Enabled, but a model is missing: the step is off until it is there.
+    Missing(Need),
+    /// Its model is being installed, with snapd's percentage when known.
+    Installing(Option<u8>),
+    /// Installed; the daemon has not bound it yet.
+    Preparing,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Target {
+    pub code: String,
+    pub name: String,
+    pub installed: bool,
+    pub bytes: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TranslateRow {
+    pub targets: Vec<Target>,
+    pub selected: Option<usize>,
+    /// The dictation language, named, when it is not English.
+    pub from: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Row {
+    pub id: String,
+    pub title: String,
+    pub description: String,
+    pub enabled: bool,
+    pub standing: Standing,
+    pub translate: Option<TranslateRow>,
+}
+
+impl Row {
+    /// Whether the switch can be turned: not while the step cannot apply.
+    pub fn switchable(&self) -> bool {
+        !matches!(self.standing, Standing::NotApplicable(_))
+    }
+
+    /// The line under the title: what is wrong, else what the step does.
+    pub fn subtitle(&self) -> String {
+        match &self.standing {
+            Standing::NotApplicable(reason) => reason.clone(),
+            Standing::Missing(need) => {
+                // TRANSLATORS: {what} names a model to install, such as "the French model"; {size} is its download size.
+                let frame = gettextrs::gettext("Needs {what} ({size})");
+                frame
+                    .replace("{what}", &need.what)
+                    .replace("{size}", &size(need.bytes))
+            }
+            Standing::Installing(_) => self.description_or("Getting the model ready"),
+            Standing::Preparing => gettextrs::gettext("Getting the model ready"),
+            Standing::Ready => self.description.clone(),
+        }
+    }
+
+    fn description_or(&self, fallback: &str) -> String {
+        if self.description.is_empty() {
+            gettextrs::gettext(fallback)
+        } else {
+            self.description.clone()
+        }
+    }
+}
+
+/// A download size in words.
+pub fn size(bytes: u64) -> String {
+    // TRANSLATORS: {n} is a size in megabytes, such as "24".
+    let frame = gettextrs::gettext("{n} MB");
+    frame.replace("{n}", &bytes.div_ceil(1_000_000).max(1).to_string())
+}
+
+pub struct Inputs<'a> {
+    pub enabled: &'a [String],
+    pub params: &'a Params,
+    pub source: &'a Source,
+    pub catalog: &'a [Entry],
+    /// `None` when no daemon runs: nothing is known about the models.
+    pub daemon: Option<&'a Offered>,
+    /// Steps whose install runs now, with snapd's percentage.
+    pub installing: &'a BTreeMap<String, Option<u8>>,
+    /// Steps installed whose models the daemon has not offered yet.
+    pub preparing: &'a BTreeSet<String>,
+    pub locales: &'a [String],
+}
+
+fn stage_rank(stage: &str) -> usize {
+    STAGES
+        .iter()
+        .position(|known| *known == stage)
+        .unwrap_or(STAGES.len())
+}
+
+/// The steps in stage order: the client's own, and every catalog step.
+fn step_ids(catalog: &[Entry]) -> Vec<(String, usize)> {
+    let mut found: BTreeMap<String, usize> = BTreeMap::new();
+    found.insert(FIT.to_owned(), 0);
+    for entry in catalog {
+        found
+            .entry(entry.step.id.clone())
+            .or_insert_with(|| stage_rank(&entry.step.stage));
+    }
+    let mut ordered: Vec<(String, usize)> = found.into_iter().collect();
+    ordered.sort_by(|a, b| (a.1, &a.0).cmp(&(b.1, &b.0)));
+    ordered
+}
+
+pub fn rows(inputs: &Inputs) -> Vec<Row> {
+    step_ids(inputs.catalog)
+        .into_iter()
+        .map(|(id, _)| row(&id, inputs))
+        .collect()
+}
+
+fn row(id: &str, inputs: &Inputs) -> Row {
+    let own = inputs.catalog.iter().find(|e| e.step.id == id);
+    let title = own
+        .and_then(|e| plugin_catalog::label(&e.step.label_key))
+        .or_else(|| (id == FIT).then(|| gettextrs::gettext("Fitted to the field")))
+        .unwrap_or_else(|| id.to_owned());
+    let description = own
+        .and_then(|e| plugin_catalog::label(&e.step.description_key))
+        .or_else(|| {
+            (id == FIT).then(|| {
+                gettextrs::gettext(
+                    "No capital or full stop in an address, and no capital where you carry on a sentence.",
+                )
+            })
+        })
+        .unwrap_or_default();
+    let enabled = inputs.enabled.iter().any(|on| on == id);
+    let translate = (id == TRANSLATE).then(|| translate_row(inputs));
+    let standing = standing(id, enabled, translate.as_ref(), inputs);
+    Row {
+        id: id.to_owned(),
+        title,
+        description,
+        enabled,
+        standing,
+        translate,
+    }
+}
+
+fn target_of(params: &Params) -> Option<&str> {
+    params
+        .get(&param_key(TRANSLATE, TRANSLATE_TO))
+        .map(String::as_str)
+        .filter(|to| !to.is_empty())
+}
+
+fn translate_row(inputs: &Inputs) -> TranslateRow {
+    let Source::One(from) = inputs.source else {
+        return TranslateRow {
+            targets: Vec::new(),
+            selected: None,
+            from: None,
+        };
+    };
+    let installed = |legs: &[&Entry]| {
+        inputs
+            .daemon
+            .is_some_and(|daemon| legs.iter().all(|leg| daemon.offers(&leg.model)))
+    };
+    let mut codes: BTreeSet<String> = inputs
+        .catalog
+        .iter()
+        .filter(|e| e.step.id == TRANSLATE)
+        .flat_map(|e| [e.in_lang.clone(), e.out_lang.clone()])
+        .filter(|code| !code.is_empty() && code != from)
+        .collect();
+    if let Some(daemon) = inputs.daemon {
+        codes.extend(
+            daemon
+                .translations
+                .iter()
+                .filter(|(f, _)| f == from)
+                .map(|(_, to)| to.clone()),
+        );
+    }
+    let mut targets: Vec<Target> = codes
+        .into_iter()
+        .filter_map(|code| {
+            let direct_installed = inputs
+                .daemon
+                .is_some_and(|d| d.translations.iter().any(|(f, t)| f == from && *t == code));
+            match plugin_catalog::translation_legs(inputs.catalog, from, &code) {
+                Some(legs) => {
+                    let done = direct_installed || installed(&legs);
+                    let bytes = if done {
+                        0
+                    } else {
+                        legs.iter()
+                            .filter(|leg| !inputs.daemon.is_some_and(|d| d.offers(&leg.model)))
+                            .map(|leg| leg.download_bytes)
+                            .sum()
+                    };
+                    Some(Target {
+                        name: language_name(&code),
+                        code,
+                        installed: done,
+                        bytes,
+                    })
+                }
+                None => direct_installed.then(|| Target {
+                    name: language_name(&code),
+                    code,
+                    installed: true,
+                    bytes: 0,
+                }),
+            }
+        })
+        .collect();
+    let order: Vec<String> = inputs.locales.to_vec();
+    let rank = |code: &str| {
+        order
+            .iter()
+            .position(|locale| primary(locale) == code || locale.starts_with(code))
+            .unwrap_or(order.len())
+    };
+    targets.sort_by(|a, b| (rank(&a.code), &a.name).cmp(&(rank(&b.code), &b.name)));
+    let selected =
+        target_of(inputs.params).and_then(|to| targets.iter().position(|t| t.code == to));
+    TranslateRow {
+        targets,
+        selected,
+        from: (from != "en").then(|| language_name(from)),
+    }
+}
+
+fn standing(
+    id: &str,
+    enabled: bool,
+    translate: Option<&TranslateRow>,
+    inputs: &Inputs,
+) -> Standing {
+    let source = match inputs.source {
+        Source::One(from) => Some(from.as_str()),
+        Source::Unknown => None,
+    };
+    let own: Vec<&Entry> = inputs.catalog.iter().filter(|e| e.step.id == id).collect();
+    if id == TRANSLATE {
+        let Some(from) = source else {
+            return Standing::NotApplicable(gettextrs::gettext(
+                "Needs a single dictation language",
+            ));
+        };
+        if enabled && target_of(inputs.params) == Some(from) {
+            return Standing::NotApplicable(gettextrs::gettext(
+                "The text is already in that language",
+            ));
+        }
+    } else if !own.is_empty()
+        && own
+            .iter()
+            .all(|e| !e.in_lang.is_empty() && e.in_lang != "any")
+    {
+        if let Some(from) = source {
+            if own.iter().all(|e| e.in_lang != from) {
+                // TRANSLATORS: {language} is a language name, such as "English".
+                let frame = gettextrs::gettext("Applies when the text is {language}");
+                let wanted = own[0].in_lang.as_str();
+                return Standing::NotApplicable(
+                    frame.replace("{language}", &language_name(wanted)),
+                );
+            }
+        }
+    }
+    if !enabled {
+        return Standing::Ready;
+    }
+    if let Some(percent) = inputs.installing.get(id) {
+        return Standing::Installing(*percent);
+    }
+    let Some(need) = need(id, translate, &own, inputs) else {
+        return Standing::Ready;
+    };
+    if inputs.preparing.contains(id) {
+        Standing::Preparing
+    } else {
+        Standing::Missing(need)
+    }
+}
+
+/// What an enabled step lacks, when the daemon runs and says it lacks it.
+fn need(
+    id: &str,
+    translate: Option<&TranslateRow>,
+    own: &[&Entry],
+    inputs: &Inputs,
+) -> Option<Need> {
+    let daemon = inputs.daemon?;
+    if id == TRANSLATE {
+        let target = translate?
+            .targets
+            .iter()
+            .find(|t| Some(t.code.as_str()) == target_of(inputs.params))?;
+        if target.installed {
+            return None;
+        }
+        let Source::One(from) = inputs.source else {
+            return None;
+        };
+        let legs = plugin_catalog::translation_legs(inputs.catalog, from, &target.code)?;
+        let entries: Vec<Entry> = legs
+            .into_iter()
+            .filter(|leg| !daemon.offers(&leg.model))
+            .cloned()
+            .collect();
+        // TRANSLATORS: {language} is a language name; this completes "Needs the French model".
+        let frame = gettextrs::gettext("the {language} model");
+        return Some(Need {
+            what: frame.replace("{language}", &target.name),
+            bytes: entries.iter().map(|e| e.download_bytes).sum(),
+            entries,
+        });
+    }
+    let trusts_daemon = daemon.steps.get(id);
+    let lacking = match trusts_daemon {
+        Some(DaemonStep::Unavailable) => true,
+        Some(_) => false,
+        None => !own.is_empty() && own.iter().all(|e| !daemon.offers(&e.model)),
+    };
+    if !lacking {
+        return None;
+    }
+    let entry = (*own.first()?).clone();
+    let title = plugin_catalog::label(&entry.step.label_key).unwrap_or_else(|| id.to_owned());
+    // TRANSLATORS: {step} is a step's name; this completes "Needs the Tidy up speech model".
+    let frame = gettextrs::gettext("the {step} model");
+    Some(Need {
+        what: frame.replace("{step}", &title),
+        bytes: entry.download_bytes,
+        entries: vec![entry],
+    })
+}
+
+/// The stored steps and parameters after the switch of `id` is set.
+pub fn with_enabled(ids: &[String], id: &str, on: bool) -> Vec<String> {
+    let mut next: Vec<String> = ids.iter().filter(|have| *have != id).cloned().collect();
+    if on {
+        next.push(id.to_owned());
+    }
+    in_stage_order(&next)
+}
+
+/// The parameters after `translate.to` is set, or cleared.
+pub fn with_target(params: &Params, to: Option<&str>) -> Params {
+    let mut next = params.clone();
+    let key = param_key(TRANSLATE, TRANSLATE_TO);
+    match to {
+        Some(to) => next.insert(key, to.to_owned()),
+        None => next.remove(&key),
+    };
+    next
+}
+
+/// The sentence under the steps, and what it comes out as.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Example {
+    pub heard: String,
+    pub typed: String,
+    /// What the text becomes beyond what is shown, such as its language.
+    pub note: Option<String>,
+}
+
+pub fn example(rows: &[Row]) -> Example {
+    let runs = |id: &str| {
+        rows.iter()
+            .any(|row| row.id == id && row.enabled && row.standing == Standing::Ready)
+    };
+    let heard = gettextrs::gettext("um so I, I think we should go");
+    let mut typed = heard.clone();
+    if runs("tidy") {
+        typed = gettextrs::gettext("So I think we should go.");
+    }
+    let mut note = None;
+    if runs(TRANSLATE) {
+        let target = rows
+            .iter()
+            .find(|row| row.id == TRANSLATE)
+            .and_then(|row| row.translate.as_ref())
+            .and_then(|t| t.targets.get(t.selected?));
+        if let Some(target) = target {
+            if target.code == "fr" {
+                // Not translated: it is what gets typed, in French.
+                typed = "Je pense que nous devrions y aller.".to_owned();
+            } else {
+                // TRANSLATORS: {language} is a language name, such as "Deutsch".
+                let frame = gettextrs::gettext("Typed in {language}");
+                note = Some(frame.replace("{language}", &target.name));
+            }
+        }
+    }
+    Example { heard, typed, note }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn entry(id: &str, step: &str, stage: &str, from: &str, to: &str, bytes: u64) -> Entry {
+        serde_json::from_value(json!({
+            "id": id, "snap": "myna-translation", "component": id, "model": format!("m-{id}"),
+            "task": "text.translate", "in_lang": from, "out_lang": to, "download_bytes": bytes,
+            "step": {"id": step, "stage": stage,
+                     "label_key": format!("step.{step}.name"),
+                     "description_key": format!("step.{step}.description"),
+                     "example_key": format!("step.{step}.example")},
+        }))
+        .unwrap()
+    }
+
+    fn catalog() -> Vec<Entry> {
+        vec![
+            entry("tidy-en", "tidy", "clean-up", "en", "en", 42_000_000),
+            entry("en-fr", "translate", "translate", "en", "fr", 33_000_000),
+            entry("en-de", "translate", "translate", "en", "de", 31_000_000),
+            entry("de-en", "translate", "translate", "de", "en", 30_000_000),
+        ]
+    }
+
+    struct Rig {
+        enabled: Vec<String>,
+        params: Params,
+        source: Source,
+        catalog: Vec<Entry>,
+        daemon: Option<Offered>,
+        installing: BTreeMap<String, Option<u8>>,
+        preparing: BTreeSet<String>,
+    }
+
+    impl Rig {
+        fn new() -> Self {
+            Self {
+                enabled: Vec::new(),
+                params: Params::new(),
+                source: Source::One("en".into()),
+                catalog: catalog(),
+                daemon: Some(Offered::default()),
+                installing: BTreeMap::new(),
+                preparing: BTreeSet::new(),
+            }
+        }
+
+        fn rows(&self) -> Vec<Row> {
+            rows(&Inputs {
+                enabled: &self.enabled,
+                params: &self.params,
+                source: &self.source,
+                catalog: &self.catalog,
+                daemon: self.daemon.as_ref(),
+                installing: &self.installing,
+                preparing: &self.preparing,
+                locales: &["fr_FR.UTF-8".to_owned()],
+            })
+        }
+
+        fn row(&self, id: &str) -> Row {
+            self.rows().into_iter().find(|r| r.id == id).unwrap()
+        }
+
+        fn on(mut self, ids: &[&str]) -> Self {
+            self.enabled = ids.iter().map(|s| (*s).to_owned()).collect();
+            self
+        }
+
+        fn to(mut self, code: &str) -> Self {
+            self.params = with_target(&self.params, Some(code));
+            self
+        }
+
+        fn offering(mut self, models: &[&str]) -> Self {
+            let daemon = self.daemon.get_or_insert_with(Offered::default);
+            daemon.models = models.iter().map(|s| (*s).to_owned()).collect();
+            self
+        }
+    }
+
+    #[test]
+    fn rows_follow_the_stages_whatever_the_catalog_order() {
+        let mut rig = Rig::new();
+        rig.catalog.reverse();
+        let ids: Vec<String> = rig.rows().into_iter().map(|r| r.id).collect();
+        assert_eq!(ids, ["fit", "tidy", "translate"]);
+    }
+
+    #[test]
+    fn the_client_s_own_step_is_a_row_with_no_catalog_and_no_snap() {
+        let mut rig = Rig::new().on(&["fit"]);
+        rig.catalog.clear();
+        rig.daemon = None;
+        let rows = rig.rows();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].standing, Standing::Ready);
+        assert!(rows[0].enabled);
+    }
+
+    #[test]
+    fn a_step_is_ready_when_off_and_when_its_model_is_offered() {
+        let rig = Rig::new();
+        assert_eq!(rig.row("tidy").standing, Standing::Ready);
+        let on = Rig::new().on(&["tidy"]).offering(&["m-tidy-en"]);
+        assert_eq!(on.row("tidy").standing, Standing::Ready);
+    }
+
+    #[test]
+    fn an_enabled_step_without_its_model_names_it_and_its_size() {
+        let rig = Rig::new().on(&["tidy"]);
+        let Standing::Missing(need) = rig.row("tidy").standing else {
+            panic!("tidy should be missing its model");
+        };
+        assert_eq!(need.bytes, 42_000_000);
+        assert_eq!(need.entries[0].id, "tidy-en");
+        assert!(rig.row("tidy").subtitle().contains("42 MB"));
+    }
+
+    #[test]
+    fn the_daemon_s_word_about_a_step_outranks_the_catalog() {
+        let mut rig = Rig::new().on(&["tidy"]);
+        rig.daemon
+            .as_mut()
+            .unwrap()
+            .steps
+            .insert("tidy".into(), DaemonStep::Applicable);
+        assert_eq!(rig.row("tidy").standing, Standing::Ready);
+        rig.daemon
+            .as_mut()
+            .unwrap()
+            .steps
+            .insert("tidy".into(), DaemonStep::Unavailable);
+        assert!(matches!(rig.row("tidy").standing, Standing::Missing(_)));
+    }
+
+    #[test]
+    fn with_no_daemon_nothing_is_claimed_missing() {
+        let mut rig = Rig::new().on(&["tidy"]);
+        rig.daemon = None;
+        assert_eq!(rig.row("tidy").standing, Standing::Ready);
+    }
+
+    #[test]
+    fn tidy_is_dimmed_with_its_reason_when_the_text_is_not_english() {
+        let mut rig = Rig::new().on(&["tidy"]);
+        rig.source = Source::One("fr".into());
+        let row = rig.row("tidy");
+        assert_eq!(
+            row.standing,
+            Standing::NotApplicable("Applies when the text is English".into())
+        );
+        assert!(!row.switchable());
+        assert_eq!(row.subtitle(), "Applies when the text is English");
+    }
+
+    #[test]
+    fn an_installing_model_shows_its_percentage_and_a_finished_one_prepares() {
+        let mut rig = Rig::new().on(&["translate"]).to("fr");
+        rig.installing.insert("translate".into(), Some(40));
+        assert_eq!(
+            rig.row("translate").standing,
+            Standing::Installing(Some(40))
+        );
+        rig.installing.clear();
+        rig.preparing.insert("translate".into());
+        assert_eq!(rig.row("translate").standing, Standing::Preparing);
+    }
+
+    #[test]
+    fn translate_lists_every_target_with_the_users_language_first() {
+        let rig = Rig::new().on(&["translate"]);
+        let translate = rig.row("translate").translate.unwrap();
+        let codes: Vec<&str> = translate.targets.iter().map(|t| t.code.as_str()).collect();
+        assert_eq!(codes, ["fr", "de"]);
+        assert_eq!(translate.selected, None);
+        assert_eq!(translate.from, None);
+    }
+
+    #[test]
+    fn a_target_is_installed_when_the_daemon_offers_its_model_and_sized_when_not() {
+        let rig = Rig::new()
+            .on(&["translate"])
+            .to("fr")
+            .offering(&["m-en-fr"]);
+        let translate = rig.row("translate").translate.unwrap();
+        assert!(translate.targets[0].installed);
+        assert_eq!(translate.targets[0].bytes, 0);
+        assert!(!translate.targets[1].installed);
+        assert_eq!(translate.targets[1].bytes, 31_000_000);
+        assert_eq!(rig.row("translate").standing, Standing::Ready);
+    }
+
+    #[test]
+    fn a_missing_target_names_its_language_and_asks_for_the_entry() {
+        let rig = Rig::new().on(&["translate"]).to("de");
+        let Standing::Missing(need) = rig.row("translate").standing else {
+            panic!("german is not installed");
+        };
+        assert_eq!(need.what, "the Deutsch model");
+        assert_eq!(need.entries.len(), 1);
+        assert_eq!(need.entries[0].id, "en-de");
+    }
+
+    #[test]
+    fn a_pivot_from_another_language_is_two_legs_and_only_the_missing_ones_count() {
+        let mut rig = Rig::new().on(&["translate"]).to("fr");
+        rig.source = Source::One("de".into());
+        let translate = rig.row("translate").translate.unwrap();
+        assert_eq!(translate.from.as_deref(), Some("Deutsch"));
+        let fr = translate.targets.iter().find(|t| t.code == "fr").unwrap();
+        assert_eq!(fr.bytes, 63_000_000);
+        let rig = rig.offering(&["m-de-en"]);
+        let Standing::Missing(need) = rig.row("translate").standing else {
+            panic!("the second leg is missing");
+        };
+        assert_eq!(need.entries.len(), 1);
+        assert_eq!(need.bytes, 33_000_000);
+    }
+
+    #[test]
+    fn a_dictation_in_the_target_language_needs_no_translation() {
+        let mut rig = Rig::new().on(&["translate"]).to("fr");
+        rig.source = Source::One("fr".into());
+        assert_eq!(
+            rig.row("translate").standing,
+            Standing::NotApplicable("The text is already in that language".into())
+        );
+    }
+
+    #[test]
+    fn several_dictation_languages_leave_translation_without_a_source() {
+        let mut rig = Rig::new().on(&["translate"]);
+        rig.source = Source::of_setting("en,fr");
+        let row = rig.row("translate");
+        assert_eq!(
+            row.standing,
+            Standing::NotApplicable("Needs a single dictation language".into())
+        );
+        assert!(row.translate.unwrap().targets.is_empty());
+    }
+
+    #[test]
+    fn the_language_setting_reads_as_one_language_or_none() {
+        assert_eq!(Source::of_setting(""), Source::One("en".into()));
+        assert_eq!(Source::of_setting("fr-CA"), Source::One("fr".into()));
+        assert_eq!(
+            Source::of_setting("zh_Hans_CN"),
+            Source::One("zh-Hans".into())
+        );
+        assert_eq!(Source::of_setting("auto"), Source::Unknown);
+        assert_eq!(Source::of_setting("en fr"), Source::Unknown);
+    }
+
+    #[test]
+    fn a_model_the_catalog_does_not_list_still_shows_as_an_installed_target() {
+        let mut rig = Rig::new().on(&["translate"]).to("fa");
+        rig.daemon = Some(Offered {
+            translations: vec![("en".into(), "fa".into())],
+            ..Offered::default()
+        });
+        let translate = rig.row("translate").translate.unwrap();
+        let fa = translate.targets.iter().find(|t| t.code == "fa").unwrap();
+        assert!(fa.installed);
+        assert_eq!(rig.row("translate").standing, Standing::Ready);
+    }
+
+    #[test]
+    fn switching_keeps_every_other_id_and_the_stage_order() {
+        let ids = vec!["translate".to_owned(), "script".to_owned()];
+        assert_eq!(
+            with_enabled(&ids, "tidy", true),
+            ["tidy", "translate", "script"]
+        );
+        assert_eq!(with_enabled(&ids, "translate", false), ["script"]);
+        assert_eq!(
+            with_enabled(&ids, "translate", true),
+            ["translate", "script"]
+        );
+    }
+
+    #[test]
+    fn the_target_is_written_and_cleared_without_touching_other_parameters() {
+        let mut params = Params::new();
+        params.insert("script.mode".into(), "simplified".into());
+        let set = with_target(&params, Some("de"));
+        assert_eq!(set.get("translate.to").map(String::as_str), Some("de"));
+        assert_eq!(
+            set.get("script.mode").map(String::as_str),
+            Some("simplified")
+        );
+        assert_eq!(with_target(&set, None), params);
+    }
+
+    #[test]
+    fn the_example_follows_the_switches() {
+        let off = example(&Rig::new().rows());
+        assert_eq!(off.typed, off.heard);
+        let tidy = example(&Rig::new().on(&["tidy"]).offering(&["m-tidy-en"]).rows());
+        assert_eq!(tidy.typed, "So I think we should go.");
+        let french = example(
+            &Rig::new()
+                .on(&["tidy", "translate"])
+                .to("fr")
+                .offering(&["m-tidy-en", "m-en-fr"])
+                .rows(),
+        );
+        assert_eq!(french.typed, "Je pense que nous devrions y aller.");
+        let german = example(
+            &Rig::new()
+                .on(&["translate"])
+                .to("de")
+                .offering(&["m-en-de"])
+                .rows(),
+        );
+        assert_eq!(german.note.as_deref(), Some("Typed in Deutsch"));
+    }
+
+    #[test]
+    fn a_step_whose_model_is_missing_leaves_the_example_alone() {
+        let example = example(&Rig::new().on(&["tidy"]).rows());
+        assert_eq!(example.typed, example.heard);
+    }
+
+    #[test]
+    fn the_daemon_s_catalog_is_read_and_an_old_daemon_has_none() {
+        let json = json!({
+            "models": [
+                {"share": "s", "model": "m-en-fr", "task": "text.translate",
+                 "params": [{"name": "language", "values": ["en"]}, {"name": "to", "values": ["fr"]}]},
+                {"model": "m-tidy-en", "task": "text.cleanup"},
+            ],
+            "steps": [
+                {"id": "tidy", "state": "applicable"},
+                {"id": "translate", "state": "unavailable", "detail": {}},
+                {"id": "x", "state": "not-applicable"},
+                {"id": "y", "state": "odd"},
+            ],
+        })
+        .to_string();
+        let offered = Offered::parse(&json).unwrap();
+        assert_eq!(offered.models, ["m-en-fr", "m-tidy-en"]);
+        assert_eq!(offered.translations, [("en".to_owned(), "fr".to_owned())]);
+        assert_eq!(offered.steps["tidy"], DaemonStep::Applicable);
+        assert_eq!(offered.steps["translate"], DaemonStep::Unavailable);
+        assert_eq!(offered.steps["x"], DaemonStep::NotApplicable);
+        assert_eq!(offered.steps["y"], DaemonStep::Unknown);
+        assert_eq!(Offered::parse(""), None);
+        assert_eq!(Offered::parse("{}"), None);
+    }
+
+    #[test]
+    fn sizes_round_up_to_whole_megabytes() {
+        assert_eq!(size(1), "1 MB");
+        assert_eq!(size(24_000_001), "25 MB");
+        assert_eq!(size(33_353_728), "34 MB");
+    }
+}
