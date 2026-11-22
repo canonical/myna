@@ -231,8 +231,11 @@ pub struct PastDictation {
     pub made_by: Vec<(String, String)>,
 }
 
-/// How many recorded dictations the Processing tab lists, newest first.
-pub const PAST_DICTATIONS_SHOWN: usize = 20;
+/// How many recorded dictations a page of the list builds, newest first.
+pub const PAST_DICTATIONS_PAGE: usize = 20;
+
+/// The most recorded dictations the list reads from the record.
+pub const PAST_DICTATIONS_READ: usize = 1000;
 
 pub fn past_dictation(entry: &myna_core::history::Entry) -> PastDictation {
     use myna_core::history::Outcome;

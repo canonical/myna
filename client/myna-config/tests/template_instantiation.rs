@@ -195,6 +195,24 @@ fn the_processing_tab_follows_the_record_and_the_chosen_script_when_enabled() {
     assert!(stdout.contains("waited: true"), "{stdout}");
     assert!(stdout.contains("lost: true"), "{stdout}");
     assert!(stdout.contains("cleared: true"), "{stdout}");
+    for line in [
+        "past-link: true",
+        "record-off-moved: true",
+        "past-opened: true",
+        "record-on-subpage: true",
+        "compare-offered: true",
+        "compare-original: true",
+        "compare-result: true",
+        "long-list-lazy: true",
+    ] {
+        assert!(stdout.contains(line), "{line}: {stdout}");
+    }
+    let ms: u128 = stdout
+        .lines()
+        .find_map(|line| line.strip_prefix("long-list: true "))
+        .and_then(|ms| ms.parse().ok())
+        .unwrap_or(u128::MAX);
+    assert!(ms < 200, "1000 recorded dictations took {ms} ms: {stdout}");
 }
 
 /// A session bus config that activates nothing, so a probe sees only the

@@ -12,9 +12,8 @@ use myna_platform::components::{ComponentStatus, Components};
 use crate::adapters::client_settings::GioClientSettings;
 use crate::domain::ClientSettingValue;
 use crate::myna_settings::{
-    choice_display_label, past_dictation, widget_plan, DebouncedTextCommit, MynaSettingsController,
-    PageState, PersistenceRequest, PersistenceWriter, Placement, SettingRow, SettingsEvent,
-    WidgetKind, PAST_DICTATIONS_SHOWN,
+    choice_display_label, widget_plan, DebouncedTextCommit, MynaSettingsController, PageState,
+    PersistenceRequest, PersistenceWriter, Placement, SettingRow, SettingsEvent, WidgetKind,
 };
 use crate::onboarding::needs_onboarding;
 use crate::ports::{ClientSettings, ClientSettingsError};
@@ -1448,7 +1447,7 @@ fn build_settings_window(application: &adw::Application) {
     let processing = processing_group();
     window
         .processing_nav()
-        .replace(&[processing_page(&processing)]);
+        .replace(&[processing_page(&processing, &window.processing_nav())]);
     watch_chain_status(&processing.notice, daemon_chain_status, CHAIN_STATUS_POLL);
     attach_steps(&processing, &overlay);
 
@@ -1719,6 +1718,7 @@ fn processing_probe() -> glib::ExitCode {
     let overlay = adw::ToastOverlay::new();
     // The groups go out of scope with this block, as they do once the real
     // window is built; the page keeps the widgets.
+    let nav = adw::NavigationView::new();
     let (page, _general) = {
         let groups = processing_group();
         let general = ready_page(
@@ -1729,14 +1729,15 @@ fn processing_probe() -> glib::ExitCode {
             &adw::PreferencesGroup::new(),
             &groups,
         );
-        (processing_page(&groups), general)
+        (processing_page(&groups, &nav), general)
     };
-    overlay.set_child(Some(&page));
+    nav.replace(&[page]);
+    overlay.set_child(Some(&nav));
     let window = adw::Window::builder().content(&overlay).build();
     window.present();
     settle_gtk();
 
-    let root = page.upcast_ref::<gtk::Widget>();
+    let root = nav.upcast_ref::<gtk::Widget>();
     let old_chinese_row = typed_descendants::<adw::ComboRow>(root)
         .into_iter()
         .any(|row| row.title() == "Chinese writing");
@@ -1794,6 +1795,31 @@ fn processing_probe() -> glib::ExitCode {
     };
     println!("notice-follows: {} {}", waits_for(true), waits_for(false));
 
+    let link = typed_descendants::<adw::ActionRow>(root)
+        .into_iter()
+        .find(|row| row.title() == "Past dictations");
+    println!("past-link: {}", link.is_some());
+    println!(
+        "record-off-moved: {}",
+        !typed_descendants::<adw::SwitchRow>(root)
+            .iter()
+            .any(|row| row.title().starts_with("Keep a record"))
+    );
+    if let Some(link) = link {
+        link.emit_by_name::<()>("activated", &[]);
+    }
+    settle_gtk();
+    println!(
+        "past-opened: {}",
+        nav.visible_page()
+            .is_some_and(|p| p.title() == "Past dictations")
+    );
+    println!(
+        "record-on-subpage: {}",
+        typed_descendants::<adw::SwitchRow>(root)
+            .iter()
+            .any(|row| row.title().starts_with("Keep a record"))
+    );
     let titles = || -> Vec<String> {
         typed_descendants::<adw::ActionRow>(root)
             .iter()
@@ -1849,6 +1875,19 @@ fn processing_probe() -> glib::ExitCode {
     );
     println!("lost: {}", shows("words from a lost field", true));
 
+    let original = typed_descendants::<gtk::ToggleButton>(root)
+        .into_iter()
+        .find(|button| button.label().as_deref() == Some("Original"));
+    println!("compare-offered: {}", original.is_some());
+    if let Some(original) = original {
+        original.set_active(true);
+        settle_gtk();
+        println!("compare-original: {}", shows("um so I think", true));
+        original.set_active(false);
+        settle_gtk();
+        println!("compare-result: {}", shows("So I think.", true));
+    }
+
     let clear = typed_descendants::<gtk::Button>(root)
         .into_iter()
         .find(|button| button.label().as_deref() == Some(gettextrs::gettext("Clear").as_str()));
@@ -1856,6 +1895,30 @@ fn processing_probe() -> glib::ExitCode {
         clear.emit_clicked();
     }
     println!("cleared: {}", shows("So I think.", false) && !path.exists());
+
+    let long: String = (0..1000_u64)
+        .filter_map(|n| {
+            let entry = myna_core::history::Entry {
+                time: 10 + n,
+                heard: format!("long {n}"),
+                typed: format!("Long {n}."),
+                speech_model: Some("a speech model".into()),
+                ..Default::default()
+            };
+            serde_json::to_string(&entry).ok().map(|line| line + "\n")
+        })
+        .collect();
+    if std::fs::write(&path, long).is_err() {
+        eprintln!("myna-config processing probe could not record a long history");
+        return glib::ExitCode::FAILURE;
+    }
+    let started = std::time::Instant::now();
+    let listed = shows("Long 999.", true);
+    println!("long-list: {listed} {}", started.elapsed().as_millis());
+    println!(
+        "long-list-lazy: {}",
+        typed_descendants::<adw::ExpanderRow>(root).len() <= 21
+    );
 
     window.close();
     glib::ExitCode::SUCCESS
@@ -5955,146 +6018,10 @@ struct ProcessingGroups {
     notice: adw::Banner,
     /// What is done to the text: one row per step.
     chain: adw::PreferencesGroup,
-    record: adw::PreferencesGroup,
-    /// The recorded dictations, listed under the switch that keeps them.
-    past: adw::PreferencesGroup,
-}
-
-/// What the list of recorded dictations is drawn from. The Clear button owns
-/// it, so it lives exactly as long as the group it fills.
-struct PastDictations {
-    rows: RefCell<Vec<gtk::Widget>>,
-    path: Option<std::path::PathBuf>,
-    /// Kept so the list follows the daemon as it records.
-    monitor: RefCell<Option<gio::FileMonitor>>,
-}
-
-impl PastDictations {
-    fn group() -> adw::PreferencesGroup {
-        let clear = gtk::Button::builder()
-            .label(gettextrs::gettext("Clear"))
-            .valign(gtk::Align::Center)
-            .css_classes(["flat"])
-            .build();
-        let group = adw::PreferencesGroup::builder()
-            .title(gettextrs::gettext("Past dictations"))
-            .description(gettextrs::gettext(
-                "What Myna typed and, where it changed something, what it heard.",
-            ))
-            .header_suffix(&clear)
-            .visible(false)
-            .build();
-        let past = Rc::new(Self {
-            rows: RefCell::new(Vec::new()),
-            path: myna_core::history::path(),
-            monitor: RefCell::new(None),
-        });
-        if let Some(path) = &past.path {
-            let watched = gio::File::for_path(path)
-                .monitor_file(gio::FileMonitorFlags::NONE, gio::Cancellable::NONE);
-            if let Ok(monitor) = watched {
-                monitor.connect_changed({
-                    let past = Rc::downgrade(&past);
-                    let group = group.downgrade();
-                    move |_, _, _, _| {
-                        if let Some((past, group)) = past.upgrade().zip(group.upgrade()) {
-                            past.refresh(&group);
-                        }
-                    }
-                });
-                past.monitor.replace(Some(monitor));
-            }
-        }
-        past.refresh(&group);
-        clear.connect_clicked({
-            let group = group.downgrade();
-            move |_| {
-                if let Some(Err(err)) = past.path.as_deref().map(myna_core::history::clear) {
-                    glib::g_warning!(crate::LOG_DOMAIN, "record not cleared: {err}");
-                }
-                if let Some(group) = group.upgrade() {
-                    past.refresh(&group);
-                }
-            }
-        });
-        group
-    }
-
-    fn refresh(&self, group: &adw::PreferencesGroup) {
-        for row in self.rows.take() {
-            group.remove(&row);
-        }
-        let entries = self
-            .path
-            .as_deref()
-            .map(|path| myna_core::history::recent(path, PAST_DICTATIONS_SHOWN))
-            .unwrap_or_default();
-        let mut rows: Vec<gtk::Widget> = Vec::new();
-        if entries.is_empty() {
-            rows.push(
-                adw::ActionRow::builder()
-                    .title(gettextrs::gettext("Nothing recorded yet"))
-                    .sensitive(false)
-                    .build()
-                    .upcast(),
-            );
-        }
-        for entry in &entries {
-            let shown = past_dictation(entry);
-            let title = crate::markup::escape_markup(&shown.typed);
-            let subtitle = crate::markup::escape_markup(&shown.detail);
-            let when = i64::try_from(entry.time)
-                .ok()
-                .and_then(|time| glib::DateTime::from_unix_local(time).ok())
-                .and_then(|time| time.format("%-d %b %H:%M").ok())
-                .map(|when| {
-                    gtk::Label::builder()
-                        .label(when.as_str())
-                        .css_classes(["dim-label", "caption"])
-                        .valign(gtk::Align::Center)
-                        .build()
-                });
-            // A record from before it said what made it has nothing to open.
-            if shown.made_by.is_empty() {
-                let row = adw::ActionRow::builder()
-                    .title(title)
-                    .subtitle(subtitle)
-                    .title_lines(0)
-                    .subtitle_lines(0)
-                    .build();
-                if let Some(when) = &when {
-                    row.add_suffix(when);
-                }
-                rows.push(row.upcast());
-                continue;
-            }
-            let row = adw::ExpanderRow::builder()
-                .title(title)
-                .subtitle(subtitle)
-                .title_lines(0)
-                .subtitle_lines(0)
-                .build();
-            if let Some(when) = &when {
-                row.add_suffix(when);
-            }
-            for (label, value) in &shown.made_by {
-                row.add_row(
-                    &adw::ActionRow::builder()
-                        .title(crate::markup::escape_markup(label))
-                        .subtitle(crate::markup::escape_markup(value))
-                        .subtitle_lines(0)
-                        .subtitle_selectable(true)
-                        .css_classes(["property"])
-                        .build(),
-                );
-            }
-            rows.push(row.upcast());
-        }
-        for row in &rows {
-            group.add(row);
-        }
-        self.rows.replace(rows);
-    }
+    /// The Past dictations sub-page: the record switch and the list.
+    past: crate::past_dictations_ui::PastPage,
+    /// The link to it, at the bottom of the page.
+    past_link: adw::PreferencesGroup,
 }
 
 fn processing_group() -> ProcessingGroups {
@@ -6106,8 +6033,8 @@ fn processing_group() -> ProcessingGroups {
                 "Switch on what Myna does to what you say, in the order shown. Any step is shown on screen while you speak and typed a sentence at a time. This is experimental.",
             ))
             .build(),
-        record: adw::PreferencesGroup::new(),
-        past: PastDictations::group(),
+        past: crate::past_dictations_ui::PastPage::new(),
+        past_link: adw::PreferencesGroup::new(),
     }
 }
 
@@ -6147,12 +6074,12 @@ fn attach_steps(groups: &ProcessingGroups, overlay: &adw::ToastOverlay) {
     crate::processing_ui::StepsPage::attach(deps, &groups.chain);
 }
 
-fn processing_page(groups: &ProcessingGroups) -> adw::NavigationPage {
+fn processing_page(groups: &ProcessingGroups, nav: &adw::NavigationView) -> adw::NavigationPage {
     let preferences = adw::PreferencesPage::new();
     preferences.set_vexpand(true);
     preferences.add(&groups.chain);
-    preferences.add(&groups.record);
-    preferences.add(&groups.past);
+    groups.past_link.add(&groups.past.link_row(nav));
+    preferences.add(&groups.past_link);
     let content = gtk::Box::new(gtk::Orientation::Vertical, 0);
     content.append(&groups.notice);
     content.append(&preferences);
@@ -6390,7 +6317,7 @@ fn ready_page(
         let group = match plan.placement {
             Placement::Dictation => &dictation,
             Placement::ActiveModel => model_settings,
-            Placement::ProcessingRecord => &processing.record,
+            Placement::ProcessingRecord => &processing.past.record,
         };
         let widget_name = (plan.placement == Placement::ActiveModel)
             .then(|| crate::backend_ui::client_setting_widget_name(&plan.key));
@@ -6524,9 +6451,7 @@ fn ready_page(
                     .build();
                 describe(&row, &plan.description);
                 if plan.key == myna_core::settings::KEY_PROCESSING_HISTORY {
-                    row.bind_property("active", &processing.past, "visible")
-                        .sync_create()
-                        .build();
+                    processing.past.follow_record(&row);
                 }
                 let updating = Rc::new(Cell::new(false));
                 row.connect_active_notify({

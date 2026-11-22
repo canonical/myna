@@ -23,6 +23,7 @@ pub mod myna_settings;
 pub mod onboarding;
 pub mod onboarding_ui;
 pub mod operation_gate;
+pub mod past_dictations_ui;
 pub mod performance;
 pub mod platform;
 pub mod plugin_catalog;
