@@ -68,7 +68,8 @@ impl ChainState {
 }
 
 /// The tasks of the daemon's `ChainMissingRequests`, a translation with its
-/// target as `text.translate>fr`; empty for a daemon too old to say.
+/// languages as `text.translate:en>fr` (`text.translate>fr` when the source
+/// is not named); empty for a daemon too old to say.
 fn named_requests(json: &str) -> Vec<String> {
     let Ok(serde_json::Value::Array(requests)) = serde_json::from_str(json) else {
         return Vec::new();
@@ -77,9 +78,13 @@ fn named_requests(json: &str) -> Vec<String> {
         .iter()
         .filter_map(|request| {
             let task = request.get("task")?.as_str()?;
-            let to = request.get("params")?.get("to").and_then(|to| to.as_str());
-            Some(match to {
-                Some(to) if task == "text.translate" => format!("{task}>{to}"),
+            let params = request.get("params")?;
+            let text = |name| params.get(name).and_then(|v| v.as_str());
+            Some(match (text("language"), text("to")) {
+                (Some(from), Some(to)) if task == "text.translate" => {
+                    format!("{task}:{from}>{to}")
+                }
+                (_, Some(to)) if task == "text.translate" => format!("{task}>{to}"),
                 _ => task.to_owned(),
             })
         })
@@ -88,6 +93,16 @@ fn named_requests(json: &str) -> Vec<String> {
 
 /// A task as the user would call it.
 pub fn word(task: &str) -> String {
+    if let Some((from, to)) = task
+        .strip_prefix("text.translate:")
+        .and_then(|pair| pair.split_once('>'))
+    {
+        // TRANSLATORS: {from} and {to} are language names, such as "English" and "Deutsch".
+        let frame = gettextrs::gettext("translation from {from} to {to}");
+        return frame
+            .replace("{from}", &crate::processing_steps::language_name(from))
+            .replace("{to}", &crate::processing_steps::language_name(to));
+    }
     if let Some(to) = task.strip_prefix("text.translate>") {
         // TRANSLATORS: {language} is a language name, such as "Français".
         let frame = gettextrs::gettext("translation to {language}");
@@ -175,10 +190,20 @@ mod tests {
         let state = ChainState::parse("degraded", "text.translate", json).unwrap();
         assert_eq!(
             state.notice().as_deref(),
-            Some("This needs a model for translation to Français, text cleanup, which is not installed. Myna types what it heard instead.")
+            Some("This needs a model for translation from English to Français, text cleanup, which is not installed. Myna types what it heard instead.")
         );
         let broken = ChainState::parse("degraded", "text.cleanup", "not json").unwrap();
         assert_eq!(broken.summary(), "missing a model for text cleanup");
+    }
+
+    #[test]
+    fn a_request_naming_only_its_target_says_so() {
+        let json = r#"[{"task":"text.translate","params":{"to":"de"}}]"#;
+        let state = ChainState::parse("degraded", "text.translate", json).unwrap();
+        assert_eq!(
+            state.summary(),
+            "missing a model for translation to Deutsch"
+        );
     }
 
     #[test]
