@@ -66,8 +66,10 @@ polkit.addRule(function(action, subject) {
         action.id == "com.canonical.Myna.Config.apply-plan" ||
         action.id == "com.canonical.Myna.Config.set-up" ||
         (action.id == "org.freedesktop.policykit.exec" &&
-         action.lookup("program") == "$PWD/myna-config"))
+         action.lookup("program") == "$PWD/myna-config")) {
+        polkit.spawn(["logger", "-t", "myna-e2e-polkit", action.id]);
         return polkit.Result.$result;
+    }
     return polkit.Result.NOT_HANDLED;
 });
 RULES
