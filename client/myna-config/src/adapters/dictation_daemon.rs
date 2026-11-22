@@ -125,6 +125,10 @@ impl DictationDaemon for SessionBusDaemon {
             .map(|json| parse_offered(&json)))
     }
 
+    async fn installed_steps(&self) -> Result<Option<String>, String> {
+        property(self, "InstalledSteps").await
+    }
+
     async fn rescan(&self) -> Result<(), String> {
         call(self, BUS, "RescanModels", ().to_variant())
             .await

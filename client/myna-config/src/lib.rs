@@ -30,6 +30,7 @@ pub mod plugin_install;
 pub mod ports;
 pub mod presentation;
 pub mod processing_steps;
+pub mod processing_ui;
 pub mod shortcut;
 pub mod shortcut_ui;
 pub mod snap_changes;

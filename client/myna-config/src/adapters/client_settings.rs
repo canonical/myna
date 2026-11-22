@@ -10,24 +10,18 @@ use crate::domain::{
 use crate::ports::{
     ClientSettings, ClientSettingsCallback, ClientSettingsError, ClientSettingsSubscription,
 };
-use myna_core::processing::{
-    chain_of, script_of, with_chain, with_script, ChineseScript, Params, ProcessingChain,
-};
+use myna_core::processing::{script_of, with_script, ChineseScript, Params};
 use myna_core::settings::{KEY_PROCESSING_PARAMS, KEY_PROCESSING_STEPS, SCHEMA_ID};
 
-/// What Myna types: the preset the stored steps read as. Not a schema key;
-/// this adapter presents it over `processing-steps` and `processing-params`.
-pub const KEY_PROCESSING_CHAIN: &str = "processing-chain";
-
 /// How Chinese is written: `script.mode`, with the `script` step switched on
-/// for any script but the recognised one. Presented like the chain.
+/// for any script but the recognised one. Presented over the stored steps.
 pub const KEY_CHINESE_SCRIPT: &str = "chinese-script";
 
 /// The keys the page presents in place of the stored step list.
 const STORED_KEYS: [&str; 2] = [KEY_PROCESSING_STEPS, KEY_PROCESSING_PARAMS];
 
 fn is_view(key: &str) -> bool {
-    key == KEY_PROCESSING_CHAIN || key == KEY_CHINESE_SCRIPT
+    key == KEY_CHINESE_SCRIPT
 }
 
 /// The stored steps and parameters, as the daemon reads them.
@@ -44,12 +38,9 @@ fn stored(settings: &gio::Settings) -> (Vec<String>, Params) {
     (ids, params)
 }
 
-fn view_value(settings: &gio::Settings, key: &str) -> ClientSettingValue {
+fn view_value(settings: &gio::Settings) -> ClientSettingValue {
     let (ids, params) = stored(settings);
-    ClientSettingValue::Choice(match key {
-        KEY_PROCESSING_CHAIN => chain_of(&ids, &params).nick().to_owned(),
-        _ => script_of(&ids, &params).nick().to_owned(),
-    })
+    ClientSettingValue::Choice(script_of(&ids, &params).nick().to_owned())
 }
 
 #[derive(Debug)]
@@ -96,6 +87,64 @@ impl GioClientSettings {
         Ok(Self { schema, settings })
     }
 
+    /// The enabled steps and their parameters, as stored.
+    pub fn steps(&self) -> (Vec<String>, Params) {
+        stored(&self.settings)
+    }
+
+    /// Store `ids` and `params`. Parameters go first: a daemon that reads
+    /// between the two writes sees a parameter no step uses yet, never a
+    /// step without its parameter.
+    pub fn set_steps(&self, ids: &[String], params: &Params) -> Result<(), ClientSettingsError> {
+        for key in STORED_KEYS {
+            self.ensure_writable(key)?;
+        }
+        let (now_ids, now_params) = stored(&self.settings);
+        let write = |key: &str, variant: glib::Variant| {
+            self.settings.set_value(key, &variant).map_err(|error| {
+                ClientSettingsError::InvalidValue {
+                    key: key.to_owned(),
+                    message: error.to_string(),
+                }
+            })
+        };
+        if *params != now_params {
+            write(KEY_PROCESSING_PARAMS, params.to_variant())?;
+        }
+        if ids != now_ids {
+            write(KEY_PROCESSING_STEPS, ids.to_variant())?;
+        }
+        Ok(())
+    }
+
+    /// Call `callback` whenever the stored steps or parameters change, until
+    /// the returned value is dropped.
+    pub fn watch_steps(
+        &self,
+        callback: impl Fn() + 'static,
+    ) -> Box<dyn ClientSettingsSubscription> {
+        let handler = self.settings.connect_changed(None, move |_, key| {
+            if STORED_KEYS.contains(&key) {
+                callback();
+            }
+        });
+        Box::new(GioSubscription {
+            settings: self.settings.clone(),
+            handler: Some(handler),
+        })
+    }
+
+    /// The `language` setting; empty when the model decides.
+    pub fn language(&self) -> String {
+        if self.schema.has_key(myna_core::settings::KEY_LANGUAGE) {
+            self.settings
+                .string(myna_core::settings::KEY_LANGUAGE)
+                .to_string()
+        } else {
+            String::new()
+        }
+    }
+
     /// Whether the schema in use holds the stored step keys; one from before
     /// them has no chain or script to present.
     fn has_views(&self) -> bool {
@@ -103,32 +152,21 @@ impl GioClientSettings {
     }
 
     fn view_metadata(&self, key: &str) -> ClientSettingMetadata {
-        let (summary, description, choices, default) = if key == KEY_PROCESSING_CHAIN {
-            (
-                gettextrs::gettext("What Myna types"),
-                gettextrs::gettext(
-                    "Exactly what you say, typed as you speak; a tidied version, without the hesitations and repeats; a French translation of it; or what you say fitted to the field you type in. Anything but the first is shown on screen while you speak and typed a sentence at a time.",
-                ),
-                ProcessingChain::ALL.map(|chain| chain.nick().to_owned()).to_vec(),
-                ProcessingChain::EXACT.nick(),
-            )
-        } else {
-            (
-                gettextrs::gettext("Chinese writing"),
-                gettextrs::gettext(
-                    "Speech models write Chinese in whichever script they like. Choose simplified or traditional characters, with the words used in Taiwan or the characters used in Hong Kong, and what you say is typed that way. Other languages are left as they are.",
-                ),
-                ChineseScript::ALL.map(|script| script.nick().to_owned()).to_vec(),
-                ChineseScript::AsRecognised.nick(),
-            )
-        };
+        let (summary, description, choices, default) = (
+            gettextrs::gettext("Chinese writing"),
+            gettextrs::gettext(
+                "Speech models write Chinese in whichever script they like. Choose simplified or traditional characters, with the words used in Taiwan or the characters used in Hong Kong, and what you say is typed that way. Other languages are left as they are.",
+            ),
+            ChineseScript::ALL.map(|script| script.nick().to_owned()).to_vec(),
+            ChineseScript::AsRecognised.nick(),
+        );
         ClientSettingMetadata::new(
             ClientSettingKey::new(key).expect("view keys are non-empty"),
             Some(summary),
             Some(description),
             ClientSettingValue::Choice(default.to_owned()),
             SettingRange::Choices(choices),
-            view_value(&self.settings, key),
+            view_value(&self.settings),
             STORED_KEYS.iter().all(|key| self.settings.is_writable(key)),
         )
     }
@@ -138,38 +176,14 @@ impl GioClientSettings {
             key: key.to_owned(),
             message: message.into(),
         };
-        for stored_key in STORED_KEYS {
-            self.ensure_writable(stored_key)?;
-        }
         let ClientSettingValue::Choice(nick) = value else {
             return Err(invalid("value has the wrong schema type"));
         };
         let (ids, params) = stored(&self.settings);
-        let (next_ids, next_params) = if key == KEY_PROCESSING_CHAIN {
-            let chain = ProcessingChain::from_nick(&nick)
-                .ok_or_else(|| invalid("value is outside the schema range"))?;
-            with_chain(&ids, &params, chain)
-        } else {
-            let script = ChineseScript::from_nick(&nick)
-                .ok_or_else(|| invalid("value is outside the schema range"))?;
-            with_script(&ids, &params, script)
-        };
-        let write = |stored_key: &str, variant: glib::Variant| {
-            self.settings
-                .set_value(stored_key, &variant)
-                .map_err(|error| ClientSettingsError::InvalidValue {
-                    key: key.to_owned(),
-                    message: error.to_string(),
-                })
-        };
-        // Parameters first: a daemon that reads between the two writes sees
-        // a parameter no step uses yet, never a step without its parameter.
-        if next_params != params {
-            write(KEY_PROCESSING_PARAMS, next_params.to_variant())?;
-        }
-        if next_ids != ids {
-            write(KEY_PROCESSING_STEPS, next_ids.to_variant())?;
-        }
+        let script = ChineseScript::from_nick(&nick)
+            .ok_or_else(|| invalid("value is outside the schema range"))?;
+        let (next_ids, next_params) = with_script(&ids, &params, script);
+        self.set_steps(&next_ids, &next_params)?;
         Ok(())
     }
 
@@ -214,7 +228,7 @@ impl ClientSettings for GioClientSettings {
             holds(&self.schema.key(key).value_type()) && !STORED_KEYS.contains(&key.as_str())
         });
         if self.has_views() {
-            keys.extend([KEY_PROCESSING_CHAIN.into(), KEY_CHINESE_SCRIPT.into()]);
+            keys.push(KEY_CHINESE_SCRIPT.into());
         }
         keys.sort();
         keys.iter()
@@ -227,7 +241,7 @@ impl ClientSettings for GioClientSettings {
 
     fn get(&self, key: &str) -> Result<ClientSettingValue, ClientSettingsError> {
         if is_view(key) && self.has_views() {
-            return Ok(view_value(&self.settings, key));
+            return Ok(view_value(&self.settings));
         }
         let schema_key = self.schema_key(key)?;
         value_from_variant(&self.settings.value(key), &setting_range(&schema_key), key)
@@ -294,15 +308,13 @@ impl ClientSettings for GioClientSettings {
         let schema = self.schema.clone();
         let handler = settings.connect_changed(None, move |settings, key| {
             if STORED_KEYS.contains(&key) {
-                for view in [KEY_PROCESSING_CHAIN, KEY_CHINESE_SCRIPT] {
-                    callback(
-                        ClientSetting::new(
-                            ClientSettingKey::new(view).expect("view keys are non-empty"),
-                            view_value(settings, view),
-                        )
-                        .expect("view setting is valid"),
-                    );
-                }
+                callback(
+                    ClientSetting::new(
+                        ClientSettingKey::new(KEY_CHINESE_SCRIPT).expect("view keys are non-empty"),
+                        view_value(settings),
+                    )
+                    .expect("view setting is valid"),
+                );
                 return;
             }
             if !schema.has_key(key) {

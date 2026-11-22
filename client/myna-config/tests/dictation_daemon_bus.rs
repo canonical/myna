@@ -119,6 +119,13 @@ fn reads_state_and_models() {
         let state = daemon.state().await;
         let offered = daemon.offered_models().await;
         let rescan = daemon.rescan().await;
+        let raw = daemon.installed_steps().await;
+        assert_eq!(
+            raw,
+            Ok(Some(
+                r#"{"models":[{"model":"bergamot-en-fr"}],"steps":[]}"#.to_owned()
+            ))
+        );
         seen.replace(Some((state, offered, rescan)));
     });
     let (state, offered, rescan) = seen.take().unwrap();
@@ -154,4 +161,6 @@ fn no_daemon() {
     assert_eq!(state, Ok(None));
     assert_eq!(offered, Ok(None));
     assert_eq!(rescan, Ok(()));
+    let raw = MainContext::ref_thread_default().block_on(daemon.installed_steps());
+    assert_eq!(raw, Ok(None));
 }

@@ -12,9 +12,9 @@ use myna_platform::components::{ComponentStatus, Components};
 use crate::adapters::client_settings::GioClientSettings;
 use crate::domain::ClientSettingValue;
 use crate::myna_settings::{
-    choice_detail, choice_display_label, past_dictation, widget_plan, DebouncedTextCommit,
-    MynaSettingsController, PageState, PersistenceRequest, PersistenceWriter, Placement,
-    SettingRow, SettingsEvent, WidgetKind, PAST_DICTATIONS_SHOWN,
+    choice_display_label, past_dictation, widget_plan, DebouncedTextCommit, MynaSettingsController,
+    PageState, PersistenceRequest, PersistenceWriter, Placement, SettingRow, SettingsEvent,
+    WidgetKind, PAST_DICTATIONS_SHOWN,
 };
 use crate::onboarding::needs_onboarding;
 use crate::ports::{ClientSettings, ClientSettingsError};
@@ -1450,6 +1450,7 @@ fn build_settings_window(application: &adw::Application) {
         .processing_nav()
         .replace(&[processing_page(&processing)]);
     watch_chain_status(&processing.notice, daemon_chain_status, CHAIN_STATUS_POLL);
+    attach_steps(&processing, &overlay);
 
     general_nav.replace(&[status_page(
         &gettextrs::gettext("Loading Myna Settings"),
@@ -1688,7 +1689,7 @@ fn typing_probe() -> glib::ExitCode {
 
 /// Drive the vocabulary editor on the real page against a scratch store: add,
 /// the three refusals, and remove, each read back from the store.
-/// Pick a chain on the Processing tab, then record a dictation behind the
+/// Pick a script on the Processing tab, then record a dictation behind the
 /// window's back and clear the record, reporting what the tab shows.
 ///
 /// The regression: the list of past dictations was drawn once and never
@@ -1735,22 +1736,6 @@ fn processing_probe() -> glib::ExitCode {
     settle_gtk();
 
     let root = page.upcast_ref::<gtk::Widget>();
-    let radios = typed_descendants::<gtk::CheckButton>(root);
-    let Some(tidy) = radios.get(1) else {
-        eprintln!("myna-config processing probe found {} chains", radios.len());
-        return glib::ExitCode::FAILURE;
-    };
-    tidy.set_active(true);
-    settle_gtk();
-    let chain = controller.shown_value(crate::adapters::client_settings::KEY_PROCESSING_CHAIN);
-    println!(
-        "chain: {}",
-        chain
-            .as_ref()
-            .and_then(ClientSettingValue::as_str)
-            .unwrap_or_default()
-    );
-
     let script = typed_descendants::<adw::ComboRow>(root)
         .into_iter()
         .find(|row| row.title() == "Chinese writing");
@@ -5979,7 +5964,7 @@ fn build_myna_page(
 struct ProcessingGroups {
     /// Advice when the chosen chain has no model for a step; hidden otherwise.
     notice: adw::Banner,
-    /// What is done to the text: one row per chain.
+    /// What is done to the text: one row per step.
     chain: adw::PreferencesGroup,
     /// How Chinese is written.
     script: adw::PreferencesGroup,
@@ -6129,9 +6114,9 @@ fn processing_group() -> ProcessingGroups {
     ProcessingGroups {
         notice: adw::Banner::builder().use_markup(false).build(),
         chain: adw::PreferencesGroup::builder()
-            .title(gettextrs::gettext("What Myna types"))
+            .title(gettextrs::gettext("Steps"))
             .description(gettextrs::gettext(
-                "Anything but the first is shown on screen while you speak and typed a sentence at a time. This is experimental.",
+                "Switch on what Myna does to what you say, in the order shown. Any step is shown on screen while you speak and typed a sentence at a time. This is experimental.",
             ))
             .build(),
         script: adw::PreferencesGroup::builder()
@@ -6140,6 +6125,42 @@ fn processing_group() -> ProcessingGroups {
         record: adw::PreferencesGroup::new(),
         past: PastDictations::group(),
     }
+}
+
+/// Give the Steps group its rows, over the real store, daemon and snapd.
+fn attach_steps(groups: &ProcessingGroups, overlay: &adw::ToastOverlay) {
+    let store = match GioClientSettings::open() {
+        Ok(store) => Rc::new(store),
+        Err(error) => {
+            glib::g_warning!(crate::LOG_DOMAIN, "steps unavailable: {error}");
+            return;
+        }
+    };
+    let deps = crate::processing_ui::Deps {
+        store,
+        daemon: Rc::new(crate::adapters::dictation_daemon::SessionBusDaemon::default()),
+        configurator: Rc::new(
+            crate::adapters::system_configurator::PkexecSystemConfigurator::new(
+                std::sync::Arc::new(crate::command::GioCommandRunner),
+            ),
+        ),
+        repository: Rc::new(crate::adapters::snap_backend::SnapBackendRepository::new(
+            std::sync::Arc::new(crate::command::GioCommandRunner),
+            std::sync::Arc::new(crate::adapters::snapd_client::UnixSocketSnapdClient::new()),
+        )),
+        catalog: Box::new(|| {
+            crate::plugin_catalog::load(
+                std::path::Path::new(crate::plugin_catalog::SNAPSHOT_DIR),
+                std::path::Path::new("/snap"),
+            )
+            .entries
+        }),
+        locales: myna_core::locale::preferred_languages(&myna_core::locale::SystemLocale::default()),
+        overlay: overlay.clone(),
+        follow_interval: Duration::from_secs(1),
+        refresh_every: crate::processing_ui::Deps::refresh_default(),
+    };
+    crate::processing_ui::StepsPage::attach(deps, &groups.chain);
 }
 
 fn processing_page(groups: &ProcessingGroups) -> adw::NavigationPage {
@@ -6224,12 +6245,6 @@ enum RowBinding {
         writable: bool,
         updating: Rc<Cell<bool>>,
     },
-    Options {
-        buttons: Vec<gtk::CheckButton>,
-        choices: Vec<String>,
-        writable: bool,
-        updating: Rc<Cell<bool>>,
-    },
     Number {
         row: adw::SpinRow,
         writable: bool,
@@ -6295,24 +6310,6 @@ impl RowBinding {
                     }
                 }
                 row.set_sensitive(*writable);
-                updating.set(false);
-            }
-            Self::Options {
-                buttons,
-                choices,
-                writable,
-                updating,
-            } => {
-                updating.set(true);
-                let chosen = value
-                    .as_str()
-                    .and_then(|value| choices.iter().position(|choice| choice == value));
-                for (index, button) in buttons.iter().enumerate() {
-                    if chosen == Some(index) {
-                        button.set_active(true);
-                    }
-                    button.set_sensitive(*writable);
-                }
                 updating.set(false);
             }
             Self::Number {
@@ -6410,7 +6407,6 @@ fn ready_page(
         let group = match plan.placement {
             Placement::Dictation => &dictation,
             Placement::ActiveModel => model_settings,
-            Placement::Processing => &processing.chain,
             Placement::ProcessingScript => &processing.script,
             Placement::ProcessingRecord => &processing.record,
         };
@@ -6502,62 +6498,6 @@ fn ready_page(
                     },
                 );
                 add(row.upcast_ref());
-            }
-            WidgetKind::Options => {
-                let chosen = controller.shown_value(&plan.key);
-                let chosen = chosen.as_ref().and_then(ClientSettingValue::as_str);
-                let updating = Rc::new(Cell::new(false));
-                let mut buttons: Vec<gtk::CheckButton> = Vec::new();
-                for choice in &plan.choices {
-                    let button = gtk::CheckButton::builder()
-                        .valign(gtk::Align::Center)
-                        .active(chosen == Some(choice.as_str()))
-                        .sensitive(plan.writable)
-                        .build();
-                    if let Some(first) = buttons.first() {
-                        button.set_group(Some(first));
-                    }
-                    let row = adw::ActionRow::builder()
-                        .title(choice_display_label(choice))
-                        .subtitle_lines(0)
-                        .activatable_widget(&button)
-                        .build();
-                    if let Some(detail) = choice_detail(choice) {
-                        row.set_subtitle(&crate::markup::escape_markup(&format!(
-                            "{}\n\u{201c}{}\u{201d}",
-                            detail.description, detail.example
-                        )));
-                    }
-                    row.add_prefix(&button);
-                    button.connect_toggled({
-                        let controller = controller.clone();
-                        let key = plan.key.clone();
-                        let choice = choice.clone();
-                        let updating = updating.clone();
-                        let writer = writer.clone();
-                        move |button| {
-                            if updating.get() || !button.is_active() {
-                                return;
-                            }
-                            if let Ok(request) =
-                                controller.set(&key, ClientSettingValue::Choice(choice.clone()))
-                            {
-                                persist_request(writer.clone(), controller.clone(), request, None);
-                            }
-                        }
-                    });
-                    add(row.upcast_ref());
-                    buttons.push(button);
-                }
-                bindings.borrow_mut().insert(
-                    plan.key.clone(),
-                    RowBinding::Options {
-                        buttons,
-                        choices: plan.choices,
-                        writable: plan.writable,
-                        updating,
-                    },
-                );
             }
             WidgetKind::Number => {
                 let (minimum, maximum) = plan.bounds.expect("Number plans carry bounds");

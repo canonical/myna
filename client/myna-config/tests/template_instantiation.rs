@@ -155,7 +155,7 @@ fn typing_into_a_text_row_keeps_focus_and_stays_editable_when_enabled() {
 /// The regression: the list of past dictations was drawn when the window
 /// opened and never again, so nothing dictated afterwards showed up in it.
 #[test]
-fn the_processing_tab_follows_the_record_and_the_chosen_chain_when_enabled() {
+fn the_processing_tab_follows_the_record_and_the_chosen_script_when_enabled() {
     if std::env::var_os("MYNA_CONFIG_GTK_TESTS").is_none() {
         eprintln!("skipped: set MYNA_CONFIG_GTK_TESTS=1 under Xvfb");
         return;
@@ -175,13 +175,12 @@ fn the_processing_tab_follows_the_record_and_the_chosen_chain_when_enabled() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(output.status.success(), "processing probe failed: {stderr}");
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("chain: tidy"), "{stdout}");
     assert!(stdout.contains("script-row: true"), "{stdout}");
     assert!(stdout.contains("script: traditional-taiwan"), "{stdout}");
     assert!(stdout.contains("notice-idle: true"), "{stdout}");
     assert!(
         stdout.contains(
-            "notice-degraded: true This needs a translation model that is not installed."
+            "notice-degraded: true This needs a model for translation, which is not installed."
         ),
         "{stdout}"
     );

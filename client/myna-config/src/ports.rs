@@ -176,6 +176,10 @@ pub trait DictationDaemon {
     /// Ids of the models the daemon's bound text shares offer
     /// (`InstalledSteps`); none when no daemon runs.
     async fn offered_models(&self) -> Result<Option<Vec<String>>, String>;
+    /// The raw `InstalledSteps` value; none when no daemon runs.
+    async fn installed_steps(&self) -> Result<Option<String>, String> {
+        Ok(None)
+    }
     /// `RescanModels`: read every text share again.
     async fn rescan(&self) -> Result<(), String>;
 }

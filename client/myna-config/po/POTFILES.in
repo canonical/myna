@@ -13,6 +13,8 @@ data/operation-error-dialog.blp
 data/status-page.blp
 src/app.rs
 src/chain_notice.rs
+src/processing_steps.rs
+src/processing_ui.rs
 src/plugin_catalog.rs
 src/active_backend.rs
 src/backend_ui.rs

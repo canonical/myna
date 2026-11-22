@@ -15,8 +15,6 @@ use crate::ports::{ClientSettings, ClientSettingsError, ClientSettingsSubscripti
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WidgetKind {
     Choice,
-    /// A choice whose options each explain themselves: a radio list.
-    Options,
     Text,
     /// A bounded integer: a spin row over the schema range.
     Number,
@@ -33,8 +31,6 @@ pub enum Placement {
     Dictation,
     /// The Model tab, and only while the active backend takes the setting.
     ActiveModel,
-    /// The Processing tab: what is done to the text.
-    Processing,
     /// The Processing tab: how Chinese is written.
     ProcessingScript,
     /// The Processing tab: the record of what was done.
@@ -141,12 +137,6 @@ pub fn widget_plan(metadata: &ClientSettingMetadata) -> WidgetPlan {
     };
     let kind = match metadata.range() {
         _ if metadata.default_value().as_bool().is_some() => WidgetKind::Switch,
-        SettingRange::Choices(_)
-            if metadata.key().as_str()
-                == crate::adapters::client_settings::KEY_PROCESSING_CHAIN =>
-        {
-            WidgetKind::Options
-        }
         SettingRange::Choices(_) => WidgetKind::Choice,
         _ if bounds.is_some() => WidgetKind::Number,
         _ if metadata.default_value().as_list().is_some() => WidgetKind::List,
@@ -172,7 +162,6 @@ pub fn widget_plan(metadata: &ClientSettingMetadata) -> WidgetPlan {
         writable: metadata.writable(),
         placement: match metadata.key().as_str() {
             myna_core::settings::KEY_LANGUAGE => Placement::ActiveModel,
-            crate::adapters::client_settings::KEY_PROCESSING_CHAIN => Placement::Processing,
             crate::adapters::client_settings::KEY_CHINESE_SCRIPT => Placement::ProcessingScript,
             myna_core::settings::KEY_PROCESSING_HISTORY => Placement::ProcessingRecord,
             _ => Placement::Dictation,
@@ -181,7 +170,7 @@ pub fn widget_plan(metadata: &ClientSettingMetadata) -> WidgetPlan {
 }
 
 /// The Dictation group's order; any other key follows, in the adapter's order.
-const DICTATION_ORDER: [&str; 9] = [
+const DICTATION_ORDER: [&str; 8] = [
     KEY_STREAMING_MODE,
     myna_core::settings::KEY_HUD_STYLE,
     myna_core::settings::KEY_SOUNDS,
@@ -190,7 +179,6 @@ const DICTATION_ORDER: [&str; 9] = [
     // Last: a row that opens a page of its own.
     myna_core::settings::KEY_VOCABULARY,
     // The Processing tab.
-    crate::adapters::client_settings::KEY_PROCESSING_CHAIN,
     crate::adapters::client_settings::KEY_CHINESE_SCRIPT,
     myna_core::settings::KEY_PROCESSING_HISTORY,
 ];
@@ -236,49 +224,6 @@ pub fn choice_display_label(choice: &str) -> String {
         "traditional-hongkong" => gettextrs::gettext("Traditional, Hong Kong (繁體)"),
         unknown => unknown.to_owned(),
     }
-}
-
-/// What an option of a [`WidgetKind::Options`] list does, and what the same
-/// spoken sentence comes out as under it.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ChoiceDetail {
-    pub description: String,
-    pub example: String,
-}
-
-pub fn choice_detail(choice: &str) -> Option<ChoiceDetail> {
-    let (description, example) = match choice {
-        "exact" => (
-            gettextrs::gettext("Typed as you speak, word for word."),
-            // Translators: a spoken sentence with a hesitation and a repeat,
-            // as a speech recogniser writes it down.
-            gettextrs::gettext("um so I, I think we should move it to thursday"),
-        ),
-        "tidy" => (
-            gettextrs::gettext(
-                "Hesitations, false starts and repeated words are left out. Nothing is added.",
-            ),
-            // Translators: the sentence above with the hesitation and the
-            // repeat removed.
-            gettextrs::gettext("So I think we should move it to Thursday."),
-        ),
-        "tidy-french" => (
-            gettextrs::gettext("Tidied, then translated from English."),
-            // Not translated: it is what gets typed, in French.
-            "Je pense donc que nous devrions le déplacer à jeudi.".to_owned(),
-        ),
-        "keyword" => (
-            gettextrs::gettext(
-                "Word for word, but with no capital or full stop in an address, and no capital where you carry on a sentence.",
-            ),
-            gettextrs::gettext("um so I, I think we should move it to thursday"),
-        ),
-        _ => return None,
-    };
-    Some(ChoiceDetail {
-        description,
-        example,
-    })
 }
 
 /// A recorded dictation as the Processing tab lists it: what was typed, under

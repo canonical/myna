@@ -9,8 +9,8 @@ use gio::glib;
 use myna_config::adapters::client_settings::GioClientSettings;
 use myna_config::domain::{ClientSettingValue, SettingRange};
 use myna_config::myna_settings::{
-    choice_detail, choice_display_label, past_dictation, widget_plan, MynaSettingsController,
-    PersistenceWriter, Placement, WidgetKind,
+    choice_display_label, past_dictation, widget_plan, MynaSettingsController, PersistenceWriter,
+    Placement, WidgetKind,
 };
 use myna_config::ports::{ClientSettings, ClientSettingsError};
 use myna_core::history::Skip;
@@ -100,12 +100,14 @@ fn enumerates_the_real_schema_and_its_metadata() {
     let adapter =
         GioClientSettings::open_with_source(&source, files.0.join("settings/keyfile")).unwrap();
 
-    // The page shows the chain and the Chinese script in place of the two
-    // stored step keys.
+    // The page shows the Chinese script in place of the two stored step keys.
     let stored = ["processing-steps", "processing-params"];
-    let presented = ["processing-chain", "chinese-script"];
+    let presented = ["chinese-script"];
     let settings = adapter.list().unwrap();
-    assert_eq!(settings.len(), expected.len());
+    assert_eq!(
+        settings.len(),
+        expected.len() - stored.len() + presented.len()
+    );
     assert!(expected
         .iter()
         .filter(|key| !stored.contains(&key.as_str()))
@@ -623,7 +625,7 @@ fn headless_widget_smoke_covers_every_real_schema_key() {
 
     let plans: Vec<_> = adapter.list().unwrap().iter().map(widget_plan).collect();
 
-    assert_eq!(plans.len(), 10);
+    assert_eq!(plans.len(), 9);
     assert!(plans.iter().any(|plan| plan.kind == WidgetKind::Choice));
     let vocabulary = plans
         .iter()
@@ -647,20 +649,10 @@ fn headless_widget_smoke_covers_every_real_schema_key() {
         .expect("sounds is listed");
     assert_eq!(switch.kind, WidgetKind::Switch);
     assert_eq!(switch.title, "Sounds on start, stop and error");
-    let chain = plans
-        .iter()
-        .find(|plan| plan.key == "processing-chain")
-        .expect("processing-chain is listed");
-    assert_eq!(chain.kind, WidgetKind::Options);
-    assert_eq!(chain.placement, Placement::Processing);
-    assert_eq!(chain.choices, ["exact", "tidy", "tidy-french", "keyword"]);
-    for choice in &chain.choices {
-        assert_ne!(&choice_display_label(choice), choice);
-        let detail = choice_detail(choice).expect("every chain explains itself");
-        assert!(!detail.description.is_empty());
-        assert!(!detail.example.is_empty());
-    }
-    assert_eq!(choice_detail("tine"), None);
+    assert!(
+        plans.iter().all(|plan| plan.key != "processing-chain"),
+        "the steps have their own page"
+    );
     let script = plans
         .iter()
         .find(|plan| plan.key == "chinese-script")
@@ -763,53 +755,54 @@ fn choice(value: &str) -> ClientSettingValue {
     ClientSettingValue::Choice(value.into())
 }
 
-/// The processing keys of the page are views over the stored steps: a
-/// choice writes the steps and their parameters, and the stored list reads
-/// back as the nearest choice.
+fn list(ids: &[&str]) -> Vec<String> {
+    ids.iter().map(|id| (*id).to_owned()).collect()
+}
+
+fn params(pairs: &[(&str, &str)]) -> myna_core::processing::Params {
+    pairs
+        .iter()
+        .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+        .collect()
+}
+
+/// The script is a view over the stored steps, and the steps are read and
+/// written whole.
 #[test]
-fn the_chain_and_the_script_are_views_over_the_stored_steps() {
+fn the_script_is_a_view_over_the_stored_steps() {
     let files = TestFiles::new("views");
     let adapter = open_adapter(&files);
-    assert_eq!(adapter.get("processing-chain").unwrap(), choice("exact"));
     assert_eq!(
         adapter.get("chinese-script").unwrap(),
         choice("as-recognised")
     );
-    assert!(!adapter.has_user_value("processing-chain").unwrap());
+    assert!(!adapter.has_user_value("chinese-script").unwrap());
+    assert_eq!(adapter.steps(), (Vec::new(), Default::default()));
 
     adapter
-        .set("processing-chain", choice("tidy-french"))
+        .set_steps(
+            &list(&["tidy", "translate"]),
+            &params(&[("translate.to", "fr")]),
+        )
         .unwrap();
-    assert_eq!(
-        adapter.get("processing-chain").unwrap(),
-        choice("tidy-french")
-    );
-    assert!(adapter.has_user_value("processing-chain").unwrap());
-
+    assert!(adapter.has_user_value("chinese-script").unwrap());
     adapter.set("chinese-script", choice("simplified")).unwrap();
     assert_eq!(adapter.get("chinese-script").unwrap(), choice("simplified"));
-    // The two settings do not disturb each other.
-    assert_eq!(
-        adapter.get("processing-chain").unwrap(),
-        choice("tidy-french")
-    );
+    // The script does not disturb the steps the page wrote.
+    let (ids, params) = adapter.steps();
+    assert_eq!(ids, ["tidy", "translate", "script"]);
+    assert_eq!(params["translate.to"], "fr");
 
-    adapter.set("processing-chain", choice("exact")).unwrap();
-    assert_eq!(adapter.get("chinese-script").unwrap(), choice("simplified"));
     adapter
         .set("chinese-script", choice("as-recognised"))
         .unwrap();
-    assert_eq!(
-        adapter.get("chinese-script").unwrap(),
-        choice("as-recognised")
-    );
-
+    assert_eq!(adapter.steps().0, ["tidy", "translate"]);
     assert!(matches!(
-        adapter.set("processing-chain", choice("summary")),
+        adapter.set("chinese-script", ClientSettingValue::Boolean(true)),
         Err(ClientSettingsError::InvalidValue { .. })
     ));
     assert!(matches!(
-        adapter.set("chinese-script", ClientSettingValue::Boolean(true)),
+        adapter.set("chinese-script", choice("summary")),
         Err(ClientSettingsError::InvalidValue { .. })
     ));
 }
@@ -821,7 +814,10 @@ fn a_choice_reaches_the_keyfile_as_steps_and_parameters() {
     let files = TestFiles::new("views-keyfile");
     let adapter = open_adapter(&files);
     adapter
-        .set("processing-chain", choice("tidy-french"))
+        .set_steps(
+            &list(&["tidy", "translate"]),
+            &params(&[("translate.to", "fr")]),
+        )
         .unwrap();
     adapter
         .set("chinese-script", choice("traditional-taiwan"))
@@ -840,10 +836,9 @@ fn a_choice_reaches_the_keyfile_as_steps_and_parameters() {
     assert!(!text.contains("processing-chain"), "{text}");
 }
 
-/// A list the page cannot name reads as the nearest choice, and reading it
-/// changes nothing.
+/// Reading the steps and the script changes nothing in the store.
 #[test]
-fn a_stored_list_that_matches_no_choice_reads_as_the_nearest() {
+fn reading_the_steps_writes_nothing() {
     let files = TestFiles::new("views-nearest");
     let path = files.0.join("settings/keyfile");
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -854,7 +849,7 @@ fn a_stored_list_that_matches_no_choice_reads_as_the_nearest() {
     )
     .unwrap();
     let adapter = open_adapter(&files);
-    assert_eq!(adapter.get("processing-chain").unwrap(), choice("tidy"));
+    assert_eq!(adapter.steps().0, ["fit", "tidy", "script"]);
     assert_eq!(
         adapter.get("chinese-script").unwrap(),
         choice("traditional")
@@ -864,9 +859,10 @@ fn a_stored_list_that_matches_no_choice_reads_as_the_nearest() {
     assert_eq!(std::fs::read_to_string(&path).unwrap(), before);
 }
 
-/// A step list written by anyone moves the page's chain and script rows.
+/// A step list written by anyone moves the page's script row and wakes
+/// whoever watches the steps.
 #[test]
-fn a_change_to_the_stored_steps_is_notified_as_the_chain_and_the_script() {
+fn a_change_to_the_stored_steps_is_notified_as_the_script_and_to_watchers() {
     let context = glib::MainContext::new();
     context
         .with_thread_default(|| {
@@ -881,11 +877,26 @@ fn a_change_to_the_stored_steps_is_notified_as_the_chain_and_the_script() {
                     Box::new(move |change| observed.lock().unwrap().push(change))
                 })
                 .unwrap();
+            let woken = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+            let _watch = reader.watch_steps({
+                let woken = Arc::clone(&woken);
+                move || {
+                    woken.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                }
+            });
             let writer = GioClientSettings::open_with_source(&source, &path).unwrap();
-            writer.set("processing-chain", choice("keyword")).unwrap();
+            writer
+                .set_steps(
+                    &list(&["script"]),
+                    &params(&[("script.mode", "simplified")]),
+                )
+                .unwrap();
 
             let deadline = Instant::now() + Duration::from_secs(5);
-            while observed.lock().unwrap().len() < 2 && Instant::now() < deadline {
+            while (observed.lock().unwrap().is_empty()
+                || woken.load(std::sync::atomic::Ordering::SeqCst) == 0)
+                && Instant::now() < deadline
+            {
                 while context.iteration(false) {}
                 std::thread::sleep(Duration::from_millis(10));
             }
@@ -896,8 +907,8 @@ fn a_change_to_the_stored_steps_is_notified_as_the_chain_and_the_script() {
                     .find(|setting| setting.key().as_str() == key)
                     .map(|setting| setting.value().clone())
             };
-            assert_eq!(seen("processing-chain"), Some(choice("keyword")));
-            assert_eq!(seen("chinese-script"), Some(choice("as-recognised")));
+            assert_eq!(seen("chinese-script"), Some(choice("simplified")));
+            assert!(woken.load(std::sync::atomic::Ordering::SeqCst) > 0);
         })
         .unwrap();
 }
