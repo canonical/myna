@@ -107,3 +107,71 @@ def test_percentile_is_nearest_rank():
     assert percentile(values, 100) == 100.0
     assert percentile([7.0], 95) == 7.0
     assert percentile([], 95) == 0.0
+
+
+def test_edit_distance_known_values():
+    for a, b, want in [
+        ("flaw", "lawn", 2),
+        ("sunday", "saturday", 3),
+        ("abc", "", 3),
+        ("abc", "abd", 1),
+        ("ab", "ba", 2),
+        ("", "", 0),
+        ("a", "abcd", 3),
+    ]:
+        assert edit_distance(a, b) == edit_distance(b, a) == want
+
+
+def test_deletion_budget_is_the_larger_of_two_and_half():
+    assert conservative_edit_violation("a b c d", "a b") is None
+    assert conservative_edit_violation("a b c d e", "a b") == "too-many-deletions"
+    assert conservative_edit_violation("a b c d e f", "a b c") is None
+    assert conservative_edit_violation("a b c d e f", "a b") == "too-many-deletions"
+
+
+def test_a_failed_alignment_names_its_worst_deleted_run():
+    long_run = "p q r s t u v"
+    padding = " ".join(f"k{i}" for i in range(12))
+    assert (
+        conservative_edit_violation(f"not {padding} {long_run} tail", f"{padding} tail")
+        == "span-too-long"
+    )
+    assert (
+        conservative_edit_violation(f"{padding} not {padding} x y z", f"{padding} {padding}")
+        == "isolated-negation"
+    )
+    assert (
+        conservative_edit_violation(f"{padding} not {padding} not", f"{padding} {padding}")
+        == "isolated-negation"
+    )
+
+
+def test_chrf_defaults_are_the_published_ones():
+    hyps = ["Le chat est assis sur le tapis.", "Il fait beau aujourd'hui, non ?", "Bonsoir"]
+    refs = ["Le chat s'est assis sur le tapis.", "Il fait beau aujourd'hui.", "Bonne soirée à tous"]
+    assert chrf(hyps, refs) == pytest.approx(0.72746, abs=5e-6)
+    assert chrf(hyps, refs, order=2) > chrf(hyps, refs)
+    assert chrf(hyps, refs, beta=1) != chrf(hyps, refs)
+    # recall is weighted: a longer hypothesis loses less than a shorter one
+    assert chrf(["abcdef xyz"], ["abcdef"]) > chrf(["abcdef"], ["abcdef xyz"])
+
+
+def test_percentile_edges():
+    assert percentile([4.0, 1.0, 3.0, 2.0], 50) == 2.0
+    assert percentile([4.0, 1.0, 3.0, 2.0], 75) == 3.0
+    assert percentile([4.0, 1.0, 3.0, 2.0], 25) == 1.0
+    assert percentile([4.0, 1.0, 3.0, 2.0], 0) == 1.0
+    assert percentile([4.0, 1.0, 3.0, 2.0], 100) == 4.0
+
+
+def test_a_six_word_run_does_not_hide_a_lone_negation():
+    padding = " ".join(f"k{i}" for i in range(12))
+    source = f"{padding} not {padding} p q r s t u {padding}"
+    assert conservative_edit_violation(source, f"{padding} {padding} {padding}") == (
+        "isolated-negation"
+    )
+
+
+def test_chrf_refuses_unpaired_inputs():
+    with pytest.raises(ValueError, match="shorter"):
+        chrf(["a"], [])
