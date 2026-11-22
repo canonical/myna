@@ -123,7 +123,7 @@ def reference_rule(text: str) -> str:
                 second = [_bare(t) for t in tokens[start + k : start + 2 * k]]
                 if first != second or (k == 1 and first[0] in _REDUPLICATION):
                     continue
-                tokens = tokens[:start] + tokens[start + k :]
+                tokens = _drop_second_copy(tokens, start, k)
                 changed = True
                 break
             if changed:
@@ -131,6 +131,19 @@ def reference_rule(text: str) -> str:
     if not tokens:
         return ""
     return " ".join(_restitch(text, tokens))
+
+
+_TRAILING = ".,;:!?\"')"
+
+
+def _drop_second_copy(tokens: list[str], start: int, k: int) -> list[str]:
+    """Remove the repeat's second copy, keeping the first copy's casing and
+    opening quote, and take the second copy's closing punctuation."""
+    kept = list(tokens[: start + k])
+    second_last = tokens[start + 2 * k - 1]
+    trailing = second_last[len(second_last.rstrip(_TRAILING)) :]
+    kept[-1] = kept[-1].rstrip(_TRAILING) + trailing
+    return kept + tokens[start + 2 * k :]
 
 
 def _restitch(original: str, tokens: list[str]) -> list[str]:
@@ -251,7 +264,7 @@ def eval_disfluent(
             "latency_ms": _latency(millis),
         }
     )
-    reduction = 1 - after / before if before else 1.0
+    reduction = 1 - after / before
     return [
         Gate("disfluent_en", "reduction", reduction, REDUCTION_MIN, ">=").decide(),
         Gate("disfluent_en", "polarity_flips", float(len(flips)), 0, "<=").decide(),

@@ -159,3 +159,209 @@ def test_cmd_text_passes_when_nothing_failed_and_strict_rejects_pending(capsys):
         text_suite.cmd_text(_args(None, suite=["translate_en_fr"], strict=True))
     assert raised.value.code == 1
     text_suite.cmd_text(_args(None, suite=["translate_en_fr"]))
+
+
+@pytest.fixture(scope="module")
+def corpus():
+    return text_corpus.load()
+
+
+def test_clean_detail_counts_every_changed_sentence(corpus):
+    first = {c.text for c in corpus.clean_en[:7]}
+    system = System("edits-seven", tidy=lambda t: t.upper() if t in first else t)
+    report = evaluate(system, ["clean_en"], repeats=2)
+    detail = report.detail["clean_en"]
+    assert detail["n"] == 200 and detail["changed"] == 7
+    assert detail["char_edits"] == sum(
+        1
+        for c in corpus.clean_en[:7]
+        for a, b in zip(c.text, c.text.upper(), strict=True)
+        if a != b
+    )
+    assert [e["id"] for e in detail["examples"]] == [c.id for c in corpus.clean_en[:5]]
+    assert detail["examples"][0]["output"] == corpus.clean_en[0].text.upper()
+    assert set(detail["latency_ms"]) == {"p50", "p95"}
+    uer = gates(report)["clean_en.uer"]
+    assert uer.value == pytest.approx(0.035) and uer.status == "fail"
+
+
+def test_one_changed_sentence_in_two_hundred_is_within_the_gate(corpus):
+    target = corpus.clean_en[0].text
+    system = System("one", tidy=lambda t: t + "!" if t == target else t)
+    uer = gates(evaluate(system, ["clean_en"], repeats=1))["clean_en.uer"]
+    assert uer.value == pytest.approx(0.005) and uer.status == "pass"
+
+
+def test_an_oracle_tidy_scores_every_disfluent_metric_perfectly(corpus):
+    oracle = {p.heard: p.intended for p in corpus.disfluent_en}
+    report = evaluate(System("oracle", tidy=oracle.__getitem__), ["disfluent_en"], repeats=1)
+    g, detail = gates(report), report.detail["disfluent_en"]
+    assert g["disfluent_en.reduction"].value == 1.0
+    assert g["disfluent_en.polarity_flips"].value == 0
+    assert detail["n"] == 190 and detail["exact"] == 190
+    assert detail["after_distance"] == 0 and detail["heard_distance"] > 0
+    assert detail["system_check_reject_rate"] == 0
+    assert detail["polarity_flip_ids"] == []
+    for row in detail["by_category"].values():
+        assert row["exact"] == row["n"]
+
+
+def test_identity_tidy_only_gets_the_untouched_categories_right(corpus):
+    report = evaluate(text_suite.identity_system(), ["disfluent_en"], repeats=1)
+    detail = report.detail["disfluent_en"]
+    keep = {"reduplication_keep", "ambiguous_keep", "negation_trap"}
+    assert detail["after_distance"] == detail["heard_distance"]
+    assert detail["exact"] == sum(p.category in keep for p in corpus.disfluent_en)
+    for name, row in detail["by_category"].items():
+        assert row["n"] == sum(p.category == name for p in corpus.disfluent_en)
+        assert row["reduction"] == (None if name in keep else 0.0)
+        assert row["exact"] == (row["n"] if name in keep else 0)
+
+
+def test_a_tidy_that_breaks_the_check_is_counted_apart_from_the_gate(corpus):
+    report = evaluate(System("wipe", tidy=lambda t: ""), ["disfluent_en"], repeats=1)
+    detail = report.detail["disfluent_en"]
+    assert detail["system_check_reject_rate"] == 1.0
+    assert gates(report)["disfluent_en.check_false_reject"].value == 0
+
+
+def test_a_negation_invented_by_the_system_is_a_flip():
+    report = evaluate(System("invents", tidy=lambda t: "Do not " + t), ["disfluent_en"], repeats=1)
+    assert gates(report)["disfluent_en.polarity_flips"].value > 100
+
+
+def test_translation_detail_and_latency_percentiles(monkeypatch, corpus):
+    clock = iter(x for i in range(10**6) for x in (0.0, 0.0125))
+    monkeypatch.setattr(text_suite.time, "perf_counter", lambda: next(clock))
+    lookup = {r.en: r.fr for r in corpus.translate_en_fr}
+    report = evaluate(System("t", translate=lookup.__getitem__), ["translate_en_fr"], repeats=2)
+    detail = report.detail["translate_en_fr"]
+    assert detail["n"] == 200
+    assert detail["latency_ms"] == {"p50": pytest.approx(12.5), "p95": pytest.approx(12.5)}
+    g = gates(report)
+    assert g["translate_en_fr.p95_ms"].value == pytest.approx(12.5)
+    assert g["translate_en_fr.chrf"].limit == 0.58 and g["translate_en_fr.p95_ms"].limit == 400
+
+
+def test_the_ship_gates_are_the_decided_ones():
+    assert text_suite.UER_MAX == 0.01
+    assert text_suite.REDUCTION_MIN == 0.5
+    assert text_suite.FALSE_REJECT_MAX == 0.05
+    assert text_suite.CHRF_MIN == 0.58
+    assert text_suite.P95_MAX_MS == 400.0
+    g = gates(evaluate(text_suite.identity_system(), ALL, repeats=1))
+    assert {k: (v.limit, v.direction) for k, v in g.items()} == {
+        "clean_en.uer": (0.01, "<="),
+        "disfluent_en.reduction": (0.5, ">="),
+        "disfluent_en.polarity_flips": (0, "<="),
+        "disfluent_en.check_false_reject": (0.05, "<="),
+        "translate_en_fr.chrf": (0.58, ">="),
+        "translate_en_fr.p95_ms": (400.0, "<"),
+    }
+
+
+def test_the_report_text_and_json_carry_every_gate():
+    report = evaluate(text_suite.identity_system(), ALL, repeats=1)
+    lines = text_suite.format_report(report).splitlines()
+    assert lines[0] == "system: identity"
+    assert lines[1] == "  PASS    clean_en.uer = 0  (gate <= 0.01)"
+    assert lines[2] == "  FAIL    disfluent_en.reduction = 0  (gate >= 0.5)"
+    assert lines[-1] == "  PENDING translate_en_fr.p95_ms = -  (gate < 400)"
+    saved = text_suite.to_json(report)
+    assert saved["system"] == "identity"
+    assert saved["gates"][0] == {
+        "suite": "clean_en",
+        "metric": "uer",
+        "value": 0.0,
+        "limit": 0.01,
+        "direction": "<=",
+        "status": "pass",
+    }
+    assert set(saved["detail"]) == set(ALL)
+    assert saved["detail"]["translate_en_fr"] == {}
+
+
+def test_arguments_default_to_identity_over_every_suite():
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    text_suite.add_arguments(parser)
+    args = parser.parse_args([])
+    assert (args.system, args.suite, args.repeats) == ("identity", None, 3)
+    assert (args.json_out, args.strict) == (None, False)
+    args = parser.parse_args(["--suite", "clean_en", "--suite", "translate_en_fr", "--strict"])
+    assert args.suite == ["clean_en", "translate_en_fr"] and args.strict
+    with pytest.raises(SystemExit):
+        parser.parse_args(["--suite", "nope"])
+
+
+def test_cmd_text_runs_every_suite_by_default(capsys):
+    with pytest.raises(SystemExit):
+        text_suite.cmd_text(_args(None, repeats=1))
+    out = capsys.readouterr().out
+    for name in ALL:
+        assert name in out
+
+
+def test_reference_rule_restitching():
+    assert reference_rule("um, we should go") == "we should go"
+    assert reference_rule("Um, we should go") == "We should go"
+    assert reference_rule('He said, "I I think so."') == 'He said, "I think so."'
+    assert reference_rule("We went, we went home.") == "We went home."
+    assert reference_rule("Uh, the the end.") == "The end."
+    assert reference_rule("We need to go, uh, now") == "We need to go, now"
+    assert reference_rule("A b A b c") == "A b c"
+    assert reference_rule("go go go go") == "go"
+    assert reference_rule("Really really, it works") == "Really really, it works"
+    assert reference_rule("Ok ok.") == "Ok."
+
+
+def test_pending_gates_still_state_their_limits():
+    g = gates(evaluate(System("nothing"), ALL, repeats=1))
+    pending = {k: (v.limit, v.direction) for k, v in g.items() if v.status == "pending"}
+    assert pending == {
+        "clean_en.uer": (0.01, "<="),
+        "disfluent_en.reduction": (0.5, ">="),
+        "disfluent_en.polarity_flips": (0, "<="),
+        "translate_en_fr.chrf": (0.58, ">="),
+        "translate_en_fr.p95_ms": (400.0, "<"),
+    }
+
+
+def test_false_reject_rate_is_the_share_of_gold_edits_rejected(monkeypatch, corpus):
+    edits = [p for p in corpus.disfluent_en if p.heard != p.intended]
+    doomed = {p.heard for p in edits[:5]}
+    monkeypatch.setattr(
+        text_suite,
+        "conservative_edit_violation",
+        lambda source, output: "bad" if source in doomed and output != source else None,
+    )
+    report = evaluate(System("none"), ["disfluent_en"], repeats=1)
+    rate = gates(report)["disfluent_en.check_false_reject"]
+    assert rate.value == pytest.approx(5 / len(edits)) and rate.status == "pass"
+    assert report.detail["disfluent_en"]["gold_rejected"] == [p.id for p in edits[:5]]
+    monkeypatch.setattr(text_suite, "conservative_edit_violation", lambda s, o: "bad")
+    rate = gates(evaluate(System("none"), ["disfluent_en"], repeats=1))
+    assert rate["disfluent_en.check_false_reject"].value == 1.0
+    assert rate["disfluent_en.check_false_reject"].status == "fail"
+
+
+def test_latency_summary_is_p50_and_p95():
+    assert text_suite._latency([float(i) for i in range(1, 101)]) == {"p50": 50.0, "p95": 95.0}
+
+
+def test_the_json_report_is_indented(tmp_path):
+    out = tmp_path / "r.json"
+    text_suite.cmd_text(_args(tmp_path, system="reference-rule", json_out=str(out)))
+    assert out.read_text(encoding="utf-8").startswith('{\n  "system": "reference-rule"')
+
+
+def test_repeats_set_the_number_of_warm_passes():
+    calls = []
+
+    def tidy(text):
+        calls.append(text)
+        return text
+
+    evaluate(System("count", tidy=tidy), ["clean_en"], repeats=2)
+    assert len(calls) == 200 * (1 + 2)
