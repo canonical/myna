@@ -1330,6 +1330,10 @@ parakeet = [
 parquet = [
     { name = "pyarrow" },
 ]
+text = [
+    { name = "onnxruntime" },
+    { name = "tokenizers" },
+]
 whisper = [
     { name = "faster-whisper" },
 ]
@@ -1363,12 +1367,14 @@ requires-dist = [
     { name = "onnxruntime", marker = "extra == 'indicconformer'", specifier = ">=1.27,<1.28" },
     { name = "onnxruntime", marker = "extra == 'nemotron'", specifier = ">=1.27,<1.28" },
     { name = "onnxruntime", marker = "extra == 'parakeet'", specifier = ">=1.27,<1.28" },
+    { name = "onnxruntime", marker = "extra == 'text'", specifier = ">=1.27,<1.28" },
     { name = "psutil", marker = "extra == 'benchmarker'", specifier = ">=5" },
     { name = "pyarrow", marker = "extra == 'parquet'", specifier = ">=22" },
     { name = "pyyaml", marker = "extra == 'benchmarker'", specifier = ">=6" },
+    { name = "tokenizers", marker = "extra == 'text'", specifier = ">=0.22,<0.23" },
     { name = "websockets", specifier = ">=16.0" },
 ]
-provides-extras = ["whisper", "parakeet", "nemotron", "indicconformer", "funasr", "benchmarker", "parquet"]
+provides-extras = ["whisper", "parakeet", "nemotron", "indicconformer", "funasr", "text", "benchmarker", "parquet"]
 
 [package.metadata.requires-dev]
 dev = [

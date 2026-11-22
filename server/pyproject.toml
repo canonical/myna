@@ -53,6 +53,13 @@ funasr = [
     # interpreter newer than 3.12 to run on anyway; the funasr snap is core24.
     "funasr-onnx>=0.4.2; python_version < '3.13'",
 ]
+# The myna-text snap: the disfluency tagger on ONNX Runtime with its tokenizer
+# (translation is a native process, myna-bergamot, built in the snap). Same
+# runtime pin as parakeet, whose wheels the snap's venv resolves to.
+text = [
+    "onnxruntime>=1.27,<1.28",
+    "tokenizers>=0.22,<0.23",
+]
 benchmarker = [
     "psutil>=5",
     "pyyaml>=6",
@@ -65,6 +72,7 @@ parquet = [
 
 [project.scripts]
 myna-server = "myna.server.cli:main"
+myna-text = "myna.text.cli:main"
 
 [dependency-groups]
 dev = [
@@ -176,6 +184,7 @@ module = [
     "onnxruntime.*",
     "pyarrow.*",
     "soundfile.*",
+    "tokenizers.*",
     "tqdm.*",
     "tracy_client.*",
 ]

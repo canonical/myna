@@ -16,6 +16,7 @@ The server project exposes model adapters through one session contract and also 
 
 - `src/myna/core/` - Session, event, audio, capability, and transport contract.
 - `src/myna/server/` - Server process and adapter loading.
+- `src/myna/text/` - The `myna-text-v1` provider behind the `myna-text` snap: protocol, disfluency tagger, Bergamot worker, component discovery.
 - `src/myna/testbed/` - Candidate adapters, corpus handling, metrics, and harnesses.
 - `src/myna/benchmarker/` - Reproducible benchmark planning, execution, and reporting.
 - `tests/` - Contract, adapter, packaging, and benchmark tests. Shared test-only helpers live in `tests/_*.py`, importable by bare name from any subdirectory; code without a production caller belongs there, not in `src/`.
