@@ -67,7 +67,11 @@ fn serve(address: &str, state: &str, steps: &str, rescans: Rc<Cell<u32>>) -> gio
         .register_object(PATH, &interface)
         .method_call(move |_, _, _, _, _, _, invocation| {
             rescans.set(rescans.get() + 1);
-            invocation.return_value(None);
+            if rescans.get() > 1 {
+                invocation.return_error(gio::DBusError::Failed, "cannot rescan");
+            } else {
+                invocation.return_value(None);
+            }
         })
         .property(move |_, _, _, _, name| match name {
             "State" => state.to_variant(),
@@ -122,6 +126,11 @@ fn reads_state_and_models() {
     assert_eq!(offered, Ok(Some(vec!["bergamot-en-fr".to_owned()])));
     assert_eq!(rescan, Ok(()));
     assert_eq!(rescans.get(), 1);
+    let failed = MainContext::ref_thread_default().block_on(daemon.rescan());
+    assert!(
+        failed.as_ref().is_err_and(|e| e.contains("cannot rescan")),
+        "a refusal is an error, not a missing daemon: {failed:?}"
+    );
 }
 
 #[test]
