@@ -216,15 +216,15 @@ impl Resolver {
                     models
                         .into_iter()
                         .filter(|capability| {
-                            let known = step::check_of(capability).is_some();
-                            if !known {
-                                myna_core::info_log!(
-                                    "process",
-                                    "{share}/{}: unknown class, not offered",
-                                    capability.id
-                                );
+                            if step::check_of(capability).is_some() {
+                                return true;
                             }
-                            known
+                            myna_core::info_log!(
+                                "process",
+                                "{share}/{}: unknown class, not offered",
+                                capability.id
+                            );
+                            false
                         })
                         .map(|capability| Candidate {
                             via,
