@@ -31,8 +31,6 @@ pub enum Placement {
     Dictation,
     /// The Model tab, and only while the active backend takes the setting.
     ActiveModel,
-    /// The Processing tab: how Chinese is written.
-    ProcessingScript,
     /// The Processing tab: the record of what was done.
     ProcessingRecord,
 }
@@ -162,7 +160,6 @@ pub fn widget_plan(metadata: &ClientSettingMetadata) -> WidgetPlan {
         writable: metadata.writable(),
         placement: match metadata.key().as_str() {
             myna_core::settings::KEY_LANGUAGE => Placement::ActiveModel,
-            crate::adapters::client_settings::KEY_CHINESE_SCRIPT => Placement::ProcessingScript,
             myna_core::settings::KEY_PROCESSING_HISTORY => Placement::ProcessingRecord,
             _ => Placement::Dictation,
         },
@@ -170,7 +167,7 @@ pub fn widget_plan(metadata: &ClientSettingMetadata) -> WidgetPlan {
 }
 
 /// The Dictation group's order; any other key follows, in the adapter's order.
-const DICTATION_ORDER: [&str; 8] = [
+const DICTATION_ORDER: [&str; 7] = [
     KEY_STREAMING_MODE,
     myna_core::settings::KEY_HUD_STYLE,
     myna_core::settings::KEY_SOUNDS,
@@ -179,7 +176,6 @@ const DICTATION_ORDER: [&str; 8] = [
     // Last: a row that opens a page of its own.
     myna_core::settings::KEY_VOCABULARY,
     // The Processing tab.
-    crate::adapters::client_settings::KEY_CHINESE_SCRIPT,
     myna_core::settings::KEY_PROCESSING_HISTORY,
 ];
 
@@ -215,7 +211,6 @@ pub fn choice_display_label(choice: &str) -> String {
         "tidy" => gettextrs::gettext("A tidied version"),
         "tidy-french" => gettextrs::gettext("A French translation"),
         "keyword" => gettextrs::gettext("Fitted to the field"),
-        "as-recognised" => gettextrs::gettext("As recognised"),
         // Translators: keep the Chinese in brackets; it names the script in
         // that script.
         "simplified" => gettextrs::gettext("Simplified (简体)"),

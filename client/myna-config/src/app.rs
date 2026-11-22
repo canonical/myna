@@ -1689,8 +1689,9 @@ fn typing_probe() -> glib::ExitCode {
 
 /// Drive the vocabulary editor on the real page against a scratch store: add,
 /// the three refusals, and remove, each read back from the store.
-/// Pick a script on the Processing tab, then record a dictation behind the
-/// window's back and clear the record, reporting what the tab shows.
+/// Check the Processing tab no longer has a Chinese group, then record a
+/// dictation behind the window's back and clear the record, reporting what
+/// the tab shows.
 ///
 /// The regression: the list of past dictations was drawn once and never
 /// again, because what redrew it was dropped with the groups once the page
@@ -1736,22 +1737,10 @@ fn processing_probe() -> glib::ExitCode {
     settle_gtk();
 
     let root = page.upcast_ref::<gtk::Widget>();
-    let script = typed_descendants::<adw::ComboRow>(root)
+    let old_chinese_row = typed_descendants::<adw::ComboRow>(root)
         .into_iter()
-        .find(|row| row.title() == "Chinese writing");
-    println!("script-row: {}", script.is_some());
-    if let Some(row) = script {
-        row.set_selected(3);
-        settle_gtk();
-        println!(
-            "script: {}",
-            controller
-                .shown_value(crate::adapters::client_settings::KEY_CHINESE_SCRIPT)
-                .as_ref()
-                .and_then(ClientSettingValue::as_str)
-                .unwrap_or_default()
-        );
-    }
+        .any(|row| row.title() == "Chinese writing");
+    println!("script-row-gone: {}", !old_chinese_row);
 
     let banner = typed_descendants::<adw::Banner>(root)
         .into_iter()
@@ -5966,8 +5955,6 @@ struct ProcessingGroups {
     notice: adw::Banner,
     /// What is done to the text: one row per step.
     chain: adw::PreferencesGroup,
-    /// How Chinese is written.
-    script: adw::PreferencesGroup,
     record: adw::PreferencesGroup,
     /// The recorded dictations, listed under the switch that keeps them.
     past: adw::PreferencesGroup,
@@ -6119,9 +6106,6 @@ fn processing_group() -> ProcessingGroups {
                 "Switch on what Myna does to what you say, in the order shown. Any step is shown on screen while you speak and typed a sentence at a time. This is experimental.",
             ))
             .build(),
-        script: adw::PreferencesGroup::builder()
-            .title(gettextrs::gettext("Chinese"))
-            .build(),
         record: adw::PreferencesGroup::new(),
         past: PastDictations::group(),
     }
@@ -6167,7 +6151,6 @@ fn processing_page(groups: &ProcessingGroups) -> adw::NavigationPage {
     let preferences = adw::PreferencesPage::new();
     preferences.set_vexpand(true);
     preferences.add(&groups.chain);
-    preferences.add(&groups.script);
     preferences.add(&groups.record);
     preferences.add(&groups.past);
     let content = gtk::Box::new(gtk::Orientation::Vertical, 0);
@@ -6407,7 +6390,6 @@ fn ready_page(
         let group = match plan.placement {
             Placement::Dictation => &dictation,
             Placement::ActiveModel => model_settings,
-            Placement::ProcessingScript => &processing.script,
             Placement::ProcessingRecord => &processing.record,
         };
         let widget_name = (plan.placement == Placement::ActiveModel)

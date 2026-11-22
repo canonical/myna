@@ -10,19 +10,11 @@ use crate::domain::{
 use crate::ports::{
     ClientSettings, ClientSettingsCallback, ClientSettingsError, ClientSettingsSubscription,
 };
-use myna_core::processing::{script_of, with_script, ChineseScript, Params};
+use myna_core::processing::Params;
 use myna_core::settings::{KEY_PROCESSING_PARAMS, KEY_PROCESSING_STEPS, SCHEMA_ID};
 
-/// How Chinese is written: `script.mode`, with the `script` step switched on
-/// for any script but the recognised one. Presented over the stored steps.
-pub const KEY_CHINESE_SCRIPT: &str = "chinese-script";
-
-/// The keys the page presents in place of the stored step list.
+/// The stored step list, which has its own page and no row of its own.
 const STORED_KEYS: [&str; 2] = [KEY_PROCESSING_STEPS, KEY_PROCESSING_PARAMS];
-
-fn is_view(key: &str) -> bool {
-    key == KEY_CHINESE_SCRIPT
-}
 
 /// The stored steps and parameters, as the daemon reads them.
 fn stored(settings: &gio::Settings) -> (Vec<String>, Params) {
@@ -36,11 +28,6 @@ fn stored(settings: &gio::Settings) -> (Vec<String>, Params) {
         .get::<Params>()
         .unwrap_or_default();
     (ids, params)
-}
-
-fn view_value(settings: &gio::Settings) -> ClientSettingValue {
-    let (ids, params) = stored(settings);
-    ClientSettingValue::Choice(script_of(&ids, &params).nick().to_owned())
 }
 
 #[derive(Debug)]
@@ -145,48 +132,6 @@ impl GioClientSettings {
         }
     }
 
-    /// Whether the schema in use holds the stored step keys; one from before
-    /// them has no chain or script to present.
-    fn has_views(&self) -> bool {
-        STORED_KEYS.iter().all(|key| self.schema.has_key(key))
-    }
-
-    fn view_metadata(&self, key: &str) -> ClientSettingMetadata {
-        let (summary, description, choices, default) = (
-            gettextrs::gettext("Chinese writing"),
-            gettextrs::gettext(
-                "Speech models write Chinese in whichever script they like. Choose simplified or traditional characters, with the words used in Taiwan or the characters used in Hong Kong, and what you say is typed that way. Other languages are left as they are.",
-            ),
-            ChineseScript::ALL.map(|script| script.nick().to_owned()).to_vec(),
-            ChineseScript::AsRecognised.nick(),
-        );
-        ClientSettingMetadata::new(
-            ClientSettingKey::new(key).expect("view keys are non-empty"),
-            Some(summary),
-            Some(description),
-            ClientSettingValue::Choice(default.to_owned()),
-            SettingRange::Choices(choices),
-            view_value(&self.settings),
-            STORED_KEYS.iter().all(|key| self.settings.is_writable(key)),
-        )
-    }
-
-    fn set_view(&self, key: &str, value: ClientSettingValue) -> Result<(), ClientSettingsError> {
-        let invalid = |message: &str| ClientSettingsError::InvalidValue {
-            key: key.to_owned(),
-            message: message.into(),
-        };
-        let ClientSettingValue::Choice(nick) = value else {
-            return Err(invalid("value has the wrong schema type"));
-        };
-        let (ids, params) = stored(&self.settings);
-        let script = ChineseScript::from_nick(&nick)
-            .ok_or_else(|| invalid("value is outside the schema range"))?;
-        let (next_ids, next_params) = with_script(&ids, &params, script);
-        self.set_steps(&next_ids, &next_params)?;
-        Ok(())
-    }
-
     fn schema_key(&self, key: &str) -> Result<gio::SettingsSchemaKey, ClientSettingsError> {
         if !self.schema.has_key(key) {
             return Err(ClientSettingsError::UnknownKey {
@@ -227,30 +172,16 @@ impl ClientSettings for GioClientSettings {
         keys.retain(|key| {
             holds(&self.schema.key(key).value_type()) && !STORED_KEYS.contains(&key.as_str())
         });
-        if self.has_views() {
-            keys.push(KEY_CHINESE_SCRIPT.into());
-        }
         keys.sort();
-        keys.iter()
-            .map(|key| match is_view(key) {
-                true => Ok(self.view_metadata(key)),
-                false => self.metadata(key),
-            })
-            .collect()
+        keys.iter().map(|key| self.metadata(key)).collect()
     }
 
     fn get(&self, key: &str) -> Result<ClientSettingValue, ClientSettingsError> {
-        if is_view(key) && self.has_views() {
-            return Ok(view_value(&self.settings));
-        }
         let schema_key = self.schema_key(key)?;
         value_from_variant(&self.settings.value(key), &setting_range(&schema_key), key)
     }
 
     fn set(&self, key: &str, value: ClientSettingValue) -> Result<(), ClientSettingsError> {
-        if is_view(key) && self.has_views() {
-            return self.set_view(key, value);
-        }
         let schema_key = self.schema_key(key)?;
         self.ensure_writable(key)?;
         let range = setting_range(&schema_key);
@@ -291,11 +222,6 @@ impl ClientSettings for GioClientSettings {
     }
 
     fn has_user_value(&self, key: &str) -> Result<bool, ClientSettingsError> {
-        if is_view(key) && self.has_views() {
-            return Ok(STORED_KEYS
-                .iter()
-                .any(|stored_key| self.settings.user_value(stored_key).is_some()));
-        }
         self.schema_key(key)?;
         Ok(self.settings.user_value(key).is_some())
     }
@@ -307,17 +233,7 @@ impl ClientSettings for GioClientSettings {
         let settings = self.settings.clone();
         let schema = self.schema.clone();
         let handler = settings.connect_changed(None, move |settings, key| {
-            if STORED_KEYS.contains(&key) {
-                callback(
-                    ClientSetting::new(
-                        ClientSettingKey::new(KEY_CHINESE_SCRIPT).expect("view keys are non-empty"),
-                        view_value(settings),
-                    )
-                    .expect("view setting is valid"),
-                );
-                return;
-            }
-            if !schema.has_key(key) {
+            if STORED_KEYS.contains(&key) || !schema.has_key(key) {
                 return;
             }
             let schema_key = schema.key(key);
