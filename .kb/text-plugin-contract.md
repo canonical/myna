@@ -32,3 +32,20 @@ The manifest also names `contract` (default 1). A provider skips, and logs by co
 - Never dictated text in a reply to a refusal or in a log line.
 
 `server/tests/text/test_protocol.py` reads `wire.rs` and fails when the Python capability and the Rust structs list different fields.
+
+## One source per plugin
+
+Nobody edits a manifest, NOTICE, `components:` stanza or catalog by hand. A plugin is `<snap-dir>/plugins/<name>.toml` (`<name>` is the component minus `model-`) plus `<name>.measured.json`. `dev/gen-plugins.py <snap-dir>` writes, deterministically:
+
+- the `components:` stanza and the `model-components` `organize:` mappings of `snap/snapcraft.yaml`, between the `BEGIN/END generated` marker comments;
+- `models/<name>/myna-text-model.json` and `models/<name>/NOTICE` (the notice text plus the sha256 of every file);
+- `<snap-dir>/catalog.json`, shipped at `$SNAP/share/<snap>/catalog.json` (staged by `dev/prepare.sh`) and snapshotted for both snaps into the myna-config deb (`/usr/share/myna-config/catalog/<snap>.json`, by `myna-config-deb/build-source.sh`).
+
+`make lint-plugins` (part of `make check`) and `server/tests/test_plugin_catalog.py` regenerate in memory and fail on drift. Component names `model-<kind>-<lang...>` are unique across both snaps. `<snap-dir>/dev/download-models.sh` only calls `dev/stage-plugins.sh`, which fetches (a `url`, checked against the pinned sha256) or copies (a `[local]` directory) what the toml lists.
+
+- Allowed licences: Apache-2.0, MIT, MPL-2.0, CC-BY-4.0, BSD. Anything else fails validation; a licence other than Apache-2.0 and MPL-2.0 names its `license_file`.
+- `quality`, `quality_source` and `latency_ms` live only in `<name>.measured.json`, fed by the evaluation pipeline; never in the toml. Until that pipeline lands they carry the previous manifest values.
+- `entry_revision` is bumped whenever an entry changes; Settings merges catalogs by entry `id` (the component name), the installed snap's catalog over the deb snapshot, the higher `entry_revision` winning.
+- Labels are derived keys, never free text: `step.<step id>.name`, `.description` and `.example`, translated through gettext. A translate entry's pair label is built from `covers` and the language endonyms.
+- Catalog entry: `id`, `snap`, `component`, `model`, `contract`, `entry_revision`, `task`, `class`, `needs`, `params`, `covers`, `in_lang`, `out_lang`, `step{id, stage, label_key, description_key, example_key}`, `download_bytes` (the component squashfs), `installed_bytes` (sum of the file sizes), `quality{value, source}`, `latency_ms`, `latency_class` (`fast` under 50 ms, `ok` under 400, else `slow`), `hardware{arch, min_ram_mb}`, `locales` (languages it is useful for), `curated`, `license`, `attribution`, `source`, `files[{name, sha256, bytes, url?}]`. Stages: `field-fit`, `clean-up`, `translate`, `target-language`.
+- A model that needs a config file keeps it hand-written in `models/<name>/` and names it with `config`.

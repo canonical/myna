@@ -12,7 +12,8 @@ One strictly confined snap, no `network` plug, serving `myna-text-v1` to the Myn
 
 - The wire is defined by `client/myna-desktop/src/process/wire.rs`; `server/tests/text/test_protocol.py` reads that file, so a field added on either side fails a test rather than a user's dictation.
 - Never log or return dictated text: ops, model ids, durations and outcomes only. Errors name a reason, not the input.
-- The component manifests (`models/*/myna-text-model.json`) hold the declared `latency_ms` and `quality`. They are measurements (see `README.md`), re-measure before changing them.
+- Never hand-edit `models/*/myna-text-model.json`, `models/*/NOTICE`, `catalog.json` or the marked blocks of `snap/snapcraft.yaml`: edit `plugins/*.toml` and run `dev/gen-plugins.py .` (`make lint-plugins` fails on drift).
+- The declared `latency_ms` and `quality` come from `plugins/*.measured.json`. They are measurements (see `README.md`), re-measure before changing them.
 - Every build input is pinned: the Python wheels by hash (`dev/prepare.sh` exports `server/uv.lock`) and the tagger by sha256. Moving one is a commit.
 - Pack with `umask 022`: a 077 shell leaves files in local snaps unreadable to the daemon.
 - `MYNA_TAGGER_SRC` is the only way to stage the tagger until it is published; publishing it, and the snap, is Charles' call.
@@ -20,8 +21,10 @@ One strictly confined snap, no `network` plug, serving `myna-text-v1` to the Myn
 # Directory
 
 - `snap/snapcraft.yaml` - The snap and its two components.
-- `models/` - Per-component manifest and NOTICE.
-- `dev/` - `prepare.sh`, `download-models.sh`, `prune-runtime.sh`, `smoke.py`.
+- `plugins/` - One `<name>.toml` per component, the only hand-edited source (plus `<name>.measured.json`); `dev/gen-plugins.py` generates from it the `components:` stanza, `models/`, and `catalog.json`.
+- `models/` - Per-component manifest and NOTICE, generated.
+- `catalog.json` - Generated catalog of this snap's plugins, shipped in the snap.
+- `dev/` - `prepare.sh`, `download-models.sh` (a thin call of `../dev/stage-plugins.sh`), `prune-runtime.sh`, `smoke.py`.
 - `NOTICE` - Third-party notices the snap ships with.
 
 # Documents

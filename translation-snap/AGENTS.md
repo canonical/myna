@@ -12,7 +12,8 @@ One strictly confined snap, no `network` plug, serving `myna-text-v1` to the Myn
 
 - The wire is defined by `client/myna-desktop/src/process/wire.rs`; `server/tests/text/test_protocol.py` reads that file.
 - Never log or return dictated text: ops, model ids, durations and outcomes only. Errors name a reason, not the input.
-- The component manifests (`models/*/myna-text-model.json`) hold the declared `latency_ms` and `quality`. They are measurements (see `README.md`), re-measure before changing them.
+- Never hand-edit `models/*/myna-text-model.json`, `models/*/NOTICE`, `catalog.json` or the marked blocks of `snap/snapcraft.yaml`: edit `plugins/*.toml` and run `dev/gen-plugins.py .` (`make lint-plugins` fails on drift).
+- The declared `latency_ms` and `quality` come from `plugins/*.measured.json`. They are measurements (see `README.md`), re-measure before changing them.
 - Every build input is pinned: the bergamot commit (its submodules ride on it), the Python wheels by hash (`dev/prepare.sh` exports `server/uv.lock`), the translation files by sha256. Moving one is a commit.
 - The MPL-2.0 attribution (Mozilla, source link, unmodified-file hashes) and the bergamot link-set licence texts live here; `dev/build-bergamot.sh` fails if a licence text is missing.
 - Pack with `umask 022`: a 077 shell leaves files in local snaps unreadable to the daemon.
@@ -24,7 +25,7 @@ One strictly confined snap, no `network` plug, serving `myna-text-v1` to the Myn
 - `snap/snapcraft.yaml` - The snap and its components.
 - `bergamot/` - `myna-bergamot.cpp`, the line-protocol front end.
 - `models/` - Per-component manifest, NOTICE and the Marian config.
-- `dev/` - `prepare.sh`, `download-models.sh`, `build-bergamot.sh`, `prune-runtime.sh`, `smoke.py`.
+- `dev/` - `prepare.sh`, `download-models.sh` (a thin call of `../dev/stage-plugins.sh`), `build-bergamot.sh`, `prune-runtime.sh`, `smoke.py`.
 - `NOTICE` - Third-party notices the snap ships with.
 
 # Documents
