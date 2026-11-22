@@ -24,6 +24,7 @@ use crate::processing_steps::{
     example, rows, with_enabled, with_script_mode, with_script_on, with_target, Inputs, Offered,
     Row, Source, Standing, SCRIPT, TRANSLATE,
 };
+use crate::step_catalog::{self, Item, Offer};
 use crate::ui::InstallControl;
 
 /// How long a finished install may wait for the daemon to offer its model
@@ -43,6 +44,8 @@ pub struct Deps {
     pub catalog: Box<dyn Fn() -> Vec<Entry>>,
     pub locales: Vec<String>,
     pub overlay: adw::ToastOverlay,
+    /// Where the Add step page is pushed.
+    pub nav: adw::NavigationView,
     /// How often an install's change is read for its progress.
     pub follow_interval: Duration,
     /// How often the daemon is asked what it offers.
@@ -84,10 +87,25 @@ impl Widgets {
     }
 }
 
+/// One item of the Add step page.
+struct CatalogWidgets {
+    row: adw::ExpanderRow,
+    control: InstallControl,
+    add: gtk::Button,
+    added: gtk::Label,
+}
+
 pub struct StepsPage {
     deps: Deps,
     group: glib::WeakRef<adw::PreferencesGroup>,
     example: adw::ActionRow,
+    add_row: adw::ActionRow,
+    catalog_page: adw::NavigationPage,
+    catalog_group: adw::PreferencesGroup,
+    catalog_widgets: RefCell<Vec<(String, CatalogWidgets)>>,
+    items: RefCell<Vec<Item>>,
+    /// A dictation is running: installs wait.
+    dictating: Cell<bool>,
     widgets: RefCell<Vec<(String, Widgets)>>,
     shown: RefCell<Vec<Row>>,
     catalog: RefCell<Vec<Entry>>,
@@ -117,10 +135,34 @@ impl StepsPage {
             .css_classes(["property"])
             .build();
         let catalog = (deps.catalog)();
+        let add_row = adw::ActionRow::builder()
+            .title(gettextrs::gettext("Add step"))
+            .subtitle(gettextrs::gettext("Installed and available steps"))
+            .activatable(true)
+            .build();
+        add_row.add_prefix(&gtk::Image::from_icon_name("list-add-symbolic"));
+        add_row.add_suffix(&gtk::Image::from_icon_name("go-next-symbolic"));
+        let catalog_group = adw::PreferencesGroup::builder()
+            .description(gettextrs::gettext(
+                "Steps your catalogs offer. Add one to switch it on; one that is not installed downloads first.",
+            ))
+            .build();
+        let preferences = adw::PreferencesPage::new();
+        preferences.add(&catalog_group);
+        let catalog_page = adw::NavigationPage::builder()
+            .title(gettextrs::gettext("Add step"))
+            .child(&preferences)
+            .build();
         let page = Rc::new(Self {
             deps,
             group: group.downgrade(),
             example,
+            add_row,
+            catalog_page,
+            catalog_group,
+            catalog_widgets: RefCell::new(Vec::new()),
+            items: RefCell::new(Vec::new()),
+            dictating: Cell::new(false),
             widgets: RefCell::new(Vec::new()),
             shown: RefCell::new(Vec::new()),
             catalog: RefCell::new(catalog),
@@ -138,6 +180,14 @@ impl StepsPage {
                     page.render();
                 }
             })));
+        page.add_row.connect_activated({
+            let page = Rc::downgrade(&page);
+            move |_| {
+                if let Some(page) = page.upgrade() {
+                    page.deps.nav.push(&page.catalog_page);
+                }
+            }
+        });
         page.render();
         // SAFETY: the key is private to this module and always holds a page.
         unsafe { group.set_data(PAGE_KEY, page.clone()) };
@@ -161,6 +211,11 @@ impl StepsPage {
             _ => None,
         };
         self.offered.replace(offered);
+        let busy = match self.deps.daemon.state().await {
+            Ok(Some(state)) => plugin_install::dictating(&state),
+            _ => false,
+        };
+        self.dictating.set(busy);
         self.catalog.replace((self.deps.catalog)());
         self.render();
     }
@@ -194,6 +249,7 @@ impl StepsPage {
     fn render(self: &Rc<Self>) {
         let offered = self.offered.borrow().clone();
         let rows = self.inputs_rows(offered.as_ref());
+        self.render_catalog(offered.as_ref(), &rows);
         if *self.shown.borrow() == rows && !self.widgets.borrow().is_empty() {
             return;
         }
@@ -237,6 +293,7 @@ impl StepsPage {
         }
         if built_before {
             group.remove(&self.example);
+            group.remove(&self.add_row);
         }
         let mut built = Vec::new();
         for row in rows {
@@ -251,6 +308,7 @@ impl StepsPage {
             built.push((row.id.clone(), widgets));
         }
         group.add(&self.example);
+        group.add(&self.add_row);
         self.widgets.replace(built);
     }
 
@@ -456,13 +514,18 @@ impl StepsPage {
                 _ => None,
             });
         let Some(need) = need else { return };
+        self.start_install(id, &need.entries);
+    }
+
+    /// Install `entries` as one operation, shown under `id`.
+    fn start_install(self: &Rc<Self>, id: &str, entries: &[Entry]) {
         if self.installing.borrow().contains_key(id) {
             return;
         }
         self.installing.borrow_mut().insert(id.to_owned(), None);
         self.preparing.borrow_mut().remove(id);
         self.render();
-        let refs: Vec<&Entry> = need.entries.iter().collect();
+        let refs: Vec<&Entry> = entries.iter().collect();
         let requests = plugin_catalog::requests(&refs);
         let page = Rc::downgrade(self);
         let id = id.to_owned();
@@ -486,6 +549,162 @@ impl StepsPage {
             }
             page.refresh().await;
         });
+    }
+
+    fn render_catalog(self: &Rc<Self>, offered: Option<&Offered>, rows: &[Row]) {
+        let (ids, params) = self.deps.store.steps();
+        let source = Source::of_setting(&self.deps.store.language());
+        let catalog = self.catalog.borrow();
+        let installing = self.installing.borrow();
+        let now = Instant::now();
+        let preparing: BTreeSet<String> = self
+            .preparing
+            .borrow()
+            .iter()
+            .filter(|(_, since)| now.duration_since(**since) < PREPARING_FOR)
+            .map(|(id, _)| id.clone())
+            .collect();
+        let items = step_catalog::items(&step_catalog::Inputs {
+            catalog: &catalog,
+            enabled: &ids,
+            params: &params,
+            source: &source,
+            daemon: offered,
+            installing: &installing,
+            preparing: &preparing,
+            locales: &self.deps.locales,
+            rows,
+        });
+        let same = {
+            let widgets = self.catalog_widgets.borrow();
+            widgets.len() == items.len()
+                && widgets
+                    .iter()
+                    .zip(&items)
+                    .all(|((id, _), item)| *id == item.id)
+        };
+        if !same {
+            for (_, widgets) in self.catalog_widgets.take() {
+                self.catalog_group.remove(&widgets.row);
+            }
+            let mut built = Vec::new();
+            for item in &items {
+                let widgets = self.catalog_item(item);
+                self.catalog_group.add(&widgets.row);
+                built.push((item.id.clone(), widgets));
+            }
+            self.catalog_widgets.replace(built);
+        }
+        let blocked = self.dictating.get() || !installing.is_empty();
+        for ((_, widgets), item) in self.catalog_widgets.borrow().iter().zip(&items) {
+            show_item(widgets, item, blocked);
+        }
+        drop(installing);
+        drop(catalog);
+        self.items.replace(items);
+    }
+
+    fn catalog_item(self: &Rc<Self>, item: &Item) -> CatalogWidgets {
+        let row = adw::ExpanderRow::builder()
+            .title(escape_markup(&item.title))
+            .subtitle_lines(0)
+            .build();
+        let control = InstallControl::new();
+        let add = gtk::Button::builder()
+            .label(gettextrs::gettext("Add"))
+            .valign(gtk::Align::Center)
+            .build();
+        add.update_property(&[gtk::accessible::Property::Label(
+            // TRANSLATORS: {step} is a step's name, such as "Tidy up speech".
+            &gettextrs::gettext("Add {step}").replace("{step}", &item.title),
+        )]);
+        let added = gtk::Label::builder()
+            .label(gettextrs::gettext("Added"))
+            .css_classes(["dim-label"])
+            .valign(gtk::Align::Center)
+            .build();
+        let suffix = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+        suffix.append(&control);
+        suffix.append(&add);
+        suffix.append(&added);
+        row.add_suffix(&suffix);
+        let mut lines: Vec<(String, String)> = Vec::new();
+        if let Some(example) = &item.example {
+            lines.push((gettextrs::gettext("For example"), example.clone()));
+        }
+        lines.extend(
+            item.details
+                .iter()
+                .map(|d| (d.label.clone(), d.text.clone())),
+        );
+        for (label, text) in lines {
+            row.add_row(
+                &adw::ActionRow::builder()
+                    .title(escape_markup(&label))
+                    .subtitle(escape_markup(&text))
+                    .subtitle_lines(0)
+                    .subtitle_selectable(true)
+                    .css_classes(["property"])
+                    .build(),
+            );
+        }
+        add.connect_clicked({
+            let page = Rc::downgrade(self);
+            let id = item.id.clone();
+            move |_| {
+                if let Some(page) = page.upgrade() {
+                    page.add_item(&id);
+                }
+            }
+        });
+        control.button().connect_clicked({
+            let page = Rc::downgrade(self);
+            let id = item.id.clone();
+            move |_| {
+                if let Some(page) = page.upgrade() {
+                    page.install_item(&id);
+                }
+            }
+        });
+        CatalogWidgets {
+            row,
+            control,
+            add,
+            added,
+        }
+    }
+
+    fn item(&self, id: &str) -> Option<Item> {
+        self.items
+            .borrow()
+            .iter()
+            .find(|item| item.id == id)
+            .cloned()
+    }
+
+    /// Switch the step of `id` on and return to the list.
+    fn add_item(self: &Rc<Self>, id: &str) {
+        let Some(item) = self.item(id) else { return };
+        if item.offer != Offer::Add {
+            return;
+        }
+        let (ids, params) = self.deps.store.steps();
+        let (ids, params) = step_catalog::with_added(&ids, &params, &item, &self.deps.locales);
+        self.write(&ids, &params);
+        self.render();
+        self.deps.nav.pop();
+    }
+
+    /// The same install as the inline button, for one catalog entry.
+    fn install_item(self: &Rc<Self>, id: &str) {
+        let Some(item) = self.item(id) else { return };
+        let Offer::Install(entry) = item.offer else {
+            return;
+        };
+        if self.dictating.get() || !self.installing.borrow().is_empty() {
+            return;
+        }
+        self.start_install(id, std::slice::from_ref(&entry));
     }
 
     fn toast_failure(&self, error: &crate::ports::SystemConfiguratorError) {
@@ -641,6 +860,42 @@ fn update(widgets: &Widgets, row: &Row) {
             combo.set_selected(script.selected as u32);
             combo.set_sensitive(row.enabled);
         }
+    }
+}
+
+fn show_item(widgets: &CatalogWidgets, item: &Item, blocked: bool) {
+    widgets.row.set_title(&escape_markup(&item.title));
+    let subtitle = match &item.offer {
+        Offer::NotApplicable(reason) => reason.clone(),
+        Offer::Unknown => gettextrs::gettext("Myna is not running"),
+        _ => item.description.clone(),
+    };
+    widgets.row.set_subtitle(&escape_markup(&subtitle));
+    widgets
+        .add
+        .set_visible(matches!(item.offer, Offer::Add | Offer::NotApplicable(_)));
+    widgets.add.set_sensitive(matches!(item.offer, Offer::Add));
+    widgets.added.set_visible(item.offer == Offer::Added);
+    let control = &widgets.control;
+    control.set_visible(true);
+    match &item.offer {
+        Offer::Install(_) => {
+            control.show_offer(
+                &gettextrs::gettext("Install"),
+                // TRANSLATORS: {step} is a step's name, such as "Translate English to French".
+                &gettextrs::gettext("Install {step}").replace("{step}", &item.title),
+            );
+            control.button().set_sensitive(!blocked);
+        }
+        Offer::Installing(percent) => control.show_installing(*percent),
+        Offer::Preparing => {
+            control.show_installing(None);
+            control
+                .progress()
+                .label
+                .set_label(&gettextrs::gettext("Preparing…"));
+        }
+        _ => control.set_visible(false),
     }
 }
 
@@ -852,6 +1107,7 @@ mod tests {
         store: Rc<GioClientSettings>,
         daemon: Rc<RefCell<String>>,
         calls: Rc<RefCell<Vec<String>>>,
+        nav: adw::NavigationView,
         _dir: std::path::PathBuf,
     }
 
@@ -883,6 +1139,13 @@ mod tests {
         let daemon = Rc::new(RefCell::new(daemon.to_owned()));
         let calls = Rc::new(RefCell::new(Vec::new()));
         let group = adw::PreferencesGroup::new();
+        let nav = adw::NavigationView::new();
+        nav.push(
+            &adw::NavigationPage::builder()
+                .title("Processing")
+                .child(&group)
+                .build(),
+        );
         let page = StepsPage::attach(
             Deps {
                 store: store.clone(),
@@ -898,6 +1161,7 @@ mod tests {
                 overlay: adw::ToastOverlay::new(),
                 follow_interval: Duration::from_millis(20),
                 refresh_every: Duration::from_millis(60),
+                nav: nav.clone(),
             },
             &group,
         );
@@ -907,6 +1171,7 @@ mod tests {
             store,
             daemon,
             calls,
+            nav,
             _dir: dir,
         }
     }
@@ -970,7 +1235,8 @@ mod tests {
             let at = |t: &str| titles.iter().position(|x| x == t).unwrap();
             assert!(at("Fitted to the field") < at("Tidy up speech"));
             assert!(at("Tidy up speech") < at("Translate"));
-            assert_eq!(titles.last().unwrap(), "For example");
+            assert_eq!(titles.last().unwrap(), "Add step");
+            assert!(at("For example") < at("Add step"));
             assert!(!switch(&rig, "Tidy up speech").is_active());
         });
     }
@@ -1081,6 +1347,114 @@ mod tests {
                     .and_then(|i| i.downcast::<gtk::StringObject>().ok())
                     .is_some_and(|s| s.string() == "Français")
             });
+        });
+    }
+
+    fn catalog_rows(rig: &Rig) -> Vec<adw::ExpanderRow> {
+        all::<adw::ExpanderRow>(rig.page.catalog_group.upcast_ref())
+    }
+
+    fn catalog_row(rig: &Rig, title: &str) -> adw::ExpanderRow {
+        catalog_rows(rig)
+            .into_iter()
+            .find(|row| row.title() == title)
+            .unwrap_or_else(|| panic!("no catalog row {title}"))
+    }
+
+    fn add_button(row: &adw::ExpanderRow) -> gtk::Button {
+        all::<gtk::Button>(row.upcast_ref())
+            .into_iter()
+            .find(|b| b.label().as_deref() == Some("Add"))
+            .expect("an Add button")
+    }
+
+    fn install_control(row: &adw::ExpanderRow) -> InstallControl {
+        all::<InstallControl>(row.upcast_ref()).remove(0)
+    }
+
+    #[test]
+    fn the_add_step_row_opens_the_catalog_with_its_facts() {
+        crate::ui::on_gtk_thread(|| {
+            let rig = rig("catalog", TIDY, TIDY, "");
+            rig.page.add_row.emit_by_name::<()>("activated", &[]);
+            assert_eq!(rig.nav.visible_page().unwrap().title(), "Add step");
+            pump_until("the daemon's answer", || {
+                !add_button(&catalog_row(&rig, "Tidy up speech")).is_sensitive()
+                    || !install_control(&catalog_row(&rig, "Tidy up speech")).is_visible()
+            });
+            let titles: Vec<String> = catalog_rows(&rig)
+                .iter()
+                .map(|row| row.title().to_string())
+                .collect();
+            assert!(titles.contains(&"Translate English to Français".to_owned()));
+            assert!(titles.contains(&"Fitted to the field".to_owned()));
+            let facts: Vec<String> =
+                all::<adw::ActionRow>(catalog_row(&rig, "Tidy up speech").upcast_ref())
+                    .iter()
+                    .map(|row| row.title().to_string())
+                    .collect();
+            assert!(facts.contains(&"For example".to_owned()), "{facts:?}");
+            assert!(facts.contains(&"Download".to_owned()), "{facts:?}");
+        });
+    }
+
+    #[test]
+    fn adding_an_installed_step_switches_it_on_and_returns_to_the_list() {
+        crate::ui::on_gtk_thread(|| {
+            let rig = rig("add", TIDY, TIDY, "");
+            rig.page.add_row.emit_by_name::<()>("activated", &[]);
+            let row = catalog_row(&rig, "Tidy up speech");
+            pump_until("Tidy to be installed", || {
+                add_button(&row).is_visible() && add_button(&row).is_sensitive()
+            });
+            add_button(&row).emit_clicked();
+            assert_eq!(rig.store.steps().0, ["tidy"]);
+            assert_eq!(rig.nav.visible_page().unwrap().title(), "Processing");
+            assert!(switch(&rig, "Tidy up speech").is_active());
+            pump_until("Added", || !add_button(&row).is_visible());
+        });
+    }
+
+    #[test]
+    fn installing_from_the_catalog_is_the_inline_install_and_then_adds() {
+        crate::ui::on_gtk_thread(|| {
+            let rig = rig("catalog-install", NOTHING, FRENCH, "");
+            rig.page.add_row.emit_by_name::<()>("activated", &[]);
+            let row = catalog_row(&rig, "Translate English to Français");
+            pump_until("the Install button", || {
+                install_control(&row).button().is_visible()
+            });
+            install_control(&row).button().emit_clicked();
+            pump_until("the install to show", || {
+                install_control(&row).progress().container.is_visible()
+            });
+            pump_until("the request", || !rig.calls.borrow().is_empty());
+            assert_eq!(rig.calls.borrow().as_slice(), ["myna-translation fr"]);
+            pump_until("Add", || {
+                add_button(&row).is_visible() && add_button(&row).is_sensitive()
+            });
+            add_button(&row).emit_clicked();
+            assert_eq!(rig.store.steps().0, ["translate"]);
+            assert_eq!(rig.store.steps().1["translate.to"], "fr");
+        });
+    }
+
+    #[test]
+    fn install_waits_while_dictating_or_another_install_runs() {
+        crate::ui::on_gtk_thread(|| {
+            let rig = rig("blocked", NOTHING, FRENCH, "");
+            let row = catalog_row(&rig, "Translate English to Français");
+            pump_until("the Install button", || {
+                install_control(&row).button().is_visible()
+            });
+            rig.page.dictating.set(true);
+            rig.page.render();
+            assert!(!install_control(&row).button().is_sensitive());
+            install_control(&row).button().emit_clicked();
+            assert!(rig.page.installing.borrow().is_empty());
+            rig.page.dictating.set(false);
+            rig.page.render();
+            assert!(install_control(&row).button().is_sensitive());
         });
     }
 

@@ -1449,7 +1449,7 @@ fn build_settings_window(application: &adw::Application) {
         .processing_nav()
         .replace(&[processing_page(&processing, &window.processing_nav())]);
     watch_chain_status(&processing.notice, daemon_chain_status, CHAIN_STATUS_POLL);
-    attach_steps(&processing, &overlay);
+    attach_steps(&processing, &overlay, &window.processing_nav());
 
     general_nav.replace(&[status_page(
         &gettextrs::gettext("Loading Myna Settings"),
@@ -6039,7 +6039,7 @@ fn processing_group() -> ProcessingGroups {
 }
 
 /// Give the Steps group its rows, over the real store, daemon and snapd.
-fn attach_steps(groups: &ProcessingGroups, overlay: &adw::ToastOverlay) {
+fn attach_steps(groups: &ProcessingGroups, overlay: &adw::ToastOverlay, nav: &adw::NavigationView) {
     let store = match GioClientSettings::open() {
         Ok(store) => Rc::new(store),
         Err(error) => {
@@ -6068,6 +6068,7 @@ fn attach_steps(groups: &ProcessingGroups, overlay: &adw::ToastOverlay) {
         }),
         locales: myna_core::locale::preferred_languages(&myna_core::locale::SystemLocale::default()),
         overlay: overlay.clone(),
+        nav: nav.clone(),
         follow_interval: Duration::from_secs(1),
         refresh_every: crate::processing_ui::Deps::refresh_default(),
     };
