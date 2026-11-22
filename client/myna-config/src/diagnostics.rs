@@ -565,6 +565,13 @@ fn render_body(
                     &input_summary(input),
                 );
             }
+            if let Some(chain) = &report.chain {
+                field(
+                    &mut out,
+                    &gettextrs::gettext("Processing"),
+                    &chain.summary(),
+                );
+            }
             field(
                 &mut out,
                 &gettextrs::gettext("Last error"),
@@ -1329,6 +1336,7 @@ mod tests {
                     snr_db: Some(31),
                 })),
                 last_error: None,
+                chain: None,
             }),
             extension: Some(ExtensionReport::Known {
                 state: "active".into(),
@@ -1397,6 +1405,7 @@ mod tests {
                 drops: None,
                 input: None,
                 last_error,
+                chain: None,
             }),
             ..DiagnosticInput::default()
         }
@@ -1489,6 +1498,23 @@ mod tests {
         assert_eq!(
             field_value(&text, "Last error"),
             Some("Model not connected (/nonexistent/share: no model snap is connected; cannot reach the model: /run/user/1000/snap.myna/backend/provider/myna.sock), 2026-10-01 09:30:00"),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn the_processing_chain_status_is_listed_when_the_daemon_publishes_it() {
+        let mut daemon = running_daemon(None);
+        let text = present_diagnostics(daemon.clone()).copy_text();
+        assert_eq!(field_value(&text, "Processing"), None, "{text}");
+        daemon.daemon_report.as_mut().unwrap().chain =
+            Some(crate::chain_notice::ChainState::Degraded(vec![
+                "text.translate".into(),
+            ]));
+        let text = present_diagnostics(daemon).copy_text();
+        assert_eq!(
+            field_value(&text, "Processing"),
+            Some("missing a translation model"),
             "{text}"
         );
     }

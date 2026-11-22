@@ -10,6 +10,7 @@ pub mod apply_plan;
 pub mod backend_apply;
 pub mod backend_controller;
 pub mod backend_ui;
+pub mod chain_notice;
 pub mod command;
 pub mod diagnostics;
 pub mod domain;

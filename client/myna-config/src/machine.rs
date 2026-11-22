@@ -301,6 +301,8 @@ pub struct DaemonReport {
     pub input: Option<InputReport>,
     /// `None` when nothing has failed, or the daemon predates the property.
     pub last_error: Option<LastError>,
+    /// `None` on a daemon older than the properties.
+    pub chain: Option<crate::chain_notice::ChainState>,
 }
 
 const DICTATION_BUS: &str = "com.canonical.Myna.Dictation";
@@ -378,6 +380,10 @@ fn parse_daemon_report(all: &gio::glib::Variant) -> DaemonReport {
         drops,
         input,
         last_error,
+        chain: crate::chain_notice::ChainState::parse(
+            &text("ChainStatus").unwrap_or_default(),
+            &text("ChainMissing").unwrap_or_default(),
+        ),
     }
 }
 
@@ -433,6 +439,24 @@ mod tests {
         assert_eq!(last.headline, "Model not running");
         assert_eq!(last.detail, "x is connected");
         assert!(last.at.starts_with("2025-"), "{}", last.at);
+    }
+
+    #[test]
+    fn the_chain_status_is_read_with_its_missing_tasks() {
+        use crate::chain_notice::ChainState;
+        let report = parse_daemon_report(&reply(&[
+            ("ChainStatus", "degraded".to_variant()),
+            ("ChainMissing", "text.translate".to_variant()),
+        ]));
+        assert_eq!(
+            report.chain,
+            Some(ChainState::Degraded(vec!["text.translate".into()]))
+        );
+        let report = parse_daemon_report(&reply(&[
+            ("ChainStatus", "".to_variant()),
+            ("ChainMissing", "".to_variant()),
+        ]));
+        assert_eq!(report.chain, None);
     }
 
     #[test]

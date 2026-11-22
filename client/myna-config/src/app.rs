@@ -1448,6 +1448,7 @@ fn build_settings_window(application: &adw::Application) {
     window
         .processing_nav()
         .replace(&[processing_page(&processing)]);
+    watch_chain_status(&processing.notice, daemon_chain_status, CHAIN_STATUS_POLL);
 
     general_nav.replace(&[status_page(
         &gettextrs::gettext("Loading Myna Settings"),
@@ -1748,6 +1749,58 @@ fn processing_probe() -> glib::ExitCode {
             .and_then(ClientSettingValue::as_str)
             .unwrap_or_default()
     );
+
+    let banner = typed_descendants::<adw::Banner>(root)
+        .into_iter()
+        .next()
+        .expect("the Processing tab has a notice banner");
+    let degraded_state =
+        || crate::chain_notice::ChainState::Degraded(vec!["text.translate".into()]);
+    let degraded = degraded_state();
+    println!("notice-idle: {}", !banner.is_revealed());
+    show_chain_notice(&banner, Some(&degraded));
+    settle_gtk();
+    println!(
+        "notice-degraded: {} {}",
+        banner.is_revealed() && banner.is_child_visible(),
+        banner.title()
+    );
+    show_chain_notice(&banner, Some(&crate::chain_notice::ChainState::Restart));
+    println!("notice-restart: {}", banner.title());
+    show_chain_notice(&banner, Some(&crate::chain_notice::ChainState::Ready));
+    settle_gtk();
+    println!("notice-ready: {}", !banner.is_revealed());
+    show_chain_notice(&banner, Some(&degraded));
+    show_chain_notice(&banner, None);
+    println!("notice-old-daemon: {}", !banner.is_revealed());
+
+    // The watcher follows a daemon that goes from missing a model to ready.
+    let reads = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let counter = reads.clone();
+    watch_chain_status(
+        &banner,
+        move || {
+            let n = counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Some(if n == 0 {
+                degraded_state()
+            } else {
+                crate::chain_notice::ChainState::Ready
+            })
+        },
+        Duration::from_millis(50),
+    );
+    let waits_for = |revealed: bool| {
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while banner.is_revealed() != revealed {
+            if std::time::Instant::now() > deadline {
+                return false;
+            }
+            glib::MainContext::default().iteration(false);
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        true
+    };
+    println!("notice-follows: {} {}", waits_for(true), waits_for(false));
 
     let titles = || -> Vec<String> {
         typed_descendants::<adw::ActionRow>(root)
@@ -5835,6 +5888,8 @@ fn build_myna_page(
 /// The groups the Processing tab shows; General's builder adds their rows.
 #[derive(Clone)]
 struct ProcessingGroups {
+    /// Advice when the chosen chain has no model for a step; hidden otherwise.
+    notice: adw::Banner,
     /// What is done to the text: one row per chain.
     chain: adw::PreferencesGroup,
     record: adw::PreferencesGroup,
@@ -5981,6 +6036,7 @@ impl PastDictations {
 
 fn processing_group() -> ProcessingGroups {
     ProcessingGroups {
+        notice: adw::Banner::builder().use_markup(false).build(),
         chain: adw::PreferencesGroup::builder()
             .title(gettextrs::gettext("What Myna types"))
             .description(gettextrs::gettext(
@@ -5994,14 +6050,56 @@ fn processing_group() -> ProcessingGroups {
 
 fn processing_page(groups: &ProcessingGroups) -> adw::NavigationPage {
     let preferences = adw::PreferencesPage::new();
+    preferences.set_vexpand(true);
     preferences.add(&groups.chain);
     preferences.add(&groups.record);
     preferences.add(&groups.past);
+    let content = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    content.append(&groups.notice);
+    content.append(&preferences);
     adw::NavigationPage::builder()
         .title(gettextrs::gettext("Processing"))
-        .child(&preferences)
+        .child(&content)
         .build()
 }
+
+/// Show the advice for `state`, or hide the banner when there is none.
+fn show_chain_notice(banner: &adw::Banner, state: Option<&crate::chain_notice::ChainState>) {
+    match state.and_then(crate::chain_notice::ChainState::notice) {
+        Some(text) => {
+            banner.set_title(&text);
+            banner.set_revealed(true);
+        }
+        None => banner.set_revealed(false),
+    }
+}
+
+/// Follow the daemon's chain status for as long as the banner lives. The
+/// daemon rebinds every few seconds while a model is missing, so a model
+/// connected meanwhile clears the notice without reopening Settings.
+fn watch_chain_status(
+    banner: &adw::Banner,
+    read: impl Fn() -> Option<crate::chain_notice::ChainState> + Clone + Send + 'static,
+    every: Duration,
+) {
+    let banner = banner.downgrade();
+    glib::spawn_future_local(async move {
+        while let Some(shown) = banner.upgrade() {
+            let read = read.clone();
+            let state = gio::spawn_blocking(read).await.ok().flatten();
+            show_chain_notice(&shown, state.as_ref());
+            drop(shown);
+            glib::timeout_future(every).await;
+        }
+    });
+}
+
+/// The daemon's chain status, `None` when it is not running or too old.
+fn daemon_chain_status() -> Option<crate::chain_notice::ChainState> {
+    crate::machine::daemon_report().and_then(|report| report.chain)
+}
+
+const CHAIN_STATUS_POLL: Duration = Duration::from_secs(5);
 
 fn status_page(title: &str, description: &str, icon: &str) -> adw::NavigationPage {
     let page = ui::StatusPage::new();

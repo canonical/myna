@@ -176,6 +176,20 @@ fn the_processing_tab_follows_the_record_and_the_chosen_chain_when_enabled() {
     assert!(output.status.success(), "processing probe failed: {stderr}");
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("chain: tidy"), "{stdout}");
+    assert!(stdout.contains("notice-idle: true"), "{stdout}");
+    assert!(
+        stdout.contains(
+            "notice-degraded: true This needs a translation model that is not installed."
+        ),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("notice-restart: A model was connected"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("notice-ready: true"), "{stdout}");
+    assert!(stdout.contains("notice-old-daemon: true"), "{stdout}");
+    assert!(stdout.contains("notice-follows: true true"), "{stdout}");
     assert!(stdout.contains("recorded: true"), "{stdout}");
     assert!(stdout.contains("made-by: true"), "{stdout}");
     assert!(stdout.contains("cleared: true"), "{stdout}");
