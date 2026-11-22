@@ -12,7 +12,7 @@ use std::cmp::Reverse;
 use std::collections::{BTreeSet, HashMap};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use myna_orchestrator::backend::share::{resolve_text_shares, TextProvider, TextShareKind};
@@ -109,6 +109,10 @@ impl Binding {
     }
 }
 
+/// How long after a failed bind a piece of text leaves the request alone,
+/// typing as heard. The binder retries every few seconds meanwhile.
+const INLINE_RETRY: Duration = Duration::from_secs(30);
+
 struct Inner {
     /// Directories of shares, searched afresh at every bind: a share comes
     /// and goes under a `snap connect` or a refresh.
@@ -117,6 +121,9 @@ struct Inner {
     /// One bind at a time, so a press and the background binder cannot both
     /// load the same model.
     binding: tokio::sync::Mutex<()>,
+    /// When each request last failed to bind, so a piece of text does not
+    /// retry a bind that just failed; the background binder is not held to it.
+    failed: Mutex<HashMap<String, Instant>>,
     status: watch::Sender<ChainStatus>,
 }
 
@@ -131,6 +138,7 @@ impl Resolver {
             dirs,
             bound: Mutex::default(),
             binding: tokio::sync::Mutex::new(()),
+            failed: Mutex::default(),
             status: watch::channel(ChainStatus::Ready).0,
         }))
     }
@@ -201,6 +209,30 @@ impl Resolver {
     /// or nothing warms.
     async fn bind(&self, request: &Request) -> (Option<Binding>, bool) {
         let _one = self.0.binding.lock().await;
+        self.bind_held(request).await
+    }
+
+    /// The last resort for a piece of text that finds its request unbound:
+    /// binds only when nothing failed lately and no other bind is running,
+    /// so a model that will not load costs one budget, not one per piece.
+    async fn bind_inline(&self, request: &Request) -> Option<Binding> {
+        let key = request.key();
+        let lately = self
+            .0
+            .failed
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .get(&key)
+            .is_some_and(|at| at.elapsed() < INLINE_RETRY);
+        if lately {
+            return None;
+        }
+        let _one = self.0.binding.try_lock().ok()?;
+        self.bind_held(request).await.0
+    }
+
+    /// [`Self::bind`] with the binding lock already held.
+    async fn bind_held(&self, request: &Request) -> (Option<Binding>, bool) {
         let key = request.key();
         if let Some(done) = self.bound(&key) {
             return (Some(done), false);
@@ -241,7 +273,12 @@ impl Resolver {
                         .bound
                         .lock()
                         .unwrap_or_else(|p| p.into_inner())
-                        .insert(key, binding.clone());
+                        .insert(key.clone(), binding.clone());
+                    self.0
+                        .failed
+                        .lock()
+                        .unwrap_or_else(|p| p.into_inner())
+                        .remove(&key);
                     return (Some(binding), needs_restart);
                 }
                 Err(e) => myna_core::info_log!(
@@ -253,10 +290,16 @@ impl Resolver {
                     match e {
                         WireError::Unavailable(_) => "unavailable",
                         WireError::Refused(_) => "refused",
+                        WireError::TimedOut => "timed out",
                     }
                 ),
             }
         }
+        self.0
+            .failed
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .insert(key, Instant::now());
         (None, needs_restart)
     }
 
@@ -296,10 +339,9 @@ impl Models for Resolver {
         let binding = match self.bound(&key) {
             Some(binding) => binding,
             None => self
-                .bind(request)
+                .bind_inline(request)
                 .await
-                .0
-                .ok_or_else(|| ModelError::Unavailable("no model covers the request".into()))?,
+                .ok_or_else(|| ModelError::Unavailable("no model is bound".into()))?,
         };
         let run = match binding.via {
             Via::Myna => {
@@ -335,6 +377,9 @@ impl Models for Resolver {
                 self.evict(&key);
                 Err(ModelError::Unavailable(why))
             }
+            // Slow, not gone: the model stays bound, or every piece would
+            // pay to load it again.
+            Err(WireError::TimedOut) => Err(ModelError::TimedOut),
         }
     }
 
@@ -434,6 +479,7 @@ mod tests {
         WarmFails,
         WarmHangs,
         RunRefuses,
+        RunHangs,
     }
 
     fn root(tag: &str) -> PathBuf {
@@ -472,13 +518,18 @@ mod tests {
                         "warm" => {
                             w.fetch_add(1, Ordering::SeqCst);
                             match mode {
-                                Mode::Works | Mode::RunRefuses => json!({"ok": true}),
+                                Mode::Works | Mode::RunRefuses | Mode::RunHangs => {
+                                    json!({"ok": true})
+                                }
                                 Mode::WarmFails => json!({"error": "no memory"}),
                                 Mode::WarmHangs => std::future::pending().await,
                             }
                         }
                         _ => {
                             r.fetch_add(1, Ordering::SeqCst);
+                            if matches!(mode, Mode::RunHangs) {
+                                std::future::pending::<()>().await;
+                            }
                             if matches!(mode, Mode::RunRefuses) {
                                 json!({"error": "cannot"})
                             } else {
@@ -740,6 +791,77 @@ mod tests {
             Err(ModelError::Refused(why)) if why == "cannot"
         ));
         assert_eq!(bound(&resolver, &request).as_deref(), Some("tagger/a"));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_slow_model_keeps_its_binding() {
+        let dir = root("slow");
+        let s = share(
+            &dir,
+            "tagger",
+            json!([model("a", "text.cleanup", 5)]),
+            Mode::RunHangs,
+        );
+        let mut resolver = Resolver::new(vec![dir.clone()]);
+        let mut request = Request::cleanup(None);
+        request.run_budget = Duration::from_millis(100);
+        resolver.settle(std::slice::from_ref(&request)).await;
+        for _ in 0..2 {
+            assert!(matches!(
+                resolver.run(&request, "hi").await,
+                Err(ModelError::TimedOut)
+            ));
+        }
+        assert_eq!(bound(&resolver, &request).as_deref(), Some("tagger/a"));
+        assert_eq!(s.warms.load(Ordering::SeqCst), 1, "never warmed again");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_failed_bind_is_not_retried_inline_for_every_piece() {
+        let dir = root("backoff");
+        let s = share(
+            &dir,
+            "tagger",
+            json!([model("a", "text.cleanup", 5)]),
+            Mode::WarmFails,
+        );
+        let mut resolver = Resolver::new(vec![dir.clone()]);
+        let request = Request::cleanup(None);
+        for _ in 0..3 {
+            assert!(matches!(
+                resolver.run(&request, "hi").await,
+                Err(ModelError::Unavailable(_))
+            ));
+        }
+        assert_eq!(s.warms.load(Ordering::SeqCst), 1);
+        // The background binder keeps trying whatever the backoff says.
+        resolver.settle(std::slice::from_ref(&request)).await;
+        assert_eq!(s.warms.load(Ordering::SeqCst), 2);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_piece_does_not_queue_behind_a_bind_in_progress() {
+        let dir = root("noqueue");
+        share(
+            &dir,
+            "tagger",
+            json!([model("a", "text.cleanup", 5)]),
+            Mode::WarmHangs,
+        );
+        let mut resolver = Resolver::new(vec![dir.clone()]);
+        let mut request = Request::cleanup(None);
+        request.bind_budget = Duration::from_millis(600);
+        resolver.prepare(std::slice::from_ref(&request));
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        let started = std::time::Instant::now();
+        assert!(matches!(
+            resolver.run(&request, "hi").await,
+            Err(ModelError::Unavailable(_))
+        ));
+        assert!(started.elapsed() < Duration::from_millis(300));
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

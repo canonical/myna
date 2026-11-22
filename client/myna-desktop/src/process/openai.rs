@@ -121,7 +121,7 @@ async fn http(
     };
     let reply = match tokio::time::timeout(within, io).await {
         Ok(reply) => reply.map_err(|e| WireError::Unavailable(e.to_string()))?,
-        Err(_) => return Err(WireError::Unavailable("timed out".into())),
+        Err(_) => return Err(WireError::TimedOut),
     };
     parse(&reply)
 }
@@ -349,7 +349,7 @@ mod tests {
         let path = dir.join("s");
         let _silent = UnixListener::bind(&path).unwrap();
         let hung = complete(&path, "m", "s", "t", Duration::from_millis(50)).await;
-        assert!(matches!(hung, Err(WireError::Unavailable(e)) if e == "timed out"));
+        assert!(matches!(hung, Err(WireError::TimedOut)));
         assert!(matches!(
             models(Path::new("/nonexistent/openai"), Duration::from_secs(1)).await,
             Err(WireError::Unavailable(_))

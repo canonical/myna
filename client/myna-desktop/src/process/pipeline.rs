@@ -85,6 +85,9 @@ impl Request {
 /// with: the next candidate is tried.
 pub const BIND_BUDGET: Duration = Duration::from_secs(5);
 
+/// How long past its run budget a model's own deadline may take to report.
+const RUN_GRACE: Duration = Duration::from_millis(100);
+
 /// Why a model gave no usable answer. The far side's reason is kept for
 /// tests and never logged or recorded: it may quote the text.
 #[derive(Debug, thiserror::Error)]
@@ -93,6 +96,8 @@ pub enum ModelError {
     Unavailable(String),
     #[error("the model refused: {0}")]
     Refused(String),
+    #[error("the model ran past its budget")]
+    TimedOut,
 }
 
 impl ModelError {
@@ -100,6 +105,7 @@ impl ModelError {
         match self {
             ModelError::Unavailable(_) => Skip::NoModel,
             ModelError::Refused(_) => Skip::Refused,
+            ModelError::TimedOut => Skip::Timeout,
         }
     }
 }
@@ -182,8 +188,14 @@ impl Pipeline {
     ) -> String {
         let written = self.written.get();
         let started = Instant::now();
-        let answer =
-            tokio::time::timeout(request.run_budget, self.models.run(request, &text)).await;
+        // The far side holds itself to the run budget (it is on the wire as
+        // the deadline), so its own timeout is the one that is reported; this
+        // one, a little later, only catches a `Models` that does not.
+        let answer = tokio::time::timeout(
+            request.run_budget + RUN_GRACE,
+            self.models.run(request, &text),
+        )
+        .await;
         let mut model = None;
         let mut answer_chars = 0;
         let mut typed = None;
@@ -289,6 +301,7 @@ mod tests {
         Fails,
         Refuses,
         Hangs,
+        TimesOut,
     }
 
     #[async_trait]
@@ -302,6 +315,7 @@ mod tests {
                 Scripted::Fails => Err(ModelError::Unavailable("none installed".into())),
                 Scripted::Refuses => Err(ModelError::Refused("cannot: um hi".into())),
                 Scripted::Hangs => std::future::pending().await,
+                Scripted::TimesOut => Err(ModelError::TimedOut),
             }
         }
     }
@@ -509,6 +523,13 @@ mod tests {
         let mut pipeline = cleanup(Scripted::Refuses);
         assert_eq!(pipeline.process(HEARD.into(), &here()).await, HEARD);
         assert_eq!(traced(&pipeline)[0].skipped, Some(Skip::Refused));
+    }
+
+    #[tokio::test]
+    async fn a_model_that_reports_its_own_timeout_is_recorded_as_one() {
+        let mut pipeline = cleanup(Scripted::TimesOut);
+        assert_eq!(pipeline.process(HEARD.into(), &here()).await, HEARD);
+        assert_eq!(traced(&pipeline)[0].skipped, Some(Skip::Timeout));
     }
 
     #[tokio::test(start_paused = true)]

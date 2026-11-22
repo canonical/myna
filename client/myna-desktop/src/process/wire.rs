@@ -92,6 +92,9 @@ pub enum WireError {
     Unavailable(String),
     #[error("provider refused: {0}")]
     Refused(String),
+    /// It was still working when the deadline passed: slow, not gone.
+    #[error("provider timed out")]
+    TimedOut,
 }
 
 async fn exchange(path: &Path, call: &Call<'_>, within: Duration) -> Result<String, WireError> {
@@ -109,7 +112,7 @@ async fn exchange(path: &Path, call: &Call<'_>, within: Duration) -> Result<Stri
     };
     match tokio::time::timeout(within, io).await {
         Ok(reply) => reply.map_err(unavailable),
-        Err(_) => Err(WireError::Unavailable("timed out".into())),
+        Err(_) => Err(WireError::TimedOut),
     }
 }
 
@@ -313,7 +316,7 @@ mod tests {
         let _silent = UnixListener::bind(&path).unwrap();
         let started = std::time::Instant::now();
         let hung = capabilities(&path, Duration::from_millis(50)).await;
-        assert!(matches!(hung, Err(WireError::Unavailable(e)) if e == "timed out"));
+        assert!(matches!(hung, Err(WireError::TimedOut)));
         assert!(started.elapsed() < secs);
         std::fs::remove_dir_all(&dir).unwrap();
     }
