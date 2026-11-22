@@ -1453,6 +1453,75 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_model_removed_mid_chain_types_what_the_rest_made_and_recovers() {
+        use super::super::graph::Graph;
+        use super::super::pipeline::Pipeline;
+        use super::super::{Field, Processor};
+        use myna_core::ProcessingChain;
+
+        let dir = root("mid-chain");
+        share(
+            &dir,
+            "myna-text",
+            json!([model("tagger", "text.cleanup", 5)]),
+            Mode::Works,
+        );
+        let translation = share(
+            &dir,
+            "myna-translation",
+            json!([model("fr", "text.translate", 5)]),
+            Mode::Works,
+        );
+        let resolver = Resolver::open(vec![dir.clone()]);
+        let graph = Graph::preset(ProcessingChain::TIDY_FRENCH);
+        resolver.settle(&graph.requests()).await;
+        assert_eq!(*resolver.status().borrow(), ChainStatus::Ready);
+        let mut pipeline = Pipeline::new(graph.clone(), resolver.clone());
+        let field = Field::default();
+        let heard = "so I think we should go";
+        assert_eq!(
+            pipeline.process(heard.into(), &field).await,
+            "so I think we should go!!"
+        );
+
+        // The component is removed: its mount, and so its socket, is gone.
+        std::fs::remove_file(translation.dir.join("text.sock")).unwrap();
+        let typed = pipeline.process(heard.into(), &field).await;
+        assert_eq!(
+            typed, "so I think we should go!",
+            "the cleaned text is typed"
+        );
+        let trace = pipeline.trace().lock().unwrap().clone();
+        assert_eq!(trace.last().unwrap().task, "text.translate");
+        assert_eq!(
+            trace.last().unwrap().skipped,
+            Some(myna_core::history::Skip::NoModel)
+        );
+
+        // Settings tells the daemon; the chain names the missing request.
+        *translation.models.lock().unwrap() = json!([]);
+        resolver.settle(&graph.requests()).await;
+        let status = resolver.status().borrow().clone();
+        assert_eq!(status.missing_tasks(), ["text.translate"]);
+
+        // Reinstalled: a new socket, and the next text is translated again.
+        let again = share(
+            &dir,
+            "myna-translation",
+            json!([model("fr", "text.translate", 5)]),
+            Mode::Works,
+        );
+        resolver.settle(&graph.requests()).await;
+        assert_eq!(*resolver.status().borrow(), ChainStatus::Ready);
+        assert_eq!(
+            pipeline.process(heard.into(), &field).await,
+            "so I think we should go!!"
+        );
+        assert!(again.runs.load(Ordering::SeqCst) >= 1);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[tokio::test]
     async fn the_signature_moves_with_a_share_and_steps_publish_once() {
         let dir = root("signature");
         let resolver = Resolver::open(vec![dir.clone()]);
