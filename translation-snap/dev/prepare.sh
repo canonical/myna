@@ -8,6 +8,12 @@ repo_root="$(dirname "$snap_dir")"
 "$repo_root/dev/stage-licenses.sh" "$snap_dir"
 "$repo_root/dev/stage-version.sh" "$snap_dir" server translation-snap
 
+# The catalog Settings reads from $SNAP/share/myna-translation/catalog.json.
+"$repo_root/dev/gen-plugins.py" --check "$snap_dir"
+rm -rf "$snap_dir/catalog"
+mkdir -p "$snap_dir/catalog"
+cp "$snap_dir/catalog.json" "$snap_dir/catalog/catalog.json"
+
 cd "$repo_root/server"
 rm -f "$snap_dir"/wheels/myna-*.whl
 uv build --wheel --out-dir "$snap_dir/wheels"

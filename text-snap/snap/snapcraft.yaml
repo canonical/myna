@@ -103,6 +103,14 @@ parts:
       "$CRAFT_PROJECT_DIR/dev/prune-runtime.sh" "$site" "$CRAFT_PART_INSTALL/bin/python3"
       rm -f "$CRAFT_PART_INSTALL"/bin/pip* "$CRAFT_PART_INSTALL"/bin/onnxruntime_test
 
+  # catalog.json, generated from plugins/*.toml and staged into catalog/ by
+  # dev/prepare.sh: what Settings reads once the snap is installed.
+  catalog:
+    plugin: dump
+    source: catalog
+    organize:
+      catalog.json: share/myna-text/catalog.json
+
   # Model weights as components. Populate components/ with
   # ./dev/download-models.sh before packing; `prime: [-*]` keeps them out of
   # the base. Whatever that stages is what ships.

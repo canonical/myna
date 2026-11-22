@@ -117,6 +117,14 @@ parts:
     override-build: |
       "$CRAFT_PROJECT_DIR/dev/build-bergamot.sh" "$CRAFT_PART_BUILD" "$CRAFT_PART_INSTALL"
 
+  # catalog.json, generated from plugins/*.toml and staged into catalog/ by
+  # dev/prepare.sh: what Settings reads once the snap is installed.
+  catalog:
+    plugin: dump
+    source: catalog
+    organize:
+      catalog.json: share/myna-translation/catalog.json
+
   # Model weights as components. Populate components/ with
   # ./dev/download-models.sh before packing; `prime: [-*]` keeps them out of
   # the base. Whatever that stages is what ships.
