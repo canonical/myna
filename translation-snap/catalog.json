@@ -43,7 +43,7 @@
       "installed_bytes": 36749127,
       "quality": {
         "value": 0.7,
-        "source": "chrF 0.701 on 200 FLEURS en_us to fr_fr pairs, beam 1; carried over from the shipped manifest"
+        "source": "chrF 0.700 on 200 FLEURS pairs (translate_en_fr); vendor FLORES COMET 0.8697"
       },
       "latency_ms": 25,
       "latency_class": "fast",

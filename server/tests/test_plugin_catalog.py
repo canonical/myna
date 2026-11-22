@@ -292,3 +292,90 @@ def test_a_component_is_declared_by_exactly_one_source_each():
         recipe = (snap_dir / "snap/snapcraft.yaml").read_text()
         assert recipe.count(gen.BEGIN) == 2
         assert recipe.count(gen.END) == 2
+
+
+def gated(valid, **gate):
+    plugin = copy.deepcopy(valid)
+    plugin["curated"] = True
+    plugin["gate"] = {"vendor_comet": 0.87, **gate}
+    plugin["measured"] = {**plugin["measured"], "gate": "pass"}
+    return plugin
+
+
+def test_a_plugin_without_a_gate_table_is_listed_as_asked(valid):
+    valid["curated"] = True
+    assert gen.listed(valid) is True
+    valid["curated"] = False
+    assert gen.listed(valid) is False
+
+
+def test_a_gated_plugin_is_listed_only_with_a_passing_gate_and_spot_check(valid):
+    spot = {"who": "Reviewer", "date": "2026-11-22", "passed": True}
+    plugin = gated(valid)
+    assert gen.listed(plugin) is False  # no spot check recorded
+    plugin["spot_check"] = spot
+    gen.validate(plugin)
+    assert gen.listed(plugin) is True
+    plugin["spot_check"] = spot | {"passed": False}
+    assert gen.listed(plugin) is False
+    plugin["spot_check"] = spot
+    plugin["measured"]["gate"] = "fail"
+    assert gen.listed(plugin) is False
+    plugin["measured"]["gate"] = "pass"
+    plugin["curated"] = False
+    assert gen.listed(plugin) is False
+
+
+def test_a_waiver_stands_in_for_the_spot_check_but_a_failed_one_overrides_it(valid):
+    plugin = gated(valid, spot_check_waiver="shipped before the gate")
+    gen.validate(plugin)
+    assert gen.listed(plugin) is True
+    plugin["spot_check"] = {"who": "R", "date": "2026-11-22", "passed": False}
+    assert gen.listed(plugin) is False
+
+
+def test_the_catalog_entry_carries_the_listing_decision(valid):
+    plugin = gated(valid)
+    assert gen.catalog_entry(plugin)["curated"] is False
+    plugin["spot_check"] = {"who": "R", "date": "2026-11-22", "passed": True}
+    assert gen.catalog_entry(plugin)["curated"] is True
+
+
+@pytest.mark.parametrize(
+    ("mutate", "match"),
+    [
+        (lambda p: p.update(gate="x"), "gate must be a table"),
+        (lambda p: p.update(spot_check={"who": "R", "date": "d"}), "spot_check needs"),
+        (
+            lambda p: p.update(spot_check={"who": "R", "date": "d", "passed": "yes"}),
+            "spot_check needs",
+        ),
+        (
+            lambda p: p.update(spot_check={"who": "R", "date": "d", "passed": True, "extra": 1}),
+            "spot_check needs",
+        ),
+        (lambda p: p["gate"].update(spot_check_waiver=" "), "must say why"),
+        (lambda p: p["measured"].pop("gate"), "from the pipeline"),
+        (lambda p: p["measured"].update(gate="maybe"), "from the pipeline"),
+    ],
+)
+def test_malformed_gate_and_spot_check_fields_fail(valid, mutate, match):
+    plugin = gated(valid)
+    mutate(plugin)
+    with pytest.raises(gen.PluginError, match=match):
+        gen.validate(plugin)
+
+
+def test_the_pipeline_and_the_generator_share_one_licence_allow_list():
+    from myna.benchmarker import plugin_eval
+
+    assert plugin_eval.LICENSES == gen.LICENSES
+    for name in ("BSD", "BSD-2-Clause", "GPL-3.0", "mit"):
+        assert plugin_eval.licence_allowed(name) == gen.licence_allowed(name)
+
+
+def test_the_shipped_gated_plugins_name_the_results_they_came_from():
+    for _, plugin in ALL:
+        if "gate" in plugin:
+            assert plugin["measured"]["gate"] == "pass"
+            assert len(plugin["measured"]["results_sha256"]) == 64

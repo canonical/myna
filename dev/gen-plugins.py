@@ -13,7 +13,9 @@ It yields, deterministically:
   - catalog.json for the snap.
 
 quality, latency_ms and their source come from plugins/<name>.measured.json,
-written by the evaluation pipeline, never typed into the toml. --check
+written by the evaluation pipeline (dev/plugin-pipeline.sh), never typed into
+the toml. A plugin with a [gate] table is emitted curated only if the pipeline's
+gate passed and its [spot_check] (who, date, passed) did too. --check
 regenerates in memory and fails when a committed file differs.
 Contract: .kb/text-plugin-contract.md.
 """
@@ -113,7 +115,23 @@ def validate(plugin: dict, source: str = "plugin") -> None:
             "free",
         ):
             raise bad(f"bad param {param!r}")
+    gate = plugin.get("gate")
+    if gate is not None and not isinstance(gate, dict):
+        raise bad("gate must be a table")
+    spot = plugin.get("spot_check")
+    if spot is not None and not (
+        spot.get("who")
+        and spot.get("date")
+        and isinstance(spot.get("passed"), bool)
+        and set(spot) <= {"who", "date", "passed", "notes"}
+    ):
+        raise bad("spot_check needs who, date, passed (and optional notes)")
+    waiver = (gate or {}).get("spot_check_waiver")
+    if waiver is not None and not (isinstance(waiver, str) and waiver.strip()):
+        raise bad("gate.spot_check_waiver must say why")
     measured = plugin["measured"]
+    if gate is not None and measured.get("gate") not in ("pass", "fail"):
+        raise bad("a plugin with a [gate] needs measured.json from the pipeline (gate pass|fail)")
     if not (
         isinstance(measured.get("quality"), (int, float))
         and 0 <= measured["quality"] <= 1
@@ -122,6 +140,23 @@ def validate(plugin: dict, source: str = "plugin") -> None:
         and measured.get("quality_source")
     ):
         raise bad("measured.json needs quality 0..1, latency_ms and quality_source")
+
+
+def listed(plugin: dict) -> bool:
+    """Whether the entry is emitted curated: the file asks for it and, when it
+    declares a [gate], the pipeline's gate passed and the native-speaker spot
+    check passed (or is waived, with the reason on record)."""
+    if not plugin["curated"]:
+        return False
+    gate = plugin.get("gate")
+    if gate is None:
+        return True
+    if plugin["measured"].get("gate") != "pass":
+        return False
+    spot = plugin.get("spot_check")
+    if spot is not None:
+        return spot["passed"]
+    return bool(gate.get("spot_check_waiver"))
 
 
 def latency_class(ms: int) -> str:
@@ -210,7 +245,7 @@ def catalog_entry(plugin: dict) -> dict:
         "latency_class": latency_class(m["latency_ms"]),
         "hardware": plugin["hardware"],
         "locales": plugin["locales"],
-        "curated": plugin["curated"],
+        "curated": listed(plugin),
         "license": plugin["license"],
         "attribution": plugin["attribution"],
         "source": plugin["source"],

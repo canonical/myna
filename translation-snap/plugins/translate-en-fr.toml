@@ -50,6 +50,13 @@ kind = "language"
 role = "target"
 required = true
 
+# DECISIONS 7.4: en-fr keeps its section 5 and 6 gates (chrF >= 0.58); the
+# vendor COMET is Mozilla's FLORES figure from the model's metadata.json.
+[gate]
+vendor_comet = 0.8697
+chrf_min = 0.58
+spot_check_waiver = "shipped listed in v0.3.3 before the spot check existed; native-speaker check pending"
+
 [step]
 id = "translate"
 stage = "translate"
