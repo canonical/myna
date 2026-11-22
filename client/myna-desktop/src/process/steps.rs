@@ -700,7 +700,7 @@ mod tests {
     #[test]
     fn english_is_never_pivoted_through_itself() {
         for (language, to) in [("en", "de"), ("fr", "en")] {
-            let c = through(language, to, &[("fr", "fa")]);
+            let c = through(language, to, &[("en", "en")]);
             assert_eq!(asks(&c), [(language.into(), to.into())]);
             assert!(matches!(c.graph.node(Id::first()), Op::Ask { .. }));
         }
