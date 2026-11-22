@@ -194,7 +194,9 @@ def test_a_provider_that_never_answers_times_out(tmp_path):
 def test_find_plugin_searches_every_snap_directory_of_a_tree(tmp_path):
     for snap, stem, ident in (("a-snap", "one", "id-one"), ("b-snap", "two", "id-two")):
         (tmp_path / snap / "plugins").mkdir(parents=True)
-        (tmp_path / snap / "plugins" / f"{stem}.toml").write_text(f'id = "{ident}"\n', encoding="utf-8")
+        (tmp_path / snap / "plugins" / f"{stem}.toml").write_text(
+            f'id = "{ident}"\n', encoding="utf-8"
+        )
     (tmp_path / "c-snap" / "plugins").mkdir(parents=True)
     (tmp_path / "c-snap" / "plugins" / "bad.toml").write_text('id = "id-bad"\n', encoding="utf-8")
     assert find_plugin(tmp_path, "id-two") == tmp_path / "b-snap/plugins/two.toml"
