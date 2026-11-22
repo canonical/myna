@@ -75,6 +75,7 @@ git -C "$root" archive HEAD extensions/myna-shell | tar -x -C "$ext_tmp"
 
 # Tests that read the repository (snapcraft.yaml, docs, dev/) have nothing to read here.
 rm "$stage/myna-config/tests/snap_packaging.rs" "$stage/myna-config/tests/client_version.rs"
+rm "$stage/myna-core/tests/text_corpus.rs"
 
 members='members = ["myna-core", "myna-platform", "myna-freedesktop", "myna-config"]'
 if [ "$(grep -c '^members = ' "$stage/Cargo.toml")" != 1 ]; then
