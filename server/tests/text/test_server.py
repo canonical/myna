@@ -208,18 +208,45 @@ def test_each_daemon_serves_its_own_kinds_and_the_translator_takes_a_binary(tmp_
         cli.build_parser().parse_args(["--socket", "s", "--bergamot", "b"])
 
 
-def test_main_stops_on_sigterm(tmp_path, monkeypatch):
+def test_main_stops_on_sigterm_and_sigint_and_serves_what_its_daemon_registers(
+    tmp_path, monkeypatch
+):
     import signal
 
     handlers = {}
     monkeypatch.setattr(signal, "signal", lambda sig, fn: handlers.setdefault(sig, fn))
     served = []
-    monkeypatch.setattr(daemon, "serve", lambda args, environ, stop, kinds: served.append(stop))
+    monkeypatch.setattr(daemon, "serve", lambda *call: served.append(call))
+    argv = ["--socket", str(tmp_path / "text.sock"), "--components", str(tmp_path)]
 
-    assert cli.main(["--socket", str(tmp_path / "text.sock"), "--components", str(tmp_path)]) == 0
+    assert cli.main(argv) == 0
 
-    handlers[signal.SIGTERM](signal.SIGTERM, None)
-    assert served[0].is_set()
+    assert set(handlers) == {signal.SIGTERM, signal.SIGINT}
+    args, environ, stop, kinds = served[0]
+    assert (args.socket, args.components) == (tmp_path / "text.sock", tmp_path)
+    assert environ is os.environ
+    assert kinds is TAGGER_KINDS
+    for sig in handlers:
+        stop.clear()
+        handlers[sig](sig, None)
+        assert stop.is_set()
+
+
+def test_the_translation_daemon_serves_the_translator_it_was_given(tmp_path, monkeypatch):
+    import signal
+
+    monkeypatch.setattr(signal, "signal", lambda sig, fn: None)
+    served = []
+    monkeypatch.setattr(daemon, "serve", lambda *call: served.append(call))
+    argv = ["--socket", str(tmp_path / "t.sock"), "--bergamot", str(tmp_path / "b")]
+
+    assert translation_cli.main(argv) == 0
+
+    kinds = served[0][3]
+    assert set(kinds) == {"translate"}
+    write_component(tmp_path, "c", TRANSLATE_META, ("config.yml",))
+    (model,) = daemon.components.find_models(tmp_path, kinds)
+    assert model._worker._argv[0] == str(tmp_path / "b")
 
 
 def test_a_request_of_the_greatest_length_is_served_and_one_byte_more_is_not(served):
