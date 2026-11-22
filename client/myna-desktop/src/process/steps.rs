@@ -130,6 +130,10 @@ pub struct Context<'a> {
     pub language: Option<&'a str>,
     /// Whether no model answers a request, as far as is known.
     pub unavailable: &'a dyn Fn(&Request) -> bool,
+    /// Whether no installed model covers a request, bound or not. Unlike
+    /// `unavailable` it does not move with what the graph asks for, so a
+    /// translation can pivot on it without flapping.
+    pub uncovered: &'a dyn Fn(&Request) -> bool,
 }
 
 impl Default for Context<'_> {
@@ -137,6 +141,7 @@ impl Default for Context<'_> {
         Self {
             language: None,
             unavailable: &|_| false,
+            uncovered: &|_| false,
         }
     }
 }
@@ -266,14 +271,26 @@ pub fn compile(steps: &[StepSpec], ctx: &Context) -> Compiled {
                     reason: "The text is already in that language".into(),
                 },
                 Some(to) => {
-                    let request = Request::translate(lang.as_deref().unwrap_or("en"), &to);
-                    let state = ask_state(&request, ctx);
-                    at = g.ask(
-                        at,
-                        request,
-                        Check::Usable { translation: true },
-                        Needs::Sentence,
-                    );
+                    let from = lang.as_deref().unwrap_or("en");
+                    let check = Check::Usable { translation: true };
+                    let direct = Request::translate(from, &to);
+                    let state = match pivot_legs(from, &to, ctx) {
+                        Some((first, second)) => {
+                            let state = [&first, &second]
+                                .into_iter()
+                                .find(|leg| (ctx.unavailable)(leg))
+                                .map_or(StepState::Applicable, |leg| StepState::Unavailable {
+                                    request: leg.clone(),
+                                });
+                            at = g.pivot(at, first, second, check);
+                            state
+                        }
+                        None => {
+                            let state = ask_state(&direct, ctx);
+                            at = g.ask(at, direct, check, Needs::Sentence);
+                            state
+                        }
+                    };
                     lang = Some(to);
                     state
                 }
@@ -305,6 +322,24 @@ pub fn compile(steps: &[StepSpec], ctx: &Context) -> Compiled {
         script: chinese,
         report,
     }
+}
+
+/// The two legs that translate `from` to `to` through English, when no
+/// installed model translates them directly and at least one leg is
+/// installed. A leg that is not installed is the step's missing request.
+fn pivot_legs(from: &str, to: &str, ctx: &Context) -> Option<(Request, Request)> {
+    let direct = Request::translate(from, to);
+    if from == "en" || to == "en" || !(ctx.uncovered)(&direct) {
+        return None;
+    }
+    let half = direct.run_budget / 2;
+    let leg = |from, to| {
+        let mut request = Request::translate(from, to);
+        request.run_budget = half;
+        request
+    };
+    let (first, second) = (leg(from, "en"), leg("en", to));
+    (!((ctx.uncovered)(&first) && (ctx.uncovered)(&second))).then_some((first, second))
 }
 
 fn ask_state(request: &Request, ctx: &Context) -> StepState {
@@ -341,7 +376,7 @@ fn fit(g: &mut Builder, from: Src) -> Src {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::process::graph::Op;
+    use crate::process::graph::{Id, Op};
 
     fn spec(ids: &[&str]) -> Vec<StepSpec> {
         ids.iter().map(|t| StepSpec::parse(t)).collect()
@@ -564,6 +599,7 @@ mod tests {
             &Context {
                 language: None,
                 unavailable: &missing,
+                ..Context::default()
             },
         );
         assert_eq!(states(&c), [("tidy", "on"), ("translate", "missing")]);
@@ -585,6 +621,102 @@ mod tests {
             },
         );
         assert_eq!(states(&c), [("tidy", "missing")]);
+    }
+
+    /// Compile `translate=to` for `language` with only `installed` pairs
+    /// covered; `bound` are the ones a model also answers for.
+    fn through(language: &str, to: &str, installed: &[(&str, &str)]) -> Compiled {
+        let covers = |r: &Request| {
+            let get = |k: &str| r.params.get(k).and_then(Value::as_str).unwrap_or("");
+            installed.contains(&(get("language"), get("to")))
+        };
+        let uncovered = |r: &Request| !covers(r);
+        compile(
+            &spec(&[&format!("translate={to}")]),
+            &Context {
+                language: Some(language),
+                unavailable: &uncovered,
+                uncovered: &uncovered,
+            },
+        )
+    }
+
+    #[test]
+    fn a_direct_model_is_used_before_a_pivot() {
+        let c = through("fr", "de", &[("fr", "de"), ("fr", "en"), ("en", "de")]);
+        assert_eq!(states(&c), [("translate", "on")]);
+        assert_eq!(asks(&c), [("fr".into(), "de".into())]);
+        assert!(matches!(c.graph.node(Id::first()), Op::Ask { .. }));
+    }
+
+    #[test]
+    fn two_installed_legs_make_a_pivot_whose_budgets_add_up() {
+        let c = through("fr", "de", &[("fr", "en"), ("en", "de")]);
+        assert_eq!(states(&c), [("translate", "on")]);
+        assert!(!c.degraded());
+        assert_eq!(
+            asks(&c),
+            [("fr".into(), "en".into()), ("en".into(), "de".into())]
+        );
+        let Op::Pivot { first, second, .. } = c.graph.node(Id::first()) else {
+            panic!("not a pivot");
+        };
+        let direct = Request::translate("fr", "de").run_budget;
+        assert_eq!(first.request.run_budget + second.request.run_budget, direct);
+        assert_eq!(first.check, Check::Usable { translation: true });
+        assert_eq!(c.graph.needs(), Some(Needs::Sentence));
+    }
+
+    #[test]
+    fn a_pivot_with_one_leg_missing_names_that_leg() {
+        for (installed, missing) in [
+            (&[("fr", "en")][..], ("en", "de")),
+            (&[("en", "de")][..], ("fr", "en")),
+        ] {
+            let c = through("fr", "de", installed);
+            assert_eq!(states(&c), [("translate", "missing")]);
+            let StepState::Unavailable { request } = &c.report[0].state else {
+                panic!("not unavailable");
+            };
+            assert_eq!(
+                (
+                    request.params["language"].as_str().unwrap(),
+                    request.params["to"].as_str().unwrap()
+                ),
+                missing
+            );
+            assert!(c.degraded());
+            assert!(matches!(c.graph.node(Id::first()), Op::Pivot { .. }));
+        }
+    }
+
+    #[test]
+    fn with_no_leg_installed_the_direct_pair_is_what_is_missing() {
+        let c = through("fr", "de", &[("fr", "fa")]);
+        assert_eq!(states(&c), [("translate", "missing")]);
+        assert_eq!(asks(&c), [("fr".into(), "de".into())]);
+    }
+
+    #[test]
+    fn english_is_never_pivoted_through_itself() {
+        for (language, to) in [("en", "de"), ("fr", "en")] {
+            let c = through(language, to, &[("fr", "fa")]);
+            assert_eq!(asks(&c), [(language.into(), to.into())]);
+            assert!(matches!(c.graph.node(Id::first()), Op::Ask { .. }));
+        }
+    }
+
+    #[test]
+    fn a_pivot_leaves_the_text_in_the_target_language_for_what_follows() {
+        let c = compile(
+            &spec(&["translate=de", "script=simplified"]),
+            &Context {
+                language: Some("fr"),
+                unavailable: &|_| false,
+                uncovered: &|r| r.params["to"] == "de" && r.params["language"] == "fr",
+            },
+        );
+        assert_eq!(states(&c), [("translate", "on"), ("script", "n/a")]);
     }
 
     #[test]

@@ -21,7 +21,7 @@ use tokio::sync::watch;
 use super::openai;
 use super::pipeline::{Answer, ModelError, Models, Prefer, Request, BIND_BUDGET};
 use super::step;
-use super::steps::StepReport;
+use super::steps::{compile, Compiled, Context, StepReport, StepSpec};
 use super::wire::{self, Capability, Params, WireError};
 
 /// Where text model shares are searched: the backend directory, and the
@@ -320,6 +320,22 @@ impl Resolver {
                 }
             }
         }
+    }
+
+    /// `steps` compiled for dictation in `language` against what is
+    /// installed and bound now: a translation no installed model covers
+    /// directly pivots through English when its legs are installed.
+    pub fn compile(&self, steps: &[StepSpec], language: Option<&str>) -> Compiled {
+        let status = self.0.status.borrow().clone();
+        let models = self.0.catalog.borrow().models.clone();
+        compile(
+            steps,
+            &Context {
+                language,
+                unavailable: &|request| status.lacks(request),
+                uncovered: &|request| rank(request, models.clone()).is_empty(),
+            },
+        )
     }
 
     /// The `share/model` a request is bound to, if it is.
@@ -648,7 +664,7 @@ impl Models for Resolver {
 
 #[cfg(test)]
 mod tests {
-    use super::super::steps::StepReport;
+    use super::super::steps::{StepReport, StepState};
     use super::*;
     use serde_json::{json, Value};
     use std::path::Path;
@@ -946,6 +962,101 @@ mod tests {
         assert_eq!(text.warms.load(Ordering::SeqCst), 1);
         assert_eq!(translation.warms.load(Ordering::SeqCst), 1);
         assert_eq!(*resolver.status().borrow(), ChainStatus::Ready);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    fn pair(from: &str, to: &str) -> Value {
+        json!({"id": format!("{from}-{to}"), "task": "text.translate",
+               "covers": {"language": [from], "to": [to]}, "latency_ms": 20})
+    }
+
+    async fn typed(resolver: &Resolver, steps: &[StepSpec], text: &str) -> String {
+        use super::super::pipeline::Pipeline;
+        use super::super::{Field, Processor};
+        let graph = resolver.compile(steps, Some("fr")).graph;
+        Pipeline::new(graph, resolver.clone())
+            .process(text.into(), &Field::default())
+            .await
+    }
+
+    #[tokio::test]
+    async fn a_translation_with_no_direct_model_runs_through_english() {
+        let dir = root("pivot");
+        let share = share(
+            &dir,
+            "myna-translation",
+            json!([pair("en", "de"), pair("fr", "en")]),
+            Mode::Works,
+        );
+        let resolver = Resolver::open(vec![dir.clone()]);
+        let steps = [StepSpec::new("translate").with("to", "de")];
+        resolver.settle(&[]).await;
+        let compiled = resolver.compile(&steps, Some("fr"));
+        assert!(!compiled.degraded());
+        let wanted = compiled.graph.requests();
+        assert_eq!(wanted.len(), 2);
+        resolver.settle(&wanted).await;
+        assert_eq!(*resolver.status().borrow(), ChainStatus::Ready);
+        assert_eq!(share.warms.load(Ordering::SeqCst), 2);
+        assert_eq!(typed(&resolver, &steps, "A lundi.").await, "A lundi.!!");
+        assert_eq!(share.runs.load(Ordering::SeqCst), 2);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_direct_model_that_appears_replaces_the_pivot() {
+        let dir = root("pivot-direct");
+        let share = share(
+            &dir,
+            "myna-translation",
+            json!([pair("en", "de"), pair("fr", "en")]),
+            Mode::Works,
+        );
+        let resolver = Resolver::open(vec![dir.clone()]);
+        let steps = [StepSpec::new("translate").with("to", "de")];
+        resolver.settle(&[]).await;
+        assert_eq!(
+            resolver.compile(&steps, Some("fr")).graph.requests().len(),
+            2
+        );
+        *share.models.lock().unwrap() = json!([pair("fr", "de"), pair("fr", "en")]);
+        resolver.settle(&[]).await;
+        let wanted = resolver.compile(&steps, Some("fr")).graph.requests();
+        assert_eq!(wanted, [Request::translate("fr", "de")]);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_pivot_missing_a_leg_names_that_leg_and_types_what_was_heard() {
+        let dir = root("pivot-missing");
+        share(
+            &dir,
+            "myna-translation",
+            json!([pair("fr", "en")]),
+            Mode::Works,
+        );
+        let resolver = Resolver::open(vec![dir.clone()]);
+        let steps = [StepSpec::new("translate").with("to", "de")];
+        resolver.settle(&[]).await;
+        let wanted = resolver.compile(&steps, Some("fr")).graph.requests();
+        resolver.settle(&wanted).await;
+        let leg = wanted.iter().find(|r| r.params["to"] == "de").unwrap();
+        assert_eq!(
+            *resolver.status().borrow(),
+            ChainStatus::Degraded {
+                missing: vec![Missing::of(leg)],
+                needs_restart: false
+            }
+        );
+        let compiled = resolver.compile(&steps, Some("fr"));
+        assert!(compiled.degraded());
+        assert_eq!(
+            compiled.report[0].state,
+            StepState::Unavailable {
+                request: leg.clone()
+            }
+        );
+        assert_eq!(typed(&resolver, &steps, "A lundi.").await, "A lundi.");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

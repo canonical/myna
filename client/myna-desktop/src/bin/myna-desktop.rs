@@ -205,16 +205,25 @@ fn spawn_binder(
     wake: Arc<tokio::sync::Notify>,
 ) {
     tokio::spawn(async move {
-        let wanted = || graph.get().requests();
-        let after = |resolver: &Resolver| {
-            let status = resolver.status().borrow().clone();
-            let language = language.get();
-            let ctx = myna_desktop::process::steps::Context {
-                language: language.as_deref(),
-                unavailable: &|request| status.lacks(request),
-            };
-            let steps = steps.get();
-            resolver.set_steps(myna_desktop::process::steps::compile(&steps, &ctx).report);
+        // The graph the steps compile to given the models installed now: a
+        // translation with no direct model pivots through English.
+        let refresh = || {
+            let compiled = resolver.compile(&steps.get(), language.get().as_deref());
+            let moved = graph.get() != compiled.graph;
+            if moved {
+                graph.set(compiled.graph);
+            }
+            resolver.set_steps(compiled.report);
+            moved
+        };
+        let wanted = || {
+            refresh();
+            graph.get().requests()
+        };
+        let after = |_: &Resolver| {
+            if refresh() {
+                wake.notify_one();
+            }
         };
         resolver
             .keep_bound(&wake, Default::default(), wanted, after)
@@ -281,6 +290,9 @@ struct LiveSettings {
     steps: Live<Vec<StepSpec>>,
     /// The model the backend said it serves; `None` until a press has asked.
     speech_model: Live<Option<String>>,
+    /// What the settings alone compile to; `graph` is this until the binder
+    /// finds installed models that change it (a translation that pivots).
+    plain: Live<Graph>,
     /// What the chosen preset does, read for each piece of text.
     graph: Live<Graph>,
     /// How Chinese is written, read for each piece of text.
@@ -310,6 +322,7 @@ impl LiveSettings {
             steps: Live::new(resolved.steps.clone()),
             speech_model: Live::default(),
             graph: Live::new(resolved.graph.clone()),
+            plain: Live::new(resolved.graph.clone()),
             script: Live::new(resolved.script),
             graph_changed: Arc::default(),
             history: Live::new(resolved.history),
@@ -447,13 +460,14 @@ impl LiveSettings {
             );
             self.commit.set(resolved.commit);
         }
-        if self.steps.get() != resolved.steps || self.graph.get() != resolved.graph {
+        if self.steps.get() != resolved.steps || self.plain.get() != resolved.graph {
             myna_core::info_log!(
                 "settings",
                 "processing steps -> {} (live, from the next text)",
                 myna_desktop::process::steps::label(&resolved.steps)
             );
             self.steps.set(resolved.steps.clone());
+            self.plain.set(resolved.graph.clone());
             self.graph.set(resolved.graph.clone());
             self.graph_changed.notify_one();
         }
