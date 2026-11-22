@@ -106,7 +106,7 @@ def test_every_component_has_a_model_manifest_and_every_manifest_a_component(sna
         manifests[path.parent.name] = json.loads(read(path))
     assert {m["id"]: m["task"] for m in manifests.values()} == COMPONENT_IDS[name]
     for component in recipe["components"]:
-        assert component in read(snap_dir / "dev/download-models.sh")
+        assert (snap_dir / "plugins" / f"{component.removeprefix('model-')}.toml").is_file()
 
 
 def test_the_runtimes_are_not_shared(recipe, translation):
@@ -153,14 +153,14 @@ def test_the_mozilla_attribution_travels_with_the_translation_snap(translation):
         "783abf3abe075afdf8d85d233994bef2c3a064e935ab1bed946820aff6ac002a",
     ):
         assert sha in component
-        assert sha in read(TRANSLATION / "dev/download-models.sh")
-    assert "MPL-2.0" in read(TRANSLATION / "dev/download-models.sh")
+        assert sha in read(TRANSLATION / "plugins/translate-en-fr.toml")
+    assert 'license = "MPL-2.0"' in read(TRANSLATION / "plugins/translate-en-fr.toml")
     assert "MPL" not in read(TEXT / "models/disfluency-en/NOTICE")
 
 
 def test_the_translate_config_names_files_the_component_ships():
     config = yaml.safe_load(read(TRANSLATION / "models/translate-en-fr/config.yml"))
-    script = read(TRANSLATION / "dev/download-models.sh")
+    script = read(TRANSLATION / "plugins/translate-en-fr.toml")
     files = [*config["models"], *config["vocabs"], config["shortlist"][0]]
     assert files
     for name in files:

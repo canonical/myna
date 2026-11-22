@@ -1,0 +1,77 @@
+# One plugin: dev/gen-plugins.py turns this into the snapcraft component,
+# models/translate-en-fr/{myna-text-model.json,NOTICE} and catalog.json.
+# config.yml stays hand-written. Contract: .kb/text-plugin-contract.md.
+id = "bergamot-base-memory-en-fr"
+component = "model-translate-en-fr"
+snap = "myna-translation"
+kind = "translate"
+task = "text.translate"
+class = "translate"
+needs = "dictation"
+language = "en"
+to = "fr"
+config = "config.yml"
+license = "MPL-2.0"
+attribution = "Mozilla and contributors, Firefox Translations (base-memory 2.0)"
+source = "https://github.com/mozilla/firefox-translations-models"
+download_bytes = 33353728
+entry_revision = 1
+curated = true
+pin = "mozilla firefox-translations en-fr base-memory 2.0"
+locales = ["en"]
+summary = "English to French translation (Firefox Translations base-memory)"
+description = """\
+Mozilla's Firefox Translations English to French student model
+(MPL-2.0), run by bergamot-translator. About 37 MB."""
+notice = """\
+model-translate-en-fr: the Firefox Translations English to French student
+model "base-memory" (version 2.0), Copyright Mozilla and contributors,
+licensed under the Mozilla Public License 2.0 (LICENSE in this component).
+
+Source: Mozilla's Firefox Translations models,
+https://github.com/mozilla/firefox-translations-models (the files themselves
+are served from the Remote Settings collection "translations-models" of
+https://firefox.settings.services.mozilla.com). The model files are shipped
+unmodified; their sha256 are:"""
+notice_tail = """\
+config.yml and myna-text-model.json are Canonical's own (AGPL-3.0-or-later).
+The runtime that executes the model, bergamot-translator (MPL-2.0), and its
+bundled libraries are noted in the myna-translation snap's NOTICE."""
+
+[[params]]
+name = "language"
+kind = "language"
+role = "source"
+required = true
+
+[[params]]
+name = "to"
+kind = "language"
+role = "target"
+required = true
+
+[step]
+id = "translate"
+stage = "translate"
+
+[hardware]
+arch = ["amd64"]
+min_ram_mb = 512
+
+[[files]]
+name = "model.enfr.intgemm.alphas.bin"
+sha256 = "6322e296d4fecfe395a8d5723da4ec37ecbe6d7613bb1dfcf4b28e2a47498b68"
+bytes = 31561787
+url = "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/e0d7f3ee-163a-4b0a-8e44-8b208b39477d.bin"
+
+[[files]]
+name = "lex.50.50.enfr.s2t.bin"
+sha256 = "2585ed98d3af0bc949865aedeb390493d591f56870814376e73e4144c41ed059"
+bytes = 4372936
+url = "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/293d1823-ff05-48c9-837b-cff8fd33f197.bin"
+
+[[files]]
+name = "vocab.enfr.spm"
+sha256 = "783abf3abe075afdf8d85d233994bef2c3a064e935ab1bed946820aff6ac002a"
+bytes = 814404
+url = "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/c7c1bcf3-71f6-425a-a6ed-403bd9a0a759.spm"

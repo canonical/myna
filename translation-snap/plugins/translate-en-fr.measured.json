@@ -1,0 +1,5 @@
+{
+  "latency_ms": 25,
+  "quality": 0.7,
+  "quality_source": "chrF 0.701 on 200 FLEURS en_us to fr_fr pairs, beam 1; carried over from the shipped manifest"
+}

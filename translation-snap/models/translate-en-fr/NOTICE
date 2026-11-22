@@ -5,8 +5,8 @@ licensed under the Mozilla Public License 2.0 (LICENSE in this component).
 Source: Mozilla's Firefox Translations models,
 https://github.com/mozilla/firefox-translations-models (the files themselves
 are served from the Remote Settings collection "translations-models" of
-https://firefox.settings.services.mozilla.com). The three model files are
-shipped unmodified; their sha256 are:
+https://firefox.settings.services.mozilla.com). The model files are shipped
+unmodified; their sha256 are:
 
   model.enfr.intgemm.alphas.bin  6322e296d4fecfe395a8d5723da4ec37ecbe6d7613bb1dfcf4b28e2a47498b68
   lex.50.50.enfr.s2t.bin         2585ed98d3af0bc949865aedeb390493d591f56870814376e73e4144c41ed059

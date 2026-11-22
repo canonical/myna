@@ -1,0 +1,5 @@
+{
+  "latency_ms": 10,
+  "quality": 0.95,
+  "quality_source": "carried over from the shipped manifest; replaced by plugin-eval-publish-pipeline results"
+}

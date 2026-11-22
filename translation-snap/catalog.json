@@ -1,0 +1,85 @@
+{
+  "catalog": 1,
+  "snap": "myna-translation",
+  "plugins": [
+    {
+      "id": "model-translate-en-fr",
+      "snap": "myna-translation",
+      "component": "model-translate-en-fr",
+      "model": "bergamot-base-memory-en-fr",
+      "contract": 2,
+      "entry_revision": 1,
+      "task": "text.translate",
+      "class": "translate",
+      "needs": "dictation",
+      "params": [
+        {
+          "name": "language",
+          "kind": "language",
+          "role": "source",
+          "required": true
+        },
+        {
+          "name": "to",
+          "kind": "language",
+          "role": "target",
+          "required": true
+        }
+      ],
+      "covers": {
+        "language": "en",
+        "to": "fr"
+      },
+      "in_lang": "en",
+      "out_lang": "fr",
+      "step": {
+        "id": "translate",
+        "stage": "translate",
+        "label_key": "step.translate.name",
+        "description_key": "step.translate.description",
+        "example_key": "step.translate.example"
+      },
+      "download_bytes": 33353728,
+      "installed_bytes": 36749127,
+      "quality": {
+        "value": 0.7,
+        "source": "chrF 0.701 on 200 FLEURS en_us to fr_fr pairs, beam 1; carried over from the shipped manifest"
+      },
+      "latency_ms": 25,
+      "latency_class": "fast",
+      "hardware": {
+        "arch": [
+          "amd64"
+        ],
+        "min_ram_mb": 512
+      },
+      "locales": [
+        "en"
+      ],
+      "curated": true,
+      "license": "MPL-2.0",
+      "attribution": "Mozilla and contributors, Firefox Translations (base-memory 2.0)",
+      "source": "https://github.com/mozilla/firefox-translations-models",
+      "files": [
+        {
+          "name": "model.enfr.intgemm.alphas.bin",
+          "sha256": "6322e296d4fecfe395a8d5723da4ec37ecbe6d7613bb1dfcf4b28e2a47498b68",
+          "bytes": 31561787,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/e0d7f3ee-163a-4b0a-8e44-8b208b39477d.bin"
+        },
+        {
+          "name": "lex.50.50.enfr.s2t.bin",
+          "sha256": "2585ed98d3af0bc949865aedeb390493d591f56870814376e73e4144c41ed059",
+          "bytes": 4372936,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/293d1823-ff05-48c9-837b-cff8fd33f197.bin"
+        },
+        {
+          "name": "vocab.enfr.spm",
+          "sha256": "783abf3abe075afdf8d85d233994bef2c3a064e935ab1bed946820aff6ac002a",
+          "bytes": 814404,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/c7c1bcf3-71f6-425a-a6ed-403bd9a0a759.spm"
+        }
+      ]
+    }
+  ]
+}

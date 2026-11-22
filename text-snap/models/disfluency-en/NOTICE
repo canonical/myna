@@ -15,3 +15,8 @@ synthetic disfluency injection):
   (revision a520ad7f999ca7e6dfdc25fed9f5070bf6f87b42)
 
 CC-BY-4.0: https://creativecommons.org/licenses/by/4.0/
+
+The model files, shipped as built, have these sha256:
+
+  tagger.onnx     66f63787da3fe7f63c7288250b872cf977d77b4a9019409cc723f69956054c3d
+  tokenizer.json  851ca67100d372ca3ae031a6abd168f53489eebfd7d89523f35c5c9b4d372c3c

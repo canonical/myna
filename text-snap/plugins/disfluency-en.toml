@@ -1,0 +1,74 @@
+# One plugin: dev/gen-plugins.py turns this into the snapcraft component,
+# models/disfluency-en/{myna-text-model.json,NOTICE} and catalog.json.
+# Contract: .kb/text-plugin-contract.md.
+id = "myna-disfluency-en"
+component = "model-disfluency-en"
+snap = "myna-text"
+kind = "disfluency-tagger"
+task = "text.cleanup"
+class = "edit"
+needs = "sentence"
+language = "en"
+tau = 0.9
+license = "Apache-2.0"
+attribution = "Canonical Ltd; fine-tuned from microsoft/MiniLM-L12-H384-uncased (MIT)"
+source = "https://huggingface.co/microsoft/MiniLM-L12-H384-uncased"
+download_bytes = 42848256
+entry_revision = 1
+curated = true
+pin = "myna-disfluency-en l12c"
+locales = ["en"]
+summary = "English disfluency tagger (ONNX int8)"
+description = """\
+myna-disfluency-en, a MiniLM-L12 word tagger fine-tuned by Canonical
+(Apache-2.0) that marks fillers, repeats and self-corrections for
+deletion. About 46 MB."""
+notice = """\
+model-disfluency-en: myna-disfluency-en, a disfluency tagger fine-tuned by
+Canonical Ltd, Apache-2.0 (LICENSE in this component).
+
+Base model: microsoft/MiniLM-L12-H384-uncased (MIT License, Copyright (c)
+Microsoft Corporation), https://huggingface.co/microsoft/MiniLM-L12-H384-uncased
+revision 44acabbec0ef496f6dbc93adadea57f376b7c0ec.
+
+Training text derives from (CC-BY-4.0; changes made: sentence extraction and
+synthetic disfluency injection):
+
+- SODA, Kim et al., https://huggingface.co/datasets/allenai/soda
+  (revision fdc848ab0183208ea7808206c91c724414d0a071)
+- Synthetic-Persona-Chat, Jandaghi et al., Google,
+  https://huggingface.co/datasets/google/Synthetic-Persona-Chat
+  (revision a520ad7f999ca7e6dfdc25fed9f5070bf6f87b42)
+
+CC-BY-4.0: https://creativecommons.org/licenses/by/4.0/
+
+The model files, shipped as built, have these sha256:"""
+
+[[params]]
+name = "language"
+kind = "language"
+role = "source"
+required = false
+
+[step]
+id = "tidy"
+stage = "clean-up"
+
+[hardware]
+arch = ["amd64"]
+min_ram_mb = 512
+
+# The tagger is unpublished: staged from a training run's directory.
+[local]
+env = "MYNA_TAGGER_SRC"
+default = "~/myna-processing-graphs/artifacts/tagger/stage/myna-disfluency-en"
+
+[[files]]
+name = "tagger.onnx"
+sha256 = "66f63787da3fe7f63c7288250b872cf977d77b4a9019409cc723f69956054c3d"
+bytes = 46114205
+
+[[files]]
+name = "tokenizer.json"
+sha256 = "851ca67100d372ca3ae031a6abd168f53489eebfd7d89523f35c5c9b4d372c3c"
+bytes = 711649

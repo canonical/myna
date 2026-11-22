@@ -63,7 +63,7 @@ help: ## List targets, grouped as in this file
 preflight: check test coverage-gate ## Everything CI blocks a merge on: check + test + the patch gate
 
 .PHONY: check
-check: lint-client lint-server lint-snaps lint-shell lint-workflows lint-client-deps i18n-check ## Static gates (CI `check` job)
+check: lint-client lint-server lint-snaps lint-plugins lint-shell lint-workflows lint-client-deps i18n-check ## Static gates (CI `check` job)
 
 .PHONY: test
 test: test-client test-server test-extension test-noble ## Every blocking suite (CI runs test-client/test-server instrumented, in `coverage`)
@@ -126,6 +126,10 @@ lint-client-deps: ## Unused Cargo dependencies (machete) + ban/licence policy (d
 .PHONY: lint-snaps
 lint-snaps: ## Validate snap engine/runtime/model manifests with modelctl lint-package
 	./dev/lint-packages.sh
+
+.PHONY: lint-plugins
+lint-plugins: ## Fail if a text snap's generated plugin files drift from plugins/*.toml
+	python3 dev/gen-plugins.py --check text-snap translation-snap
 
 .PHONY: lint-shell
 lint-shell: ## shellcheck every dev, snap and hook script
