@@ -303,6 +303,9 @@ pub struct DaemonReport {
     pub last_error: Option<LastError>,
     /// `None` on a daemon older than the properties.
     pub chain: Option<crate::chain_notice::ChainState>,
+    /// The steps switched on in the settings store, as `tidy, translate=fr`;
+    /// `None` when none is.
+    pub steps: Option<String>,
 }
 
 const DICTATION_BUS: &str = "com.canonical.Myna.Dictation";
@@ -331,7 +334,9 @@ pub fn daemon_report() -> Option<DaemonReport> {
             gio::Cancellable::NONE,
         )
         .ok()?;
-    Some(parse_daemon_report(&reply.child_value(0)))
+    let mut report = parse_daemon_report(&reply.child_value(0));
+    report.steps = steps_line(&myna_core::Settings::load());
+    Some(report)
 }
 
 /// Read a `GetAll` reply's `a{sv}`. A property this daemon does not publish is
@@ -384,7 +389,30 @@ fn parse_daemon_report(all: &gio::glib::Variant) -> DaemonReport {
             &text("ChainStatus").unwrap_or_default(),
             &text("ChainMissing").unwrap_or_default(),
         ),
+        steps: None,
     }
+}
+
+/// The enabled steps with their parameters, in the order stored.
+fn steps_line(settings: &myna_core::Settings) -> Option<String> {
+    let steps: Vec<String> = settings
+        .processing_steps
+        .iter()
+        .map(|id| {
+            let prefix = format!("{id}.");
+            let values: Vec<&str> = settings
+                .processing_params
+                .iter()
+                .filter(|(key, _)| key.starts_with(&prefix))
+                .map(|(_, value)| value.as_str())
+                .collect();
+            match values.as_slice() {
+                [] => id.clone(),
+                values => format!("{id}={}", values.join("/")),
+            }
+        })
+        .collect();
+    (!steps.is_empty()).then(|| steps.join(", "))
 }
 
 fn local_time(usec: i64) -> String {
@@ -414,6 +442,30 @@ mod tests {
     fn an_older_daemon_has_no_last_error_and_no_drop_count() {
         let report = parse_daemon_report(&reply(&[("State", "idle".to_variant())]));
         assert_eq!(report, DaemonReport::default());
+    }
+
+    #[test]
+    fn the_steps_line_names_each_step_with_its_parameters() {
+        let settings = |ids: &[&str], params: &[(&str, &str)]| myna_core::Settings {
+            processing_steps: ids.iter().map(|s| s.to_string()).collect(),
+            processing_params: params
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
+            ..Default::default()
+        };
+        assert_eq!(steps_line(&settings(&[], &[])), None);
+        assert_eq!(
+            steps_line(&settings(
+                &["tidy", "translate", "script"],
+                &[
+                    ("translate.to", "fr"),
+                    ("script.mode", "simplified"),
+                    ("x.y", "z")
+                ]
+            )),
+            Some("tidy, translate=fr, script=simplified".to_owned())
+        );
     }
 
     #[test]

@@ -8,7 +8,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
 use myna_core::history::{append, Entry, Outcome};
-use myna_core::ProcessingChain;
 
 use super::pipeline::Trace;
 use super::{Field, Landing, Processor};
@@ -17,7 +16,8 @@ use crate::live::Live;
 /// What a record says besides the text, read as each piece is recorded.
 #[derive(Clone, Default)]
 pub struct Context {
-    pub chain: Live<ProcessingChain>,
+    /// The enabled steps, recorded as [`super::steps::label`].
+    pub steps: Live<Vec<super::steps::StepSpec>>,
     /// What the steps of the piece just processed did.
     pub trace: Trace,
     /// The model the backend said it serves, once a press has asked.
@@ -85,7 +85,7 @@ impl<P: Processor> Processor for Recorded<P> {
                 .map_or(0, |since| since.as_secs()),
             heard: landing.heard,
             typed: landing.typed,
-            chain: Some(self.context.chain.get().nick().to_owned()),
+            chain: Some(super::steps::label(&self.context.steps.get())),
             steps,
             speech_model: self.context.speech_model.get(),
             version: self.context.version.map(str::to_owned),
@@ -119,7 +119,9 @@ mod tests {
 
     fn context() -> Context {
         let context = Context {
-            chain: Live::new(ProcessingChain::TIDY),
+            steps: Live::new(crate::process::steps::preset_steps(
+                myna_core::ProcessingChain::TIDY,
+            )),
             speech_model: Live::new(Some("parakeet".into())),
             version: Some("1.2.3"),
             ..Context::default()

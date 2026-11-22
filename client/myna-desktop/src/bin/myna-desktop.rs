@@ -58,6 +58,7 @@ use myna_desktop::process::graph::{Graph, Needs};
 use myna_desktop::process::history::{Context, Recorded};
 use myna_desktop::process::pipeline::Pipeline;
 use myna_desktop::process::resolve::Resolver;
+use myna_desktop::process::steps::{compile, stored_steps, StepSpec};
 use myna_desktop::shortcut::control::{default_socket_path, listen, send_toggle, ControlTrigger};
 use myna_desktop::sound::{
     player::{Player, Previewer},
@@ -144,7 +145,7 @@ struct Resolved {
     sounds: bool,
     sound_set: SoundSet,
     commit: CommitPolicy,
-    chain: myna_core::ProcessingChain,
+    steps: Vec<StepSpec>,
     graph: Graph,
     /// The script Chinese is converted to, or as recognised where the
     /// language is not Chinese.
@@ -161,15 +162,15 @@ impl Resolved {
             choice: settings.streaming_mode,
             backend_streams,
         };
-        let graph = Graph::preset(settings.processing_chain);
         let language = args.language.clone().or_else(|| settings.language.clone());
-        let script =
-            if myna_desktop::process::script::applies(settings.chinese_script, language.as_deref())
-            {
-                settings.chinese_script
-            } else {
-                myna_core::ChineseScript::AsRecognised
-            };
+        let steps = stored_steps(&settings.processing_steps, &settings.processing_params);
+        let myna_desktop::process::steps::Compiled { graph, script, .. } = compile(
+            &steps,
+            &myna_desktop::process::steps::Context {
+                language: language.as_deref(),
+                ..Default::default()
+            },
+        );
         // Conversion reads a sentence at a time and no more.
         let needs = graph
             .needs()
@@ -184,7 +185,7 @@ impl Resolved {
             sounds: settings.sounds,
             sound_set: settings.sound_set,
             commit: CommitPolicy::for_needs(needs),
-            chain: settings.processing_chain,
+            steps,
             graph,
             script,
             history: settings.processing_history,
@@ -210,7 +211,7 @@ fn text_share_dirs(args: &Args) -> Vec<PathBuf> {
 fn spawn_binder(
     resolver: Resolver,
     graph: Live<Graph>,
-    chain: Live<myna_core::ProcessingChain>,
+    steps: Live<Vec<StepSpec>>,
     language: Live<Option<String>>,
     wake: Arc<tokio::sync::Notify>,
 ) {
@@ -223,7 +224,7 @@ fn spawn_binder(
                 language: language.as_deref(),
                 unavailable: &|request| status.lacks(request),
             };
-            let steps = myna_desktop::process::steps::preset_steps(chain.get());
+            let steps = steps.get();
             resolver.set_steps(myna_desktop::process::steps::compile(&steps, &ctx).report);
         };
         resolver
@@ -287,8 +288,8 @@ struct LiveSettings {
     auto_stop: Live<AutoStop>,
     /// Read at each press.
     commit: Live<CommitPolicy>,
-    /// Read as each piece is recorded.
-    chain: Live<myna_core::ProcessingChain>,
+    /// The enabled steps, as stored; read as each piece is recorded.
+    steps: Live<Vec<StepSpec>>,
     /// The model the backend said it serves; `None` until a press has asked.
     speech_model: Live<Option<String>>,
     /// What the chosen preset does, read for each piece of text.
@@ -317,7 +318,7 @@ impl LiveSettings {
             vocabulary: Live::new(resolved.vocabulary.clone()),
             auto_stop: Live::new(resolved.auto_stop),
             commit: Live::new(resolved.commit),
-            chain: Live::new(resolved.chain),
+            steps: Live::new(resolved.steps.clone()),
             speech_model: Live::default(),
             graph: Live::new(resolved.graph.clone()),
             script: Live::new(resolved.script),
@@ -457,13 +458,13 @@ impl LiveSettings {
             );
             self.commit.set(resolved.commit);
         }
-        if self.chain.get() != resolved.chain {
+        if self.steps.get() != resolved.steps || self.graph.get() != resolved.graph {
             myna_core::info_log!(
                 "settings",
-                "processing chain -> {} (live, from the next text)",
-                resolved.chain.nick()
+                "processing steps -> {} (live, from the next text)",
+                myna_desktop::process::steps::label(&resolved.steps)
             );
-            self.chain.set(resolved.chain);
+            self.steps.set(resolved.steps.clone());
             self.graph.set(resolved.graph.clone());
             self.graph_changed.notify_one();
         }
@@ -882,7 +883,7 @@ async fn run_controller(
             spawn_binder(
                 resolver.clone(),
                 live.graph.clone(),
-                live.chain.clone(),
+                live.steps.clone(),
                 live.language.clone(),
                 live.graph_changed.clone(),
             );
@@ -890,7 +891,7 @@ async fn run_controller(
                 .written(live.vocabulary.clone())
                 .scripted(live.script.clone());
             let context = Context {
-                chain: live.chain.clone(),
+                steps: live.steps.clone(),
                 trace: pipeline.trace(),
                 speech_model: live.speech_model.clone(),
                 version: Some(env!("MYNA_VERSION")),
@@ -1167,6 +1168,16 @@ fn print_status(args: &Args) -> ExitCode {
             (None, myna_core::ModeSource::Unknown) => "built-in",
         },
     );
+    row(
+        "steps",
+        if settings.processing_steps.is_empty() {
+            "(none)".into()
+        } else {
+            settings.processing_steps.join(",")
+        },
+        myna_desktop::process::steps::describe(&resolved.steps),
+        source(false, !settings.processing_steps.is_empty()),
+    );
 
     println!("\nbackend");
     match args.backend.as_ref().zip(provider) {
@@ -1389,6 +1400,9 @@ fn main() -> ExitCode {
 
     // Everything resolvable, resolved once: flags, then the user's settings,
     // then the built-in.
+    if myna_core::processing::migrate_legacy_store() {
+        myna_core::info_log!("settings", "moved the legacy processing keys to steps");
+    }
     let settings = myna_core::Settings::load();
     let resolved = Resolved::new(&args, &settings, None);
     myna_core::info_log!(
@@ -1756,14 +1770,20 @@ mod tests {
         Resolved::new(args, settings, backend_streams)
     }
 
+    /// Settings holding the steps of a preset.
+    fn settings_of(chain: myna_core::ProcessingChain) -> myna_core::Settings {
+        myna_core::Settings {
+            processing_steps: chain.steps(),
+            processing_params: chain.params(),
+            ..unset()
+        }
+    }
+
     #[test]
     fn a_chain_holds_the_dictation_as_far_as_its_nodes_need() {
         let a = Args::default();
         assert_eq!(resolved(&a, &unset()).commit, CommitPolicy::Streaming);
-        let tidy = myna_core::Settings {
-            processing_chain: myna_core::ProcessingChain::TIDY,
-            ..unset()
-        };
+        let tidy = settings_of(myna_core::ProcessingChain::TIDY);
         assert_eq!(
             resolved(&a, &tidy).commit,
             CommitPolicy::Horizon { sentences: 1 }
@@ -1781,10 +1801,7 @@ mod tests {
             live.graph.get(),
             Graph::preset(myna_core::ProcessingChain::TIDY)
         );
-        let french = myna_core::Settings {
-            processing_chain: myna_core::ProcessingChain::TIDY_FRENCH,
-            ..unset()
-        };
+        let french = settings_of(myna_core::ProcessingChain::TIDY_FRENCH);
         live.apply(&resolved(&a, &french), "test");
         assert_eq!(
             live.graph.get(),
@@ -1806,11 +1823,16 @@ mod tests {
     fn a_chinese_script_streams_by_sentence_and_only_for_chinese() {
         use myna_core::ChineseScript::{AsRecognised, Traditional};
         let a = Args::default();
-        let with = |language: Option<&str>, chain, script| myna_core::Settings {
-            language: language.map(str::to_owned),
-            processing_chain: chain,
-            chinese_script: script,
-            ..unset()
+        let with = |language: Option<&str>, chain, script| {
+            let (steps, params) =
+                myna_core::processing::with_chain(&[], &Default::default(), chain);
+            let (steps, params) = myna_core::processing::with_script(&steps, &params, script);
+            myna_core::Settings {
+                language: language.map(str::to_owned),
+                processing_steps: steps,
+                processing_params: params,
+                ..unset()
+            }
         };
         let exact = myna_core::ProcessingChain::EXACT;
         let r = resolved(&a, &with(None, exact, Traditional));

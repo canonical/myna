@@ -59,6 +59,7 @@ pub const fn appearance_policy(animations_enabled: bool, high_contrast: bool) ->
 }
 
 pub fn run() -> glib::ExitCode {
+    myna_core::processing::migrate_legacy_store();
     if smoke_requested(std::env::var_os(TEMPLATE_ENV).as_deref()) {
         return template_probe();
     }
@@ -1741,7 +1742,7 @@ fn processing_probe() -> glib::ExitCode {
     };
     tidy.set_active(true);
     settle_gtk();
-    let chain = controller.shown_value(myna_core::settings::KEY_PROCESSING_CHAIN);
+    let chain = controller.shown_value(crate::adapters::client_settings::KEY_PROCESSING_CHAIN);
     println!(
         "chain: {}",
         chain
@@ -1760,7 +1761,7 @@ fn processing_probe() -> glib::ExitCode {
         println!(
             "script: {}",
             controller
-                .shown_value(myna_core::settings::KEY_CHINESE_SCRIPT)
+                .shown_value(crate::adapters::client_settings::KEY_CHINESE_SCRIPT)
                 .as_ref()
                 .and_then(ClientSettingValue::as_str)
                 .unwrap_or_default()

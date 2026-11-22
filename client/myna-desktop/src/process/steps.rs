@@ -36,6 +36,16 @@ impl StepSpec {
         self
     }
 
+    /// The step `id` with the stored parameters that belong to it
+    /// (`translate.to` becomes `to`).
+    pub fn stored(id: &str, params: &myna_core::processing::Params) -> Self {
+        let prefix = format!("{id}.");
+        params
+            .iter()
+            .filter_map(|(key, value)| Some((key.strip_prefix(&prefix)?, value)))
+            .fold(Self::new(id), |step, (key, value)| step.with(key, value))
+    }
+
     /// `id` or `id=value`, the value being the step's one parameter
     /// (`translate=fr`, `script=simplified`).
     pub fn parse(token: &str) -> Self {
@@ -87,7 +97,7 @@ impl Kind {
     fn param(self) -> Option<&'static str> {
         match self {
             Kind::Translate => Some("to"),
-            Kind::Script => Some("script"),
+            Kind::Script => Some("mode"),
             Kind::Fit | Kind::Tidy => None,
         }
     }
@@ -153,16 +163,46 @@ impl Compiled {
 
 /// The steps a preset is.
 pub fn preset_steps(chain: ProcessingChain) -> Vec<StepSpec> {
-    match chain {
-        ProcessingChain::TIDY => vec![StepSpec::new("tidy")],
-        ProcessingChain::TIDY_FRENCH => {
-            vec![
-                StepSpec::new("tidy"),
-                StepSpec::new("translate").with("to", "fr"),
-            ]
-        }
-        ProcessingChain::KEYWORD => vec![StepSpec::new("fit")],
-        _ => Vec::new(),
+    stored_steps(&chain.steps(), &chain.params())
+}
+
+/// The steps a settings list and its parameters amount to, in the order
+/// stored. Ids this build does not know stay, and compile as unknown.
+pub fn stored_steps(ids: &[String], params: &myna_core::processing::Params) -> Vec<StepSpec> {
+    ids.iter().map(|id| StepSpec::stored(id, params)).collect()
+}
+
+/// The steps as a line for `--status`: `tidy, translate=fr`.
+pub fn describe(steps: &[StepSpec]) -> String {
+    if steps.is_empty() {
+        return "(none)".into();
+    }
+    let one = |step: &StepSpec| match step.params.values().find_map(Value::as_str) {
+        Some(value) => format!("{}={value}", step.id),
+        None => step.id.clone(),
+    };
+    steps.iter().map(one).collect::<Vec<_>>().join(", ")
+}
+
+/// A short name for a step list, as the history records it: the preset's
+/// nick when the steps are one, else the ids joined by `+`.
+pub fn label(steps: &[StepSpec]) -> String {
+    let compiled: Vec<&str> = steps.iter().map(|s| s.id.as_str()).collect();
+    let is_preset = |chain: ProcessingChain| {
+        let ids = chain.steps();
+        ids.len() == compiled.len()
+            && ids.iter().all(|id| compiled.contains(&id.as_str()))
+            && (chain != ProcessingChain::TIDY_FRENCH
+                || steps
+                    .iter()
+                    .any(|s| s.id == "translate" && s.text("to") == Some("fr")))
+    };
+    match ProcessingChain::ALL
+        .into_iter()
+        .find(|chain| is_preset(*chain))
+    {
+        Some(chain) => chain.nick().to_owned(),
+        None => compiled.join("+"),
     }
 }
 
@@ -238,7 +278,7 @@ pub fn compile(steps: &[StepSpec], ctx: &Context) -> Compiled {
                     state
                 }
             },
-            Kind::Script => match step.text("script").and_then(ChineseScript::from_nick) {
+            Kind::Script => match step.text("mode").and_then(ChineseScript::from_nick) {
                 _ if !script::chinese(lang.as_deref()) => StepState::NotApplicable {
                     reason: "Applies when the text is Chinese".into(),
                 },
@@ -369,7 +409,7 @@ mod tests {
         );
         assert_eq!(
             StepSpec::parse("script=traditional"),
-            StepSpec::new("script").with("script", "traditional")
+            StepSpec::new("script").with("mode", "traditional")
         );
         assert_eq!(StepSpec::parse("tidy=1"), StepSpec::new("tidy"));
         assert_eq!(StepSpec::parse("translate="), StepSpec::new("translate"));
@@ -584,5 +624,57 @@ mod tests {
         assert_eq!(primary("fr-CA"), "fr");
         assert_eq!(primary("ZH_tw"), "zh");
         assert_eq!(primary(""), "");
+    }
+
+    #[test]
+    fn stage_order_here_is_the_order_settings_writes() {
+        let ids: Vec<&str> = Kind::ALL.iter().map(|k| k.id()).collect();
+        assert_eq!(ids, myna_core::processing::STEP_ORDER);
+    }
+
+    #[test]
+    fn stored_steps_take_the_parameters_that_carry_their_id() {
+        let params: myna_core::processing::Params = [
+            ("translate.to", "de"),
+            ("script.mode", "simplified"),
+            ("translatex.to", "no"),
+        ]
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect();
+        let ids = ["tidy", "translate", "script", "from-the-future"].map(String::from);
+        assert_eq!(
+            stored_steps(&ids, &params),
+            [
+                StepSpec::new("tidy"),
+                StepSpec::new("translate").with("to", "de"),
+                StepSpec::new("script").with("mode", "simplified"),
+                StepSpec::new("from-the-future"),
+            ]
+        );
+        let c = compile(&stored_steps(&ids, &params), &Context::default());
+        assert!(c.degraded(), "the unknown id is reported");
+    }
+
+    #[test]
+    fn a_history_label_names_a_preset_or_joins_the_steps() {
+        for chain in ProcessingChain::ALL {
+            assert_eq!(label(&preset_steps(chain)), chain.nick());
+        }
+        let german = vec![
+            StepSpec::new("tidy"),
+            StepSpec::new("translate").with("to", "de"),
+        ];
+        assert_eq!(label(&german), "tidy+translate");
+        assert_eq!(label(&spec(&["fit", "tidy"])), "fit+tidy");
+    }
+
+    #[test]
+    fn describe_lists_each_step_with_its_parameter() {
+        assert_eq!(describe(&[]), "(none)");
+        assert_eq!(
+            describe(&spec(&["tidy", "translate=fr", "script=traditional"])),
+            "tidy, translate=fr, script=traditional"
+        );
     }
 }

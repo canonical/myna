@@ -100,11 +100,22 @@ fn enumerates_the_real_schema_and_its_metadata() {
     let adapter =
         GioClientSettings::open_with_source(&source, files.0.join("settings/keyfile")).unwrap();
 
+    // The page shows the chain and the Chinese script in place of the two
+    // stored step keys.
+    let stored = ["processing-steps", "processing-params"];
+    let presented = ["processing-chain", "chinese-script"];
     let settings = adapter.list().unwrap();
     assert_eq!(settings.len(), expected.len());
     assert!(expected
         .iter()
+        .filter(|key| !stored.contains(&key.as_str()))
         .all(|key| settings.iter().any(|setting| setting.key().as_str() == key)));
+    assert!(presented.iter().all(|key| settings
+        .iter()
+        .any(|setting| setting.key().as_str() == *key)));
+    assert!(!settings
+        .iter()
+        .any(|setting| stored.contains(&setting.key().as_str())));
 
     let streaming = settings
         .iter()
@@ -746,4 +757,147 @@ fn sounds_are_a_boolean_that_defaults_on() {
         adapter.set("silence-timeout", ClientSettingValue::Boolean(true)),
         Err(ClientSettingsError::InvalidValue { key, .. }) if key == "silence-timeout"
     ));
+}
+
+fn choice(value: &str) -> ClientSettingValue {
+    ClientSettingValue::Choice(value.into())
+}
+
+/// The processing keys of the page are views over the stored steps: a
+/// choice writes the steps and their parameters, and the stored list reads
+/// back as the nearest choice.
+#[test]
+fn the_chain_and_the_script_are_views_over_the_stored_steps() {
+    let files = TestFiles::new("views");
+    let adapter = open_adapter(&files);
+    assert_eq!(adapter.get("processing-chain").unwrap(), choice("exact"));
+    assert_eq!(
+        adapter.get("chinese-script").unwrap(),
+        choice("as-recognised")
+    );
+    assert!(!adapter.has_user_value("processing-chain").unwrap());
+
+    adapter
+        .set("processing-chain", choice("tidy-french"))
+        .unwrap();
+    assert_eq!(
+        adapter.get("processing-chain").unwrap(),
+        choice("tidy-french")
+    );
+    assert!(adapter.has_user_value("processing-chain").unwrap());
+
+    adapter.set("chinese-script", choice("simplified")).unwrap();
+    assert_eq!(adapter.get("chinese-script").unwrap(), choice("simplified"));
+    // The two settings do not disturb each other.
+    assert_eq!(
+        adapter.get("processing-chain").unwrap(),
+        choice("tidy-french")
+    );
+
+    adapter.set("processing-chain", choice("exact")).unwrap();
+    assert_eq!(adapter.get("chinese-script").unwrap(), choice("simplified"));
+    adapter
+        .set("chinese-script", choice("as-recognised"))
+        .unwrap();
+    assert_eq!(
+        adapter.get("chinese-script").unwrap(),
+        choice("as-recognised")
+    );
+
+    assert!(matches!(
+        adapter.set("processing-chain", choice("summary")),
+        Err(ClientSettingsError::InvalidValue { .. })
+    ));
+    assert!(matches!(
+        adapter.set("chinese-script", ClientSettingValue::Boolean(true)),
+        Err(ClientSettingsError::InvalidValue { .. })
+    ));
+}
+
+/// What the daemon reads is what the page wrote: the step ids in stage
+/// order and their parameters, in the keyfile.
+#[test]
+fn a_choice_reaches_the_keyfile_as_steps_and_parameters() {
+    let files = TestFiles::new("views-keyfile");
+    let adapter = open_adapter(&files);
+    adapter
+        .set("processing-chain", choice("tidy-french"))
+        .unwrap();
+    adapter
+        .set("chinese-script", choice("traditional-taiwan"))
+        .unwrap();
+    gio::Settings::sync();
+    let text = std::fs::read_to_string(files.0.join("settings/keyfile")).unwrap();
+    assert!(
+        text.contains("processing-steps=['tidy', 'translate', 'script']"),
+        "{text}"
+    );
+    assert!(text.contains("'translate.to': 'fr'"), "{text}");
+    assert!(
+        text.contains("'script.mode': 'traditional-taiwan'"),
+        "{text}"
+    );
+    assert!(!text.contains("processing-chain"), "{text}");
+}
+
+/// A list the page cannot name reads as the nearest choice, and reading it
+/// changes nothing.
+#[test]
+fn a_stored_list_that_matches_no_choice_reads_as_the_nearest() {
+    let files = TestFiles::new("views-nearest");
+    let path = files.0.join("settings/keyfile");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(
+        &path,
+        "[com/canonical/myna/dictation]\nprocessing-steps=['fit', 'tidy', 'script']\n\
+         processing-params={'script.mode': 'traditional'}\n",
+    )
+    .unwrap();
+    let adapter = open_adapter(&files);
+    assert_eq!(adapter.get("processing-chain").unwrap(), choice("tidy"));
+    assert_eq!(
+        adapter.get("chinese-script").unwrap(),
+        choice("traditional")
+    );
+    let before = std::fs::read_to_string(&path).unwrap();
+    let _ = adapter.list().unwrap();
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), before);
+}
+
+/// A step list written by anyone moves the page's chain and script rows.
+#[test]
+fn a_change_to_the_stored_steps_is_notified_as_the_chain_and_the_script() {
+    let context = glib::MainContext::new();
+    context
+        .with_thread_default(|| {
+            let files = TestFiles::new("views-notify");
+            let source = real_schema_source(&files);
+            let path = files.0.join("settings/keyfile");
+            let observed = Arc::new(std::sync::Mutex::new(Vec::new()));
+            let reader = GioClientSettings::open_with_source(&source, &path).unwrap();
+            let _subscription = reader
+                .subscribe({
+                    let observed = Arc::clone(&observed);
+                    Box::new(move |change| observed.lock().unwrap().push(change))
+                })
+                .unwrap();
+            let writer = GioClientSettings::open_with_source(&source, &path).unwrap();
+            writer.set("processing-chain", choice("keyword")).unwrap();
+
+            let deadline = Instant::now() + Duration::from_secs(5);
+            while observed.lock().unwrap().len() < 2 && Instant::now() < deadline {
+                while context.iteration(false) {}
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            let observed = observed.lock().unwrap();
+            let seen = |key: &str| {
+                observed
+                    .iter()
+                    .find(|setting| setting.key().as_str() == key)
+                    .map(|setting| setting.value().clone())
+            };
+            assert_eq!(seen("processing-chain"), Some(choice("keyword")));
+            assert_eq!(seen("chinese-script"), Some(choice("as-recognised")));
+        })
+        .unwrap();
 }

@@ -142,7 +142,8 @@ pub fn widget_plan(metadata: &ClientSettingMetadata) -> WidgetPlan {
     let kind = match metadata.range() {
         _ if metadata.default_value().as_bool().is_some() => WidgetKind::Switch,
         SettingRange::Choices(_)
-            if metadata.key().as_str() == myna_core::settings::KEY_PROCESSING_CHAIN =>
+            if metadata.key().as_str()
+                == crate::adapters::client_settings::KEY_PROCESSING_CHAIN =>
         {
             WidgetKind::Options
         }
@@ -171,8 +172,8 @@ pub fn widget_plan(metadata: &ClientSettingMetadata) -> WidgetPlan {
         writable: metadata.writable(),
         placement: match metadata.key().as_str() {
             myna_core::settings::KEY_LANGUAGE => Placement::ActiveModel,
-            myna_core::settings::KEY_PROCESSING_CHAIN => Placement::Processing,
-            myna_core::settings::KEY_CHINESE_SCRIPT => Placement::ProcessingScript,
+            crate::adapters::client_settings::KEY_PROCESSING_CHAIN => Placement::Processing,
+            crate::adapters::client_settings::KEY_CHINESE_SCRIPT => Placement::ProcessingScript,
             myna_core::settings::KEY_PROCESSING_HISTORY => Placement::ProcessingRecord,
             _ => Placement::Dictation,
         },
@@ -189,8 +190,8 @@ const DICTATION_ORDER: [&str; 9] = [
     // Last: a row that opens a page of its own.
     myna_core::settings::KEY_VOCABULARY,
     // The Processing tab.
-    myna_core::settings::KEY_PROCESSING_CHAIN,
-    myna_core::settings::KEY_CHINESE_SCRIPT,
+    crate::adapters::client_settings::KEY_PROCESSING_CHAIN,
+    crate::adapters::client_settings::KEY_CHINESE_SCRIPT,
     myna_core::settings::KEY_PROCESSING_HISTORY,
 ];
 

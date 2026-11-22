@@ -583,6 +583,9 @@ fn render_body(
                     &chain.summary(),
                 );
             }
+            if let Some(steps) = &report.steps {
+                field(&mut out, &gettextrs::gettext("Processing steps"), steps);
+            }
             field(
                 &mut out,
                 &gettextrs::gettext("Last error"),
@@ -1582,6 +1585,7 @@ mod tests {
                 })),
                 last_error: None,
                 chain: None,
+                steps: None,
             }),
             extension: Some(ExtensionReport::Known {
                 state: "active".into(),
@@ -1658,6 +1662,7 @@ mod tests {
                 input: None,
                 last_error,
                 chain: None,
+                steps: None,
             }),
             ..DiagnosticInput::default()
         }
@@ -1767,6 +1772,20 @@ mod tests {
         assert_eq!(
             field_value(&text, "Processing"),
             Some("missing a translation model"),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn the_enabled_steps_are_listed_when_any_is_on() {
+        let mut daemon = running_daemon(None);
+        let text = present_diagnostics(daemon.clone()).copy_text();
+        assert_eq!(field_value(&text, "Processing steps"), None, "{text}");
+        daemon.daemon_report.as_mut().unwrap().steps = Some("tidy, translate=fr".into());
+        let text = present_diagnostics(daemon).copy_text();
+        assert_eq!(
+            field_value(&text, "Processing steps"),
+            Some("tidy, translate=fr"),
             "{text}"
         );
     }

@@ -25,6 +25,7 @@ use std::path::PathBuf;
 use gio::glib;
 use gio::prelude::{SettingsExt, SettingsExtManual};
 
+use crate::processing::Params;
 use crate::StreamingMode;
 
 /// The schema every myna client settings key lives under.
@@ -57,14 +58,14 @@ pub const KEY_SOUNDS: &str = "sounds";
 /// installed gets.
 pub const DEFAULT_SOUNDS: bool = true;
 
-/// What is done to dictated text before it is typed.
-pub const KEY_PROCESSING_CHAIN: &str = "processing-chain";
+/// The enabled processing steps, by stable id, in stage order.
+pub const KEY_PROCESSING_STEPS: &str = "processing-steps";
+
+/// The steps' parameters, keyed `<step>.<param>`.
+pub const KEY_PROCESSING_PARAMS: &str = "processing-params";
 
 /// Whether processed dictations are recorded, as heard and as typed.
 pub const KEY_PROCESSING_HISTORY: &str = "processing-history";
-
-/// How Chinese is written once it is typed.
-pub const KEY_CHINESE_SCRIPT: &str = "chinese-script";
 
 /// Which set of cues the daemon plays.
 pub const KEY_SOUND_SET: &str = "sound-set";
@@ -121,84 +122,6 @@ impl SoundSet {
     }
 }
 
-/// What is done to dictated text before it is typed (`processing-chain`):
-/// the id of one of the presets this build knows. What a preset does is data
-/// in the daemon (`myna-desktop`'s graph); this is only its name, as stored.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct ProcessingChain(&'static str);
-
-impl ProcessingChain {
-    /// Nothing: typed as heard.
-    pub const EXACT: Self = Self("exact");
-    /// Hesitations, false starts and repeats dropped.
-    pub const TIDY: Self = Self("tidy");
-    /// Tidied, then translated from English to French.
-    pub const TIDY_FRENCH: Self = Self("tidy-french");
-    /// Typed as heard, fitted to the field: no capital or full stop in an
-    /// address, no capital that continues a sentence.
-    pub const KEYWORD: Self = Self("keyword");
-
-    /// Every preset, in schema order.
-    pub const ALL: [Self; 4] = [Self::EXACT, Self::TIDY, Self::TIDY_FRENCH, Self::KEYWORD];
-
-    /// The schema enum nick.
-    pub fn nick(self) -> &'static str {
-        self.0
-    }
-
-    /// The preset a nick names; `None` for one this build does not know.
-    pub fn from_nick(nick: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|chain| chain.nick() == nick)
-    }
-}
-
-impl Default for ProcessingChain {
-    fn default() -> Self {
-        Self::EXACT
-    }
-}
-
-/// How Chinese text is written (`chinese-script`). A speech model picks a
-/// script as it likes; anything but `AsRecognised` converts what it wrote.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub enum ChineseScript {
-    /// Typed as the speech model wrote it.
-    #[default]
-    AsRecognised,
-    Simplified,
-    Traditional,
-    /// Traditional, in the characters and words used in Taiwan.
-    TraditionalTaiwan,
-    /// Traditional, in the characters used in Hong Kong.
-    TraditionalHongKong,
-}
-
-impl ChineseScript {
-    pub const ALL: [Self; 5] = [
-        Self::AsRecognised,
-        Self::Simplified,
-        Self::Traditional,
-        Self::TraditionalTaiwan,
-        Self::TraditionalHongKong,
-    ];
-
-    /// The schema enum nick.
-    pub fn nick(self) -> &'static str {
-        match self {
-            Self::AsRecognised => "as-recognised",
-            Self::Simplified => "simplified",
-            Self::Traditional => "traditional",
-            Self::TraditionalTaiwan => "traditional-taiwan",
-            Self::TraditionalHongKong => "traditional-hongkong",
-        }
-    }
-
-    /// The script a nick names; `None` for one this build does not know.
-    pub fn from_nick(nick: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|script| script.nick() == nick)
-    }
-}
-
 /// The schema default for [`KEY_SILENCE_TIMEOUT`], also what a machine with
 /// no schema installed gets - a forgotten session should end there too.
 pub const DEFAULT_SILENCE_TIMEOUT_SECS: u32 = 30;
@@ -227,16 +150,16 @@ pub struct Settings {
     pub silence_timeout: u32,
     /// Whether a session's start, stop and failure are heard as well as seen.
     pub sounds: bool,
-    /// What is done to the text before it is typed.
-    pub processing_chain: ProcessingChain,
+    /// The enabled steps that process the text before it is typed.
+    pub processing_steps: Vec<String>,
+    /// Their parameters, keyed `<step>.<param>`.
+    pub processing_params: Params,
     /// Whether each processed dictation is recorded, as heard and as typed.
     pub processing_history: bool,
     /// Which cues are heard.
     pub sound_set: SoundSet,
     /// The user's local dictionary, raw (unnormalized) as stored.
     pub vocabulary: Vec<String>,
-    /// How Chinese text is written when typed.
-    pub chinese_script: ChineseScript,
 }
 
 /// What a machine with no schema installed reads: every key's schema default.
@@ -248,11 +171,11 @@ impl Default for Settings {
             hud_style: None,
             silence_timeout: DEFAULT_SILENCE_TIMEOUT_SECS,
             sounds: DEFAULT_SOUNDS,
-            processing_chain: ProcessingChain::default(),
+            processing_steps: Vec::new(),
+            processing_params: Params::new(),
             processing_history: false,
             sound_set: SoundSet::default(),
             vocabulary: Vec::new(),
-            chinese_script: ChineseScript::default(),
         }
     }
 }
@@ -281,11 +204,13 @@ impl Settings {
                 .seconds(KEY_SILENCE_TIMEOUT)
                 .unwrap_or(default.silence_timeout),
             sounds: store.flag(KEY_SOUNDS).unwrap_or(default.sounds),
-            processing_chain: store
-                .text(KEY_PROCESSING_CHAIN)
-                .as_deref()
-                .and_then(ProcessingChain::from_nick)
-                .unwrap_or(default.processing_chain),
+            processing_steps: store
+                .strings(KEY_PROCESSING_STEPS)
+                .map(|ids| ids.into_iter().filter(|id| !id.is_empty()).collect())
+                .unwrap_or(default.processing_steps),
+            processing_params: store
+                .string_map(KEY_PROCESSING_PARAMS)
+                .unwrap_or(default.processing_params),
             processing_history: store
                 .flag(KEY_PROCESSING_HISTORY)
                 .unwrap_or(default.processing_history),
@@ -295,11 +220,6 @@ impl Settings {
                 .and_then(SoundSet::from_nick)
                 .unwrap_or(default.sound_set),
             vocabulary: store.strings(KEY_VOCABULARY).unwrap_or(default.vocabulary),
-            chinese_script: store
-                .text(KEY_CHINESE_SCRIPT)
-                .as_deref()
-                .and_then(ChineseScript::from_nick)
-                .unwrap_or(default.chinese_script),
         }
     }
 }
@@ -380,6 +300,13 @@ impl Store {
                 .map(|s| s.to_string())
                 .collect(),
         )
+    }
+
+    /// A string-to-string map key (`a{ss}`); an unset key reads the schema
+    /// default (empty).
+    pub fn string_map(&self, key: &str) -> Option<Params> {
+        self.has(key)?;
+        self.settings.value(key).get::<Params>()
     }
 
     fn has(&self, key: &str) -> Option<()> {
@@ -708,61 +635,39 @@ mod tests {
         }
     }
 
-    /// Text is typed as heard out of the box, with or without a schema, and
-    /// the schema and [`ProcessingChain`] name the same chains.
+    /// No step is enabled out of the box, with or without a schema, and the
+    /// two processing keys round-trip through the store.
     #[test]
-    fn the_processing_chain_reads_the_schema_default_and_round_trips() {
+    fn the_processing_steps_read_the_schema_default_and_round_trip() {
         let store = test_store();
-        assert_eq!(
-            Settings::from_store(&store).processing_chain,
-            ProcessingChain::EXACT
-        );
-        assert_eq!(Settings::default().processing_chain, ProcessingChain::EXACT);
-        let range = test_schema().key(KEY_PROCESSING_CHAIN).range();
-        let (_, nicks) = range.get::<(String, glib::Variant)>().unwrap();
-        let nicks: Vec<String> = nicks.get().unwrap();
-        assert_eq!(
-            nicks,
-            ProcessingChain::ALL.map(|chain| chain.nick().to_owned())
-        );
-        for chain in [
-            ProcessingChain::TIDY_FRENCH,
-            ProcessingChain::TIDY,
-            ProcessingChain::KEYWORD,
-        ] {
-            assert!(store
-                .settings
-                .set_string(KEY_PROCESSING_CHAIN, chain.nick())
-                .is_ok());
-            assert_eq!(Settings::from_store(&store).processing_chain, chain);
-        }
-        assert_eq!(ProcessingChain::from_nick("summary"), None);
+        let read = Settings::from_store(&store);
+        assert!(read.processing_steps.is_empty());
+        assert!(read.processing_params.is_empty());
+        assert_eq!(Settings::default().processing_steps, Vec::<String>::new());
+        assert!(store
+            .settings
+            .set_strv(KEY_PROCESSING_STEPS, ["tidy", "", "translate"])
+            .is_ok());
+        let params: Params = [("translate.to".to_owned(), "de".to_owned())].into();
+        assert!(store
+            .settings
+            .set_value(
+                KEY_PROCESSING_PARAMS,
+                &glib::variant::ToVariant::to_variant(&params)
+            )
+            .is_ok());
+        let read = Settings::from_store(&store);
+        assert_eq!(read.processing_steps, ["tidy", "translate"]);
+        assert_eq!(read.processing_params, params);
     }
 
-    /// Chinese is typed as recognised out of the box, and the schema and
-    /// [`ChineseScript`] name the same scripts.
+    /// A schema without the keys (an older install beside a newer binary)
+    /// reads as no steps instead of aborting.
     #[test]
-    fn the_chinese_script_reads_the_schema_default_and_round_trips() {
+    fn a_store_without_the_step_keys_reads_no_steps() {
         let store = test_store();
-        assert_eq!(
-            Settings::from_store(&store).chinese_script,
-            ChineseScript::AsRecognised
-        );
-        let range = test_schema().key(KEY_CHINESE_SCRIPT).range();
-        let (_, nicks) = range.get::<(String, glib::Variant)>().unwrap();
-        let nicks: Vec<String> = nicks.get().unwrap();
-        assert_eq!(
-            nicks,
-            ChineseScript::ALL.map(|script| script.nick().to_owned())
-        );
-        for script in ChineseScript::ALL {
-            assert!(store
-                .settings
-                .set_string(KEY_CHINESE_SCRIPT, script.nick())
-                .is_ok());
-            assert_eq!(Settings::from_store(&store).chinese_script, script);
-        }
-        assert_eq!(ChineseScript::from_nick("pinyin"), None);
+        assert!(store.string_map("no-such-key").is_none());
+        assert!(store.strings("no-such-key").is_none());
     }
 
     /// The schema enum and [`SoundSet`] name the same sets: every nick this

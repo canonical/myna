@@ -26,6 +26,7 @@ pub mod history;
 pub mod language;
 pub mod locale;
 pub mod mode;
+pub mod processing;
 pub mod protocol;
 pub mod provider_env;
 pub mod session;
@@ -43,9 +44,10 @@ pub use events::{
     WARNING_GPU_UNAVAILABLE, WARNING_MEMORY_PRESSURE,
 };
 pub use mode::{effective_mode, streams_by_default, EffectiveMode, ModeSource};
+pub use processing::{ChineseScript, ProcessingChain};
 pub use protocol::PROTOCOL_VERSION;
 pub use session::{
     normalize_keywords, spoken_written, SessionConfig, KEYWORDS_MAX_ENTRIES,
     KEYWORDS_MAX_ENTRY_CHARS,
 };
-pub use settings::{ChineseScript, ProcessingChain, Settings, SettingsWatch, SoundSet};
+pub use settings::{Settings, SettingsWatch, SoundSet};
