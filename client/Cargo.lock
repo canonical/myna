@@ -1273,8 +1273,11 @@ version = "0.0.0"
 dependencies = [
  "async-trait",
  "audioadapter-buffers",
+ "bytes",
+ "futures-util",
  "myna-audio",
  "myna-core",
+ "myna-desktop",
  "myna-orchestrator",
  "rubato",
  "serde_json",

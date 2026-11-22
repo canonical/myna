@@ -14,9 +14,12 @@ path = "src/main.rs"
 myna-core = { path = "../myna-core" }
 myna-audio = { path = "../myna-audio" }
 myna-orchestrator = { path = "../myna-orchestrator" }
+myna-desktop = { path = "../myna-desktop" }
 tokio = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
 rubato.workspace = true
 audioadapter-buffers.workspace = true
 async-trait.workspace = true
+futures-util.workspace = true
+bytes.workspace = true
