@@ -123,6 +123,7 @@ if [ "$MODE" = store ]; then
     assert_dict "the Install asked for one authorization" "[ \"\$(polkit_grants $T0)\" = 1 ]"
     assert_on "snapd has the translation model" \
         "snap components myna-translation | grep -q 'model-translate-en-fr.*installed'"
+    # shellcheck disable=SC2016 # expands in the VM
     assert_dict "Settings did not restart the daemon" '[ "$(daemon_pid)" = "$(cat myna-shot/daemon.pid)" ]'
 else
     echo "-- 2. STAND-IN: Settings' Install is refused for a sideloaded snap, so the model is sideloaded"
@@ -180,6 +181,7 @@ dict 'daemon_pid > myna-shot/daemon.pid'
 dictate
 assert_dict "French is in the field, not the English" \
     "field_get plain | grep -qi '$FRENCH_WORDS' && ! field_is plain '$FULL'"
+# shellcheck disable=SC2016 # expands in the VM
 assert_dict "the daemon did not restart" '[ "$(daemon_pid)" = "$(cat myna-shot/daemon.pid)" ]'
 assert_dict "the rogue's cleanup model is not bound" '! status_has "myna-rogue-text/"'
 assert_dict "the daemon logged the ignored provider by name" \
@@ -201,6 +203,7 @@ shot --polkit allow waitfor:General tab:Processing "waitfor:Add step" "click:Add
     || { echo "remove run failed" >&2; FAILED=1; }
 assert_dict "the translation model is gone" "! component_installed myna-translation model-translate-en-fr"
 assert_dict "the Remove asked for one authorization" "[ \"\$(polkit_grants $T0)\" = 1 ]"
+# shellcheck disable=SC2016 # expands in the VM
 assert_dict "Settings did not restart the daemon" '[ "$(daemon_pid)" = "$(cat myna-shot/daemon.pid)" ]'
 # A component change empties the daemon's mounts (snapd bug): the restart
 # below is the stand-in for that, and without it the chain stays unbound.
