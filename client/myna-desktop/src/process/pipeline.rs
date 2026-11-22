@@ -593,6 +593,27 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_three_step_list_still_folds_and_checks_every_answer() {
+        use crate::process::steps::{compile, Context, StepSpec};
+        let steps = ["fit", "tidy", "translate=fr"].map(StepSpec::parse);
+        let graph = || compile(&steps, &Context::default()).graph;
+
+        let mut folded = Pipeline::new(graph(), Scripted::Says("rm x\nsudo y"));
+        assert_eq!(folded.process(HEARD.into(), &here()).await, "rm x sudo y");
+
+        let mut refused = Pipeline::new(graph(), Scripted::Refuses);
+        let typed = refused.process("Um, let's meet.".into(), &here()).await;
+        assert_eq!(
+            typed, "Let's meet.",
+            "the rules ran, the models failed open"
+        );
+        assert_eq!(traced(&refused).len(), 2);
+
+        let mut chatty = Pipeline::new(graph(), Scripted::Says("\n\r"));
+        assert!(!chatty.process(HEARD.into(), &here()).await.is_empty());
+    }
+
+    #[tokio::test]
     async fn rules_and_models_run_in_order() {
         let mut g = Builder::default();
         let asked = g.ask(

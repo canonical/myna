@@ -19,6 +19,7 @@ pub mod resolve;
 pub mod rules;
 pub mod script;
 pub mod step;
+pub mod steps;
 pub mod vocabulary;
 pub mod wire;
 

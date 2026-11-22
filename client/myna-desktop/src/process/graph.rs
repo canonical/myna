@@ -14,9 +14,9 @@ use std::collections::HashMap;
 use myna_core::ProcessingChain;
 use myna_platform::text_input::FieldPurpose;
 
-use super::disfluency::Lang;
 use super::pipeline::{Check, Request};
 use super::rules::Rule;
+use super::steps::{compile, preset_steps, Context};
 use super::Field;
 
 /// How much of a dictation a node has to see at once.
@@ -32,6 +32,13 @@ pub enum Needs {
 /// keeps a source ahead of the node that reads it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Id(usize);
+
+#[cfg(test)]
+impl Id {
+    pub fn first() -> Self {
+        Id(0)
+    }
+}
 
 /// Where a node's text comes from.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -182,47 +189,9 @@ impl Graph {
         (0..self.nodes.len()).filter(|&i| seen[i]).map(Id).collect()
     }
 
-    /// The graph a preset names.
+    /// The graph a preset names: its steps compiled for unknown language.
     pub fn preset(chain: ProcessingChain) -> Self {
-        let mut g = Builder::default();
-        let out = match chain {
-            ProcessingChain::TIDY => {
-                let plain = g.rule(Src::Input, Rule::Disfluency(Lang::Any));
-                let spelled = g.rule(plain, Rule::Vocabulary);
-                g.tidy(spelled)
-            }
-            ProcessingChain::TIDY_FRENCH => {
-                let plain = g.rule(Src::Input, Rule::Disfluency(Lang::Any));
-                let spelled = g.rule(plain, Rule::Vocabulary);
-                let tidy = g.tidy(spelled);
-                g.ask(
-                    tidy,
-                    Request::translate("en", "fr"),
-                    Check::Usable { translation: true },
-                    Needs::Sentence,
-                )
-            }
-            ProcessingChain::KEYWORD => {
-                let address = g.rule(Src::Input, Rule::Address);
-                let go_on = g.rule(Src::Input, Rule::Continue);
-                // After the recasing, so a term keeps its capitals; an
-                // address is no prose and keeps none of them.
-                let go_on = g.rule(go_on, Rule::Vocabulary);
-                let heard = g.rule(Src::Input, Rule::Vocabulary);
-                g.route(
-                    vec![
-                        (
-                            When::Purpose(&[FieldPurpose::Url, FieldPurpose::Email]),
-                            address,
-                        ),
-                        (When::MidSentence, go_on),
-                    ],
-                    heard,
-                )
-            }
-            _ => Src::Input,
-        };
-        g.finish(out)
+        compile(&preset_steps(chain), &Context::default()).graph
     }
 }
 
