@@ -131,6 +131,18 @@ refusal, and installs with `snap install --dangerous` plus a daemon restart
 knows `myna-translation`, where Settings' Install and no restart carry the
 whole flow. Delete the stand-in branches when both snapd problems are fixed.
 
+The `deadair` suite takes the same `E2E_PLUGIN_BLOBS` and installs both
+text snaps with their models over the fake speech backend, so what it
+measures is Myna's own wait: `dead_air_ms` minus `asr_tail_ms` from the record
+of past dictations (the first dictation after five daemon starts, then
+`E2E_DEADAIR_N` warm ones, for Tidy and Tidy then French; bounds 1000 ms cold,
+p95 100 ms and 1000 ms warm). It then breaks the text model (stopped,
+SIGSTOPped, and `tools/fault-text.py` passing for `myna-text` while answering
+with a chat reply, control characters, one word, nothing, or never) and asserts
+every dictation still types the words that were heard and that the daemon's
+journal holds none of them. The fake's scripted transcript is nine words; a
+long dictation's wait is the last sentence's, which the bound already covers.
+
 `dev/try-desktop.sh` (`make try-desktop`) reuses the provisioning above for a
 manual-test VM; it only ever copies the `installed` snapshot of an e2e VM.
 
