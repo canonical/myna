@@ -22,6 +22,20 @@ use super::openai;
 use super::pipeline::{Answer, ModelError, Models, Prefer, Request};
 use super::wire::{self, Capability, WireError};
 
+/// Where text model shares are searched: the backend directory, and the
+/// colon separated directories `extra` adds (`MYNA_TEXT_SHARES`, for a
+/// provider run by hand). The daemon and the testbed search alike.
+pub fn share_dirs(
+    backend: Option<&std::path::Path>,
+    extra: Option<std::ffi::OsString>,
+) -> Vec<PathBuf> {
+    let mut dirs: Vec<PathBuf> = backend.map(PathBuf::from).into_iter().collect();
+    if let Some(extra) = extra {
+        dirs.extend(std::env::split_paths(&extra).filter(|p| !p.as_os_str().is_empty()));
+    }
+    dirs
+}
+
 /// How a share is spoken to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Via {
@@ -145,6 +159,11 @@ impl Resolver {
 
     pub fn status(&self) -> watch::Receiver<ChainStatus> {
         self.0.status.subscribe()
+    }
+
+    /// The `share/model` a request is bound to, if it is.
+    pub fn bound_to(&self, request: &Request) -> Option<String> {
+        self.bound(&request.key()).map(|binding| binding.name())
     }
 
     fn bound(&self, key: &str) -> Option<Binding> {
@@ -410,6 +429,13 @@ mod tests {
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
     use tokio::net::UnixListener;
 
+    #[test]
+    fn shares_are_searched_in_the_backend_dir_then_the_extra_ones() {
+        let dirs = share_dirs(Some(Path::new("/b")), Some("/x::/y".into()));
+        assert_eq!(dirs, [Path::new("/b"), Path::new("/x"), Path::new("/y")]);
+        assert!(share_dirs(None, None).is_empty());
+    }
+
     fn cap(id: &str, task: &str, latency: Option<u64>, quality: Option<f64>) -> Candidate {
         Candidate {
             via: Via::Myna,
@@ -553,7 +579,7 @@ mod tests {
     }
 
     fn bound(resolver: &Resolver, request: &Request) -> Option<String> {
-        resolver.bound(&request.key()).map(|b| b.name())
+        resolver.bound_to(request)
     }
 
     #[tokio::test]

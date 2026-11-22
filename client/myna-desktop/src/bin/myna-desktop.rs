@@ -183,7 +183,7 @@ impl Resolved {
             auto_stop: resolve_auto_stop(activation, settings.silence_timeout),
             sounds: settings.sounds,
             sound_set: settings.sound_set,
-            commit: resolve_commit(needs),
+            commit: CommitPolicy::for_needs(needs),
             chain: settings.processing_chain,
             graph,
             script,
@@ -192,29 +192,15 @@ impl Resolved {
     }
 }
 
-/// A chain may still change text, so it holds the dictation back: only as
-/// far as its nodes need, the last finished sentence and the one being said,
-/// or all of it until the end. With no chain text is typed as it arrives.
-fn resolve_commit(needs: Option<Needs>) -> CommitPolicy {
-    match needs {
-        None => CommitPolicy::Streaming,
-        Some(Needs::Sentence) => CommitPolicy::Horizon { sentences: 1 },
-        Some(Needs::Dictation) => CommitPolicy::AtEnd,
-    }
-}
-
 /// Where text model shares are searched: the backend directory, and any
 /// directory of shares `MYNA_TEXT_SHARES` adds (colon separated, for a
 /// provider run by hand).
 fn text_share_dirs(args: &Args) -> Vec<PathBuf> {
-    let mut dirs = Vec::new();
-    if let Some(BackendSocket::Search(dir)) = &args.backend {
-        dirs.push(dir.clone());
-    }
-    if let Some(extra) = std::env::var_os("MYNA_TEXT_SHARES") {
-        dirs.extend(std::env::split_paths(&extra).filter(|p| !p.as_os_str().is_empty()));
-    }
-    dirs
+    let backend = match &args.backend {
+        Some(BackendSocket::Search(dir)) => Some(dir.as_path()),
+        _ => None,
+    };
+    myna_desktop::process::resolve::share_dirs(backend, std::env::var_os("MYNA_TEXT_SHARES"))
 }
 
 /// How often the binder looks again for a share that was not there.
@@ -1691,7 +1677,10 @@ mod tests {
             resolved(&a, &tidy).commit,
             CommitPolicy::Horizon { sentences: 1 }
         );
-        assert_eq!(resolve_commit(Some(Needs::Dictation)), CommitPolicy::AtEnd);
+        assert_eq!(
+            CommitPolicy::for_needs(Some(Needs::Dictation)),
+            CommitPolicy::AtEnd
+        );
 
         let live = LiveSettings::new(&resolved(&a, &unset()), Live::new(SoundSet::default()));
         assert_eq!(live.graph.get(), Graph::passthrough());

@@ -23,6 +23,18 @@ pub enum CommitPolicy {
 }
 
 impl CommitPolicy {
+    /// How long a chain holds text back: only as far as its nodes need,
+    /// the last finished sentence and the one being said, or all of it
+    /// until the end. With no node text is typed as it arrives.
+    pub fn for_needs(needs: Option<crate::process::graph::Needs>) -> Self {
+        use crate::process::graph::Needs;
+        match needs {
+            None => CommitPolicy::Streaming,
+            Some(Needs::Sentence) => CommitPolicy::Horizon { sentences: 1 },
+            Some(Needs::Dictation) => CommitPolicy::AtEnd,
+        }
+    }
+
     /// Whether text goes to the field as it arrives, with nothing held back.
     pub fn streams(self) -> bool {
         self == CommitPolicy::Streaming
@@ -49,7 +61,7 @@ impl CommitPolicy {
 /// punctuation, then whitespace, or at once for a full-width mark, which
 /// Chinese and Japanese leave unspaced. A mark at the very end closes
 /// nothing yet, since the next piece may continue it ("3." then "5 metres").
-fn sentence_ends(text: &str) -> Vec<usize> {
+pub fn sentence_ends(text: &str) -> Vec<usize> {
     let full_width = |c: char| matches!(c, '。' | '？' | '！');
     let mut ends = Vec::new();
     let (mut closed, mut closed_full_width) = (false, false);
@@ -61,6 +73,19 @@ fn sentence_ends(text: &str) -> Vec<usize> {
         closed_full_width = full_width(c);
     }
     ends
+}
+
+/// Add committed text to what is held. Servers whose segments carry natural
+/// (leading-space) whitespace concatenate verbatim (contract I2);
+/// stripped-segment servers get a separator, never a double space.
+pub fn append(pending: &mut String, text: &str) {
+    if !pending.is_empty()
+        && !pending.ends_with(char::is_whitespace)
+        && !text.starts_with(char::is_whitespace)
+    {
+        pending.push(' ');
+    }
+    pending.push_str(text);
 }
 
 /// Where the user reads held text while it is not in the field.
@@ -137,6 +162,29 @@ mod tests {
                 ("DraftTail".to_string(), str("")),
                 ("DraftText".to_string(), str("hello world")),
             ]
+        );
+    }
+
+    #[test]
+    fn held_text_is_joined_without_a_double_space() {
+        let mut held = String::new();
+        append(&mut held, "one");
+        append(&mut held, "two");
+        append(&mut held, " three");
+        assert_eq!(held, "one two three");
+    }
+
+    #[test]
+    fn the_policy_follows_what_the_nodes_need() {
+        use crate::process::graph::Needs;
+        assert_eq!(CommitPolicy::for_needs(None), CommitPolicy::Streaming);
+        assert_eq!(
+            CommitPolicy::for_needs(Some(Needs::Sentence)),
+            CommitPolicy::Horizon { sentences: 1 }
+        );
+        assert_eq!(
+            CommitPolicy::for_needs(Some(Needs::Dictation)),
+            CommitPolicy::AtEnd
         );
     }
 

@@ -1193,13 +1193,7 @@ impl CommitBuffer {
     /// (leading-space) whitespace concatenate verbatim (contract I2);
     /// stripped-segment servers get a separator - never a double space.
     fn push(&mut self, text: &str) {
-        if !self.pending.is_empty()
-            && !self.pending.ends_with(char::is_whitespace)
-            && !text.starts_with(char::is_whitespace)
-        {
-            self.pending.push(' ');
-        }
-        self.pending.push_str(text);
+        crate::draft::append(&mut self.pending, text);
     }
 
     /// Whether text this utterance produced reached no field: the ending
