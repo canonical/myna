@@ -1315,7 +1315,7 @@ impl CommitBuffer {
         let landed = Instant::now();
         if result.is_ok() {
             self.last = text.trim_end().chars().last().or(self.last);
-            myna_core::dbg_log!("inject", "committed {} chars: {:?}", text.len(), text);
+            myna_core::dbg_log!("inject", "committed {} chars", text.chars().count());
         }
         let outcome = match &result {
             Ok(()) => Outcome::Typed,
