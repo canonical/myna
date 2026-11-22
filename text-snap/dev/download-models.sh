@@ -42,9 +42,22 @@ verified() { # <file> <sha256>
     [ -f "$1" ] && [ "$(sha256sum "$1" | cut -d' ' -f1)" = "$2" ]
 }
 
+# The small files come from the tree and are copied on every run, pin current
+# or not: a manifest edited after the weights were staged must reach the pack.
+translate_text_files() { # <component dir>
+    install -m 0644 "$snap_dir/models/translate-en-fr/"{myna-text-model.json,config.yml,NOTICE} "$1/"
+    install -m 0644 /usr/share/common-licenses/MPL-2.0 "$1/LICENSE"
+}
+
+tagger_text_files() { # <component dir>
+    install -m 0644 "$snap_dir/models/disfluency-en/"{myna-text-model.json,NOTICE} "$1/"
+    install -m 0644 /usr/share/common-licenses/Apache-2.0 "$1/LICENSE"
+}
+
 stage_translate() {
     local out="$snap_dir/components/model-translate-en-fr"
     if pin_is_current "$out" "$translate_rev"; then
+        translate_text_files "$out"
         echo "model already present at $out - skipping"
         return 0
     fi
@@ -68,8 +81,7 @@ stage_translate() {
         [ -n "$name" ] || continue
         cp -al "$cache/$name" "$out/$name" 2>/dev/null || cp -a "$cache/$name" "$out/$name"
     done <<<"$translate_files"
-    install -m 0644 "$snap_dir/models/translate-en-fr/"{myna-text-model.json,config.yml,NOTICE} "$out/"
-    install -m 0644 /usr/share/common-licenses/MPL-2.0 "$out/LICENSE"
+    translate_text_files "$out"
     pin_stamp "$out" "$translate_rev"
     echo "component ready at $out"
 }
@@ -78,6 +90,7 @@ stage_tagger() {
     local out="$snap_dir/components/model-disfluency-en"
     local src="${MYNA_TAGGER_SRC:-$HOME/myna-processing-graphs/artifacts/tagger/stage/myna-disfluency-en}"
     if pin_is_current "$out" "$tagger_rev"; then
+        tagger_text_files "$out"
         echo "model already present at $out - skipping"
         return 0
     fi
@@ -96,8 +109,7 @@ stage_tagger() {
         [ -n "$name" ] || continue
         cp -al "$src/$name" "$out/$name" 2>/dev/null || cp -a "$src/$name" "$out/$name"
     done <<<"$tagger_files"
-    install -m 0644 "$snap_dir/models/disfluency-en/"{myna-text-model.json,NOTICE} "$out/"
-    install -m 0644 "$src/LICENSE" "$out/LICENSE"
+    tagger_text_files "$out"
     pin_stamp "$out" "$tagger_rev"
     echo "component ready at $out"
 }
