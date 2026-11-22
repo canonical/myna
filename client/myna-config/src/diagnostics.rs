@@ -650,6 +650,11 @@ fn render_body(
                 &memory_summary(memory),
             );
         }
+        if backend.connection == DiagnosticConnection::NotConnected {
+            for problem in &backend.problems {
+                field(&mut out, &gettextrs::gettext("Note"), problem);
+            }
+        }
     }
 
     out.push('\n');
@@ -666,12 +671,25 @@ fn render_body(
         ),
         _ => gettextrs::gettext("IBus is not set up, so Myna cannot type. Set up Dictation to turn it on."),
     });
+    // A model that is not connected cannot break dictation, so what it failed
+    // to answer stays on its own entry above.
+    let in_use: Vec<String> = input
+        .backends
+        .iter()
+        .filter(|backend| backend.connection != DiagnosticConnection::NotConnected)
+        .flat_map(|backend| {
+            backend
+                .problems
+                .iter()
+                .map(|problem| format!("{}: {problem}", backend.snap_name))
+        })
+        .collect();
     let problems: Vec<&String> = input
         .problems
         .iter()
         .chain(not_connected.as_ref())
         .chain(no_input_method.as_ref())
-        .chain(input.backends.iter().flat_map(|backend| &backend.problems))
+        .chain(&in_use)
         .collect();
     if problems.is_empty() {
         out.push_str("  ");
@@ -1222,6 +1240,60 @@ mod tests {
         let report = present_diagnostics(input(DiagnosticConnection::Connected));
         assert_eq!(report.onboarding(), OnboardingState::Ready);
         assert!(report.copy_text().contains("Problems:\n  (none)"));
+    }
+
+    fn backend_with_problem(connection: DiagnosticConnection) -> DiagnosticInput {
+        DiagnosticInput {
+            inventory_complete: true,
+            installed_snaps: vec![InstalledSnap {
+                name: "myna".into(),
+                version: "0.1.0".into(),
+            }],
+            backends: vec![
+                BackendDiagnostic {
+                    snap_name: "myna-parakeet".into(),
+                    connection: DiagnosticConnection::Connected,
+                    ..BackendDiagnostic::default()
+                },
+                BackendDiagnostic {
+                    snap_name: "myna-indicconformer".into(),
+                    connection,
+                    problems: vec!["Available engines: permission denied".into()],
+                    ..BackendDiagnostic::default()
+                },
+            ],
+            ..DiagnosticInput::default()
+        }
+    }
+
+    /// A model nobody dictates through cannot break dictation: what it
+    /// failed to answer belongs on its own entry, not among the problems of a
+    /// healthy install.
+    #[test]
+    fn an_unused_models_failure_is_not_a_problem_of_the_install() {
+        let text = present_diagnostics(backend_with_problem(DiagnosticConnection::NotConnected))
+            .copy_text();
+        assert!(text.contains("Problems:\n  (none)"), "{text}");
+        let entry = text
+            .split("myna-indicconformer")
+            .nth(1)
+            .and_then(|rest| rest.split("\n\n").next())
+            .unwrap_or_default();
+        assert!(
+            entry.contains("Available engines: permission denied"),
+            "{text}"
+        );
+    }
+
+    /// The model in use does matter, and the problem names whose it is.
+    #[test]
+    fn the_connected_models_failure_is_a_problem_naming_the_model() {
+        let text =
+            present_diagnostics(backend_with_problem(DiagnosticConnection::Connected)).copy_text();
+        assert!(
+            text.contains("Problems:\n  myna-indicconformer: Available engines: permission denied"),
+            "{text}"
+        );
     }
 
     #[test]

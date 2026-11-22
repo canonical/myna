@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-22 03:48+0000\n"
+"POT-Creation-Date: 2026-11-22 13:22+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -524,7 +524,7 @@ msgid ""
 "succeeds."
 msgstr ""
 
-#: src/backend_ui.rs:833 src/diagnostics.rs:659
+#: src/backend_ui.rs:833 src/diagnostics.rs:664
 msgid "No model is connected. Choose one to use for dictation."
 msgstr ""
 
@@ -1010,7 +1010,7 @@ msgstr ""
 msgid "Close Myna Settings."
 msgstr ""
 
-#: src/onboarding_ui.rs:945 src/diagnostics.rs:665
+#: src/onboarding_ui.rs:945 src/diagnostics.rs:670
 msgid ""
 "Another input method is in use, and Dictation types through IBus. Choose "
 "IBus in the system settings."
@@ -1183,7 +1183,7 @@ msgstr ""
 msgid "limited to"
 msgstr ""
 
-#: src/diagnostics.rs:269 src/diagnostics.rs:347 src/diagnostics.rs:719
+#: src/diagnostics.rs:269 src/diagnostics.rs:347 src/diagnostics.rs:737
 msgid "of"
 msgstr ""
 
@@ -1236,7 +1236,7 @@ msgstr ""
 msgid "Dictation will be slow. Pause the build or workload before dictating."
 msgstr ""
 
-#: src/diagnostics.rs:345 src/diagnostics.rs:717
+#: src/diagnostics.rs:345 src/diagnostics.rs:735
 msgid "reached"
 msgstr ""
 
@@ -1304,7 +1304,7 @@ msgstr ""
 msgid "GPU"
 msgstr ""
 
-#: src/diagnostics.rs:478 src/diagnostics.rs:884
+#: src/diagnostics.rs:478 src/diagnostics.rs:902
 msgid "none"
 msgstr ""
 
@@ -1369,11 +1369,11 @@ msgstr ""
 msgid "Process"
 msgstr ""
 
-#: src/diagnostics.rs:586 src/diagnostics.rs:835
+#: src/diagnostics.rs:586 src/diagnostics.rs:853
 msgid "not running"
 msgstr ""
 
-#: src/diagnostics.rs:592 src/diagnostics.rs:847 src/diagnostics.rs:856
+#: src/diagnostics.rs:592 src/diagnostics.rs:865 src/diagnostics.rs:874
 msgid "not installed"
 msgstr ""
 
@@ -1397,146 +1397,150 @@ msgstr ""
 msgid "none selected"
 msgstr ""
 
-#: src/diagnostics.rs:656
+#: src/diagnostics.rs:655
+msgid "Note"
+msgstr ""
+
+#: src/diagnostics.rs:661
 msgid "Problems"
 msgstr ""
 
-#: src/diagnostics.rs:662
+#: src/diagnostics.rs:667
 msgid ""
 "IBus is not installed, so Myna cannot type. Install the “ibus” package, then "
 "log out and back in."
 msgstr ""
 
-#: src/diagnostics.rs:667
+#: src/diagnostics.rs:672
 msgid ""
 "IBus is not set up, so Myna cannot type. Set up Dictation to turn it on."
 msgstr ""
 
-#: src/diagnostics.rs:678 src/diagnostics.rs:692
+#: src/diagnostics.rs:696 src/diagnostics.rs:710
 msgid "(none)"
 msgstr ""
 
-#: src/diagnostics.rs:688
+#: src/diagnostics.rs:706
 msgid "Warnings"
 msgstr ""
 
-#: src/diagnostics.rs:713
+#: src/diagnostics.rs:731
 msgid "not probed"
 msgstr ""
 
-#: src/diagnostics.rs:726
+#: src/diagnostics.rs:744
 msgid "policy allows"
 msgstr ""
 
-#: src/diagnostics.rs:733
+#: src/diagnostics.rs:751
 msgid "cores in this class"
 msgstr ""
 
-#: src/diagnostics.rs:740
+#: src/diagnostics.rs:758
 msgid "mains"
 msgstr ""
 
-#: src/diagnostics.rs:741 src/diagnostics.rs:746
+#: src/diagnostics.rs:759 src/diagnostics.rs:764
 msgid "battery"
 msgstr ""
 
-#: src/diagnostics.rs:795
+#: src/diagnostics.rs:813
 msgid "chunks dropped this session"
 msgstr ""
 
-#: src/diagnostics.rs:803
+#: src/diagnostics.rs:821
 msgid "no dictation yet"
 msgstr ""
 
-#: src/diagnostics.rs:806
+#: src/diagnostics.rs:824
 msgid "speech"
 msgstr ""
 
-#: src/diagnostics.rs:807
+#: src/diagnostics.rs:825
 msgid "no speech heard"
 msgstr ""
 
-#: src/diagnostics.rs:815
+#: src/diagnostics.rs:833
 msgid "offset"
 msgstr ""
 
-#: src/diagnostics.rs:817
+#: src/diagnostics.rs:835
 msgid "floor"
 msgstr ""
 
-#: src/diagnostics.rs:824
+#: src/diagnostics.rs:842
 msgid "Input method"
 msgstr ""
 
-#: src/diagnostics.rs:825
+#: src/diagnostics.rs:843
 msgid "Indicator host"
 msgstr ""
 
-#: src/diagnostics.rs:831
+#: src/diagnostics.rs:849
 msgid "active"
 msgstr ""
 
-#: src/diagnostics.rs:833
+#: src/diagnostics.rs:851
 msgid "set up, starts at the next login"
 msgstr ""
 
-#: src/diagnostics.rs:836
+#: src/diagnostics.rs:854
 msgid "not set up"
 msgstr ""
 
-#: src/diagnostics.rs:837
+#: src/diagnostics.rs:855
 msgid "turned off"
 msgstr ""
 
-#: src/diagnostics.rs:839
+#: src/diagnostics.rs:857
 msgid "locked by the administrator"
 msgstr ""
 
-#: src/diagnostics.rs:841
+#: src/diagnostics.rs:859
 msgid "hidden by another copy"
 msgstr ""
 
-#: src/diagnostics.rs:843
+#: src/diagnostics.rs:861
 msgid "another input method is in use"
 msgstr ""
 
-#: src/diagnostics.rs:844
+#: src/diagnostics.rs:862
 msgid "not supported on this desktop"
 msgstr ""
 
-#: src/diagnostics.rs:846
+#: src/diagnostics.rs:864
 msgid "failed"
 msgstr ""
 
-#: src/diagnostics.rs:855
+#: src/diagnostics.rs:873
 msgid "gnome-shell did not answer"
 msgstr ""
 
-#: src/diagnostics.rs:859
+#: src/diagnostics.rs:877
 msgid "installed since login, starts at the next one"
 msgstr ""
 
-#: src/diagnostics.rs:862
+#: src/diagnostics.rs:880
 msgid "installed since login, not enabled"
 msgstr ""
 
-#: src/diagnostics.rs:865
+#: src/diagnostics.rs:883
 msgid "myna-config package"
 msgstr ""
 
-#: src/diagnostics.rs:866
+#: src/diagnostics.rs:884
 msgid "Ubuntu package"
 msgstr ""
 
-#: src/diagnostics.rs:867
+#: src/diagnostics.rs:885
 msgid "development override"
 msgstr ""
 
-#: src/diagnostics.rs:868
+#: src/diagnostics.rs:886
 msgid "user copy"
 msgstr ""
 
-#: src/diagnostics.rs:869
+#: src/diagnostics.rs:887
 msgid "other system copy"
 msgstr ""
 
