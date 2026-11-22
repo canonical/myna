@@ -46,16 +46,19 @@ impl CommitPolicy {
 }
 
 /// The byte offset after each sentence that something follows: its closing
-/// punctuation, then whitespace. A full stop at the very end closes nothing
-/// yet, since the next piece may continue it ("3." then "5 metres").
+/// punctuation, then whitespace, or at once for a full-width mark, which
+/// Chinese and Japanese leave unspaced. A mark at the very end closes
+/// nothing yet, since the next piece may continue it ("3." then "5 metres").
 fn sentence_ends(text: &str) -> Vec<usize> {
+    let full_width = |c: char| matches!(c, '。' | '？' | '！');
     let mut ends = Vec::new();
-    let mut closed = false;
+    let (mut closed, mut closed_full_width) = (false, false);
     for (at, c) in text.char_indices() {
-        if closed && c.is_whitespace() {
+        if (closed && c.is_whitespace()) || (closed_full_width && !full_width(c)) {
             ends.push(at);
         }
-        closed = matches!(c, '.' | '?' | '!' | '。' | '？' | '！');
+        closed = matches!(c, '.' | '?' | '!') || full_width(c);
+        closed_full_width = full_width(c);
     }
     ends
 }
@@ -164,6 +167,19 @@ mod tests {
         assert_eq!(&"One. Two"[..policy.ready("One. Two", false)], "One.");
         // Nothing follows the stop, so it may yet be "3.5".
         assert_eq!(policy.ready("It is 3.", false), 0);
+    }
+
+    #[test]
+    fn full_width_marks_end_a_sentence_without_a_space() {
+        let policy = CommitPolicy::Horizon { sentences: 1 };
+        let text = "你好。再见！谢谢？嗯";
+        // The segment has no spaces: "谢谢？" is kept, "嗯" is being said.
+        assert_eq!(&text[..policy.ready(text, false)], "你好。再见！");
+        // A mark at the very end closes nothing yet, as a full stop does.
+        assert_eq!(policy.ready("你好。再见。", false), 0);
+        // A run of marks is one end.
+        let run = CommitPolicy::Horizon { sentences: 0 };
+        assert_eq!(&"真的？！好"[..run.ready("真的？！好", false)], "真的？！");
     }
 
     #[test]
