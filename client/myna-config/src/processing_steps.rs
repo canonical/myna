@@ -900,6 +900,139 @@ mod tests {
     }
 
     #[test]
+    fn stage_not_name_orders_the_rows_and_unknown_steps_are_named_by_id() {
+        let mut rig = Rig::new();
+        rig.catalog = vec![
+            entry("a", "zzz", "clean-up", "en", "en", 1),
+            entry("b", "aaa", "translate", "en", "fr", 1),
+            entry("c", "mmm", "no-such-stage", "en", "en", 1),
+        ];
+        let rows = rig.rows();
+        let ids: Vec<&str> = rows.iter().map(|r| r.id.as_str()).collect();
+        assert_eq!(ids, ["fit", "zzz", "aaa", "mmm"]);
+        assert_eq!(rows[0].title, "Fitted to the field");
+        assert_eq!(rows[1].title, "zzz");
+        assert!(rows[1].description.is_empty());
+        assert!(rows.iter().all(Row::switchable));
+    }
+
+    #[test]
+    fn chinese_targets_and_codes_have_names() {
+        assert_eq!(language_name("zh-Hans"), "Chinese (Simplified)");
+        assert_eq!(language_name("zh-Hant"), "Chinese (Traditional)");
+        assert_eq!(language_name("xx"), "xx");
+    }
+
+    #[test]
+    fn a_row_without_a_description_still_has_a_subtitle_while_installing() {
+        let mut rig = Rig::new().on(&["translate"]).to("fr");
+        rig.installing.insert("translate".into(), None);
+        assert_eq!(
+            rig.row("translate").subtitle(),
+            "Types your dictation in another language."
+        );
+        let mut bare = Rig::new().on(&["fit"]);
+        bare.catalog.clear();
+        bare.installing.insert("fit".into(), None);
+        let row = Row {
+            description: String::new(),
+            standing: Standing::Installing(None),
+            ..bare.row("fit")
+        };
+        assert_eq!(row.subtitle(), "Getting the model ready");
+    }
+
+    #[test]
+    fn only_pairs_the_source_can_reach_are_listed_and_the_source_is_never_a_target() {
+        let rig = Rig::new().on(&["translate"]);
+        let codes: Vec<String> = rig
+            .row("translate")
+            .translate
+            .unwrap()
+            .targets
+            .into_iter()
+            .map(|t| t.code)
+            .collect();
+        assert!(!codes.contains(&"en".to_owned()));
+        let mut empty_lang = Rig::new().on(&["translate"]);
+        empty_lang
+            .catalog
+            .push(entry("x", "translate", "translate", "", "", 1));
+        let codes: Vec<String> = empty_lang
+            .row("translate")
+            .translate
+            .unwrap()
+            .targets
+            .into_iter()
+            .map(|t| t.code)
+            .collect();
+        assert!(!codes.contains(&String::new()));
+    }
+
+    #[test]
+    fn an_offered_pair_from_another_source_is_not_an_installed_target() {
+        let mut rig = Rig::new().on(&["translate"]);
+        rig.daemon = Some(Offered {
+            translations: vec![("de".into(), "fr".into())],
+            ..Offered::default()
+        });
+        let fr = rig
+            .row("translate")
+            .translate
+            .unwrap()
+            .targets
+            .into_iter()
+            .find(|t| t.code == "fr")
+            .unwrap();
+        assert!(!fr.installed);
+    }
+
+    #[test]
+    fn the_users_language_comes_first_and_only_a_matching_one() {
+        let rig = Rig::new().on(&["translate"]);
+        let first = |locales: &[&str]| {
+            let locales: Vec<String> = locales.iter().map(|l| (*l).to_owned()).collect();
+            let rows = rows(&Inputs {
+                enabled: &rig.enabled,
+                params: &rig.params,
+                source: &rig.source,
+                catalog: &rig.catalog,
+                daemon: rig.daemon.as_ref(),
+                installing: &rig.installing,
+                preparing: &rig.preparing,
+                locales: &locales,
+            });
+            rows.into_iter()
+                .find(|r| r.id == "translate")
+                .unwrap()
+                .translate
+                .unwrap()
+                .targets[0]
+                .code
+                .clone()
+        };
+        assert_eq!(first(&["de_DE.UTF-8"]), "de");
+        assert_eq!(first(&["fr"]), "fr");
+        assert_eq!(first(&["xx"]), "de");
+    }
+
+    #[test]
+    fn a_step_with_an_any_input_is_never_dimmed_by_the_language() {
+        let mut rig = Rig::new().on(&["tidy"]);
+        rig.source = Source::One("fr".into());
+        rig.catalog[0].in_lang = "any".into();
+        assert!(!matches!(
+            rig.row("tidy").standing,
+            Standing::NotApplicable(_)
+        ));
+        rig.catalog[0].in_lang = String::new();
+        assert!(!matches!(
+            rig.row("tidy").standing,
+            Standing::NotApplicable(_)
+        ));
+    }
+
+    #[test]
     fn sizes_round_up_to_whole_megabytes() {
         assert_eq!(size(1), "1 MB");
         assert_eq!(size(24_000_001), "25 MB");
