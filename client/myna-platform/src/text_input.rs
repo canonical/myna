@@ -364,4 +364,22 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn format_characters_survive_while_controls_still_fold() {
+        let keep = [
+            "\u{0645}\u{06cc}\u{200c}\u{062e}\u{0648}\u{0627}\u{0647}\u{0645}",
+            "a\u{200d}b",
+            "\u{200f}\u{0633}\u{0644}\u{0627}\u{0645}\u{200f} hello \u{200e}",
+            "x\u{202a}y\u{202b}z\u{202c}\u{202d}\u{202e}",
+        ];
+        for input in keep {
+            assert_eq!(fold_control_chars(input), input, "input: {input:?}");
+        }
+        assert_eq!(fold_control_chars("a\u{200c}\nb"), "a\u{200c} b");
+        assert_eq!(
+            fold_control_chars("\u{200f}a\r\n\u{200e}b"),
+            "\u{200f}a \u{200e}b"
+        );
+    }
 }
