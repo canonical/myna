@@ -8,6 +8,7 @@ import json
 import pytest
 
 from myna.benchmarker import text_corpus, text_suite
+from myna.benchmarker.text_gate import GateConfig
 from myna.benchmarker.text_suite import Gate, System, evaluate, reference_rule
 
 ALL = sorted(text_suite.SUITES)
@@ -49,7 +50,7 @@ def test_the_gold_edits_pass_the_conservative_edit_check():
 
 def test_perfect_translation_passes_and_a_wrong_one_fails():
     rows = text_corpus.load().translate_en_fr
-    lookup = {r.en: r.fr for r in rows}
+    lookup = {r.en: r.target for r in rows}
     good = evaluate(System("oracle", translate=lookup.__getitem__), ["translate_en_fr"], 1)
     assert [g.status for g in good.gates] == ["pass", "pass"]
     assert gates(good)["translate_en_fr.chrf"].value == pytest.approx(1.0)
@@ -60,7 +61,7 @@ def test_perfect_translation_passes_and_a_wrong_one_fails():
 def test_translation_p95_gate_fails_a_slow_system(monkeypatch):
     ticks = iter(range(0, 10**7, 1))
     monkeypatch.setattr(text_suite.time, "perf_counter", lambda: next(ticks) * 0.5)
-    lookup = {r.en: r.fr for r in text_corpus.load().translate_en_fr}
+    lookup = {r.en: r.target for r in text_corpus.load().translate_en_fr}
     report = evaluate(System("slow", translate=lookup.__getitem__), ["translate_en_fr"], 1)
     p95 = gates(report)["translate_en_fr.p95_ms"]
     assert p95.value == 500.0 and p95.status == "fail"
@@ -137,6 +138,8 @@ def _args(tmp_path, **overrides):
         "repeats": 1,
         "json_out": None,
         "strict": False,
+        "plugin": None,
+        "socket": None,
     }
     return argparse.Namespace(**{**values, **overrides})
 
@@ -233,7 +236,7 @@ def test_a_negation_invented_by_the_system_is_a_flip():
 def test_translation_detail_and_latency_percentiles(monkeypatch, corpus):
     clock = iter(x for i in range(10**6) for x in (0.0, 0.0125))
     monkeypatch.setattr(text_suite.time, "perf_counter", lambda: next(clock))
-    lookup = {r.en: r.fr for r in corpus.translate_en_fr}
+    lookup = {r.en: r.target for r in corpus.translate_en_fr}
     report = evaluate(System("t", translate=lookup.__getitem__), ["translate_en_fr"], repeats=2)
     detail = report.detail["translate_en_fr"]
     assert detail["n"] == 200
@@ -288,11 +291,11 @@ def test_arguments_default_to_identity_over_every_suite():
     text_suite.add_arguments(parser)
     args = parser.parse_args([])
     assert (args.system, args.suite, args.repeats) == ("identity", None, 3)
-    assert (args.json_out, args.strict) == (None, False)
+    assert (args.json_out, args.strict, args.plugin, args.socket) == (None, False, None, None)
     args = parser.parse_args(["--suite", "clean_en", "--suite", "translate_en_fr", "--strict"])
     assert args.suite == ["clean_en", "translate_en_fr"] and args.strict
-    with pytest.raises(SystemExit):
-        parser.parse_args(["--suite", "nope"])
+    with pytest.raises(SystemExit, match="unknown suite"):
+        evaluate(text_suite.identity_system(), ["nope"], repeats=1)
 
 
 def test_cmd_text_runs_every_suite_by_default(capsys):
@@ -365,3 +368,125 @@ def test_repeats_set_the_number_of_warm_passes():
 
     evaluate(System("count", tidy=tidy), ["clean_en"], repeats=2)
     assert len(calls) == 200 * (1 + 2)
+
+
+def _de_lookup():
+    return {r.en: r.target for r in text_corpus.load().pairs["de"]}
+
+
+def test_a_pair_slice_gets_the_plugin_gate_and_the_degeneracy_gates():
+    gate = GateConfig(vendor_comet=0.85)
+    system = System("oracle", translate=_de_lookup().__getitem__)
+    report = evaluate(system, ["translate_en_de"], 1, {"translate_en_de": gate})
+    g = gates(report)
+    assert set(g) == {
+        f"translate_en_de.{m}"
+        for m in (
+            "chrf p95_ms empty_rate repeat_loop_rate length_ratio_min length_ratio_max "
+            "copy_through_rate vendor_comet"
+        ).split()
+    }
+    assert all(x.status == "pass" for x in report.gates)
+    assert g["translate_en_de.chrf"].limit == 0.40 and g["translate_en_de.chrf"].value == 1.0
+    assert g["translate_en_de.vendor_comet"].value == 0.85
+    assert g["translate_en_de.copy_through_rate"].limit == 0.05
+    hyps = report.detail["translate_en_de"]["hypotheses"]
+    assert len(hyps) == 200 and hyps[0]["hypothesis"] == _de_lookup()[hyps[0]["source"]]
+
+
+def test_a_pair_without_a_plugin_config_gets_the_two_legacy_gates():
+    system = System("oracle", translate=_de_lookup().__getitem__)
+    report = evaluate(system, ["translate_en_de"], 1)
+    assert [g.metric for g in report.gates] == ["chrf", "p95_ms"]
+    assert gates(report)["translate_en_de.chrf"].limit == 0.58
+    assert "hypotheses" not in report.detail["translate_en_de"]
+
+
+@pytest.mark.parametrize(
+    ("translate", "metric"),
+    [
+        (lambda t: "", "empty_rate"),
+        (lambda t: "la " * 12, "repeat_loop_rate"),
+        (lambda t: t, "copy_through_rate"),
+        (lambda t: "x", "length_ratio_min"),
+        (lambda t: t * 6, "length_ratio_max"),
+    ],
+)
+def test_each_degeneracy_gate_fails_its_own_failure_mode(translate, metric):
+    report = evaluate(
+        System("bad", translate=translate),
+        ["translate_en_de"],
+        1,
+        {"translate_en_de": GateConfig()},
+    )
+    assert gates(report)[f"translate_en_de.{metric}"].status == "fail"
+
+
+def test_a_low_vendor_comet_fails_the_gate_and_none_adds_no_gate():
+    system = System("oracle", translate=_de_lookup().__getitem__)
+    low = evaluate(
+        system, ["translate_en_de"], 1, {"translate_en_de": GateConfig(vendor_comet=0.79)}
+    )
+    assert gates(low)["translate_en_de.vendor_comet"].status == "fail"
+    none = evaluate(system, ["translate_en_de"], 1, {"translate_en_de": GateConfig()})
+    assert "translate_en_de.vendor_comet" not in gates(none)
+
+
+def test_a_reverse_plugin_translates_the_foreign_side_into_english():
+    lookup = {r.target: r.en for r in text_corpus.load().pairs["de"]}
+    report = evaluate(
+        System("oracle", translate=lookup.__getitem__),
+        ["translate_en_de"],
+        1,
+        {"translate_en_de": GateConfig(reverse=True)},
+    )
+    assert gates(report)["translate_en_de.chrf"].value == 1.0
+
+
+def test_a_system_without_translate_leaves_every_pair_gate_pending():
+    report = evaluate(
+        text_suite.identity_system(),
+        ["translate_en_de"],
+        1,
+        {"translate_en_de": GateConfig(vendor_comet=0.9)},
+    )
+    g = gates(report)
+    assert report.pending and not report.failed
+    assert g["translate_en_de.vendor_comet"].status == "pass"
+    assert {x.status for k, x in g.items() if not k.endswith("vendor_comet")} == {"pending"}
+
+
+def test_a_pair_with_no_slice_says_how_to_build_it():
+    with pytest.raises(SystemExit, match="--pair en:xx"):
+        evaluate(System("t", translate=str), ["translate_en_xx"], 1)
+
+
+def test_plugin_plan_picks_the_slice_and_the_gate_of_the_plugin_file():
+    suites, plan = text_suite.plugin_plan(
+        {"task": "text.translate", "language": "en", "to": "de", "gate": {"p95_max_ms": 200}}
+    )
+    assert suites == ["translate_en_de"] and plan["translate_en_de"].p95_max_ms == 200
+    assert text_suite.plugin_plan({"task": "text.cleanup"}) == (["clean_en", "disfluent_en"], {})
+
+
+def test_cmd_text_with_a_plugin_and_a_socket_scores_that_model(tmp_path, capsys, monkeypatch):
+    plugin = tmp_path / "translate-en-de.toml"
+    plugin.write_text(
+        'id = "m"\ntask = "text.translate"\nlanguage = "en"\nto = "de"\n[gate]\nchrf_min = 0.9\n',
+        encoding="utf-8",
+    )
+    lookup = _de_lookup()
+    monkeypatch.setattr(
+        text_suite,
+        "socket_system",
+        lambda path, model: System(f"socket:{model}@{path}", translate=lookup.__getitem__),
+    )
+    text_suite.cmd_text(_args(tmp_path, plugin=str(plugin), socket="/run/x.sock"))
+    out = capsys.readouterr().out
+    assert "system: socket:m@/run/x.sock" in out
+    assert "PASS    translate_en_de.chrf = 1  (gate >= 0.9)" in out
+
+
+def test_cmd_text_socket_without_a_plugin_is_refused(tmp_path):
+    with pytest.raises(SystemExit, match="--plugin"):
+        text_suite.cmd_text(_args(tmp_path, socket="/run/x.sock"))

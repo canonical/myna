@@ -10,6 +10,9 @@ Scores a text system (a cleanup step, a translator) on the vendored corpus
                     zero polarity flips, ``Check::ConservativeEdit`` false-
                     reject rate <= 5% on the corpus's own gold edits.
 ``translate_en_fr`` corpus chrF >= 0.58 and warm p95 latency < 400 ms.
+``translate_en_<l>`` any other pair slice; its gate is the plugin's
+                    ``[gate]`` table (``--plugin``, see ``text_gate``): chrF,
+                    p95, and the degeneracy rates.
 
 A gate on a task the system does not offer is ``pending``, never a pass. A
 system is an object with optional ``tidy(text) -> str`` and
@@ -31,12 +34,17 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from myna.benchmarker import text_corpus
+from myna.benchmarker.text_gate import GateConfig, find_plugin, load_plugin, pair_of, socket_system
 from myna.benchmarker.text_metrics import (
     chrf,
     conservative_edit_violation,
+    copy_through_rate,
     edit_distance,
+    empty_rate,
+    median_length_ratio,
     percentile,
     polarity_flip,
+    repeat_loop_rate,
 )
 
 UER_MAX = 0.01
@@ -273,21 +281,58 @@ def eval_disfluent(
 
 
 def eval_translate(
-    system: System, corpus: text_corpus.TextCorpus, repeats: int
+    system: System,
+    corpus: text_corpus.TextCorpus,
+    repeats: int,
+    lang: str = "fr",
+    gate: GateConfig | None = None,
 ) -> tuple[list[Gate], dict[str, Any]]:
+    suite = text_corpus.pair_slice(lang)
+    chrf_limit = gate.chrf_limit() if gate else CHRF_MIN
+    p95_limit = gate.p95_max_ms if gate else P95_MAX_MS
+    gates = [Gate(suite, "chrf", None, chrf_limit, ">=")]
+    gates.append(Gate(suite, "p95_ms", None, p95_limit, "<"))
+    if gate:
+        gates += [
+            Gate(suite, "empty_rate", None, gate.empty_max, "<="),
+            Gate(suite, "repeat_loop_rate", None, gate.repeat_max, "<="),
+            Gate(suite, "length_ratio_min", None, gate.ratio_min, ">="),
+            Gate(suite, "length_ratio_max", None, gate.ratio_max, "<="),
+            Gate(suite, "copy_through_rate", None, gate.copy_max, "<="),
+        ]
+    if gate and gate.vendor_comet is not None:
+        gates.append(Gate(suite, "vendor_comet", gate.vendor_comet, gate.comet_min, ">="))
     if system.translate is None:
-        return [
-            Gate("translate_en_fr", "chrf", None, CHRF_MIN, ">=").decide(),
-            Gate("translate_en_fr", "p95_ms", None, P95_MAX_MS, "<").decide(),
-        ], {}
-    rows = corpus.translate_en_fr
-    outputs, millis = _timed(system.translate, [r.en for r in rows], repeats)
-    score = chrf(outputs, [r.fr for r in rows])
+        return [g.decide() for g in gates], {}
+    rows = corpus.pairs.get(lang)
+    if rows is None:
+        raise SystemExit(f"no corpus slice {suite}: myna-bench build-text-corpus --pair en:{lang}")
+    sources = [r.target if gate and gate.reverse else r.en for r in rows]
+    refs = [r.en if gate and gate.reverse else r.target for r in rows]
+    outputs, millis = _timed(system.translate, sources, repeats)
     latency = _latency(millis)
-    return [
-        Gate("translate_en_fr", "chrf", score, CHRF_MIN, ">=").decide(),
-        Gate("translate_en_fr", "p95_ms", latency["p95"], P95_MAX_MS, "<").decide(),
-    ], {"n": len(rows), "latency_ms": latency}
+    ratio = median_length_ratio(outputs, refs)
+    values = {
+        "chrf": chrf(outputs, refs),
+        "p95_ms": latency["p95"],
+        "empty_rate": empty_rate(outputs),
+        "repeat_loop_rate": repeat_loop_rate(outputs),
+        "length_ratio_min": ratio,
+        "length_ratio_max": ratio,
+        "copy_through_rate": copy_through_rate(outputs, sources),
+    }
+    for g in gates:
+        if g.metric in values:
+            g.value = values[g.metric]
+        g.decide()
+    detail: dict[str, Any] = {"n": len(rows), "latency_ms": latency}
+    if gate:
+        detail["vendor_comet"] = gate.vendor_comet
+        detail["hypotheses"] = [
+            {"id": r.id, "source": s, "hypothesis": o}
+            for r, s, o in zip(rows, sources, outputs, strict=True)
+        ]
+    return gates, detail
 
 
 def _latency(millis: list[float]) -> dict[str, float]:
@@ -297,12 +342,32 @@ def _latency(millis: list[float]) -> dict[str, float]:
 SUITES = {"clean_en": eval_clean, "disfluent_en": eval_disfluent, "translate_en_fr": eval_translate}
 
 
-def evaluate(system: System, suites: list[str], repeats: int = 3) -> Report:
+def _run_suite(
+    name: str,
+    system: System,
+    corpus: text_corpus.TextCorpus,
+    repeats: int,
+    gate: GateConfig | None,
+) -> tuple[list[Gate], dict[str, Any]]:
+    if name in ("clean_en", "disfluent_en"):
+        return SUITES[name](system, corpus, repeats)
+    match = text_corpus.PAIR_RE.fullmatch(name)
+    if not match:
+        raise SystemExit(f"unknown suite {name!r}")
+    return eval_translate(system, corpus, repeats, match[1], gate)
+
+
+def evaluate(
+    system: System,
+    suites: list[str],
+    repeats: int = 3,
+    gates: dict[str, GateConfig] | None = None,
+) -> Report:
     corpus = text_corpus.load()
     report = Report(system.name)
     for name in suites:
-        gates, detail = SUITES[name](system, corpus, repeats)
-        report.gates.extend(gates)
+        suite_gates, detail = _run_suite(name, system, corpus, repeats, (gates or {}).get(name))
+        report.gates.extend(suite_gates)
         report.detail[name] = detail
     return report
 
@@ -334,6 +399,14 @@ def to_json(report: Report) -> dict[str, Any]:
     }
 
 
+def plugin_plan(plugin: dict[str, Any]) -> tuple[list[str], dict[str, GateConfig]]:
+    """The suites a plugin is graded on and the gate config of its pair slice."""
+    if plugin.get("task") == "text.cleanup":
+        return ["clean_en", "disfluent_en"], {}
+    suite = text_corpus.pair_slice(pair_of(plugin))
+    return [suite], {suite: GateConfig.from_plugin(plugin)}
+
+
 def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--system",
@@ -343,8 +416,15 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--suite",
         action="append",
-        choices=sorted(SUITES),
-        help="suite to run (repeatable; default all three)",
+        help="suite to run: clean_en, disfluent_en or translate_en_<l> (repeatable; "
+        "default clean_en, disfluent_en and translate_en_fr)",
+    )
+    parser.add_argument(
+        "--plugin",
+        help="a plugin file or id: grade it on its own slice with the gate config of its file",
+    )
+    parser.add_argument(
+        "--socket", help="with --plugin: score the plugin's model on this running provider socket"
     )
     parser.add_argument("--repeats", type=int, default=3, help="warm latency passes (default 3)")
     parser.add_argument("--json", dest="json_out", help="also write the full report here")
@@ -352,8 +432,22 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
 
 
 def cmd_text(args: argparse.Namespace) -> None:
-    system = load_system(args.system)
-    report = evaluate(system, args.suite or sorted(SUITES), args.repeats)
+    gates: dict[str, GateConfig] = {}
+    suites = args.suite or sorted(SUITES)
+    system_spec = args.system
+    system: System | None = None
+    if args.plugin:
+        from pathlib import Path
+
+        repo = Path(__file__).resolve().parents[4]
+        plugin = load_plugin(find_plugin(repo, args.plugin))
+        plugin_suites, gates = plugin_plan(plugin)
+        suites = args.suite or plugin_suites
+        if args.socket:
+            system = socket_system(args.socket, plugin["id"])
+    elif args.socket:
+        raise SystemExit("--socket needs --plugin to name the model")
+    report = evaluate(system or load_system(system_spec), suites, args.repeats, gates)
     print(format_report(report))
     if args.json_out:
         with open(args.json_out, "w", encoding="utf-8") as handle:
