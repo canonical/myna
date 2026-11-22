@@ -623,6 +623,11 @@ mod tests {
                 needs_restart: false
             }
         );
+        // The same answer is not published again, a different one is.
+        let mut seen = resolver.status();
+        seen.borrow_and_update();
+        resolver.settle(&requests).await;
+        assert!(!seen.has_changed().unwrap());
         share(
             &dir,
             "marian",
@@ -630,6 +635,7 @@ mod tests {
             Mode::Works,
         );
         resolver.settle(&requests).await;
+        assert!(seen.has_changed().unwrap());
         assert_eq!(*resolver.status().borrow(), ChainStatus::Ready);
         std::fs::remove_dir_all(&dir).unwrap();
     }
