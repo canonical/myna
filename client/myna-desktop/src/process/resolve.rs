@@ -18,12 +18,23 @@ use async_trait::async_trait;
 use myna_orchestrator::backend::share::{resolve_text_shares, TextProvider, TextShareKind};
 use tokio::sync::watch;
 
+use super::openai;
 use super::pipeline::{Answer, ModelError, Models, Prefer, Request};
 use super::wire::{self, Capability, WireError};
+
+/// How a share is spoken to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Via {
+    /// `myna-text-v1`.
+    Myna,
+    /// OpenAI chat over the socket, prompted by a compiled recipe.
+    Chat,
+}
 
 /// A model of a connected share that might serve a request.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Candidate {
+    pub via: Via,
     pub socket: PathBuf,
     pub share: String,
     pub capability: Capability,
@@ -69,8 +80,24 @@ pub enum ChainStatus {
     },
 }
 
+/// What a chat model is warmed with: a short dictation like the real ones.
+const WARM_TEXT: &str = "Um, so I I think we should meet on Tuesday, no, Wednesday.";
+
+async fn chat(
+    socket: &std::path::Path,
+    model: &str,
+    request: &Request,
+    text: &str,
+    within: Duration,
+) -> Result<String, WireError> {
+    let system = openai::system_prompt(&request.task, &request.params)
+        .ok_or_else(|| WireError::Refused("no recipe".into()))?;
+    openai::complete(socket, model, &system, text, within).await
+}
+
 #[derive(Clone)]
 struct Binding {
+    via: Via,
     socket: PathBuf,
     share: String,
     model: String,
@@ -137,26 +164,33 @@ impl Resolver {
         for dir in &self.0.dirs {
             let shares = resolve_text_shares(dir);
             needs_restart |= shares.needs_restart();
-            providers.extend(
-                shares
-                    .providers
-                    .into_iter()
-                    .filter(|p| p.kind == TextShareKind::MynaText),
-            );
+            providers.extend(shares.providers);
         }
         let mut out = Vec::new();
         for provider in providers {
-            match wire::capabilities(&provider.socket, within).await {
-                Ok(caps) => out.extend(caps.models.into_iter().map(|capability| Candidate {
+            let share = provider.snap_name.clone();
+            let found = match provider.kind {
+                TextShareKind::MynaText => wire::capabilities(&provider.socket, within)
+                    .await
+                    .map(|caps| (Via::Myna, caps.models)),
+                // Unlabelled: whatever it is, ask it as a chat server.
+                TextShareKind::Unlabelled => {
+                    openai::models(&provider.socket, within).await.map(|ids| {
+                        (
+                            Via::Chat,
+                            ids.iter().flat_map(|id| openai::capabilities(id)).collect(),
+                        )
+                    })
+                }
+            };
+            match found {
+                Ok((via, models)) => out.extend(models.into_iter().map(|capability| Candidate {
+                    via,
                     socket: provider.socket.clone(),
-                    share: provider.snap_name.clone(),
+                    share: share.clone(),
                     capability,
                 })),
-                Err(e) => myna_core::info_log!(
-                    "process",
-                    "{}: no capabilities ({e:?})",
-                    provider.snap_name
-                ),
+                Err(e) => myna_core::info_log!("process", "{share}: no models ({e:?})"),
             }
         }
         (out, needs_restart)
@@ -173,17 +207,31 @@ impl Resolver {
         }
         let (candidates, needs_restart) = self.candidates(request.bind_budget).await;
         for candidate in rank(request, candidates).into_iter().take(2) {
-            let warmed = wire::warm(
-                &candidate.socket,
-                &candidate.capability.id,
-                &request.task,
-                &request.params,
-                request.bind_budget,
-            )
-            .await;
+            let warmed = match candidate.via {
+                Via::Myna => {
+                    wire::warm(
+                        &candidate.socket,
+                        &candidate.capability.id,
+                        &request.task,
+                        &request.params,
+                        request.bind_budget,
+                    )
+                    .await
+                }
+                Via::Chat => chat(
+                    &candidate.socket,
+                    &candidate.capability.id,
+                    request,
+                    WARM_TEXT,
+                    request.bind_budget,
+                )
+                .await
+                .map(|_| ()),
+            };
             match warmed {
                 Ok(()) => {
                     let binding = Binding {
+                        via: candidate.via,
                         socket: candidate.socket,
                         share: candidate.share,
                         model: candidate.capability.id,
@@ -253,15 +301,29 @@ impl Models for Resolver {
                 .0
                 .ok_or_else(|| ModelError::Unavailable("no model covers the request".into()))?,
         };
-        let run = wire::run(
-            &binding.socket,
-            &binding.model,
-            &request.task,
-            &request.params,
-            text,
-            request.run_budget,
-        )
-        .await;
+        let run = match binding.via {
+            Via::Myna => {
+                wire::run(
+                    &binding.socket,
+                    &binding.model,
+                    &request.task,
+                    &request.params,
+                    text,
+                    request.run_budget,
+                )
+                .await
+            }
+            Via::Chat => {
+                chat(
+                    &binding.socket,
+                    &binding.model,
+                    request,
+                    text,
+                    request.run_budget,
+                )
+                .await
+            }
+        };
         match run {
             Ok(text) => Ok(Answer {
                 text,
@@ -305,6 +367,7 @@ mod tests {
 
     fn cap(id: &str, task: &str, latency: Option<u64>, quality: Option<f64>) -> Candidate {
         Candidate {
+            via: Via::Myna,
             socket: "/s".into(),
             share: "share".into(),
             capability: serde_json::from_value(json!({
@@ -671,6 +734,81 @@ mod tests {
             Err(ModelError::Refused(why)) if why == "cannot"
         ));
         assert_eq!(bound(&resolver, &request).as_deref(), Some("tagger/a"));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// An unlabelled share serving OpenAI chat: every request is answered
+    /// with a completion that upper-cases the user message.
+    fn chat_share(root: &Path, name: &str, model: &'static str) -> Arc<AtomicUsize> {
+        let dir = root.join(name);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("provider.env"),
+            format!("SNAP_NAME={name}\nUNIX_SOCKET=chat.sock\n"),
+        )
+        .unwrap();
+        let listener = UnixListener::bind(dir.join("chat.sock")).unwrap();
+        let completions = Arc::new(AtomicUsize::new(0));
+        let counted = completions.clone();
+        tokio::spawn(async move {
+            loop {
+                let Ok((mut stream, _)) = listener.accept().await else {
+                    return;
+                };
+                let counted = counted.clone();
+                tokio::spawn(async move {
+                    let mut buf = vec![0; 16384];
+                    let n = tokio::io::AsyncReadExt::read(&mut stream, &mut buf)
+                        .await
+                        .unwrap();
+                    let request = String::from_utf8_lossy(&buf[..n]).into_owned();
+                    let body = if request.starts_with("GET /v1/models") {
+                        json!({"data": [{"id": model}]}).to_string()
+                    } else {
+                        counted.fetch_add(1, Ordering::SeqCst);
+                        let json = &request[request.find("\r\n\r\n").unwrap() + 4..];
+                        let sent: Value = serde_json::from_str(json).unwrap();
+                        let user = sent["messages"][1]["content"]
+                            .as_str()
+                            .unwrap()
+                            .to_uppercase();
+                        json!({"choices": [{"message": {"content": user}}]}).to_string()
+                    };
+                    let reply = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{body}",
+                        body.len()
+                    );
+                    stream.write_all(reply.as_bytes()).await.unwrap();
+                });
+            }
+        });
+        completions
+    }
+
+    #[tokio::test]
+    async fn a_chat_share_serves_what_its_recipes_cover_and_loses_to_a_faster_model() {
+        let dir = root("chat");
+        let completions = chat_share(&dir, "gemma4", "gemma4-e4b");
+        let mut resolver = Resolver::new(vec![dir.clone()]);
+        let translate = Request::translate("en", "fr");
+        let answer = resolver.run(&translate, "hello").await.unwrap();
+        assert_eq!(answer.text, "HELLO");
+        assert_eq!(answer.model.as_deref(), Some("gemma4/gemma4-e4b"));
+        // One completion to warm, one to run.
+        assert_eq!(completions.load(Ordering::SeqCst), 2);
+        // Cleanup has a 1 s budget and a chat model takes longer than that.
+        let cleanup = Request::cleanup(None);
+        assert!(resolver.run(&cleanup, "um hello").await.is_err());
+        share(
+            &dir,
+            "marian",
+            json!([model("m", "text.translate", 90)]),
+            Mode::Works,
+        );
+        let faster = Request::translate("en", "fr");
+        resolver.evict(&faster.key());
+        let answer = resolver.run(&faster, "hello").await.unwrap();
+        assert_eq!(answer.model.as_deref(), Some("marian/m"));
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }
