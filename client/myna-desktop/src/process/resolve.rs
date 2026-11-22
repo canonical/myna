@@ -195,6 +195,11 @@ struct Inner {
     /// Directories of shares, searched afresh at every bind: a share comes
     /// and goes under a `snap connect` or a refresh.
     dirs: Vec<PathBuf>,
+    /// Directories whose shares are bound whatever snap provides them
+    /// (`MYNA_TEXT_SHARES`).
+    open_dirs: Vec<PathBuf>,
+    /// Snaps already logged as not on the allow-list.
+    ignored: Mutex<BTreeSet<String>>,
     bound: Mutex<HashMap<String, Binding>>,
     /// One bind at a time, so a press and the background binder cannot both
     /// load the same model.
@@ -212,9 +217,22 @@ struct Inner {
 pub struct Resolver(Arc<Inner>);
 
 impl Resolver {
+    /// Binds only the shares of curated snaps found under `dirs`.
     pub fn new(dirs: Vec<PathBuf>) -> Self {
+        Self::with_open(dirs, Vec::new())
+    }
+
+    /// Binds every share found under `dirs`, whatever snap provides it.
+    pub fn open(dirs: Vec<PathBuf>) -> Self {
+        Self::with_open(Vec::new(), dirs)
+    }
+
+    /// [`Resolver::new`] for `dirs`, and every share under `open_dirs`.
+    pub fn with_open(dirs: Vec<PathBuf>, open_dirs: Vec<PathBuf>) -> Self {
         Self(Arc::new(Inner {
             dirs,
+            open_dirs,
+            ignored: Mutex::default(),
             bound: Mutex::default(),
             binding: tokio::sync::Mutex::new(()),
             failed: Mutex::default(),
@@ -247,7 +265,7 @@ impl Resolver {
         let mtime =
             |path: &std::path::Path| std::fs::metadata(path).and_then(|m| m.modified()).ok();
         let mut seen = Vec::new();
-        for dir in &self.0.dirs {
+        for dir in self.0.dirs.iter().chain(&self.0.open_dirs) {
             seen.push((dir.clone(), mtime(dir)));
             let Ok(shares) = std::fs::read_dir(dir) else {
                 continue;
@@ -320,6 +338,18 @@ impl Resolver {
             .remove(key);
     }
 
+    fn ignore(&self, snap: &str) {
+        let first = self
+            .0
+            .ignored
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .insert(snap.to_string());
+        if first {
+            myna_core::info_log!("process", "{snap}: not a curated text provider, ignored");
+        }
+    }
+
     /// Every candidate of every connected Myna text share, whether a
     /// share is connected that this process cannot see yet, and the shares
     /// that answered.
@@ -327,6 +357,16 @@ impl Resolver {
         let mut providers: Vec<TextProvider> = Vec::new();
         let mut needs_restart = false;
         for dir in &self.0.dirs {
+            let shares = resolve_text_shares(dir);
+            needs_restart |= shares.needs_restart();
+            providers.extend(shares.providers.into_iter().filter(|p| {
+                p.is_curated() || {
+                    self.ignore(&p.snap_name);
+                    false
+                }
+            }));
+        }
+        for dir in &self.0.open_dirs {
             let shares = resolve_text_shares(dir);
             needs_restart |= shares.needs_restart();
             providers.extend(shares.providers);
@@ -786,7 +826,7 @@ mod tests {
             json!([model("b", "text.cleanup", 50)]),
             Mode::Works,
         );
-        let resolver = Resolver::new(vec![dir.clone()]);
+        let resolver = Resolver::open(vec![dir.clone()]);
         let request = Request::cleanup(Some("en".into()));
         resolver.settle(std::slice::from_ref(&request)).await;
         assert_eq!(bound(&resolver, &request).as_deref(), Some("fast/a"));
@@ -814,7 +854,7 @@ mod tests {
             json!([model("b", "text.cleanup", 50)]),
             Mode::Works,
         );
-        let resolver = Resolver::new(vec![dir.clone()]);
+        let resolver = Resolver::open(vec![dir.clone()]);
         let request = Request::cleanup(None);
         resolver.settle(std::slice::from_ref(&request)).await;
         assert_eq!(bound(&resolver, &request).as_deref(), Some("b/b"));
@@ -843,7 +883,7 @@ mod tests {
             json!([model("b", "text.cleanup", 50)]),
             Mode::Works,
         );
-        let resolver = Resolver::new(vec![dir.clone()]);
+        let resolver = Resolver::open(vec![dir.clone()]);
         let mut request = Request::cleanup(None);
         request.bind_budget = Duration::from_millis(200);
         resolver.settle(std::slice::from_ref(&request)).await;
@@ -862,7 +902,7 @@ mod tests {
             };
             share(&dir, n, json!([model(n, "text.cleanup", ms)]), mode)
         });
-        let resolver = Resolver::new(vec![dir.clone()]);
+        let resolver = Resolver::open(vec![dir.clone()]);
         let request = Request::cleanup(None);
         resolver.settle(std::slice::from_ref(&request)).await;
         assert!(bound(&resolver, &request).is_none());
@@ -885,7 +925,7 @@ mod tests {
             json!([model("bergamot-base-memory-en-fr", "text.translate", 25)]),
             Mode::Works,
         );
-        let resolver = Resolver::new(vec![dir.clone()]);
+        let resolver = Resolver::open(vec![dir.clone()]);
         let cleanup = Request::cleanup(Some("en".into()));
         let translate = Request::translate("en", "fr");
         resolver.settle(&[cleanup.clone(), translate.clone()]).await;
@@ -912,7 +952,7 @@ mod tests {
             json!([model("a", "text.cleanup", 5)]),
             Mode::Works,
         );
-        let resolver = Resolver::new(vec![dir.clone()]);
+        let resolver = Resolver::open(vec![dir.clone()]);
         let requests = [Request::cleanup(None), Request::translate("en", "fr")];
         resolver.settle(&requests).await;
         assert_eq!(
@@ -947,7 +987,7 @@ mod tests {
         let mut known = model("known", "text.cleanup", 50);
         known["class"] = json!("edit");
         share(&dir, "odd", json!([odd]), Mode::Works);
-        let resolver = Resolver::new(vec![dir.clone()]);
+        let resolver = Resolver::open(vec![dir.clone()]);
         let request = Request::cleanup(None);
         resolver.settle(std::slice::from_ref(&request)).await;
         assert_eq!(bound(&resolver, &request), None);
@@ -968,7 +1008,7 @@ mod tests {
     async fn a_share_connected_after_start_asks_for_a_restart() {
         let dir = root("restart");
         std::fs::create_dir_all(dir.join("late")).unwrap();
-        let resolver = Resolver::new(vec![dir.clone()]);
+        let resolver = Resolver::open(vec![dir.clone()]);
         resolver.settle(&[Request::cleanup(None)]).await;
         assert_eq!(
             *resolver.status().borrow(),
@@ -989,7 +1029,7 @@ mod tests {
             json!([model("a", "text.cleanup", 5)]),
             Mode::Works,
         );
-        let mut resolver = Resolver::new(vec![dir.clone()]);
+        let mut resolver = Resolver::open(vec![dir.clone()]);
         let request = Request::cleanup(None);
         let answer = resolver.run(&request, "hi").await.unwrap();
         assert_eq!(answer.text, "hi!");
@@ -1019,7 +1059,7 @@ mod tests {
             json!([model("a", "text.cleanup", 5)]),
             Mode::Works,
         );
-        let mut resolver = Resolver::new(vec![dir.clone()]);
+        let mut resolver = Resolver::open(vec![dir.clone()]);
         let request = Request::cleanup(None);
         resolver.settle(std::slice::from_ref(&request)).await;
         std::fs::remove_file(first.dir.join("text.sock")).unwrap();
@@ -1056,7 +1096,7 @@ mod tests {
             json!([model("a", "text.cleanup", 5)]),
             Mode::RunRefuses,
         );
-        let mut resolver = Resolver::new(vec![dir.clone()]);
+        let mut resolver = Resolver::open(vec![dir.clone()]);
         let request = Request::cleanup(None);
         resolver.settle(std::slice::from_ref(&request)).await;
         assert!(matches!(
@@ -1076,7 +1116,7 @@ mod tests {
             json!([model("a", "text.cleanup", 5)]),
             Mode::RunHangs,
         );
-        let mut resolver = Resolver::new(vec![dir.clone()]);
+        let mut resolver = Resolver::open(vec![dir.clone()]);
         let mut request = Request::cleanup(None);
         request.run_budget = Duration::from_millis(100);
         resolver.settle(std::slice::from_ref(&request)).await;
@@ -1100,7 +1140,7 @@ mod tests {
             json!([model("a", "text.cleanup", 5)]),
             Mode::WarmFails,
         );
-        let mut resolver = Resolver::new(vec![dir.clone()]);
+        let mut resolver = Resolver::open(vec![dir.clone()]);
         let request = Request::cleanup(None);
         for _ in 0..3 {
             assert!(matches!(
@@ -1124,7 +1164,7 @@ mod tests {
             json!([model("a", "text.cleanup", 5)]),
             Mode::WarmHangs,
         );
-        let mut resolver = Resolver::new(vec![dir.clone()]);
+        let mut resolver = Resolver::open(vec![dir.clone()]);
         let mut request = Request::cleanup(None);
         request.bind_budget = Duration::from_millis(600);
         resolver.prepare(std::slice::from_ref(&request));
@@ -1190,7 +1230,7 @@ mod tests {
     async fn a_chat_share_serves_what_its_recipes_cover_and_loses_to_a_faster_model() {
         let dir = root("chat");
         let completions = chat_share(&dir, "gemma4", "gemma4-e4b");
-        let mut resolver = Resolver::new(vec![dir.clone()]);
+        let mut resolver = Resolver::open(vec![dir.clone()]);
         let translate = Request::translate("en", "fr");
         let answer = resolver.run(&translate, "hello").await.unwrap();
         assert_eq!(answer.text, "HELLO");
@@ -1228,7 +1268,7 @@ mod tests {
             json!([model("fr", "text.translate", 10)]),
             Mode::Works,
         );
-        let resolver = Resolver::new(vec![dir.clone()]);
+        let resolver = Resolver::open(vec![dir.clone()]);
         let want = [
             Request::cleanup(Some("en".into())),
             Request::translate("en", "fr"),
@@ -1271,7 +1311,7 @@ mod tests {
             json!([model("tagger", "text.cleanup", 5)]),
             Mode::Works,
         );
-        let resolver = Resolver::new(vec![dir.clone()]);
+        let resolver = Resolver::open(vec![dir.clone()]);
         let request = Request::cleanup(Some("en".into()));
         resolver.settle(std::slice::from_ref(&request)).await;
         assert!(bound(&resolver, &request).is_some());
@@ -1298,7 +1338,7 @@ mod tests {
     #[tokio::test]
     async fn the_signature_moves_with_a_share_and_steps_publish_once() {
         let dir = root("signature");
-        let resolver = Resolver::new(vec![dir.clone()]);
+        let resolver = Resolver::open(vec![dir.clone()]);
         let empty = resolver.signature();
         assert_eq!(resolver.signature(), empty);
         let s = share(&dir, "a", json!([]), Mode::Works);
@@ -1311,7 +1351,7 @@ mod tests {
         )
         .unwrap();
         assert_ne!(resolver.signature(), one);
-        assert!(Resolver::new(vec![dir.join("none")]).signature().len() == 1);
+        assert!(Resolver::open(vec![dir.join("none")]).signature().len() == 1);
 
         let mut seen = resolver.catalog();
         seen.borrow_and_update();
@@ -1331,7 +1371,7 @@ mod tests {
     async fn a_component_appearing_flips_the_chain_to_ready_without_a_call() {
         let dir = root("watch");
         let s = share(&dir, "myna-translation", json!([]), Mode::Works);
-        let resolver = Resolver::new(vec![dir.clone()]);
+        let resolver = Resolver::open(vec![dir.clone()]);
         let wake = Arc::new(tokio::sync::Notify::new());
         let ran = Arc::new(AtomicUsize::new(0));
         let watcher = {
@@ -1393,7 +1433,7 @@ mod tests {
     #[tokio::test]
     async fn a_still_unbound_request_is_retried_after_the_retry_interval() {
         let dir = root("retry");
-        let resolver = Resolver::new(vec![dir.clone()]);
+        let resolver = Resolver::open(vec![dir.clone()]);
         let wake = Arc::new(tokio::sync::Notify::new());
         let ran = Arc::new(AtomicUsize::new(0));
         let watcher = {
@@ -1441,7 +1481,7 @@ mod tests {
             json!([model("m", "text.cleanup", 50)]),
             Mode::Works,
         );
-        let resolver = Resolver::new(vec![dir.clone()]);
+        let resolver = Resolver::open(vec![dir.clone()]);
         let request = Request::cleanup(Some("en".into()));
         resolver.settle(std::slice::from_ref(&request)).await;
         assert_eq!(bound(&resolver, &request).as_deref(), Some("a/m"));
@@ -1455,7 +1495,7 @@ mod tests {
     async fn the_catalog_is_published_when_the_models_change_and_not_otherwise() {
         let dir = root("catalog-change");
         let s = share(&dir, "a", json!([]), Mode::Works);
-        let resolver = Resolver::new(vec![dir.clone()]);
+        let resolver = Resolver::open(vec![dir.clone()]);
         let mut seen = resolver.catalog();
         seen.borrow_and_update();
         resolver.settle(&[]).await;
@@ -1467,5 +1507,129 @@ mod tests {
         resolver.settle(&[]).await;
         assert!(!seen.has_changed().unwrap());
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    fn spoofed(root: &Path, dir: &str, snap: &str) {
+        let share = share(
+            root,
+            dir,
+            json!([model("t", "text.cleanup", 5)]),
+            Mode::Works,
+        );
+        drop(share);
+        std::fs::write(
+            root.join(dir).join("provider.env"),
+            format!("SNAP_NAME={snap}\nMYNA_ROLE=text\nUNIX_SOCKET=text.sock\n"),
+        )
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn only_curated_snaps_are_bound() {
+        let dir = root("curated");
+        share(
+            &dir,
+            "myna-text",
+            json!([model("tagger", "text.cleanup", 5)]),
+            Mode::Works,
+        );
+        share(
+            &dir,
+            "myna-translation",
+            json!([model("fr", "text.translate", 10)]),
+            Mode::Works,
+        );
+        share(
+            &dir,
+            "evil",
+            json!([model("e", "text.cleanup", 1)]),
+            Mode::Works,
+        );
+        chat_share(&dir, "gemma4", "gemma4-e4b");
+        chat_share(&dir, "qwen3", "qwen3-chat");
+        let resolver = Resolver::new(vec![dir.clone()]);
+        let want = [Request::cleanup(None), Request::translate("en", "fr")];
+        resolver.settle(&want).await;
+        assert_eq!(
+            resolver.bound_to(&want[0]).as_deref(),
+            Some("myna-text/tagger")
+        );
+        assert_eq!(
+            resolver.bound_to(&want[1]).as_deref(),
+            Some("myna-translation/fr")
+        );
+        let shares: BTreeSet<String> = resolver
+            .catalog()
+            .borrow()
+            .models
+            .iter()
+            .map(|m| m.share.clone())
+            .collect();
+        assert_eq!(
+            shares,
+            ["gemma4", "myna-text", "myna-translation"]
+                .map(String::from)
+                .into()
+        );
+        assert_eq!(*resolver.status().borrow(), ChainStatus::Ready);
+    }
+
+    #[tokio::test]
+    async fn an_ignored_share_neither_degrades_the_chain_nor_asks_for_a_restart() {
+        let dir = root("ignored");
+        share(
+            &dir,
+            "evil",
+            json!([model("e", "text.cleanup", 1)]),
+            Mode::Works,
+        );
+        let resolver = Resolver::new(vec![dir.clone()]);
+        let request = Request::cleanup(None);
+        let (candidates, needs_restart, answered) = resolver.candidates(request.bind_budget).await;
+        assert!(candidates.is_empty() && !needs_restart && answered.is_empty());
+        assert!(resolver.0.ignored.lock().unwrap().contains("evil"));
+        assert!(resolver.bound_to(&request).is_none());
+    }
+
+    #[tokio::test]
+    async fn a_dev_share_dir_bypasses_the_list() {
+        let dir = root("open-dir");
+        let open = root("open-extra");
+        share(
+            &dir,
+            "evil",
+            json!([model("e", "text.cleanup", 1)]),
+            Mode::Works,
+        );
+        share(
+            &open,
+            "mine",
+            json!([model("m", "text.cleanup", 2)]),
+            Mode::Works,
+        );
+        let resolver = Resolver::with_open(vec![dir.clone()], vec![open.clone()]);
+        let request = Request::cleanup(None);
+        resolver.settle(std::slice::from_ref(&request)).await;
+        assert_eq!(resolver.bound_to(&request).as_deref(), Some("mine/m"));
+        let shares: BTreeSet<String> = resolver
+            .catalog()
+            .borrow()
+            .models
+            .iter()
+            .map(|m| m.share.clone())
+            .collect();
+        assert_eq!(shares, ["mine".to_string()].into());
+    }
+
+    #[tokio::test]
+    async fn the_name_is_the_one_provider_env_declares() {
+        let dir = root("spoof");
+        spoofed(&dir, "myna-text", "evil");
+        spoofed(&dir, "elsewhere", "myna-text");
+        let resolver = Resolver::new(vec![dir.clone()]);
+        let request = Request::cleanup(None);
+        resolver.settle(std::slice::from_ref(&request)).await;
+        assert_eq!(resolver.bound_to(&request).as_deref(), Some("myna-text/t"));
+        assert!(resolver.0.ignored.lock().unwrap().contains("evil"));
     }
 }

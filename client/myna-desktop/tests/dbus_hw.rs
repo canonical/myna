@@ -393,7 +393,7 @@ async fn the_chains_status_follows_the_models_on_the_bus() {
     );
     let translation = FakeShare::start(&root, "myna-translation", json!([]));
 
-    let resolver = Resolver::new(vec![root.clone()]);
+    let resolver = Resolver::open(vec![root.clone()]);
     let bus = std::sync::Arc::new(tokio::sync::Mutex::new(owner));
     let forwarder = tokio::spawn(chain::run(
         bus.clone(),

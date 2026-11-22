@@ -49,6 +49,19 @@ pub struct TextProvider {
     pub kind: TextShareKind,
 }
 
+/// Snaps whose text or chat shares Myna binds. Widening the list is a
+/// release. The name is the share's own `SNAP_NAME`, which only the
+/// snap's provider hook writes; a sideload can spoof it on its owner's
+/// machine only.
+pub const CURATED_TEXT_SNAPS: &[&str] = &["myna-text", "myna-translation", "gemma4"];
+
+impl TextProvider {
+    /// Whether the providing snap is on [`CURATED_TEXT_SNAPS`].
+    pub fn is_curated(&self) -> bool {
+        CURATED_TEXT_SNAPS.contains(&self.snap_name.as_str())
+    }
+}
+
 /// Connected text / LLM shares discovered under the `backend` directory.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct TextShares {

@@ -56,7 +56,7 @@ pub struct Lab {
 
 impl Lab {
     pub fn new(config: Config, total: usize) -> Self {
-        let resolver = Resolver::new(config.share_dirs.clone());
+        let resolver = Resolver::open(config.share_dirs.clone());
         let script_applies =
             |script| myna_desktop::process::script::applies(script, config.language.as_deref());
         let mut requests: Vec<Request> = Vec::new();

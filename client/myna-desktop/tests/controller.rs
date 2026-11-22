@@ -2394,7 +2394,7 @@ fn keyword() -> myna_desktop::process::pipeline::Pipeline {
     use myna_desktop::process::{graph::Graph, pipeline::*, resolve::Resolver};
     Pipeline::new(
         Graph::preset(myna_core::ProcessingChain::KEYWORD),
-        Resolver::new(Vec::new()),
+        Resolver::open(Vec::new()),
     )
 }
 
