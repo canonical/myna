@@ -39,21 +39,40 @@ impl Check {
     }
 }
 
+/// Ideographs and kana, which are written without spaces: each one is a
+/// word of its own, or a cleanup of Chinese would be one token that either
+/// matches whole or not at all.
+fn is_unspaced(c: char) -> bool {
+    matches!(c,
+        '\u{3040}'..='\u{30ff}' | '\u{3400}'..='\u{4dbf}' | '\u{4e00}'..='\u{9fff}'
+        | '\u{f900}'..='\u{faff}' | '\u{20000}'..='\u{2fa1f}')
+}
+
 /// A word of `text`, lowercased and stripped of punctuation; an apostrophe
 /// inside a word stays, so "shouldn't" can be told from "should".
 fn words(text: &str) -> Vec<String> {
-    text.split_whitespace()
-        .map(|word| {
-            let kept: String = word
-                .chars()
-                .map(|c| if c == '\u{2019}' { '\'' } else { c })
-                .filter(|c| c.is_alphanumeric() || *c == '\'')
-                .flat_map(char::to_lowercase)
-                .collect();
-            kept.trim_matches('\'').to_owned()
-        })
-        .filter(|word| !word.is_empty())
-        .collect()
+    let mut out = Vec::new();
+    let mut word = String::new();
+    let mut flush = |word: &mut String| {
+        let kept = word.trim_matches('\'');
+        if !kept.is_empty() {
+            out.push(kept.to_owned());
+        }
+        word.clear();
+    };
+    for raw in text.split_whitespace() {
+        for c in raw.chars().map(|c| if c == '\u{2019}' { '\'' } else { c }) {
+            if is_unspaced(c) {
+                flush(&mut word);
+                word.push(c);
+                flush(&mut word);
+            } else if c.is_alphanumeric() || c == '\'' {
+                word.extend(c.to_lowercase());
+            }
+        }
+        flush(&mut word);
+    }
+    out
 }
 
 fn is_negation(word: &str) -> bool {
@@ -247,6 +266,20 @@ mod tests {
     }
 
     #[test]
+    fn chinese_is_checked_a_character_at_a_time() {
+        assert_eq!(tidy("嗯 我们 明天 开会", "我们明天开会。"), Ok(()));
+        assert_eq!(tidy("我们明天开会", "开会明天我们"), Err(Skip::NewWord));
+        assert_eq!(tidy("我们明天开会", "我们后天开会"), Err(Skip::NewWord));
+        assert_eq!(
+            tidy("今天天气很好啊啊啊啊啊啊啊啊", "今天天气很好"),
+            Err(Skip::LongDrop)
+        );
+        assert_eq!(tidy("今天天气很好", "今天"), Err(Skip::TooManyDropped));
+        // Latin beside it is still a word.
+        assert_eq!(tidy("open GitHub 好的", "Open GitHub."), Ok(()));
+    }
+
+    #[test]
     fn a_vocabulary_word_may_not_stand_in_for_a_lone_negation() {
         let written = ["nginx".to_owned()];
         let check = |heard, answer| Check::ConservativeEdit.verdict(heard, answer, &written);
@@ -392,6 +425,11 @@ mod tests {
             ("", "hello", &[]),
             ("a b c d e", "a b", &[]),
             ("a b c d e f", "a b", &[]),
+            ("嗯 我们 明天 开会", "我们明天开会", &[]),
+            ("我们不去", "我们去", &[]),
+            ("今天天气很好啊啊啊啊", "今天天气很好", &[]),
+            ("我们明天开会", "开会明天我们", &[]),
+            ("今日は、えーと、晴れです", "今日は晴れです", &[]),
             ("one two", "one two three", &[]),
             ("Monday, no, Tuesday", "Tuesday", &[]),
             ("co-operate fully", "cooperate fully", &[]),

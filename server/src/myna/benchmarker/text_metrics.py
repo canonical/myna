@@ -49,25 +49,48 @@ def polarity_flip(heard: str, intended: str, output: str) -> bool:
     return got < negation_count(intended) or got > negation_count(heard)
 
 
+_UNSPACED = (
+    (0x3040, 0x30FF),
+    (0x3400, 0x4DBF),
+    (0x4E00, 0x9FFF),
+    (0xF900, 0xFAFF),
+    (0x20000, 0x2FA1F),
+)
 _LONGEST_DROP = 6
 _LONGEST_MISHEARING = 3
 _SPOKEN_WRITTEN_SEPARATOR = " => "
 
 
+def _is_unspaced(c: str) -> bool:
+    """Ideographs and kana: written without spaces, so each is a word."""
+    return any(lo <= ord(c) <= hi for lo, hi in _UNSPACED)
+
+
 def _check_words(text: str) -> list[str]:
     """The words ``Check::ConservativeEdit`` compares: lowercased, stripped of
     everything but letters, digits and apostrophes (a curly one is straight),
-    with apostrophes trimmed from the edges. Not the ASR normaliser, which
-    treats punctuation inside a token differently."""
-    tokens = []
-    for raw in text.split():
-        kept = "".join(
-            c.lower() if c.isalnum() else c
-            for c in raw.replace("\u2019", "'")
-            if c.isalnum() or c == "'"
-        ).strip("'")
+    with apostrophes trimmed from the edges, and each ideograph or kana a word
+    of its own. Not the ASR normaliser, which treats punctuation inside a token
+    differently."""
+    tokens: list[str] = []
+    word = ""
+
+    def flush() -> None:
+        nonlocal word
+        kept = word.strip("'")
         if kept:
             tokens.append(kept)
+        word = ""
+
+    for raw in text.split():
+        for c in raw.replace("\u2019", "'"):
+            if _is_unspaced(c):
+                flush()
+                word = c
+                flush()
+            elif c.isalnum() or c == "'":
+                word += c.lower()
+        flush()
     return tokens
 
 

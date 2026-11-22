@@ -80,6 +80,36 @@
     "written": []
   },
   {
+    "answer": "我们明天开会",
+    "heard": "嗯 我们 明天 开会",
+    "verdict": "ok",
+    "written": []
+  },
+  {
+    "answer": "我们去",
+    "heard": "我们不去",
+    "verdict": "ok",
+    "written": []
+  },
+  {
+    "answer": "今天天气很好",
+    "heard": "今天天气很好啊啊啊啊",
+    "verdict": "ok",
+    "written": []
+  },
+  {
+    "answer": "开会明天我们",
+    "heard": "我们明天开会",
+    "verdict": "new-word",
+    "written": []
+  },
+  {
+    "answer": "今日は晴れです",
+    "heard": "今日は、えーと、晴れです",
+    "verdict": "ok",
+    "written": []
+  },
+  {
     "answer": "one two three",
     "heard": "one two",
     "verdict": "new-word",
