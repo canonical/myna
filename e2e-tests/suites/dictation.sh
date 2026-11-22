@@ -41,6 +41,9 @@
 #      switched on in Myna Settings is stored as the step 'tidy' and the next
 #      dictation still lands whole (the rules fail open with no text snap);
 #      Translate switched on says what it lacks instead of a silent failure.
+#  13. Chinese script is a step row, not a section: dimmed for English, and
+#      once the dictation language is Chinese its switch and "Write Chinese as"
+#      combo store the step and its mode, which the daemon reads.
 set -uo pipefail
 # shellcheck source=e2e-tests/suites/lib.sh
 source "$(dirname "$0")/lib.sh"
@@ -294,6 +297,26 @@ shot waitfor:General tab:Processing "waitfor:Tidy up speech@switch" \
     "click:Tidy up speech@switch" "click:Translate@switch" \
     "$(poll "! grep -q processing-steps $STORE || grep -q \"processing-steps=\\[\\]\" $STORE")" \
     || { echo "processing reset failed" >&2; FAILED=1; }
+
+echo "-- 13. Chinese script is a step"
+shot waitfor:General tab:Processing "waitfor:Chinese script@switch" \
+    shot:shots/dictation/13-script-dimmed.png \
+    || { echo "script dim run failed" >&2; FAILED=1; }
+assert_on "Chinese dictation makes the row usable" "snap run myna.config set language zh"
+shot waitfor:General tab:Processing "waitfor:Chinese script@switch" \
+    "click:Chinese script@switch" \
+    "$(poll "grep -q \"processing-steps=\\['script'\\]\" $STORE")" \
+    "click:Write Chinese as@combo box" "click:Traditional, Taiwan (繁體)" \
+    "$(poll "grep -q \"'script.mode': 'traditional-taiwan'\" $STORE")" \
+    shot:shots/dictation/13-script-taiwan.png \
+    || { echo "script run failed" >&2; FAILED=1; }
+assert_dict "the daemon reads the script step" \
+    "wait_until 20 sh -c 'snap run myna --status 2>&1 | grep -q \"step script\"'"
+shot waitfor:General tab:Processing "waitfor:Chinese script@switch" \
+    "click:Chinese script@switch" \
+    "$(poll "! grep -q \"processing-steps=\\['script'\\]\" $STORE")" \
+    || { echo "script reset failed" >&2; FAILED=1; }
+on "snap run myna.config set language ''" >/dev/null 2>&1
 
 dict 'mic_stop' >/dev/null 2>&1
 if [ -n "$HOSTED" ]; then
