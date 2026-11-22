@@ -1294,6 +1294,7 @@ dependencies = [
 name = "myna-desktop"
 version = "0.0.0"
 dependencies = [
+ "aho-corasick",
  "async-trait",
  "futures-util",
  "gettext-rs",
@@ -1303,6 +1304,7 @@ dependencies = [
  "myna-platform",
  "serde",
  "serde_json",
+ "strsim",
  "thiserror",
  "tokio",
  "tokio-tungstenite",
@@ -1892,6 +1894,12 @@ name = "strength_reduce"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fe895eb47f22e2ddd4dabc02bce419d2e643c8e3b585c78158b349195bc24d82"
+
+[[package]]
+name = "strsim"
+version = "0.11.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
 
 [[package]]
 name = "syn"

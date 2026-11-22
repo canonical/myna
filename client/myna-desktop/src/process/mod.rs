@@ -17,6 +17,7 @@ pub mod openai;
 pub mod pipeline;
 pub mod resolve;
 pub mod rules;
+pub mod vocabulary;
 pub mod wire;
 
 /// Where a piece of text is about to land, for a graph that routes on it.

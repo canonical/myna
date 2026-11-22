@@ -1,6 +1,7 @@
 //! Deterministic changes to a piece of text: no model, no budget.
 
 use super::disfluency::{self, Lang};
+use super::vocabulary::Vocabulary;
 
 /// Words that take a capital only at the start of a sentence, whatever the
 /// text around them.
@@ -19,11 +20,19 @@ pub enum Rule {
     Continue,
     /// Drop stutters and unambiguous filled pauses.
     Disfluency(Lang),
+    /// Spell the user's vocabulary as written; see [`Rule::apply_with`].
+    Vocabulary,
 }
 
 impl Rule {
     pub fn apply(self, text: &str) -> String {
+        self.apply_with(text, &Vocabulary::default())
+    }
+
+    /// `apply`, with the user's vocabulary for the rule that spells it.
+    pub fn apply_with(self, text: &str, vocabulary: &Vocabulary) -> String {
         match self {
+            Rule::Vocabulary => vocabulary.apply(text),
             Rule::Address => {
                 let bare = text.trim().trim_end_matches(['.', '!', '?', '\u{2026}']);
                 decapitalise(bare, |_| true)
