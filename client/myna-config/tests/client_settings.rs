@@ -591,7 +591,7 @@ fn headless_widget_smoke_covers_every_real_schema_key() {
 
     let plans: Vec<_> = adapter.list().unwrap().iter().map(widget_plan).collect();
 
-    assert_eq!(plans.len(), 9);
+    assert_eq!(plans.len(), 10);
     assert!(plans.iter().any(|plan| plan.kind == WidgetKind::Choice));
     let vocabulary = plans
         .iter()
@@ -629,6 +629,25 @@ fn headless_widget_smoke_covers_every_real_schema_key() {
         assert!(!detail.example.is_empty());
     }
     assert_eq!(choice_detail("tine"), None);
+    let script = plans
+        .iter()
+        .find(|plan| plan.key == "chinese-script")
+        .expect("chinese-script is listed");
+    assert_eq!(script.kind, WidgetKind::Choice);
+    assert_eq!(script.placement, Placement::ProcessingScript);
+    assert_eq!(
+        script.choices,
+        [
+            "as-recognised",
+            "simplified",
+            "traditional",
+            "traditional-taiwan",
+            "traditional-hongkong"
+        ]
+    );
+    for choice in &script.choices {
+        assert_ne!(&choice_display_label(choice), choice);
+    }
     let record = plans
         .iter()
         .find(|plan| plan.key == "processing-history")

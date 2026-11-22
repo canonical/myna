@@ -42,6 +42,14 @@
     <value nick="keyword" value="3"/>
   </enum>
 
+  <enum id="com.canonical.Myna.Dictation.ChineseScript">
+    <value nick="as-recognised" value="0"/>
+    <value nick="simplified" value="1"/>
+    <value nick="traditional" value="2"/>
+    <value nick="traditional-taiwan" value="3"/>
+    <value nick="traditional-hongkong" value="4"/>
+  </enum>
+
   <schema id="com.canonical.Myna.Dictation" path="/com/canonical/myna/dictation/">
     <key name="processing-chain" enum="com.canonical.Myna.Dictation.ProcessingChain">
       <default>'exact'</default>
@@ -51,6 +59,17 @@
         the hesitations and repeats; a French translation of it; or what you
         say fitted to the field you type in. Anything but the first is shown
         on screen while you speak and typed a sentence at a time.
+      </description>
+    </key>
+
+    <key name="chinese-script" enum="com.canonical.Myna.Dictation.ChineseScript">
+      <default>'as-recognised'</default>
+      <summary>Chinese writing</summary>
+      <description>
+        Speech models write Chinese in whichever script they like. Choose
+        simplified or traditional characters, with the words used in Taiwan
+        or the characters used in Hong Kong, and what you say is typed that
+        way. Other languages are left as they are.
       </description>
     </key>
 

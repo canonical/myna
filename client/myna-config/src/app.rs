@@ -1750,6 +1750,23 @@ fn processing_probe() -> glib::ExitCode {
             .unwrap_or_default()
     );
 
+    let script = typed_descendants::<adw::ComboRow>(root)
+        .into_iter()
+        .find(|row| row.title() == "Chinese writing");
+    println!("script-row: {}", script.is_some());
+    if let Some(row) = script {
+        row.set_selected(3);
+        settle_gtk();
+        println!(
+            "script: {}",
+            controller
+                .shown_value(myna_core::settings::KEY_CHINESE_SCRIPT)
+                .as_ref()
+                .and_then(ClientSettingValue::as_str)
+                .unwrap_or_default()
+        );
+    }
+
     let banner = typed_descendants::<adw::Banner>(root)
         .into_iter()
         .next()
@@ -5909,6 +5926,8 @@ struct ProcessingGroups {
     notice: adw::Banner,
     /// What is done to the text: one row per chain.
     chain: adw::PreferencesGroup,
+    /// How Chinese is written.
+    script: adw::PreferencesGroup,
     record: adw::PreferencesGroup,
     /// The recorded dictations, listed under the switch that keeps them.
     past: adw::PreferencesGroup,
@@ -6060,6 +6079,9 @@ fn processing_group() -> ProcessingGroups {
                 "Anything but the first is shown on screen while you speak and typed a sentence at a time. This is experimental.",
             ))
             .build(),
+        script: adw::PreferencesGroup::builder()
+            .title(gettextrs::gettext("Chinese"))
+            .build(),
         record: adw::PreferencesGroup::new(),
         past: PastDictations::group(),
     }
@@ -6069,6 +6091,7 @@ fn processing_page(groups: &ProcessingGroups) -> adw::NavigationPage {
     let preferences = adw::PreferencesPage::new();
     preferences.set_vexpand(true);
     preferences.add(&groups.chain);
+    preferences.add(&groups.script);
     preferences.add(&groups.record);
     preferences.add(&groups.past);
     let content = gtk::Box::new(gtk::Orientation::Vertical, 0);
@@ -6333,6 +6356,7 @@ fn ready_page(
             Placement::Dictation => &dictation,
             Placement::ActiveModel => model_settings,
             Placement::Processing => &processing.chain,
+            Placement::ProcessingScript => &processing.script,
             Placement::ProcessingRecord => &processing.record,
         };
         let widget_name = (plan.placement == Placement::ActiveModel)

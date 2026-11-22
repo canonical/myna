@@ -176,6 +176,8 @@ fn the_processing_tab_follows_the_record_and_the_chosen_chain_when_enabled() {
     assert!(output.status.success(), "processing probe failed: {stderr}");
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("chain: tidy"), "{stdout}");
+    assert!(stdout.contains("script-row: true"), "{stdout}");
+    assert!(stdout.contains("script: traditional-taiwan"), "{stdout}");
     assert!(stdout.contains("notice-idle: true"), "{stdout}");
     assert!(
         stdout.contains(

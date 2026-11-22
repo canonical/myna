@@ -47,4 +47,4 @@ pub use protocol::PROTOCOL_VERSION;
 pub use session::{
     normalize_keywords, SessionConfig, KEYWORDS_MAX_ENTRIES, KEYWORDS_MAX_ENTRY_CHARS,
 };
-pub use settings::{ProcessingChain, Settings, SettingsWatch, SoundSet};
+pub use settings::{ChineseScript, ProcessingChain, Settings, SettingsWatch, SoundSet};

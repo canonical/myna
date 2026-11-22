@@ -63,6 +63,9 @@ pub const KEY_PROCESSING_CHAIN: &str = "processing-chain";
 /// Whether processed dictations are recorded, as heard and as typed.
 pub const KEY_PROCESSING_HISTORY: &str = "processing-history";
 
+/// How Chinese is written once it is typed.
+pub const KEY_CHINESE_SCRIPT: &str = "chinese-script";
+
 /// Which set of cues the daemon plays.
 pub const KEY_SOUND_SET: &str = "sound-set";
 
@@ -155,6 +158,47 @@ impl Default for ProcessingChain {
     }
 }
 
+/// How Chinese text is written (`chinese-script`). A speech model picks a
+/// script as it likes; anything but `AsRecognised` converts what it wrote.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum ChineseScript {
+    /// Typed as the speech model wrote it.
+    #[default]
+    AsRecognised,
+    Simplified,
+    Traditional,
+    /// Traditional, in the characters and words used in Taiwan.
+    TraditionalTaiwan,
+    /// Traditional, in the characters used in Hong Kong.
+    TraditionalHongKong,
+}
+
+impl ChineseScript {
+    pub const ALL: [Self; 5] = [
+        Self::AsRecognised,
+        Self::Simplified,
+        Self::Traditional,
+        Self::TraditionalTaiwan,
+        Self::TraditionalHongKong,
+    ];
+
+    /// The schema enum nick.
+    pub fn nick(self) -> &'static str {
+        match self {
+            Self::AsRecognised => "as-recognised",
+            Self::Simplified => "simplified",
+            Self::Traditional => "traditional",
+            Self::TraditionalTaiwan => "traditional-taiwan",
+            Self::TraditionalHongKong => "traditional-hongkong",
+        }
+    }
+
+    /// The script a nick names; `None` for one this build does not know.
+    pub fn from_nick(nick: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|script| script.nick() == nick)
+    }
+}
+
 /// The schema default for [`KEY_SILENCE_TIMEOUT`], also what a machine with
 /// no schema installed gets - a forgotten session should end there too.
 pub const DEFAULT_SILENCE_TIMEOUT_SECS: u32 = 30;
@@ -191,6 +235,8 @@ pub struct Settings {
     pub sound_set: SoundSet,
     /// The user's local dictionary, raw (unnormalized) as stored.
     pub vocabulary: Vec<String>,
+    /// How Chinese text is written when typed.
+    pub chinese_script: ChineseScript,
 }
 
 /// What a machine with no schema installed reads: every key's schema default.
@@ -206,6 +252,7 @@ impl Default for Settings {
             processing_history: false,
             sound_set: SoundSet::default(),
             vocabulary: Vec::new(),
+            chinese_script: ChineseScript::default(),
         }
     }
 }
@@ -248,6 +295,11 @@ impl Settings {
                 .and_then(SoundSet::from_nick)
                 .unwrap_or(default.sound_set),
             vocabulary: store.strings(KEY_VOCABULARY).unwrap_or(default.vocabulary),
+            chinese_script: store
+                .text(KEY_CHINESE_SCRIPT)
+                .as_deref()
+                .and_then(ChineseScript::from_nick)
+                .unwrap_or(default.chinese_script),
         }
     }
 }
@@ -685,6 +737,32 @@ mod tests {
             assert_eq!(Settings::from_store(&store).processing_chain, chain);
         }
         assert_eq!(ProcessingChain::from_nick("summary"), None);
+    }
+
+    /// Chinese is typed as recognised out of the box, and the schema and
+    /// [`ChineseScript`] name the same scripts.
+    #[test]
+    fn the_chinese_script_reads_the_schema_default_and_round_trips() {
+        let store = test_store();
+        assert_eq!(
+            Settings::from_store(&store).chinese_script,
+            ChineseScript::AsRecognised
+        );
+        let range = test_schema().key(KEY_CHINESE_SCRIPT).range();
+        let (_, nicks) = range.get::<(String, glib::Variant)>().unwrap();
+        let nicks: Vec<String> = nicks.get().unwrap();
+        assert_eq!(
+            nicks,
+            ChineseScript::ALL.map(|script| script.nick().to_owned())
+        );
+        for script in ChineseScript::ALL {
+            assert!(store
+                .settings
+                .set_string(KEY_CHINESE_SCRIPT, script.nick())
+                .is_ok());
+            assert_eq!(Settings::from_store(&store).chinese_script, script);
+        }
+        assert_eq!(ChineseScript::from_nick("pinyin"), None);
     }
 
     /// The schema enum and [`SoundSet`] name the same sets: every nick this
