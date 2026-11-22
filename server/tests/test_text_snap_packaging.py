@@ -29,6 +29,7 @@ COMPONENT_IDS = {
         "bergamot-base-memory-en-de": "text.translate",
         "bergamot-base-memory-en-fr": "text.translate",
         "bergamot-tiny-en-fa": "text.translate",
+        "bergamot-tiny-fr-en": "text.translate",
     },
 }
 
