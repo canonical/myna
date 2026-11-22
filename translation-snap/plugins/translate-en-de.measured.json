@@ -1,0 +1,7 @@
+{
+  "latency_ms": 20,
+  "quality": 0.66,
+  "quality_source": "chrF 0.660 on 200 FLEURS pairs (translate_en_de); vendor FLORES COMET 0.8651",
+  "gate": "pass",
+  "results_sha256": "15949a06049efae4b25f255f5945d24c72c0dbf8a394ce343a577217f367b5d3"
+}

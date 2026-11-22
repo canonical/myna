@@ -3,6 +3,85 @@
   "snap": "myna-translation",
   "plugins": [
     {
+      "id": "model-translate-en-de",
+      "snap": "myna-translation",
+      "component": "model-translate-en-de",
+      "model": "bergamot-base-memory-en-de",
+      "contract": 2,
+      "entry_revision": 1,
+      "task": "text.translate",
+      "class": "translate",
+      "needs": "dictation",
+      "params": [
+        {
+          "name": "language",
+          "kind": "language",
+          "role": "source",
+          "required": true
+        },
+        {
+          "name": "to",
+          "kind": "language",
+          "role": "target",
+          "required": true
+        }
+      ],
+      "covers": {
+        "language": "en",
+        "to": "de"
+      },
+      "in_lang": "en",
+      "out_lang": "de",
+      "step": {
+        "id": "translate",
+        "stage": "translate",
+        "label_key": "step.translate.name",
+        "description_key": "step.translate.description",
+        "example_key": "step.translate.example"
+      },
+      "download_bytes": 33083392,
+      "installed_bytes": 36719532,
+      "quality": {
+        "value": 0.66,
+        "source": "chrF 0.660 on 200 FLEURS pairs (translate_en_de); vendor FLORES COMET 0.8651"
+      },
+      "latency_ms": 20,
+      "latency_class": "fast",
+      "hardware": {
+        "arch": [
+          "amd64"
+        ],
+        "min_ram_mb": 512
+      },
+      "locales": [
+        "en"
+      ],
+      "curated": false,
+      "license": "MPL-2.0",
+      "attribution": "Mozilla and contributors, Firefox Translations (base-memory 2.1)",
+      "source": "https://github.com/mozilla/firefox-translations-models",
+      "files": [
+        {
+          "name": "model.ende.intgemm.alphas.bin",
+          "sha256": "8df29d9494d19f47fd5d97c6a73474c6f657e9f81c1a607c431d02befdf3810f",
+          "bytes": 31561787,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/23db71e7-b6d9-45eb-a47d-0290d7d8ef63.bin"
+        },
+        {
+          "name": "lex.50.50.ende.s2t.bin",
+          "sha256": "7ed39f1cffbd68a27ddf05bbfe068de2060f1d7e69f1a20e27ae923551dd7393",
+          "bytes": 4347672,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/bc072b1a-7749-43f7-9fe0-34a6dff10c4a.bin"
+        },
+        {
+          "name": "vocab.ende.spm",
+          "sha256": "69f730becafa48e3bb2c244eab66456877c08959a02f2bd5519b5a3088b62f9c",
+          "bytes": 810073,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/261225ea-5a52-455b-981c-7d09c6e6da3c.spm"
+        }
+      ]
+    },
+    {
       "id": "model-translate-en-fr",
       "snap": "myna-translation",
       "component": "model-translate-en-fr",
