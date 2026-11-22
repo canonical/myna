@@ -82,6 +82,85 @@
       ]
     },
     {
+      "id": "model-translate-en-fa",
+      "snap": "myna-translation",
+      "component": "model-translate-en-fa",
+      "model": "bergamot-tiny-en-fa",
+      "contract": 2,
+      "entry_revision": 1,
+      "task": "text.translate",
+      "class": "translate",
+      "needs": "dictation",
+      "params": [
+        {
+          "name": "language",
+          "kind": "language",
+          "role": "source",
+          "required": true
+        },
+        {
+          "name": "to",
+          "kind": "language",
+          "role": "target",
+          "required": true
+        }
+      ],
+      "covers": {
+        "language": "en",
+        "to": "fa"
+      },
+      "in_lang": "en",
+      "out_lang": "fa",
+      "step": {
+        "id": "translate",
+        "stage": "translate",
+        "label_key": "step.translate.name",
+        "description_key": "step.translate.description",
+        "example_key": "step.translate.example"
+      },
+      "download_bytes": 21615516,
+      "installed_bytes": 21615516,
+      "quality": {
+        "value": 0.537,
+        "source": "chrF 0.537 on 200 FLEURS pairs (translate_en_fa); vendor FLORES COMET 0.8494"
+      },
+      "latency_ms": 15,
+      "latency_class": "fast",
+      "hardware": {
+        "arch": [
+          "amd64"
+        ],
+        "min_ram_mb": 512
+      },
+      "locales": [
+        "en"
+      ],
+      "curated": false,
+      "license": "MPL-2.0",
+      "attribution": "Mozilla and contributors, Firefox Translations (tiny 1.1)",
+      "source": "https://github.com/mozilla/firefox-translations-models",
+      "files": [
+        {
+          "name": "model.enfa.intgemm.alphas.bin",
+          "sha256": "456ad3952bcc59d208c76baba4dcef340ee4239416bd760d6fec27f9a16228f8",
+          "bytes": 17141051,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/8e412aee-68b4-46cd-aa00-1e7357db24c1.bin"
+        },
+        {
+          "name": "lex.50.50.enfa.s2t.bin",
+          "sha256": "8542e7fb2bfa3a11b89f8392b8adb0dbbf863cd34569488b7c4535a91c3ae6b4",
+          "bytes": 3631332,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/8ec72d9b-f5b6-40bd-a23d-cedb2c757e92.bin"
+        },
+        {
+          "name": "vocab.enfa.spm",
+          "sha256": "6435d3d9d766159fe192ab90892540b438ad7adb7ab4ea4049f68d0b4cdea3bd",
+          "bytes": 843133,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/203a10f4-6885-49c2-89e3-e7a4f3e3e738.spm"
+        }
+      ]
+    },
+    {
       "id": "model-translate-en-fr",
       "snap": "myna-translation",
       "component": "model-translate-en-fr",
