@@ -6,6 +6,8 @@ import argparse
 import hashlib
 import json
 import os
+import platform
+import re
 import socket
 import stat
 import sys
@@ -15,7 +17,7 @@ import pytest
 
 from myna.benchmarker import plugin_eval as pe
 from myna.benchmarker import text_suite
-from myna.benchmarker.text_gate import GateConfig
+from myna.benchmarker.text_gate import GateConfig, GateError
 
 HERE = Path(__file__).resolve().parent
 FAKE = HERE.parent / "text" / "fake_bergamot.py"
@@ -51,7 +53,9 @@ def sha(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def make_repo(tmp_path: Path, extra: str = "") -> tuple[Path, Path]:
+def make_repo(
+    tmp_path: Path, extra: str = '[gate]\nvendor_comet = 0.87\nchrf_min = 0.9\n'
+) -> tuple[Path, Path]:
     """A tiny repo tree with one translation plugin and its generated outputs."""
     src = tmp_path / "upstream"
     src.mkdir()
@@ -123,7 +127,10 @@ def plugin_of(repo):
 def test_a_licence_off_the_allow_list_is_refused(env):
     repo, _ = env
     plugin = plugin_of(repo) | {"license": "CC-BY-NC-4.0"}
-    with pytest.raises(pe.PipelineError, match="allow-list"):
+    with pytest.raises(pe.PipelineError, match="licence 'CC-BY-NC-4.0' is not on the allow-list"):
+        pe.check_inputs(plugin, repo / "translation-snap")
+    del plugin["license"]
+    with pytest.raises(pe.PipelineError, match="licence None is not on the allow-list"):
         pe.check_inputs(plugin, repo / "translation-snap")
     for ok in ("Apache-2.0", "MIT", "MPL-2.0", "CC-BY-4.0", "BSD-3-Clause", "BSD"):
         assert pe.licence_allowed(ok)
@@ -226,6 +233,52 @@ def test_stage_takes_an_explicit_licence_file(env, tmp_path):
     assert (out / "LICENSE").read_text(encoding="utf-8") == "licence text"
 
 
+def test_stage_hardlinks_on_one_filesystem_and_copies_across_devices(env, tmp_path, monkeypatch):
+    repo, _ = env
+    plugin = plugin_of(repo)
+    files = pe.fetch_files(plugin, tmp_path / "cache")
+    models = repo / "translation-snap/models/translate-en-fr"
+    one = tmp_path / "one"
+    one.mkdir()
+    linked = pe.stage_component(plugin, models, files, one)
+    assert (linked / "model.bin").samefile(files["model.bin"])
+    monkeypatch.setattr(pe, "_same_fs", lambda a, b: False)
+    two = tmp_path / "two"
+    two.mkdir()
+    copied = pe.stage_component(plugin, models, files, two)
+    assert (copied / "model.bin").read_bytes() == FILES["model.bin"]
+    assert not (copied / "model.bin").samefile(files["model.bin"])
+
+
+def test_the_snap_binary_is_the_last_resort(monkeypatch, tmp_path):
+    monkeypatch.delenv("MYNA_BERGAMOT", raising=False)
+    monkeypatch.setenv("PATH", str(tmp_path))
+    monkeypatch.setattr(pe, "SNAP_BERGAMOT", tmp_path / "absent")
+    assert pe._find_bergamot() is None
+    present = tmp_path / "present"
+    present.write_text("")
+    monkeypatch.setattr(pe, "SNAP_BERGAMOT", present)
+    assert pe._find_bergamot() == present
+
+
+def test_peak_rss_is_the_status_figure_in_megabytes():
+    import subprocess
+
+    child = subprocess.Popen(
+        [sys.executable, "-c", "import time; print('up', flush=True); time.sleep(30)"],
+        stdout=subprocess.PIPE,
+    )
+    try:
+        assert child.stdout.readline() == b"up\n"
+        status = Path(f"/proc/{child.pid}/status").read_text().splitlines()
+        kb = next(int(ln.split()[1]) for ln in status if ln.startswith("VmHWM"))
+        assert pe.peak_rss_mb([child.pid]) == kb / 1024
+        assert pe.peak_rss_mb([child.pid, child.pid]) == 2 * kb / 1024
+    finally:
+        child.kill()
+        child.wait()
+
+
 def test_process_tree_and_rss_read_proc_for_this_process_and_its_children():
     import subprocess
 
@@ -279,13 +332,13 @@ def test_an_incomplete_spot_check_is_refused(spot):
 
 def test_quality_source_names_the_vendor_evidence_or_its_absence():
     gate = GateConfig(vendor_comet=0.8697)
-    assert pe.quality_source({}, gate, 0.7012, 200, "translate_en_fr") == (
+    assert pe.quality_source(gate, 0.7012, 200, "translate_en_fr") == (
         "chrF 0.701 on 200 FLEURS pairs (translate_en_fr); vendor FLORES COMET 0.8697"
     )
-    assert pe.quality_source({}, GateConfig(), 0.5, 200, "translate_en_xx").endswith(
+    assert pe.quality_source(GateConfig(), 0.5, 200, "translate_en_xx").endswith(
         "quality not measured by the vendor"
     )
-    assert pe.quality_source({}, GateConfig(), None, 0, "x") == "not measured"
+    assert pe.quality_source(GateConfig(), None, 0, "x") == "not measured"
 
 
 def report_of(gates, detail):
@@ -324,7 +377,7 @@ def test_results_say_pass_only_when_every_gate_passed():
 def test_measured_json_rounds_latency_up_and_records_the_gate_and_results_hash():
     gate = GateConfig(vendor_comet=0.87)
     results = pe.build_results(PLUGIN, translate_report(), ["translate_en_fr"], gate, {})
-    slim = pe.measured_json(PLUGIN, results, gate, ["translate_en_fr"], "abc")
+    slim = pe.measured_json(results, gate, ["translate_en_fr"], "abc")
     assert slim == {
         "latency_ms": 19,
         "quality": 0.701,
@@ -334,7 +387,7 @@ def test_measured_json_rounds_latency_up_and_records_the_gate_and_results_hash()
     }
     fast = translate_report(p95=0.2)
     results = pe.build_results(PLUGIN, fast, ["translate_en_fr"], gate, {})
-    assert pe.measured_json(PLUGIN, results, gate, ["translate_en_fr"], "")["latency_ms"] == 1
+    assert pe.measured_json(results, gate, ["translate_en_fr"], "")["latency_ms"] == 1
 
 
 def test_measured_json_of_a_cleanup_plugin_reports_reduction_and_uer():
@@ -350,7 +403,7 @@ def test_measured_json_of_a_cleanup_plugin_reports_reduction_and_uer():
     suites = ["clean_en", "disfluent_en"]
     results = pe.build_results(plugin, report_of(gates, detail), suites, None, {})
     assert results["measured"] == {}
-    slim = pe.measured_json(plugin, results, None, suites, "h")
+    slim = pe.measured_json(results, None, suites, "h")
     assert slim["latency_ms"] == 7 and slim["quality"] == 0.812
     assert slim["quality_source"] == "cleanup reduction 0.812, UER 0.0050 on the text corpus"
 
@@ -362,21 +415,47 @@ def test_the_pipeline_runs_through_the_real_daemon_and_writes_both_files(env, tm
     assert out == tmp_path / "results/plugins/fake-en-fr.json"
     saved = json.loads(out.read_text(encoding="utf-8"))
     assert saved["plugin"] == "fake-en-fr" and saved["schema"] == pe.SCHEMA
+    assert (saved["component"], saved["snap"]) == ("model-translate-en-fr", "myna-translation")
     assert saved["gate"] == "fail"  # an upper-casing stand-in is not a translator
     hyps = saved["detail"]["translate_en_fr"]["hypotheses"]
     assert len(hyps) == 200 and hyps[0]["hypothesis"] == hyps[0]["source"].upper()
-    assert saved["rss_mb"] > 1
+    assert saved["rss_mb"] > 1 and saved["rss_mb"] == round(saved["rss_mb"], 1)
+    assert saved["repeats"] == 1 and re.fullmatch(r"\d{4}-\d{2}-\d{2}", saved["date"])
+    assert saved["measured"]["vendor_comet"] == 0.87
+    assert saved["gate_config"]["vendor_comet"] == 0.87 and saved["gate_config"]["chrf_min"] == 0.9
     versions = saved["versions"]
     assert versions["files"] == {n: sha(d) for n, d in FILES.items()}
     assert versions["bergamot_sha256"] == pe.sha256_file(fake)
+    assert versions["python"] == platform.python_version() and versions["pin"] == "fake 1"
     assert set(versions["corpus"]) == {"translate_en_fr.jsonl"}
-    measured = json.loads(
-        (repo / "translation-snap/plugins/translate-en-fr.measured.json").read_text(
-            encoding="utf-8"
-        )
-    )
+    target = repo / "translation-snap/plugins/translate-en-fr.measured.json"
+    measured = json.loads(target.read_text(encoding="utf-8"))
     assert measured["gate"] == "fail" and measured["results_sha256"] == pe.sha256_file(out)
-    assert "gate: fail" in capsys.readouterr().out
+    assert measured["quality_source"].endswith("vendor FLORES COMET 0.87")
+    assert results["measured_file"] == str(target)
+    printed = capsys.readouterr().out
+    assert "system: socket:fake-en-fr" in printed and f"results: {out}" in printed
+    assert "gate: fail  spot check: missing  rss: " in printed
+    pe.run(args_for(tmp_path, fake))  # the results directory may already exist
+
+
+def test_the_binary_comes_from_the_environment_when_none_is_given(env, tmp_path, monkeypatch):
+    _, fake = env
+    monkeypatch.setenv("MYNA_BERGAMOT", str(fake))
+    results = pe.run(args_for(tmp_path, fake, bergamot=None))
+    saved = json.loads(Path(results["results_file"]).read_text(encoding="utf-8"))
+    assert saved["versions"]["bergamot_sha256"] == pe.sha256_file(fake)
+
+
+def test_the_host_guard_defaults_to_chug(env, tmp_path, monkeypatch):
+    _, fake = env
+    monkeypatch.delenv("MYNA_PIPELINE_HOST")
+    monkeypatch.setattr(pe.socket, "gethostname", lambda: "elsewhere")
+    with pytest.raises(pe.PipelineError, match=r"chug only .*elsewhere.*chug\.sh"):
+        pe.run(args_for(tmp_path, fake))
+    monkeypatch.setattr(pe.socket, "gethostname", lambda: "chug")
+    with pytest.raises(GateError, match="no plugin 'nope'"):
+        pe.run(args_for(tmp_path, fake, plugin="nope"))
 
 
 def test_no_measured_leaves_the_plugin_directory_alone(env, tmp_path):

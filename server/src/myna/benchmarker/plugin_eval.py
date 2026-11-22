@@ -165,7 +165,6 @@ def peak_rss_mb(pids: list[int]) -> float:
 @dataclass
 class Daemon:
     process: subprocess.Popen[bytes]
-    socket_path: Path
 
     def stop(self) -> None:
         self.process.terminate()
@@ -195,7 +194,7 @@ def start_daemon(
             try:
                 with socket.socket(socket.AF_UNIX) as probe:
                     probe.connect(str(sock))
-                return Daemon(process, sock)
+                return Daemon(process)
             except OSError:
                 pass
         time.sleep(0.1)
@@ -215,9 +214,7 @@ def spot_check_state(plugin: dict[str, Any]) -> str:
     return "waived" if plugin.get("gate", {}).get("spot_check_waiver") else "missing"
 
 
-def quality_source(
-    plugin: dict[str, Any], gate: GateConfig, score: float | None, n: int, suite: str
-) -> str:
+def quality_source(gate: GateConfig, score: float | None, n: int, suite: str) -> str:
     if score is None:
         return "not measured"
     measured = f"chrF {score:.3f} on {n} FLEURS pairs ({suite})"
@@ -260,7 +257,6 @@ def build_results(
 
 
 def measured_json(
-    plugin: dict[str, Any],
     results: dict[str, Any],
     gate: GateConfig | None,
     suites: list[str],
@@ -271,16 +267,13 @@ def measured_json(
     if m:
         p95 = m["latency_ms"]["p95"]
         score = round(m["chrf"], 3)
-        source = quality_source(plugin, gate or GateConfig(), m["chrf"], m["n"], suites[0])
+        source = quality_source(gate or GateConfig(), m["chrf"], m["n"], suites[0])
     else:
-        gates = {f"{g['suite']}.{g['metric']}": g["value"] for g in results["gates"]}
-        p95 = max(
-            (results["detail"][s].get("latency_ms", {}).get("p95", 0.0) for s in suites), default=0
-        )
-        uer = gates.get("clean_en.uer")
-        red = gates.get("disfluent_en.reduction")
-        score = round(red, 3) if red is not None else 0.0
-        source = f"cleanup reduction {red:.3f}, UER {uer:.4f} on the text corpus"
+        values = {f"{g['suite']}.{g['metric']}": g["value"] for g in results["gates"]}
+        p95 = max(results["detail"][s]["latency_ms"]["p95"] for s in suites)
+        reduction, uer = values["disfluent_en.reduction"], values["clean_en.uer"]
+        score = round(reduction, 3)
+        source = f"cleanup reduction {reduction:.3f}, UER {uer:.4f} on the text corpus"
     return {
         "latency_ms": max(1, math.ceil(p95)),
         "quality": score,
@@ -345,7 +338,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     out_dir.mkdir(parents=True, exist_ok=True)
     out = out_dir / f"{plugin['id']}.json"
     out.write_text(json.dumps(results, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    slim = measured_json(plugin, results, gate, suites, sha256_file(out))
+    slim = measured_json(results, gate, suites, sha256_file(out))
     if not args.no_measured:
         target = path.with_suffix(".measured.json")
         target.write_text(json.dumps(slim, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
@@ -357,12 +350,14 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     return results
 
 
+SNAP_BERGAMOT = Path("/snap/myna-translation/current/bin/myna-bergamot")
+
+
 def _find_bergamot() -> Path | None:
     found = os.environ.get("MYNA_BERGAMOT") or shutil.which("myna-bergamot")
     if found:
         return Path(found)
-    snap = Path("/snap/myna-translation/current/bin/myna-bergamot")
-    return snap if snap.is_file() else None
+    return SNAP_BERGAMOT if SNAP_BERGAMOT.is_file() else None
 
 
 def add_arguments(parser: argparse.ArgumentParser) -> None:
