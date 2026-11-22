@@ -2582,3 +2582,22 @@ async fn text_the_field_refuses_is_reported_as_lost() {
     assert_eq!(landed[0].heard, "tail");
     assert!(landed[0].timing.is_none(), "it never landed");
 }
+
+#[tokio::test]
+async fn held_text_discarded_on_a_cancelled_dictation_is_reported() {
+    use myna_core::history::Outcome;
+    let landed = landings_of(
+        CommitPolicy::AtEnd,
+        MockInjector::new(),
+        [TriggerEdge::Press, TriggerEdge::Release],
+        events_session(
+            vec![OrchestratorEvent::Final("held words".into())],
+            SessionOutcome::Aborted,
+        ),
+    )
+    .await;
+    assert_eq!(landed.len(), 1, "{landed:?}");
+    assert_eq!(landed[0].outcome, Outcome::Discarded);
+    assert_eq!(landed[0].heard, "held words");
+    assert_eq!(landed[0].typed, "");
+}

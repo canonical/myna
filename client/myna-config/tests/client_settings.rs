@@ -481,6 +481,27 @@ fn a_past_dictation_shows_what_was_heard_only_when_it_differs() {
 }
 
 #[test]
+fn a_past_dictation_says_why_it_was_not_typed() {
+    use myna_core::history::Outcome;
+    for (outcome, said) in [
+        (Outcome::FocusLost, "Not typed: focus left the field"),
+        (Outcome::Refused, "Not typed: the field refused it"),
+        (Outcome::Discarded, "Not typed: the dictation was cancelled"),
+        (Outcome::Empty, "Nothing to type"),
+    ] {
+        let lost = myna_core::history::Entry {
+            time: 1,
+            heard: "hello".into(),
+            outcome: Some(outcome),
+            ..Default::default()
+        };
+        let shown = past_dictation(&lost);
+        assert_eq!(shown.detail, said, "{outcome:?}");
+        assert_eq!(shown.typed, "hello", "what was heard is what is left");
+    }
+}
+
+#[test]
 fn a_past_dictation_says_what_made_it() {
     let step =
         |task: &str, model: Option<&str>, ms, skipped: Option<Skip>| myna_core::history::Step {

@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
-use myna_core::history::{append, Entry};
+use myna_core::history::{append, Entry, Outcome};
 use myna_core::ProcessingChain;
 
 use super::pipeline::Trace;
@@ -69,6 +69,12 @@ impl<P: Processor> Processor for Recorded<P> {
 
     fn landed(&mut self, landing: Landing) {
         let steps = self.steps.take().unwrap_or_default();
+        // Text discarded while held never went through the steps.
+        let steps = if landing.outcome == Outcome::Discarded {
+            Vec::new()
+        } else {
+            steps
+        };
         let Some(path) = self.path.as_ref().filter(|_| self.on.get()) else {
             return;
         };
@@ -99,7 +105,6 @@ impl<P: Processor> Processor for Recorded<P> {
 mod tests {
     use super::super::landing::Timing;
     use super::*;
-    use myna_core::history::Outcome;
     use std::os::unix::fs::PermissionsExt;
     use std::time::Duration;
 
@@ -188,6 +193,22 @@ mod tests {
         let lines = lines(&path);
         assert!(lines[0].get("steps").is_none());
         assert_eq!(lines[0]["chain"], "tidy");
+    }
+
+    #[tokio::test]
+    async fn text_discarded_while_held_carries_no_steps_and_leaves_none_behind() {
+        let path = scratch("discarded");
+        let mut recorded = Recorded::new(Shout, Live::new(true), Some(path.clone()), context());
+        recorded.process("a".into(), &Field::default()).await;
+        recorded.landed(Landing {
+            outcome: Outcome::Discarded,
+            ..landing("held", "")
+        });
+        recorded.landed(landing("b", "b"));
+        let lines = lines(&path);
+        assert_eq!(lines[0]["outcome"], "discarded");
+        assert!(lines[0].get("steps").is_none());
+        assert!(lines[1].get("steps").is_none());
     }
 
     #[tokio::test]

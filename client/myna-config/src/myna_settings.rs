@@ -294,9 +294,19 @@ pub struct PastDictation {
 pub const PAST_DICTATIONS_SHOWN: usize = 20;
 
 pub fn past_dictation(entry: &myna_core::history::Entry) -> PastDictation {
-    let lost = entry.outcome == Some(myna_core::history::Outcome::FocusLost);
-    let detail = if lost {
-        gettextrs::gettext("Not typed: focus left the field")
+    use myna_core::history::Outcome;
+    let not_typed = match entry.outcome {
+        Some(Outcome::FocusLost) => Some(gettextrs::gettext("Not typed: focus left the field")),
+        Some(Outcome::Refused) => Some(gettextrs::gettext("Not typed: the field refused it")),
+        Some(Outcome::Discarded) => {
+            Some(gettextrs::gettext("Not typed: the dictation was cancelled"))
+        }
+        Some(Outcome::Empty) => Some(gettextrs::gettext("Nothing to type")),
+        Some(Outcome::Typed) | None => None,
+    };
+    let lost = not_typed.is_some();
+    let detail = if let Some(why) = not_typed {
+        why
     } else if entry.heard.trim() == entry.typed.trim() {
         gettextrs::gettext("Typed as heard")
     } else {

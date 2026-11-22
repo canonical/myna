@@ -54,6 +54,13 @@ pub enum Outcome {
     /// Focus left the field first, so `typed` is what would have been typed
     /// and `heard` is what can be recovered.
     FocusLost,
+    /// Processing left nothing to type, so `typed` is empty.
+    Empty,
+    /// The field would not take it for a reason other than focus.
+    Refused,
+    /// The dictation was cancelled while the text was still held back, so
+    /// nothing was typed and `heard` is what can be recovered.
+    Discarded,
 }
 
 /// One step of a chain, as it went for one piece of text.

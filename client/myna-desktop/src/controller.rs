@@ -781,6 +781,9 @@ impl DesktopController {
                 .flush_ready(target.as_mut(), ending.writes_allowed(), ready, processor)
                 .await);
         }
+        if !finish {
+            utterance.buffer.discard(processor);
+        }
         if !policy.streams() {
             draft.show("", "").await;
         }
@@ -1207,6 +1210,20 @@ impl CommitBuffer {
         self.dropped
     }
 
+    /// Report text still held back when the dictation was cancelled: it was
+    /// never typed, and `heard` is what can be recovered.
+    fn discard(&mut self, processor: &mut dyn Processor) {
+        let heard = std::mem::take(&mut self.pending);
+        if !heard.trim().is_empty() {
+            processor.landed(Landing {
+                heard,
+                typed: String::new(),
+                outcome: Outcome::Discarded,
+                timing: None,
+            });
+        }
+    }
+
     /// Insert the buffered text as a single `CommitText`, then clear the
     /// buffer. A no-op when empty; when `allowed` is false it discards the
     /// text rather than inserting it, and records the drop.
@@ -1272,6 +1289,14 @@ impl CommitBuffer {
             text = fold_control_chars(&text);
         }
         if text.is_empty() {
+            if !said.trim().is_empty() {
+                processor.landed(Landing {
+                    heard: said,
+                    typed: String::new(),
+                    outcome: Outcome::Empty,
+                    timing: None,
+                });
+            }
             return Ending::None;
         }
         let typed = text.clone();
@@ -1293,22 +1318,20 @@ impl CommitBuffer {
             myna_core::dbg_log!("inject", "committed {} chars: {:?}", text.len(), text);
         }
         let outcome = match &result {
-            Ok(()) => Some(Outcome::Typed),
-            Err(InjectError::FocusLost) => Some(Outcome::FocusLost),
-            Err(_) => None,
+            Ok(()) => Outcome::Typed,
+            Err(InjectError::FocusLost) => Outcome::FocusLost,
+            Err(_) => Outcome::Refused,
         };
-        if let Some(outcome) = outcome {
-            let landed_now = outcome == Outcome::Typed;
-            processor.landed(Landing {
-                heard: said,
-                typed,
-                outcome,
-                timing: self
-                    .stopped
-                    .filter(|_| landed_now)
-                    .map(|stopped| Timing::between(stopped, ready_at, injecting, landed)),
-            });
-        }
+        let landed_now = outcome == Outcome::Typed;
+        processor.landed(Landing {
+            heard: said,
+            typed,
+            outcome,
+            timing: self
+                .stopped
+                .filter(|_| landed_now)
+                .map(|stopped| Timing::between(stopped, ready_at, injecting, landed)),
+        });
         self.record(result)
     }
 
@@ -1879,6 +1902,55 @@ mod tests {
                 "a backend failure says nothing about the target being ours"
             );
         }
+    }
+
+    /// Answers with `reply` and keeps what it is told landed.
+    struct Reply {
+        reply: &'static str,
+        landed: Vec<Landing>,
+    }
+
+    #[async_trait]
+    impl Processor for Reply {
+        async fn process(&mut self, _: String, _: &Field) -> String {
+            self.reply.to_owned()
+        }
+
+        fn landed(&mut self, landing: Landing) {
+            self.landed.push(landing);
+        }
+    }
+
+    async fn flushed(target: &mut ScriptedTarget, reply: &'static str) -> Vec<Landing> {
+        let mut processor = Reply {
+            reply,
+            landed: Vec::new(),
+        };
+        let mut buffer = CommitBuffer::default();
+        buffer.push("hello there");
+        let len = buffer.pending.len();
+        buffer.flush_ready(target, true, len, &mut processor).await;
+        processor.landed
+    }
+
+    #[tokio::test]
+    async fn text_processing_emptied_is_still_recorded() {
+        let landed = flushed(&mut ScriptedTarget::default(), "").await;
+        assert_eq!(landed.len(), 1);
+        assert_eq!(landed[0].heard, "hello there");
+        assert_eq!(landed[0].typed, "");
+        assert_eq!(landed[0].outcome, Outcome::Empty);
+    }
+
+    #[tokio::test]
+    async fn text_the_field_failed_on_is_recorded_with_what_was_heard() {
+        let mut target = ScriptedTarget::refusing(InjectError::Backend("boom".into()));
+        let landed = flushed(&mut target, "Hello there.").await;
+        assert_eq!(landed.len(), 1);
+        assert_eq!(landed[0].heard, "hello there");
+        assert_eq!(landed[0].typed, "Hello there.");
+        assert_eq!(landed[0].outcome, Outcome::Refused);
+        assert!(landed[0].timing.is_none());
     }
 
     #[tokio::test]
