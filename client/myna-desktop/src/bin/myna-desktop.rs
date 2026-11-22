@@ -830,6 +830,9 @@ async fn run_controller(
         .commit(live.commit.clone())
         .processor({
             let resolver = Resolver::new(text_share_dirs(&args));
+            if let Some(bus) = pump_bus.clone() {
+                tokio::spawn(myna_desktop::dbus::chain::run(bus, resolver.status()));
+            }
             spawn_binder(
                 resolver.clone(),
                 live.graph.clone(),
@@ -1183,6 +1186,12 @@ fn print_status(args: &Args) -> ExitCode {
                     status.status_message
                 }
             );
+            if !status.chain_status.is_empty() {
+                println!(
+                    "  {:<15} {} {}",
+                    "chain", status.chain_status, status.chain_missing
+                );
+            }
         }
         // Not running is the common case for someone debugging, and it is an
         // answer, not a failure - so it reads as one and still exits 0.

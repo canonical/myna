@@ -10,6 +10,7 @@
 //! well-known name and serves `/com/canonical/Myna/Dictation` lands in the polish phase
 //! (contract publisher.md P13–P15).
 
+pub mod chain;
 pub mod hud_style;
 pub mod pump;
 pub mod serve;

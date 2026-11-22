@@ -283,6 +283,60 @@ async fn the_published_last_error_is_readable_on_the_bus() {
     assert!(time(get("LastErrorTime").await) > 0);
 }
 
+/// A chain with no model for a step is told to Settings: ready until it is
+/// not, then the missing tasks, then ready again once they are covered.
+#[tokio::test]
+async fn the_chains_status_follows_the_models_on_the_bus() {
+    use myna_desktop::dbus::{chain, OBJECT_PATH};
+    use myna_desktop::process::resolve::ChainStatus;
+
+    skip_unless_dbus!();
+    let _serial = exclusive().await;
+    name_is_free().await;
+    let owner = ZbusBus::serve().await.expect("serve owns the name");
+    let conn = zbus::Connection::session().await.expect("session bus");
+    let properties = zbus::fdo::PropertiesProxy::builder(&conn)
+        .destination(BUS_NAME)
+        .unwrap()
+        .path(OBJECT_PATH)
+        .unwrap()
+        .build()
+        .await
+        .expect("properties proxy");
+    let interface = zbus::names::InterfaceName::try_from(BUS_NAME).unwrap();
+    let get = |name: &'static str| {
+        let (properties, interface) = (&properties, interface.clone());
+        async move {
+            let value = properties.get(interface, name).await.expect(name);
+            String::try_from(value).unwrap()
+        }
+    };
+    assert_eq!(get("ChainStatus").await, "ready");
+    assert_eq!(get("ChainMissing").await, "");
+
+    let (tx, rx) = tokio::sync::watch::channel(ChainStatus::Degraded {
+        missing_tasks: vec!["text.translate".into()],
+        needs_restart: false,
+    });
+    let bus = std::sync::Arc::new(tokio::sync::Mutex::new(owner));
+    let forwarder = tokio::spawn(chain::run(bus.clone(), rx));
+    let until = |name: &'static str, want: &'static str| async move {
+        for _ in 0..100 {
+            if get(name).await == want {
+                return;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+        panic!("{name} never became {want:?}");
+    };
+    until("ChainStatus", "degraded").await;
+    assert_eq!(get("ChainMissing").await, "text.translate");
+    tx.send(ChainStatus::Ready).unwrap();
+    until("ChainStatus", "ready").await;
+    assert_eq!(get("ChainMissing").await, "");
+    forwarder.abort();
+}
+
 /// What the toast fallback said to the notification server, one line a call.
 struct NotificationServer(std::sync::Arc<std::sync::Mutex<Vec<String>>>);
 

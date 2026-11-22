@@ -80,6 +80,10 @@ struct ServedState {
     /// Held text and the guess after it; empty unless text is being held.
     draft_text: String,
     draft_tail: String,
+    /// `ready`, `degraded` or `restart`; see [`crate::dbus::chain`].
+    chain_status: String,
+    /// Tasks of the chosen chain no installed model covers, comma separated.
+    chain_missing: String,
 }
 
 impl ServedState {
@@ -94,6 +98,7 @@ impl ServedState {
             hud_style: myna_core::Settings::load()
                 .hud_style
                 .unwrap_or_else(|| myna_core::settings::DEFAULT_HUD_STYLE.to_string()),
+            chain_status: crate::dbus::chain::READY.into(),
             input_offset: f64::NAN,
             input_noise_floor: f64::NAN,
             input_speech_level: f64::NAN,
@@ -403,6 +408,30 @@ impl DictationObject {
             .hud_style
             .clone()
     }
+
+    /// `ChainStatus`: whether every model step of the chosen processing
+    /// chain has a model (`ready`), some has none and is skipped
+    /// (`degraded`), or one was connected after the daemon started and only
+    /// a restart sees it (`restart`).
+    #[zbus(property)]
+    async fn chain_status(&self) -> String {
+        self.served
+            .lock()
+            .expect("served state poisoned")
+            .chain_status
+            .clone()
+    }
+
+    /// `ChainMissing`: the tasks (`text.translate`) no connected model
+    /// covers, comma separated; empty while the chain is `ready`.
+    #[zbus(property)]
+    async fn chain_missing(&self) -> String {
+        self.served
+            .lock()
+            .expect("served state poisoned")
+            .chain_missing
+            .clone()
+    }
 }
 
 /// The real session-bus [`Bus`]. Best-effort: a bus hiccup is logged, never
@@ -635,6 +664,8 @@ impl Bus for ZbusBus {
                     ("LastErrorTime", PropertyValue::I64(v)) => served.last_error_time = *v,
                     ("DraftText", PropertyValue::Str(s)) => served.draft_text = s.clone(),
                     ("DraftTail", PropertyValue::Str(s)) => served.draft_tail = s.clone(),
+                    ("ChainStatus", PropertyValue::Str(s)) => served.chain_status = s.clone(),
+                    ("ChainMissing", PropertyValue::Str(s)) => served.chain_missing = s.clone(),
                     _ => {
                         myna_core::dbg_log!("dbus", "ignoring unknown property set: {name}");
                         return Ok(());
@@ -665,6 +696,8 @@ impl Bus for ZbusBus {
                 "LastErrorTime" => iface.last_error_time_changed(emitter).await,
                 "DraftText" => iface.draft_text_changed(emitter).await,
                 "DraftTail" => iface.draft_tail_changed(emitter).await,
+                "ChainStatus" => iface.chain_status_changed(emitter).await,
+                "ChainMissing" => iface.chain_missing_changed(emitter).await,
                 _ => Ok(()),
             }
         }
