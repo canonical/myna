@@ -5,6 +5,7 @@
 
 use async_trait::async_trait;
 
+mod check;
 pub mod history;
 pub mod pipeline;
 

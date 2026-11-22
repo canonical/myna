@@ -3,17 +3,18 @@
 //! A step that needs a model names a [`Request`], what it needs done, and
 //! never a model. [`Models`] answers the request with whatever fits.
 
-use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
+use myna_core::history::Skip;
 use myna_core::ProcessingChain;
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
 
+pub use super::check::Check;
 use super::Processor;
 use crate::inject::fold_control_chars;
 use crate::live::Live;
@@ -56,13 +57,23 @@ impl Request {
     }
 }
 
-/// Why a model gave no usable answer. Carries no text.
+/// Why a model gave no usable answer. The far side's reason is kept for
+/// tests and never logged or recorded: it may quote the text.
 #[derive(Debug, thiserror::Error)]
 pub enum ModelError {
     #[error("no model: {0}")]
     Unavailable(String),
     #[error("the model refused: {0}")]
     Refused(String),
+}
+
+impl ModelError {
+    fn skip(&self) -> Skip {
+        match self {
+            ModelError::Unavailable(_) => Skip::NoModel,
+            ModelError::Refused(_) => Skip::Refused,
+        }
+    }
 }
 
 /// A model's answer, and which model it was when the far side says.
@@ -80,43 +91,6 @@ pub trait Models: Send {
 
 /// What each step did to the last piece of text, for the record.
 pub type Trace = Arc<Mutex<Vec<myna_core::history::Step>>>;
-
-/// What an answer must satisfy to be typed in place of what was heard.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Check {
-    /// Not empty.
-    Present,
-    /// Only words that were said: a cleanup may drop, recase and
-    /// repunctuate, never add.
-    NoNewWords,
-}
-
-impl Check {
-    fn passes(self, heard: &str, answer: &str) -> bool {
-        if answer.trim().is_empty() {
-            return false;
-        }
-        match self {
-            Check::Present => true,
-            Check::NoNewWords => {
-                let said: HashSet<String> = words(heard).collect();
-                words(answer).all(|word| said.contains(&word))
-            }
-        }
-    }
-}
-
-/// The words of `text`, lowercased and stripped of punctuation.
-fn words(text: &str) -> impl Iterator<Item = String> + '_ {
-    text.split_whitespace()
-        .map(|word| {
-            word.chars()
-                .filter(|c| c.is_alphanumeric())
-                .flat_map(char::to_lowercase)
-                .collect::<String>()
-        })
-        .filter(|word| !word.is_empty())
-}
 
 #[derive(Clone)]
 pub enum Step {
@@ -149,11 +123,11 @@ impl Node {
         match self {
             Node::Tidy => vec![Step::Ask {
                 request: Request::cleanup(None),
-                check: Check::NoNewWords,
+                check: Check::ConservativeEdit,
             }],
             Node::French => vec![Step::Ask {
                 request: Request::translate("en", "fr"),
-                check: Check::Present,
+                check: Check::Usable { translation: true },
             }],
         }
     }
@@ -189,6 +163,7 @@ pub fn steps_of(nodes: &[Node]) -> Vec<Step> {
 pub struct Pipeline {
     steps: Live<Vec<Step>>,
     models: Box<dyn Models>,
+    written: Live<Vec<String>>,
     trace: Trace,
 }
 
@@ -197,8 +172,17 @@ impl Pipeline {
         Self {
             steps: steps.into(),
             models: Box::new(models),
+            written: Live::new(Vec::new()),
             trace: Trace::default(),
         }
+    }
+
+    /// The user's vocabulary, which a cleanup may write in place of what
+    /// the speech model misheard.
+    #[must_use]
+    pub fn written(mut self, words: Live<Vec<String>>) -> Self {
+        self.written = words;
+        self
     }
 
     /// Where the steps of the last piece of text are left.
@@ -211,6 +195,7 @@ impl Pipeline {
 impl Processor for Pipeline {
     async fn process(&mut self, mut text: String) -> String {
         let mut trace = Vec::new();
+        let written = self.written.get();
         for step in &self.steps.get() {
             match step {
                 Step::Rule(rule) => text = rule(&text),
@@ -219,22 +204,31 @@ impl Processor for Pipeline {
                     let answer =
                         tokio::time::timeout(request.budget, self.models.run(request, &text)).await;
                     let mut model = None;
+                    let mut answer_chars = 0;
                     let skipped = match answer {
                         Ok(Ok(answer)) => {
                             model = answer.model;
                             let cleaned = fold_control_chars(&answer.text);
-                            if check.passes(&text, &cleaned) {
-                                text = cleaned;
-                                None
-                            } else {
-                                Some(format!("the answer failed {check:?}"))
+                            answer_chars = cleaned.chars().count();
+                            match check.verdict(&text, &cleaned, &written) {
+                                Ok(()) => {
+                                    text = cleaned;
+                                    None
+                                }
+                                Err(why) => Some(why),
                             }
                         }
-                        Ok(Err(err)) => Some(err.to_string()),
-                        Err(_) => Some(format!("no answer within {:?}", request.budget)),
+                        Ok(Err(err)) => Some(err.skip()),
+                        Err(_) => Some(Skip::Timeout),
                     };
-                    if let Some(why) = &skipped {
-                        myna_core::info_log!("process", "{} skipped: {why}", request.task);
+                    if let Some(why) = skipped {
+                        // Counts only: no word of the text or the answer.
+                        myna_core::info_log!(
+                            "process",
+                            "{} skipped: {why:?} ({} chars in, {answer_chars} out)",
+                            request.task,
+                            text.chars().count()
+                        );
                     }
                     trace.push(myna_core::history::Step {
                         task: request.task.clone(),
@@ -315,6 +309,7 @@ mod tests {
     enum Scripted {
         Says(&'static str),
         Fails,
+        Refuses,
         Hangs,
     }
 
@@ -327,6 +322,7 @@ mod tests {
                     model: Some("scripted".into()),
                 }),
                 Scripted::Fails => Err(ModelError::Unavailable("none installed".into())),
+                Scripted::Refuses => Err(ModelError::Refused("cannot: um hi".into())),
                 Scripted::Hangs => std::future::pending().await,
             }
         }
@@ -408,9 +404,21 @@ mod tests {
         assert_eq!(pipeline.process(HEARD.into()).await, HEARD);
         let trace = traced(&pipeline);
         assert_eq!(trace[0].model.as_deref(), Some("scripted"));
+        assert_eq!(trace[0].skipped, Some(Skip::NewWord));
+    }
+
+    #[tokio::test]
+    async fn a_cleanup_may_write_the_users_own_words_for_what_was_misheard() {
+        let written = Live::new(Vec::new());
+        let mut pipeline = cleanup(Scripted::Says("Restart MySQL.")).written(written.clone());
         assert_eq!(
-            trace[0].skipped.as_deref(),
-            Some("the answer failed NoNewWords")
+            pipeline.process("restart my sequel".into()).await,
+            "restart my sequel"
+        );
+        written.set(vec!["MySQL".into()]);
+        assert_eq!(
+            pipeline.process("restart my sequel".into()).await,
+            "Restart MySQL."
         );
     }
 
@@ -426,20 +434,21 @@ mod tests {
         assert_eq!(pipeline.process(HEARD.into()).await, HEARD);
         let trace = traced(&pipeline);
         assert_eq!(trace[0].model, None);
-        assert_eq!(
-            trace[0].skipped.as_deref(),
-            Some("no model: none installed")
-        );
+        assert_eq!(trace[0].skipped, Some(Skip::NoModel));
+    }
+
+    #[tokio::test]
+    async fn a_refusal_is_recorded_as_a_code_without_the_far_sides_words() {
+        let mut pipeline = cleanup(Scripted::Refuses);
+        assert_eq!(pipeline.process(HEARD.into()).await, HEARD);
+        assert_eq!(traced(&pipeline)[0].skipped, Some(Skip::Refused));
     }
 
     #[tokio::test(start_paused = true)]
     async fn a_model_over_its_budget_types_what_was_heard() {
         let mut pipeline = cleanup(Scripted::Hangs);
         assert_eq!(pipeline.process(HEARD.into()).await, HEARD);
-        assert_eq!(
-            traced(&pipeline)[0].skipped.as_deref(),
-            Some("no answer within 1s")
-        );
+        assert_eq!(traced(&pipeline)[0].skipped, Some(Skip::Timeout));
         // The trace is of the last text alone.
         assert_eq!(pipeline.process(HEARD.into()).await, HEARD);
         assert_eq!(traced(&pipeline).len(), 1);

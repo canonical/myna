@@ -13,6 +13,7 @@ use myna_config::myna_settings::{
     PersistenceWriter, Placement, WidgetKind,
 };
 use myna_config::ports::{ClientSettings, ClientSettingsError};
+use myna_core::history::Skip;
 
 const SCHEMA_ID: &str = "com.canonical.Myna.Dictation";
 static NEXT_DIR: AtomicUsize = AtomicUsize::new(0);
@@ -482,11 +483,11 @@ fn a_past_dictation_shows_what_was_heard_only_when_it_differs() {
 #[test]
 fn a_past_dictation_says_what_made_it() {
     let step =
-        |task: &str, model: Option<&str>, ms, skipped: Option<&str>| myna_core::history::Step {
+        |task: &str, model: Option<&str>, ms, skipped: Option<Skip>| myna_core::history::Step {
             task: task.into(),
             model: model.map(Into::into),
             ms,
-            skipped: skipped.map(Into::into),
+            skipped,
         };
     let entry = myna_core::history::Entry {
         time: 1,
@@ -495,7 +496,7 @@ fn a_past_dictation_says_what_made_it() {
         chain: Some("tidy-french".into()),
         steps: vec![
             step("text.cleanup", Some("fdt-small"), 4, None),
-            step("text.translate", None, 1000, Some("no answer within 10s")),
+            step("text.translate", None, 1000, Some(Skip::Timeout)),
             step("text.summarise", Some("gemma"), 7, None),
         ],
         speech_model: Some("parakeet-tdt".into()),
@@ -509,11 +510,44 @@ fn a_past_dictation_says_what_made_it() {
             pair("Speech model", "parakeet-tdt"),
             pair("Processing", "A French translation"),
             pair("Tidying", "fdt-small, 4 ms"),
-            pair("Translation", "Not used (1000 ms): no answer within 10s"),
+            pair("Translation", "Not used (1000 ms): the model was too slow"),
             pair("text.summarise", "gemma, 7 ms"),
             pair("Myna version", "0.3.3+git22"),
         ]
     );
+}
+
+#[test]
+fn every_reason_a_step_was_not_used_reads_differently() {
+    use Skip::*;
+    let all = [
+        NoModel,
+        Refused,
+        Timeout,
+        Empty,
+        NewWord,
+        TooManyDropped,
+        LongDrop,
+        DroppedNegation,
+        Chatty,
+        OddLength,
+        Other,
+    ];
+    let shown: std::collections::HashSet<String> = all
+        .into_iter()
+        .map(|why| {
+            let entry = myna_core::history::Entry {
+                steps: vec![myna_core::history::Step {
+                    task: "text.cleanup".into(),
+                    skipped: Some(why),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            };
+            past_dictation(&entry).made_by[0].1.clone()
+        })
+        .collect();
+    assert_eq!(shown.len(), all.len(), "{shown:?}");
 }
 
 #[test]

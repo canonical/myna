@@ -307,7 +307,7 @@ pub fn past_dictation(entry: &myna_core::history::Entry) -> PastDictation {
             // Translators: a step whose result was not used, how it ran and why.
             Some(why) => gettextrs::gettext("Not used ({ran}): {why}")
                 .replace("{ran}", &ran)
-                .replace("{why}", why),
+                .replace("{why}", &skip_reason(*why)),
             None => ran,
         };
         made_by.push((label, value));
@@ -319,6 +319,24 @@ pub fn past_dictation(entry: &myna_core::history::Entry) -> PastDictation {
         typed: entry.typed.trim().to_owned(),
         detail,
         made_by,
+    }
+}
+
+/// Why a step's answer was not used, in the user's words.
+fn skip_reason(why: myna_core::history::Skip) -> String {
+    use myna_core::history::Skip;
+    match why {
+        Skip::NoModel => gettextrs::gettext("no model was reachable"),
+        Skip::Refused => gettextrs::gettext("the model could not answer"),
+        Skip::Timeout => gettextrs::gettext("the model was too slow"),
+        Skip::Empty => gettextrs::gettext("the answer was empty"),
+        Skip::NewWord => gettextrs::gettext("the answer added or moved words"),
+        Skip::TooManyDropped => gettextrs::gettext("the answer left out too much"),
+        Skip::LongDrop => gettextrs::gettext("the answer left out too many words in a row"),
+        Skip::DroppedNegation => gettextrs::gettext("the answer left out a “not”"),
+        Skip::Chatty => gettextrs::gettext("the answer was a chat reply"),
+        Skip::OddLength => gettextrs::gettext("the answer was far shorter or longer"),
+        Skip::Other => gettextrs::gettext("for a reason this version does not know"),
     }
 }
 

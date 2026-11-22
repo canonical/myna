@@ -42,7 +42,38 @@ pub struct Step {
     pub ms: u64,
     /// Why the step left the text as it was; `None` when its answer was used.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub skipped: Option<String>,
+    pub skipped: Option<Skip>,
+}
+
+/// Why a step left the text as it was. A code, never words from the
+/// dictation or from a model, so neither the record nor a log can leak
+/// what was said through it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Skip {
+    /// Nothing that answers the request was reachable.
+    NoModel,
+    /// The model said it could not answer.
+    Refused,
+    /// No answer within the step's budget.
+    Timeout,
+    /// The answer held no words.
+    Empty,
+    /// The answer held a word that was not said, or moved one.
+    NewWord,
+    /// The answer dropped more of what was said than a cleanup may.
+    TooManyDropped,
+    /// The answer dropped too many words in a row.
+    LongDrop,
+    /// The answer dropped a lone "not", "never" or "n't".
+    DroppedNegation,
+    /// The answer opened with a chat reply such as "Sure!".
+    Chatty,
+    /// The answer was far shorter or longer than what was said.
+    OddLength,
+    /// A reason this build does not know, from a newer or older record.
+    #[serde(other)]
+    Other,
 }
 
 /// Where the record is kept: beside the settings in the snap's own data, as
@@ -170,6 +201,28 @@ mod tests {
     }
 
     #[test]
+    fn a_skip_reads_back_as_a_code_and_an_unknown_one_as_other() {
+        let step = |skipped: &str| -> Step {
+            serde_json::from_str(&format!(
+                "{{\"task\":\"text.cleanup\",\"ms\":1,\"skipped\":{skipped}}}"
+            ))
+            .unwrap()
+        };
+        assert_eq!(
+            step("\"dropped-negation\"").skipped,
+            Some(Skip::DroppedNegation)
+        );
+        assert_eq!(
+            step("\"the answer failed NoNewWords\"").skipped,
+            Some(Skip::Other)
+        );
+        assert_eq!(
+            serde_json::to_string(&Skip::TooManyDropped).unwrap(),
+            "\"too-many-dropped\""
+        );
+    }
+
+    #[test]
     fn what_did_the_work_is_kept_and_an_older_line_still_reads() {
         let path = scratch("details");
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -191,7 +244,7 @@ mod tests {
                     task: "text.translate".into(),
                     model: None,
                     ms: 1000,
-                    skipped: Some("no answer".into()),
+                    skipped: Some(Skip::Timeout),
                 },
             ],
             speech_model: Some("parakeet".into()),

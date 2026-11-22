@@ -811,7 +811,8 @@ async fn run_controller(
         .commit(live.commit.clone())
         .processor({
             let pipeline =
-                Pipeline::new(live.steps.clone(), SocketModels::new(text_models_socket()));
+                Pipeline::new(live.steps.clone(), SocketModels::new(text_models_socket()))
+                    .written(live.vocabulary.clone());
             let context = Context {
                 chain: live.chain.clone(),
                 trace: pipeline.trace(),

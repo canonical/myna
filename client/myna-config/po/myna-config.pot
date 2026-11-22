@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-20 16:54+0000\n"
+"POT-Creation-Date: 2026-11-22 00:17+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -419,19 +419,19 @@ msgstr ""
 msgid "Preview sound style"
 msgstr ""
 
-#: src/active_backend.rs:420
+#: src/active_backend.rs:421
 msgid "The change was cancelled."
 msgstr ""
 
-#: src/active_backend.rs:495
+#: src/active_backend.rs:496
 msgid "No model is connected."
 msgstr ""
 
-#: src/active_backend.rs:500
+#: src/active_backend.rs:501
 msgid "The model is not available to switch to."
 msgstr ""
 
-#: src/active_backend.rs:515
+#: src/active_backend.rs:516
 msgid "The model changed while it was being switched on. Try again."
 msgstr ""
 
@@ -1606,6 +1606,50 @@ msgstr ""
 
 #: src/myna_settings.rs:316
 msgid "Myna version"
+msgstr ""
+
+#: src/myna_settings.rs:329
+msgid "no model was reachable"
+msgstr ""
+
+#: src/myna_settings.rs:330
+msgid "the model could not answer"
+msgstr ""
+
+#: src/myna_settings.rs:331
+msgid "the model was too slow"
+msgstr ""
+
+#: src/myna_settings.rs:332
+msgid "the answer was empty"
+msgstr ""
+
+#: src/myna_settings.rs:333
+msgid "the answer added or moved words"
+msgstr ""
+
+#: src/myna_settings.rs:334
+msgid "the answer left out too much"
+msgstr ""
+
+#: src/myna_settings.rs:335
+msgid "the answer left out too many words in a row"
+msgstr ""
+
+#: src/myna_settings.rs:336
+msgid "the answer left out a “not”"
+msgstr ""
+
+#: src/myna_settings.rs:337
+msgid "the answer was a chat reply"
+msgstr ""
+
+#: src/myna_settings.rs:338
+msgid "the answer was far shorter or longer"
+msgstr ""
+
+#: src/myna_settings.rs:339
+msgid "for a reason this version does not know"
 msgstr ""
 
 #. TRANSLATORS: separates language names in a list, as in "English, Deutsch".
