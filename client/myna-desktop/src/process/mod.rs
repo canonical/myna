@@ -10,6 +10,7 @@ mod check;
 pub mod disfluency;
 pub mod graph;
 pub mod history;
+pub mod openai;
 pub mod pipeline;
 pub mod resolve;
 pub mod rules;
