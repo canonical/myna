@@ -222,6 +222,7 @@ _VERDICTS = {
 }
 
 
+@pytest.mark.repo_tree
 def test_the_reference_check_agrees_with_the_products_on_every_shared_case():
     cases = json.loads(_CASES.read_text(encoding="utf-8"))
     assert len(cases) > 500
