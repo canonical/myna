@@ -107,7 +107,8 @@ fn conservative_edit(heard: &str, answer: &str, written: &[String]) -> Result<()
                     break;
                 }
                 let run = &heard[i..next];
-                let spans = if heard[next] == answer[j] {
+                let same = heard[next] == answer[j];
+                let spans = if same {
                     1..=1
                 } else if written.contains(&answer[j]) {
                     1..=LONGEST_MISHEARING
@@ -119,11 +120,15 @@ fn conservative_edit(heard: &str, answer: &str, written: &[String]) -> Result<()
                     if end > n || !sounds_alike(&heard[next..end], &answer[j]) {
                         continue;
                     }
-                    if let Err(why) = droppable(run) {
+                    // A word the user's vocabulary stands in for is dropped
+                    // as far as a negation or a long run is concerned, and
+                    // all of its words but the one kept count as dropped.
+                    let swapped = if same { &[][..] } else { &heard[next..end] };
+                    if let Err(why) = droppable(run).and_then(|()| droppable(swapped)) {
                         worst = nearer(worst, why);
                         continue;
                     }
-                    let total = so_far + run.len();
+                    let total = so_far + run.len() + swapped.len().saturating_sub(1);
                     let cell = &mut dropped[end][j + 1];
                     *cell = Some(cell.map_or(total, |best| best.min(total)));
                 }
@@ -242,6 +247,37 @@ mod tests {
     }
 
     #[test]
+    fn a_vocabulary_word_may_not_stand_in_for_a_lone_negation() {
+        let written = ["nginx".to_owned()];
+        let check = |heard, answer| Check::ConservativeEdit.verdict(heard, answer, &written);
+        assert_eq!(
+            check("we do not ship", "we do nginx ship"),
+            Err(Skip::DroppedNegation)
+        );
+        assert!(check("we do never ship", "we do nginx ship").is_err());
+        assert_eq!(check("we do ship", "we do nginx"), Err(Skip::NewWord));
+        // The same word inside a longer misheard run is a repair.
+        assert_eq!(check("run n jinx now", "run nginx now"), Ok(()));
+        assert_eq!(
+            check("run not now", "run nginx now"),
+            Err(Skip::DroppedNegation)
+        );
+    }
+
+    #[test]
+    fn words_a_vocabulary_word_replaces_count_as_dropped() {
+        let written = ["MySQL".to_owned()];
+        let check = |heard, answer| Check::ConservativeEdit.verdict(heard, answer, &written);
+        assert_eq!(check("my sequel", "MySQL"), Ok(()));
+        // Three heard words become one: two dropped, over the budget of two
+        // once a fourth goes.
+        assert_eq!(
+            check("a b my sequel server", "MySQL"),
+            Err(Skip::TooManyDropped)
+        );
+    }
+
+    #[test]
     fn a_new_moved_or_doubled_word_fails() {
         assert_eq!(
             tidy("meet Tuesday", "Sure! Meet Tuesday."),
@@ -314,9 +350,9 @@ mod tests {
             Err(Skip::NewWord),
             "the spoken side of an entry is not a written word"
         );
-        // The cheapest reading wins: "MySQL" for "m s q" drops two words,
-        // "MySQL" for "m" alone would drop four, past the budget of three.
-        assert_eq!(tidy("x y m s q k", "MySQL k"), Ok(()));
+        // The cheapest reading wins: "MySQL" for "m s q" drops "x" and two
+        // more, "MySQL" for "m" alone would drop five, past the budget of 3.
+        assert_eq!(tidy("x m s q k", "MySQL k"), Ok(()));
         assert_eq!(
             tidy("restart a sequel now", "restart MySQL now"),
             Err(Skip::NewWord)
