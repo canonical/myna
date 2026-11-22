@@ -49,83 +49,124 @@ def polarity_flip(heard: str, intended: str, output: str) -> bool:
     return got < negation_count(intended) or got > negation_count(heard)
 
 
+_LONGEST_DROP = 6
+_LONGEST_MISHEARING = 3
+_SPOKEN_WRITTEN_SEPARATOR = " => "
+
+
+def _check_words(text: str) -> list[str]:
+    """The words ``Check::ConservativeEdit`` compares: lowercased, stripped of
+    everything but letters, digits and apostrophes (a curly one is straight),
+    with apostrophes trimmed from the edges. Not the ASR normaliser, which
+    treats punctuation inside a token differently."""
+    tokens = []
+    for raw in text.split():
+        kept = "".join(
+            c.lower() if c.isalnum() else c
+            for c in raw.replace("\u2019", "'")
+            if c.isalnum() or c == "'"
+        ).strip("'")
+        if kept:
+            tokens.append(kept)
+    return tokens
+
+
+def _written_form(entry: str) -> str:
+    """What a vocabulary entry is typed as: the right of ``spoken => written``
+    when both sides are present, else the whole entry."""
+    spoken, sep, written = entry.strip().partition(_SPOKEN_WRITTEN_SEPARATOR)
+    if sep and spoken.strip() and written.strip():
+        return written.strip()
+    return entry.strip()
+
+
+def _droppable(run: list[str]) -> str | None:
+    if len(run) == 1 and is_negation(run[0]):
+        return "isolated-negation"
+    if len(run) > _LONGEST_DROP:
+        return "span-too-long"
+    return None
+
+
+def _nearer(so_far: str, other: str) -> str:
+    return other if so_far == "not-a-subsequence" else so_far
+
+
 def conservative_edit_violation(
     source: str, output: str, written_words: Sequence[str] = ()
 ) -> str | None:
     """Why ``output`` is not an acceptable conservative edit of ``source``, or
-    None. This is the model-agnostic ``Check::ConservativeEdit`` of DECISIONS
-    section 3, in its reference form:
+    None. A port of the product's ``Check::ConservativeEdit`` (DECISIONS
+    section 3), kept in step with it by the shared cases in
+    ``client/myna-desktop/tests/data/conservative_edit_cases.json``:
 
-    - the output words are an ordered subsequence of the source words (a word
-      listed in ``written_words`` may expand: it is matched case-insensitively
-      anywhere in the output and is not counted as an insertion);
-    - at least one word survives when the source had one;
-    - total deletions are at most ``max(2, n / 2)``;
-    - no deleted run is longer than 6 words;
-    - a lone negation (``not``, ``never``, ``*n't``) is never deleted by itself,
-      though it may go inside a run of two or more.
+    - the output words are an ordered subsequence of the source words, except
+      that a word of ``written_words`` (vocabulary entries, ``spoken => written``
+      or plain) may stand in for one to three source words that start with its
+      first letter, which then count as deleted bar one;
+    - at least one word survives;
+    - total deletions are at most ``max(2, ceil(n / 2))``;
+    - no deleted run, or run a vocabulary word replaces, is longer than 6 words;
+    - a lone negation (``not``, ``never``, ``*n't``) is never deleted or
+      replaced by itself, though it may go inside a run of two or more.
+
+    The same output can align to the source several ways, so the cheapest
+    alignment whose runs are all legal decides.
     """
-    src, out = words(source), words(output)
-    allowed = {w.casefold() for w in written_words}
-    out = [w for w in out if w not in allowed]
-    if len(out) > len(src):
-        return "not-a-subsequence"
-    deleted = len(src) - len(out)
-    if src and not out:
+    heard, answer = _check_words(source), _check_words(output)
+    if not answer:
         return "empty"
-    if deleted > max(2, len(src) // 2):
-        return "too-many-deletions"
-    # The same output can align to the source several ways ("not on Monday,
-    # no, on Tuesday" -> "on Tuesday" keeps either "on"); the edit is
-    # acceptable if any alignment has only legal deleted runs.
-    return _alignment_violation(src, out)
-
-
-def _legal_run(run: list[str]) -> bool:
-    return len(run) <= 6 and not (len(run) == 1 and is_negation(run[0]))
-
-
-def _alignment_violation(src: list[str], out: list[str]) -> str | None:
-    @cache
-    def ok(i: int, j: int, start: int) -> bool:
-        """Can src[i:] align to out[j:], given a deleted run began at ``start``
-        (or -1 when the previous word was kept)?"""
-        if i == len(src):
-            return j == len(out) and (start < 0 or _legal_run(src[start:i]))
-        if j < len(out) and src[i] == out[j] and (start < 0 or _legal_run(src[start:i])):
-            if ok(i + 1, j + 1, -1):
-                return True
-        return ok(i + 1, j, i if start < 0 else start)
-
-    if ok(0, 0, -1):
-        return None
-    if not _is_subsequence(src, out):
-        return "not-a-subsequence"
-    spans = _greedy_runs(src, out)
-    if any(len(span) > 6 for span in spans):
-        return "span-too-long"
-    return "isolated-negation"
-
-
-def _is_subsequence(src: list[str], out: list[str]) -> bool:
-    kept = iter(src)
-    return all(token in kept for token in out)
-
-
-def _greedy_runs(src: list[str], out: list[str]) -> list[list[str]]:
-    runs: list[list[str]] = []
-    j = 0
-    in_run = False
-    for token in src:
-        if j < len(out) and token == out[j]:
-            j += 1
-            in_run = False
+    written = {w for entry in written_words for w in _check_words(_written_form(entry))}
+    n = len(heard)
+    # dropped[i][j]: the fewest source words dropped to keep answer[:j] with
+    # heard[i - 1] the last one used, or i == 0 before any.
+    dropped: list[list[int | None]] = [[None] * (len(answer) + 1) for _ in range(n + 1)]
+    dropped[0][0] = 0
+    worst = "not-a-subsequence"
+    for j, word in enumerate(answer):
+        for i in range(n + 1):
+            so_far = dropped[i][j]
+            if so_far is None:
+                continue
+            for dropping in range(_LONGEST_DROP + 2):
+                nxt = i + dropping
+                if nxt >= n:
+                    break
+                run = heard[i:nxt]
+                same = heard[nxt] == word
+                if same:
+                    spans = range(1, 2)
+                elif word in written:
+                    spans = range(1, _LONGEST_MISHEARING + 1)
+                else:
+                    continue
+                for span in spans:
+                    end = nxt + span
+                    if end > n or not word.startswith(heard[nxt][0]):
+                        continue
+                    swapped = [] if same else heard[nxt:end]
+                    why = _droppable(run) or _droppable(swapped)
+                    if why:
+                        worst = _nearer(worst, why)
+                        continue
+                    total = so_far + len(run) + max(len(swapped) - 1, 0)
+                    best_here = dropped[end][j + 1]
+                    dropped[end][j + 1] = total if best_here is None else min(best_here, total)
+    budget = max(2, -(-n // 2))
+    best: int | None = None
+    for i, row in enumerate(dropped):
+        so_far = row[len(answer)]
+        if so_far is None:
             continue
-        if not in_run:
-            runs.append([])
-            in_run = True
-        runs[-1].append(token)
-    return runs
+        why = _droppable(heard[i:])
+        if why:
+            worst = _nearer(worst, why)
+            continue
+        total = so_far + (n - i)
+        best = total if best is None else min(best, total)
+    if best is None:
+        return worst
+    return None if best <= budget else "too-many-deletions"
 
 
 def _ngrams(text: str, n: int) -> Counter[str]:

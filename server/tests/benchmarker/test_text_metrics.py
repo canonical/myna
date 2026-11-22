@@ -3,6 +3,9 @@ ConservativeEdit reference check, chrF and percentiles."""
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pytest
 
 from myna.benchmarker.text_metrics import (
@@ -53,7 +56,7 @@ def test_polarity_flip_allows_a_repair_to_drop_its_own_negation():
         ("alpha beta", "beta alpha", "not-a-subsequence"),
         ("alpha beta", "alpha beta gamma", "not-a-subsequence"),
         ("alpha beta", "", "empty"),
-        ("", "", None),
+        ("", "", "empty"),
     ],
 )
 def test_conservative_edit_reference_check(source, output, reason):
@@ -77,8 +80,31 @@ def test_conservative_edit_caps_a_deleted_run_at_six_words():
 
 
 def test_conservative_edit_allows_written_words_to_expand():
-    assert conservative_edit_violation("ship it", "ship it Gnome", ["gnome"]) is None
-    assert conservative_edit_violation("ship it", "ship it Gnome") == "not-a-subsequence"
+    # A vocabulary word replaces heard words that start as it does; it is not
+    # an insertion anywhere.
+    assert conservative_edit_violation("gee nome here", "Gnome here", ["Gnome"]) is None
+    assert conservative_edit_violation("gee nome here", "Gnome here") == "not-a-subsequence"
+    assert conservative_edit_violation("ship it", "ship it Gnome", ["Gnome"]) == (
+        "not-a-subsequence"
+    )
+    assert conservative_edit_violation("restart my sequel", "MySQL", ["my sequel => MySQL"]) is None
+
+
+def test_a_written_word_may_not_replace_a_lone_negation():
+    assert conservative_edit_violation("we do not ship", "we do nginx ship", ["nginx"]) == (
+        "isolated-negation"
+    )
+    assert conservative_edit_violation("run not now", "run nginx now", ["nginx"]) == (
+        "isolated-negation"
+    )
+
+
+def test_the_words_a_written_word_replaces_count_as_deleted():
+    # Four of five heard words become one: three deleted, past the budget of
+    # two once a fifth word goes too.
+    assert conservative_edit_violation("a b my sequel server", "MySQL", ["MySQL"]) == (
+        "too-many-deletions"
+    )
 
 
 def test_chrf_is_one_for_identical_and_low_for_unrelated():
@@ -124,16 +150,18 @@ def test_edit_distance_known_values():
 
 def test_deletion_budget_is_the_larger_of_two_and_half():
     assert conservative_edit_violation("a b c d", "a b") is None
-    assert conservative_edit_violation("a b c d e", "a b") == "too-many-deletions"
+    # Half rounds up, as in the product: five words may lose three.
+    assert conservative_edit_violation("a b c d e", "a b") is None
+    assert conservative_edit_violation("a b c d e f g", "a b") == "too-many-deletions"
     assert conservative_edit_violation("a b c d e f", "a b c") is None
     assert conservative_edit_violation("a b c d e f", "a b") == "too-many-deletions"
 
 
-def test_a_failed_alignment_names_its_worst_deleted_run():
+def test_a_failed_alignment_names_the_first_reason_it_met():
     long_run = "p q r s t u v"
     padding = " ".join(f"k{i}" for i in range(12))
     assert (
-        conservative_edit_violation(f"not {padding} {long_run} tail", f"{padding} tail")
+        conservative_edit_violation(f"{padding} {long_run} tail", f"{padding} tail")
         == "span-too-long"
     )
     assert (
@@ -175,3 +203,32 @@ def test_a_six_word_run_does_not_hide_a_lone_negation():
 def test_chrf_refuses_unpaired_inputs():
     with pytest.raises(ValueError, match="shorter"):
         chrf(["a"], [])
+
+
+# The Rust ``Check::ConservativeEdit`` (client/myna-desktop/src/process/check.rs)
+# is the product's check; this file's cases are run through it by a Rust test
+# that regenerates them from the vendored corpus (``MYNA_REGEN_CASES=1``).
+_CASES = (
+    Path(__file__).resolve().parents[3]
+    / "client/myna-desktop/tests/data/conservative_edit_cases.json"
+)
+_VERDICTS = {
+    "not-a-subsequence": "new-word",
+    "too-many-deletions": "too-many-dropped",
+    "span-too-long": "long-drop",
+    "isolated-negation": "dropped-negation",
+    "empty": "empty",
+    None: "ok",
+}
+
+
+def test_the_reference_check_agrees_with_the_products_on_every_shared_case():
+    cases = json.loads(_CASES.read_text(encoding="utf-8"))
+    assert len(cases) > 500
+    wrong = [
+        (c["heard"], c["answer"], c["written"], c["verdict"], got)
+        for c in cases
+        if (got := _VERDICTS[conservative_edit_violation(c["heard"], c["answer"], c["written"])])
+        != c["verdict"]
+    ]
+    assert not wrong, f"{len(wrong)} of {len(cases)} differ, first: {wrong[:3]}"

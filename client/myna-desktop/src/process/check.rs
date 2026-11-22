@@ -359,6 +359,119 @@ mod tests {
         );
     }
 
+    /// The cases `server/tests/benchmarker/test_text_metrics.py` also runs, so
+    /// the benchmarker's reference check cannot drift from this one. Set
+    /// `MYNA_REGEN_CASES=1` to rewrite the file from the vendored corpus.
+    const CASES: &str = "tests/data/conservative_edit_cases.json";
+
+    fn verdict_name(result: Result<(), Skip>) -> String {
+        match result {
+            Ok(()) => "ok".to_owned(),
+            Err(skip) => serde_json::to_value(skip)
+                .unwrap()
+                .as_str()
+                .unwrap()
+                .to_owned(),
+        }
+    }
+
+    fn regenerated_cases() -> Vec<serde_json::Value> {
+        let hand: &[(&str, &str, &[&str])] = &[
+            ("we do not ship", "we do nginx ship", &["nginx"]),
+            ("restart my sequel now", "Restart MySQL now.", &["MySQL"]),
+            (
+                "restart my sequel now",
+                "Restart MySQL now.",
+                &["my sequel => MySQL"],
+            ),
+            ("a b my sequel server", "MySQL", &["MySQL"]),
+            ("ship it", "ship it Gnome", &["Gnome"]),
+            ("gee nome here", "Gnome here", &["Gnome"]),
+            ("run not now", "run nginx now", &["nginx"]),
+            ("it isn't ready", "it ready", &[]),
+            ("", "hello", &[]),
+            ("a b c d e", "a b", &[]),
+            ("a b c d e f", "a b", &[]),
+            ("one two", "one two three", &[]),
+            ("Monday, no, Tuesday", "Tuesday", &[]),
+            ("co-operate fully", "cooperate fully", &[]),
+            ("well, it's 3.5 now", "it's 3.5 now", &[]),
+        ];
+        let corpus = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../server/src/myna/benchmarker/textcorpus/disfluent_en.jsonl"
+        ))
+        .expect("the vendored corpus");
+        let mut cases: Vec<(String, String, Vec<String>)> = hand
+            .iter()
+            .map(|(h, a, w)| {
+                (
+                    h.to_string(),
+                    a.to_string(),
+                    w.iter().map(|w| w.to_string()).collect(),
+                )
+            })
+            .collect();
+        for line in corpus.lines() {
+            let row: serde_json::Value = serde_json::from_str(line).unwrap();
+            let heard = row["heard"].as_str().unwrap().to_owned();
+            let intended = row["intended"].as_str().unwrap().to_owned();
+            let heard_words: Vec<&str> = heard.split_whitespace().collect();
+            let intended_words: Vec<&str> = intended.split_whitespace().collect();
+            let mut without_middle = intended_words.clone();
+            without_middle.remove(without_middle.len() / 2);
+            let mut reversed = intended_words.clone();
+            reversed.reverse();
+            let every_other: Vec<&str> = heard_words.iter().copied().step_by(2).collect();
+            for answer in [
+                intended.clone(),
+                without_middle.join(" "),
+                heard_words[1..].join(" "),
+                reversed.join(" "),
+                every_other.join(" "),
+            ] {
+                cases.push((heard.clone(), answer, Vec::new()));
+            }
+        }
+        cases
+            .into_iter()
+            .map(|(heard, answer, written)| {
+                let verdict =
+                    verdict_name(Check::ConservativeEdit.verdict(&heard, &answer, &written));
+                serde_json::json!({
+                    "heard": heard, "answer": answer, "written": written, "verdict": verdict,
+                })
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_benchmarkers_reference_check_agrees_on_the_shared_cases() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(CASES);
+        if std::env::var_os("MYNA_REGEN_CASES").is_some() {
+            let mut text = serde_json::to_string_pretty(&regenerated_cases()).unwrap();
+            text.push('\n');
+            std::fs::write(&path, text).unwrap();
+        }
+        let cases: Vec<serde_json::Value> =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert!(cases.len() > 500, "the corpus-derived cases are there");
+        for case in &cases {
+            let written: Vec<String> = case["written"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|w| w.as_str().unwrap().to_owned())
+                .collect();
+            let got = verdict_name(Check::ConservativeEdit.verdict(
+                case["heard"].as_str().unwrap(),
+                case["answer"].as_str().unwrap(),
+                &written,
+            ));
+            assert_eq!(got, case["verdict"].as_str().unwrap(), "{case}");
+        }
+    }
+
     fn usable(heard: &str, answer: &str) -> Result<(), Skip> {
         Check::Usable { translation: false }.verdict(heard, answer, &[])
     }
