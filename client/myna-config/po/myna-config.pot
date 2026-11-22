@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-22 15:02+0000\n"
+"POT-Creation-Date: 2026-11-22 17:22+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -18,7 +18,7 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=INTEGER; plural=EXPRESSION;\n"
 
-#: data/diagnostics-page.blp:5 data/diagnostics-page.blp:8 src/app.rs:1465
+#: data/diagnostics-page.blp:5 data/diagnostics-page.blp:8 src/app.rs:1466
 msgid "About and Diagnostics"
 msgstr ""
 
@@ -81,7 +81,7 @@ msgid "Read-only privacy-safe diagnostic text."
 msgstr ""
 
 #: data/install-control.blp:54 data/onboarding-components.blp:60
-#: src/app.rs:4421
+#: src/app.rs:4406
 msgid "Installed"
 msgstr ""
 
@@ -103,14 +103,14 @@ msgstr ""
 msgid "General"
 msgstr ""
 
-#: data/main-window.blp:39 data/myna-page.blp:71 src/app.rs:1460
-#: src/app.rs:3606 src/app.rs:4044 src/backend_apply.rs:384
+#: data/main-window.blp:39 data/myna-page.blp:71 src/app.rs:1461
+#: src/app.rs:3591 src/app.rs:4029 src/backend_apply.rs:384
 #: src/diagnostics.rs:651 src/presentation.rs:157
 msgid "Model"
 msgstr ""
 
-#: data/main-window.blp:46 src/app.rs:6156 src/diagnostics.rs:582
-#: src/myna_settings.rs:322
+#: data/main-window.blp:46 src/app.rs:6177 src/diagnostics.rs:582
+#: src/myna_settings.rs:267
 msgid "Processing"
 msgstr ""
 
@@ -147,32 +147,32 @@ msgstr ""
 msgid "Cancel"
 msgstr ""
 
-#: data/myna-page.blp:67 data/onboarding-window.blp:7 src/app.rs:2257
-#: src/app.rs:5655 src/onboarding_ui.rs:1426 src/shortcut_ui.rs:591
+#: data/myna-page.blp:67 data/onboarding-window.blp:7 src/app.rs:2242
+#: src/app.rs:5640 src/onboarding_ui.rs:1426 src/shortcut_ui.rs:591
 msgid "Dictation"
 msgstr ""
 
-#: data/onboarding-components.blp:18 src/app.rs:4367 src/onboarding_ui.rs:1427
+#: data/onboarding-components.blp:18 src/app.rs:4352 src/onboarding_ui.rs:1427
 msgid "Install components"
 msgstr ""
 
-#: data/onboarding-components.blp:27 src/app.rs:4371
+#: data/onboarding-components.blp:27 src/app.rs:4356
 msgid ""
 "Dictation requires some additional components, including the optimal speech-"
 "to-text model for your computer. Installation might take a few minutes."
 msgstr ""
 
-#: data/onboarding-components.blp:44 src/app.rs:514 src/app.rs:4449
-#: src/app.rs:4513 src/app.rs:4919
+#: data/onboarding-components.blp:44 src/app.rs:514 src/app.rs:4434
+#: src/app.rs:4498 src/app.rs:4904
 msgid "Install all components"
 msgstr ""
 
-#: data/onboarding-components.blp:52 src/app.rs:4438
+#: data/onboarding-components.blp:52 src/app.rs:4423
 #: src/ui/install_control.rs:134
 msgid "Installing…"
 msgstr ""
 
-#: data/onboarding-shortcut.blp:18 src/app.rs:5387 src/onboarding_ui.rs:1428
+#: data/onboarding-shortcut.blp:18 src/app.rs:5372 src/onboarding_ui.rs:1428
 msgid "How to dictate"
 msgstr ""
 
@@ -216,7 +216,7 @@ msgstr ""
 msgid "Close"
 msgstr ""
 
-#: data/operation-error-dialog.blp:34 src/app.rs:4589
+#: data/operation-error-dialog.blp:34 src/app.rs:4574
 msgid "Copy Details"
 msgstr ""
 
@@ -224,11 +224,11 @@ msgstr ""
 msgid "Copy the full failure details to the clipboard"
 msgstr ""
 
-#: data/status-page.blp:8 src/app.rs:1455 src/app.rs:5956
+#: data/status-page.blp:8 src/app.rs:1456 src/app.rs:5941
 msgid "Loading Myna Settings"
 msgstr ""
 
-#: data/status-page.blp:9 src/app.rs:1456 src/app.rs:5957
+#: data/status-page.blp:9 src/app.rs:1457 src/app.rs:5942
 msgid "Reading the installed settings schema…"
 msgstr ""
 
@@ -240,258 +240,378 @@ msgstr ""
 msgid "Done"
 msgstr ""
 
-#: src/app.rs:1461
+#: src/app.rs:1462
 msgid "Model details appear once Myna finds your models."
 msgstr ""
 
-#: src/app.rs:1466
+#: src/app.rs:1467
 msgid "Diagnostics appear once Myna finds your models."
 msgstr ""
 
-#: src/app.rs:1880 src/app.rs:6003
+#: src/app.rs:1865 src/app.rs:5988
 msgid "Clear"
 msgstr ""
 
-#: src/app.rs:1971 src/list_editor_ui.rs:135
+#: src/app.rs:1956 src/list_editor_ui.rs:135
 msgid "{count} word or phrase"
 msgid_plural "{count} words or phrases"
 msgstr[0] ""
 msgstr[1] ""
 
-#: src/app.rs:2086 src/list_editor_ui.rs:150
+#: src/app.rs:2071 src/list_editor_ui.rs:150
 msgid "Typed when you say “{spoken}”"
 msgstr ""
 
-#: src/app.rs:3644 src/backend_ui.rs:4192 src/model_family.rs:27
+#: src/app.rs:3629 src/backend_ui.rs:4192 src/model_family.rs:27
 msgid "Fastest and most accurate in its 25 languages"
 msgstr ""
 
-#: src/app.rs:3648 src/backend_ui.rs:4700 src/model_family.rs:31
+#: src/app.rs:3633 src/backend_ui.rs:4700 src/model_family.rs:31
 msgid "Most languages, with uneven accuracy"
 msgstr ""
 
-#: src/app.rs:3781 src/myna_settings.rs:214
+#: src/app.rs:3766 src/myna_settings.rs:202
 msgid "As you speak"
 msgstr ""
 
-#: src/app.rs:3782 src/myna_settings.rs:215
+#: src/app.rs:3767 src/myna_settings.rs:203
 msgid "When you stop"
 msgstr ""
 
-#: src/app.rs:3922 src/app.rs:6789
+#: src/app.rs:3907 src/app.rs:6729
 msgid "Preview"
 msgstr ""
 
-#: src/app.rs:3936 src/sound_preview.rs:69
+#: src/app.rs:3921 src/sound_preview.rs:69
 msgid "Could not preview sounds"
 msgstr ""
 
-#: src/app.rs:3991 src/backend_ui.rs:793
+#: src/app.rs:3976 src/backend_ui.rs:793
 msgid "Changing to {model} failed"
 msgstr ""
 
-#: src/app.rs:3992 src/app.rs:4545 src/app.rs:4554 src/app.rs:4939
-#: src/app.rs:5752 src/app.rs:5758 src/backend_ui.rs:1391
-#: src/onboarding_ui.rs:622 src/ui/status_page.rs:70
+#: src/app.rs:3977 src/app.rs:4530 src/app.rs:4539 src/app.rs:4924
+#: src/app.rs:5737 src/app.rs:5743 src/processing_ui.rs:431
+#: src/backend_ui.rs:1391 src/onboarding_ui.rs:622 src/ui/status_page.rs:70
 msgid "Details"
 msgstr ""
 
 #. TRANSLATORS: {setting} is a setting's name on the Model tab, such as "Unload when idle (seconds)".
-#: src/app.rs:4111 src/backend_ui.rs:1797
+#: src/app.rs:4096 src/backend_ui.rs:1797
 msgid "Changing “{setting}” failed"
 msgstr ""
 
-#: src/app.rs:4113 src/presentation.rs:178
+#: src/app.rs:4098 src/presentation.rs:178
 msgid "Unload when idle (seconds)"
 msgstr ""
 
 #. TRANSLATORS: {size} is a download size, such as "4.2 GB".
-#: src/app.rs:4411 src/onboarding_ui.rs:928
+#: src/app.rs:4396 src/onboarding_ui.rs:928
 msgid "Up to {size}"
 msgstr ""
 
-#: src/app.rs:4546 src/onboarding_ui.rs:1087
+#: src/app.rs:4531 src/onboarding_ui.rs:1087
 msgid "Could not let Myna run in the background"
 msgstr ""
 
-#: src/app.rs:4573 src/app.rs:4721 src/backend_ui.rs:2565
+#: src/app.rs:4558 src/app.rs:4706 src/backend_ui.rs:2565
 msgid "Executable:"
 msgstr ""
 
-#: src/app.rs:4574 src/app.rs:4722 src/backend_ui.rs:2569
+#: src/app.rs:4559 src/app.rs:4707 src/backend_ui.rs:2569
 msgid "Arguments:"
 msgstr ""
 
-#: src/app.rs:4575 src/app.rs:4723 src/backend_ui.rs:2578
+#: src/app.rs:4560 src/app.rs:4708 src/backend_ui.rs:2578
 #: src/backend_ui.rs:2656 src/backend_ui.rs:3438
 msgid "Exit status:"
 msgstr ""
 
-#: src/app.rs:4576 src/app.rs:4724 src/app.rs:4951 src/backend_ui.rs:2623
+#: src/app.rs:4561 src/app.rs:4709 src/app.rs:4936 src/backend_ui.rs:2623
 msgid "Message:"
 msgstr ""
 
-#: src/app.rs:4641 src/onboarding_ui.rs:1066
+#: src/app.rs:4626 src/onboarding_ui.rs:1066
 msgid "Enabling user daemons support"
 msgstr ""
 
-#: src/app.rs:4663 src/onboarding_ui.rs:1067
+#: src/app.rs:4648 src/onboarding_ui.rs:1067
 msgid "Installing Dictation app"
 msgstr ""
 
 #. TRANSLATORS: {step} is what is installing, such as "Installing speech-to-text model", and {percent} how much of its download has arrived.
-#: src/app.rs:4673 src/app.rs:4736 src/app.rs:4841 src/onboarding_ui.rs:1075
+#: src/app.rs:4658 src/app.rs:4721 src/app.rs:4826 src/onboarding_ui.rs:1075
 msgid "{step} ({percent}%)"
 msgstr ""
 
-#: src/app.rs:4687 src/onboarding_ui.rs:1068
+#: src/app.rs:4672 src/onboarding_ui.rs:1068
 msgid "Installing speech-to-text model"
 msgstr ""
 
-#: src/app.rs:4701 src/onboarding_ui.rs:1089
+#: src/app.rs:4686 src/onboarding_ui.rs:1089
 msgid "Installing the speech-to-text model failed"
 msgstr ""
 
-#: src/app.rs:4764 src/onboarding_ui.rs:1070
+#: src/app.rs:4749 src/onboarding_ui.rs:1070
 msgid "Setting up the dictation indicator"
 msgstr ""
 
-#: src/app.rs:4937 src/onboarding_ui.rs:1092
+#: src/app.rs:4922 src/onboarding_ui.rs:1092
 msgid "Setting up the dictation indicator failed"
 msgstr ""
 
-#: src/app.rs:4950 src/backend_ui.rs:2609
+#: src/app.rs:4935 src/backend_ui.rs:2609
 msgid "D-Bus call:"
 msgstr ""
 
-#: src/app.rs:5402 src/shortcut_ui.rs:669
+#: src/app.rs:5387 src/shortcut_ui.rs:669
 msgid "You can trigger Dictation anytime by using the keyboard shortcut:"
 msgstr ""
 
-#: src/app.rs:5751 src/onboarding_ui.rs:743 src/onboarding_ui.rs:750
+#: src/app.rs:5736 src/onboarding_ui.rs:743 src/onboarding_ui.rs:750
 #: src/onboarding_ui.rs:1001
 msgid "Could not set up Dictation"
 msgstr ""
 
-#: src/app.rs:5784 src/onboarding_ui.rs:952
+#: src/app.rs:5769 src/onboarding_ui.rs:952
 msgid "Dictation is not set up yet. Select Next to try again."
 msgstr ""
 
-#: src/app.rs:5961
+#: src/app.rs:5946
 msgid "No Myna Settings"
 msgstr ""
 
-#: src/app.rs:5962
+#: src/app.rs:5947
 msgid "The installed schema does not declare any settings."
 msgstr ""
 
-#: src/app.rs:6008
+#: src/app.rs:5993
 msgid "Past dictations"
 msgstr ""
 
-#: src/app.rs:6010
+#: src/app.rs:5995
 msgid "What Myna typed and, where it changed something, what it heard."
 msgstr ""
 
-#: src/app.rs:6064
+#: src/app.rs:6049
 msgid "Nothing recorded yet"
 msgstr ""
 
-#: src/app.rs:6132 src/adapters/client_settings.rs:108
-msgid "What Myna types"
+#: src/app.rs:6117
+msgid "Steps"
 msgstr ""
 
-#: src/app.rs:6134
+#: src/app.rs:6119
 msgid ""
-"Anything but the first is shown on screen while you speak and typed a "
-"sentence at a time. This is experimental."
+"Switch on what Myna does to what you say, in the order shown. Any step is "
+"shown on screen while you speak and typed a sentence at a time. This is "
+"experimental."
 msgstr ""
 
-#: src/app.rs:6138
+#: src/app.rs:6123
 msgid "Chinese"
 msgstr ""
 
-#: src/app.rs:6211
+#: src/app.rs:6232
 msgid "Myna Settings Unavailable"
 msgstr ""
 
-#: src/app.rs:6212
+#: src/app.rs:6233
 msgid "Myna Settings could not start."
 msgstr ""
 
-#: src/app.rs:6757
+#: src/app.rs:6697
 msgid "Could not save the setting"
 msgstr ""
 
-#: src/app.rs:6794
+#: src/app.rs:6734
 msgid "Preview sound style"
 msgstr ""
 
-#: src/chain_notice.rs:39
+#: src/chain_notice.rs:44
 msgid "A model was connected after Myna started. Restart dictation to use it."
 msgstr ""
 
-#: src/chain_notice.rs:44
+#: src/chain_notice.rs:49
 msgid ""
-"This needs a {models} model that is not installed. Myna types what it heard "
-"instead."
+"This needs a model for {models}, which is not installed. Myna types what it "
+"heard instead."
 msgstr ""
 
-#: src/chain_notice.rs:54
+#: src/chain_notice.rs:59
 msgid "ready"
 msgstr ""
 
-#: src/chain_notice.rs:55
+#: src/chain_notice.rs:60
 msgid "restart dictation to use a new model"
 msgstr ""
 
 #. TRANSLATORS: {models} names the kinds of model that are missing, such as "translation".
-#: src/chain_notice.rs:58
-msgid "missing a {models} model"
+#: src/chain_notice.rs:63
+msgid "missing a model for {models}"
 msgstr ""
 
-#: src/chain_notice.rs:68
+#. TRANSLATORS: {language} is a language name, such as "Français".
+#: src/chain_notice.rs:93
+msgid "translation to {language}"
+msgstr ""
+
+#: src/chain_notice.rs:97
 msgid "text cleanup"
 msgstr ""
 
-#: src/chain_notice.rs:69
+#: src/chain_notice.rs:98
 msgid "translation"
 msgstr ""
 
-#: src/chain_notice.rs:70
+#: src/chain_notice.rs:99
 msgid "rewriting"
 msgstr ""
 
-#: src/chain_notice.rs:71
+#: src/chain_notice.rs:100
 msgid "text"
 msgstr ""
 
 #. TRANSLATORS: separates the kinds of model in a list, as in "text cleanup, translation".
-#: src/chain_notice.rs:82
+#: src/chain_notice.rs:111
 msgid ", "
 msgstr ""
 
-#: src/plugin_catalog.rs:159
-msgid "Tidy up speech"
+#: src/processing_steps.rs:129
+msgid "Chinese (Simplified)"
 msgstr ""
 
-#: src/plugin_catalog.rs:161
-msgid "Removes filler words and false starts, and fixes case and punctuation."
+#: src/processing_steps.rs:130
+msgid "Chinese (Traditional)"
 msgstr ""
 
-#: src/plugin_catalog.rs:163
+#. TRANSLATORS: {what} names a model to install, such as "the French model"; {size} is its download size.
+#: src/processing_steps.rs:198
+msgid "Needs {what} ({size})"
+msgstr ""
+
+#: src/processing_steps.rs:204
+msgid "Getting the model ready"
+msgstr ""
+
+#. TRANSLATORS: {n} is a size in megabytes, such as "24".
+#: src/processing_steps.rs:221
+msgid "{n} MB"
+msgstr ""
+
+#: src/processing_steps.rs:271 src/myna_settings.rs:217
+msgid "Fitted to the field"
+msgstr ""
+
+#: src/processing_steps.rs:278
+msgid ""
+"No capital or full stop in an address, and no capital where you carry on a "
+"sentence."
+msgstr ""
+
+#: src/processing_steps.rs:396
+msgid "Needs a single dictation language"
+msgstr ""
+
+#: src/processing_steps.rs:401
+msgid "The text is already in that language"
+msgstr ""
+
+#. TRANSLATORS: {language} is a language name, such as "English".
+#: src/processing_steps.rs:412
+msgid "Applies when the text is {language}"
+msgstr ""
+
+#. TRANSLATORS: {language} is a language name; this completes "Needs the French model".
+#: src/processing_steps.rs:462
+msgid "the {language} model"
+msgstr ""
+
+#. TRANSLATORS: {step} is a step's name; this completes "Needs the Tidy up speech model".
+#: src/processing_steps.rs:481
+msgid "the {step} model"
+msgstr ""
+
+#: src/processing_steps.rs:523 src/plugin_catalog.rs:254
 msgid "um so I, I think we should go"
 msgstr ""
 
-#: src/plugin_catalog.rs:164
+#: src/processing_steps.rs:526
+msgid "So I think we should go."
+msgstr ""
+
+#. TRANSLATORS: {language} is a language name, such as "Deutsch".
+#: src/processing_steps.rs:541
+msgid "Typed in {language}"
+msgstr ""
+
+#: src/processing_ui.rs:109
+msgid "For example"
+msgstr ""
+
+#: src/processing_ui.rs:289
+msgid "Translate to"
+msgstr ""
+
+#: src/processing_ui.rs:298
+msgid "From"
+msgstr ""
+
+#: src/processing_ui.rs:299
+msgid "Your dictation language"
+msgstr ""
+
+#: src/processing_ui.rs:344
+msgid "The change could not be saved."
+msgstr ""
+
+#: src/processing_ui.rs:416
+msgid "Finish dictating, then try again."
+msgstr ""
+
+#: src/processing_ui.rs:426
+msgid "Installing the model failed"
+msgstr ""
+
+#: src/processing_ui.rs:540
+msgid "Choose a language"
+msgstr ""
+
+#. TRANSLATORS: {language} is a language name; its model is not installed yet.
+#: src/processing_ui.rs:546
+msgid "{language} (not installed)"
+msgstr ""
+
+#. TRANSLATORS: {what} names a model, such as "the French model".
+#: src/processing_ui.rs:571
+msgid "Install {what}"
+msgstr ""
+
+#: src/processing_ui.rs:573 src/backend_ui.rs:1176
+msgid "Install"
+msgstr ""
+
+#: src/processing_ui.rs:583
+msgid "Preparing…"
+msgstr ""
+
+#: src/plugin_catalog.rs:250
+msgid "Tidy up speech"
+msgstr ""
+
+#: src/plugin_catalog.rs:252
+msgid "Removes filler words and false starts, and fixes case and punctuation."
+msgstr ""
+
+#: src/plugin_catalog.rs:255
 msgid "Translate"
 msgstr ""
 
-#: src/plugin_catalog.rs:165
+#: src/plugin_catalog.rs:256
 msgid "Types your dictation in another language."
 msgstr ""
 
-#: src/plugin_catalog.rs:166
+#: src/plugin_catalog.rs:257
 msgid "I think we should go"
 msgstr ""
 
@@ -557,10 +677,6 @@ msgstr ""
 
 #: src/backend_ui.rs:956
 msgid "Changing model"
-msgstr ""
-
-#: src/backend_ui.rs:1176
-msgid "Install"
 msgstr ""
 
 #. TRANSLATORS: the Install button's name to assistive technology; {model} is a model family, such as "Whisper".
@@ -1597,238 +1713,199 @@ msgstr ""
 msgid "other system copy"
 msgstr ""
 
-#: src/myna_settings.rs:85
+#: src/myna_settings.rs:81
 msgid "Type a word or phrase to add."
 msgstr ""
 
-#: src/myna_settings.rs:86
+#: src/myna_settings.rs:82
 msgid "That word is already in the list."
 msgstr ""
 
-#: src/myna_settings.rs:88
+#: src/myna_settings.rs:84
 msgid "A word or phrase can be at most {limit} characters long."
 msgstr ""
 
-#: src/myna_settings.rs:92
+#: src/myna_settings.rs:88
 msgid "The list holds at most {limit} words. Remove one to add another."
 msgstr ""
 
-#: src/myna_settings.rs:216
+#: src/myna_settings.rs:204
 msgid "Ribbon"
 msgstr ""
 
-#: src/myna_settings.rs:217
+#: src/myna_settings.rs:205
 msgid "VU meter"
 msgstr ""
 
-#: src/myna_settings.rs:218
+#: src/myna_settings.rs:206
 msgid "Default"
 msgstr ""
 
-#: src/myna_settings.rs:219
+#: src/myna_settings.rs:207
 msgid "Bird"
 msgstr ""
 
-#: src/myna_settings.rs:220
+#: src/myna_settings.rs:208
 msgid "Chime"
 msgstr ""
 
-#: src/myna_settings.rs:221
+#: src/myna_settings.rs:209
 msgid "Voice"
 msgstr ""
 
-#: src/myna_settings.rs:222
+#: src/myna_settings.rs:210
 msgid "Marimba"
 msgstr ""
 
-#: src/myna_settings.rs:223
+#: src/myna_settings.rs:211
 msgid "Water"
 msgstr ""
 
-#: src/myna_settings.rs:224
+#: src/myna_settings.rs:212
 msgid "Radio"
 msgstr ""
 
-#: src/myna_settings.rs:225
+#: src/myna_settings.rs:213
 msgid "Strings"
 msgstr ""
 
-#: src/myna_settings.rs:226
+#: src/myna_settings.rs:214
 msgid "Exactly what I say"
 msgstr ""
 
-#: src/myna_settings.rs:227
+#: src/myna_settings.rs:215
 msgid "A tidied version"
 msgstr ""
 
-#: src/myna_settings.rs:228
+#: src/myna_settings.rs:216
 msgid "A French translation"
 msgstr ""
 
-#: src/myna_settings.rs:229
-msgid "Fitted to the field"
-msgstr ""
-
-#: src/myna_settings.rs:230
+#: src/myna_settings.rs:218
 msgid "As recognised"
 msgstr ""
 
-#: src/myna_settings.rs:233
+#: src/myna_settings.rs:221
 msgid "Simplified (简体)"
 msgstr ""
 
-#: src/myna_settings.rs:234
+#: src/myna_settings.rs:222
 msgid "Traditional (繁體)"
 msgstr ""
 
-#: src/myna_settings.rs:235
+#: src/myna_settings.rs:223
 msgid "Traditional, Taiwan (繁體)"
 msgstr ""
 
-#: src/myna_settings.rs:236
+#: src/myna_settings.rs:224
 msgid "Traditional, Hong Kong (繁體)"
 msgstr ""
 
-#: src/myna_settings.rs:252
-msgid "Typed as you speak, word for word."
-msgstr ""
-
-#: src/myna_settings.rs:255 src/myna_settings.rs:274
-msgid "um so I, I think we should move it to thursday"
-msgstr ""
-
-#: src/myna_settings.rs:259
-msgid ""
-"Hesitations, false starts and repeated words are left out. Nothing is added."
-msgstr ""
-
-#: src/myna_settings.rs:263
-msgid "So I think we should move it to Thursday."
-msgstr ""
-
-#: src/myna_settings.rs:266
-msgid "Tidied, then translated from English."
-msgstr ""
-
-#: src/myna_settings.rs:272
-msgid ""
-"Word for word, but with no capital or full stop in an address, and no "
-"capital where you carry on a sentence."
-msgstr ""
-
-#: src/myna_settings.rs:300
+#: src/myna_settings.rs:245
 msgid "Not typed: focus left the field"
 msgstr ""
 
-#: src/myna_settings.rs:301
+#: src/myna_settings.rs:246
 msgid "Not typed: the field refused it"
 msgstr ""
 
-#: src/myna_settings.rs:303
+#: src/myna_settings.rs:248
 msgid "Not typed: the dictation was cancelled"
 msgstr ""
 
-#: src/myna_settings.rs:305
+#: src/myna_settings.rs:250
 msgid "Nothing to type"
 msgstr ""
 
-#: src/myna_settings.rs:312
+#: src/myna_settings.rs:257
 msgid "Typed as heard"
 msgstr ""
 
-#: src/myna_settings.rs:314
+#: src/myna_settings.rs:259
 msgid "Heard: {heard}"
 msgstr ""
 
-#: src/myna_settings.rs:318
+#: src/myna_settings.rs:263
 msgid "Speech model"
 msgstr ""
 
-#: src/myna_settings.rs:328
+#: src/myna_settings.rs:273
 msgid "Tidying"
 msgstr ""
 
-#: src/myna_settings.rs:329
+#: src/myna_settings.rs:274
 msgid "Translation"
 msgstr ""
 
-#: src/myna_settings.rs:333
+#: src/myna_settings.rs:278
 msgid "{ms} ms"
 msgstr ""
 
-#: src/myna_settings.rs:340
+#: src/myna_settings.rs:285
 msgid "Not used ({ran}): {why}"
 msgstr ""
 
-#: src/myna_settings.rs:350
+#: src/myna_settings.rs:295
 msgid "{total} ms ({heard} ms to hear, {typed} ms to type)"
 msgstr ""
 
-#: src/myna_settings.rs:354
+#: src/myna_settings.rs:299
 msgid "Wait after you stopped"
 msgstr ""
 
-#: src/myna_settings.rs:357
+#: src/myna_settings.rs:302
 msgid "Myna version"
 msgstr ""
 
-#: src/myna_settings.rs:372
+#: src/myna_settings.rs:317
 msgid "no model was reachable"
 msgstr ""
 
-#: src/myna_settings.rs:373
+#: src/myna_settings.rs:318
 msgid "the model could not answer"
 msgstr ""
 
-#: src/myna_settings.rs:374
+#: src/myna_settings.rs:319
 msgid "the model was too slow"
 msgstr ""
 
-#: src/myna_settings.rs:375
+#: src/myna_settings.rs:320
 msgid "the answer was empty"
 msgstr ""
 
-#: src/myna_settings.rs:376
+#: src/myna_settings.rs:321
 msgid "the answer added or moved words"
 msgstr ""
 
-#: src/myna_settings.rs:377
+#: src/myna_settings.rs:322
 msgid "the answer left out too much"
 msgstr ""
 
-#: src/myna_settings.rs:378
+#: src/myna_settings.rs:323
 msgid "the answer left out too many words in a row"
 msgstr ""
 
-#: src/myna_settings.rs:379
+#: src/myna_settings.rs:324
 msgid "the answer left out a “not”"
 msgstr ""
 
-#: src/myna_settings.rs:380
+#: src/myna_settings.rs:325
 msgid "the answer was a chat reply"
 msgstr ""
 
-#: src/myna_settings.rs:381
+#: src/myna_settings.rs:326
 msgid "the answer was far shorter or longer"
 msgstr ""
 
-#: src/myna_settings.rs:382
+#: src/myna_settings.rs:327
 msgid "for a reason this version does not know"
 msgstr ""
 
-#: src/adapters/client_settings.rs:110
-msgid ""
-"Exactly what you say, typed as you speak; a tidied version, without the "
-"hesitations and repeats; a French translation of it; or what you say fitted "
-"to the field you type in. Anything but the first is shown on screen while "
-"you speak and typed a sentence at a time."
-msgstr ""
-
-#: src/adapters/client_settings.rs:117
+#: src/adapters/client_settings.rs:156
 msgid "Chinese writing"
 msgstr ""
 
-#: src/adapters/client_settings.rs:119
+#: src/adapters/client_settings.rs:158
 msgid ""
 "Speech models write Chinese in whichever script they like. Choose simplified "
 "or traditional characters, with the words used in Taiwan or the characters "
