@@ -1817,6 +1817,33 @@ mod tests {
         assert!(live.history.get());
     }
 
+    /// The steps in force and the graph they compile to move separately: a
+    /// step this build cannot run changes the record and not the graph, and
+    /// a language a step does not apply to changes the graph and not the
+    /// steps.
+    #[test]
+    fn the_steps_and_their_graph_follow_settings_and_language_apart() {
+        let a = Args::default();
+        let tidy = settings_of(myna_core::ProcessingChain::TIDY);
+        let live = LiveSettings::new(&resolved(&a, &tidy), Live::new(SoundSet::default()));
+        let graph = live.graph.get();
+        assert_ne!(graph, Graph::passthrough());
+
+        let mut future = tidy.clone();
+        future.processing_steps.push("from-the-future".into());
+        live.apply(&resolved(&a, &future), "test");
+        assert_eq!(live.steps.get().len(), 2);
+        assert_eq!(live.graph.get(), graph);
+
+        let french = myna_core::Settings {
+            language: Some("fr".into()),
+            ..future
+        };
+        live.apply(&resolved(&a, &french), "test");
+        assert_eq!(live.steps.get().len(), 2);
+        assert_eq!(live.graph.get(), Graph::passthrough());
+    }
+
     /// A script holds exact dictation to a sentence, never the whole of it,
     /// and only where the language may be Chinese.
     #[test]
