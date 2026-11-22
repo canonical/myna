@@ -31,6 +31,8 @@ pub struct Quality {
     pub source: String,
 }
 
+impl Eq for Quality {}
+
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 pub struct Entry {
     pub id: String,
@@ -59,6 +61,12 @@ pub struct Entry {
     pub curated: bool,
     #[serde(default)]
     pub license: String,
+    #[serde(default)]
+    pub attribution: String,
+    #[serde(default)]
+    pub source: String,
+    #[serde(default)]
+    pub quality: Option<Quality>,
 }
 
 fn one() -> u32 {
@@ -226,19 +234,23 @@ pub fn translation_legs<'a>(entries: &'a [Entry], from: &str, to: &str) -> Optio
     Some(vec![leg(from, "en")?, leg("en", to)?])
 }
 
+/// How far down the user's locales a thing useful for `useful_for` (bare
+/// language codes, else `fallback`) comes; `locales.len()` when not at all.
+pub fn relevance(useful_for: &[String], fallback: &str, locales: &[String]) -> usize {
+    locales
+        .iter()
+        .position(|locale| {
+            let language = locale.split(['_', '-', '.']).next().unwrap_or_default();
+            useful_for.iter().any(|l| l == language)
+                || (useful_for.is_empty() && fallback == language)
+        })
+        .unwrap_or(locales.len())
+}
+
 /// Stable sort putting entries relevant to the user's locales first, in the
 /// order the locales are given, then the rest by id.
 pub fn locale_order(entries: &mut [&Entry], locales: &[String]) {
-    let rank = |entry: &Entry| {
-        locales
-            .iter()
-            .position(|locale| {
-                let language = locale.split(['_', '-', '.']).next().unwrap_or_default();
-                entry.locales.iter().any(|l| l == language)
-                    || (entry.locales.is_empty() && entry.in_lang == language)
-            })
-            .unwrap_or(locales.len())
-    };
+    let rank = |entry: &Entry| relevance(&entry.locales, &entry.in_lang, locales);
     entries.sort_by(|a, b| (rank(a), &a.id).cmp(&(rank(b), &b.id)));
 }
 
@@ -669,5 +681,28 @@ mod tests {
         let mut sorted: Vec<&Entry> = entries.iter().collect();
         locale_order(&mut sorted, &["de-AT".to_owned()]);
         assert_eq!(sorted[0].id, "translate-de-en");
+    }
+
+    #[test]
+    fn an_entry_carries_its_credit_and_measured_quality() {
+        let (dir, snapshot, root) = rig();
+        let full = with(
+            with(
+                with(entry("a", 1), "attribution", "Mozilla".into()),
+                "source",
+                "https://x".into(),
+            ),
+            "quality",
+            serde_json::json!({"value": 0.7, "source": "chrF 0.700"}),
+        );
+        write(dir.path(), "snap/a.json", &[full]);
+        let _ = (&snapshot, &root);
+        let text = fs::read_to_string(dir.path().join("snap/a.json")).unwrap();
+        let mut skipped = Vec::new();
+        let got = parse(Path::new("a.json"), &text, &mut skipped);
+        assert!(skipped.is_empty(), "{skipped:?}");
+        assert_eq!(got[0].attribution, "Mozilla");
+        assert_eq!(got[0].source, "https://x");
+        assert_eq!(got[0].quality.as_ref().unwrap().source, "chrF 0.700");
     }
 }

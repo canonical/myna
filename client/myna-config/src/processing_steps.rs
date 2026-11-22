@@ -83,7 +83,7 @@ impl Offered {
         Some(offered)
     }
 
-    fn offers(&self, model: &str) -> bool {
+    pub(crate) fn offers(&self, model: &str) -> bool {
         self.models.iter().any(|offered| offered == model)
     }
 }
