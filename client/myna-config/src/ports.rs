@@ -106,6 +106,38 @@ pub trait SystemConfigurator {
         cancellation: CancellationToken,
     ) -> Result<Option<String>, SystemConfiguratorError>;
 
+    /// Install or remove named components of an installed snap in one snapd
+    /// request as the user (one prompt). The change it started, none when
+    /// there was nothing to do.
+    async fn change_components(
+        &self,
+        snap: &str,
+        _components: &[String],
+        install: bool,
+        _cancellation: CancellationToken,
+    ) -> Result<Option<String>, SystemConfiguratorError> {
+        Err(SystemConfiguratorError::snapd_execution(
+            crate::snap_install::components_request(snap, install),
+            None,
+            "this configurator cannot change components".to_owned(),
+        ))
+    }
+
+    /// Install components of a text snap, and the snap with them when it is
+    /// missing, and connect it, as root under one `pkexec`, so a first
+    /// install costs one prompt.
+    async fn set_up_plugin(
+        &self,
+        plan: &PluginSetUp,
+        _cancellation: CancellationToken,
+    ) -> Result<(), SystemConfiguratorError> {
+        Err(SystemConfiguratorError::snapd_execution(
+            crate::snap_install::components_request(&plan.snap, true),
+            None,
+            "this configurator cannot set up a plugin".to_owned(),
+        ))
+    }
+
     /// One snapd change as it stands now, read as the user.
     async fn snap_change(
         &self,
@@ -134,6 +166,28 @@ pub struct SetUpPlan {
     pub flag: bool,
     pub installs: Vec<&'static str>,
     pub connect: Option<&'static str>,
+}
+
+/// What Settings asks of the running dictation daemon about models.
+#[async_trait(?Send)]
+pub trait DictationDaemon {
+    /// The daemon's `State`; none when no daemon runs.
+    async fn state(&self) -> Result<Option<String>, String>;
+    /// Ids of the models the daemon's bound text shares offer
+    /// (`InstalledSteps`); none when no daemon runs.
+    async fn offered_models(&self) -> Result<Option<Vec<String>>, String>;
+    /// `RescanModels`: read every text share again.
+    async fn rescan(&self) -> Result<(), String>;
+}
+
+/// A first install of components of a text snap: `snap install --edge
+/// <snap>+<component>...`, then `snap connect myna:backend <snap>:provider`
+/// when `connect` is set, under one authorization.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PluginSetUp {
+    pub snap: String,
+    pub components: Vec<String>,
+    pub connect: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

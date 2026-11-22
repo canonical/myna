@@ -59,6 +59,46 @@ const CONTENT_CONNECTIONS: &str = "/v2/connections?select=all&interface=content"
 
 const INSTALL_ON_EDGE: &str = r#"{"action":"install","channel":"latest/edge"}"#;
 
+/// A component's name as the generator writes it: `model-` and a slug.
+pub fn is_valid_component_name(name: &str) -> bool {
+    name.strip_prefix("model-").is_some_and(|slug| {
+        !slug.is_empty()
+            && slug
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+    })
+}
+
+/// The body of an install or remove of named components. The components are
+/// always named: snapd installs every component of a store snap when the list
+/// is empty.
+pub fn components_body(
+    snap: &str,
+    components: &[String],
+    install: bool,
+) -> Result<String, SnapdError> {
+    if !is_valid_snap_name(snap) {
+        return Err(SnapdError::Transport {
+            message: format!("invalid snap name: {snap}"),
+        });
+    }
+    if components.is_empty() {
+        return Err(SnapdError::Transport {
+            message: "no components named".to_owned(),
+        });
+    }
+    if let Some(bad) = components.iter().find(|c| !is_valid_component_name(c)) {
+        return Err(SnapdError::Transport {
+            message: format!("invalid component name: {bad}"),
+        });
+    }
+    Ok(serde_json::json!({
+        "action": if install { "install" } else { "remove" },
+        "components": components,
+    })
+    .to_string())
+}
+
 /// Default host location of the snapd socket. The value is deliberately a
 /// constant, not user configurable, so an attacker cannot redirect the client.
 pub const DEFAULT_SNAPD_SOCKET: &str = "/run/snapd.socket";
@@ -397,6 +437,17 @@ pub trait SnapdClient {
         cancellation: CancellationToken,
     ) -> Result<Option<String>, SnapdError>;
 
+    /// Install or remove `components` of `snap` (`remove` when `install` is
+    /// false) in one request, so one prompt. The change it started, none when
+    /// there is nothing to do.
+    async fn change_components(
+        &self,
+        snap: &str,
+        components: &[String],
+        install: bool,
+        cancellation: CancellationToken,
+    ) -> Result<Option<String>, SnapdError>;
+
     /// One change as snapd reports it now, read as the user.
     async fn change(
         &self,
@@ -524,6 +575,30 @@ impl SnapdClient for UnixSocketSnapdClient {
                 message: "snapd answered an install synchronously".to_owned(),
                 body: String::new(),
             }),
+            Err(SnapdError::Snapd {
+                kind: Some(kind), ..
+            }) if kind == "snap-already-installed" => Ok(None),
+            Err(error) => Err(error),
+        }
+    }
+
+    async fn change_components(
+        &self,
+        snap: &str,
+        components: &[String],
+        install: bool,
+        cancellation: CancellationToken,
+    ) -> Result<Option<String>, SnapdError> {
+        let body = components_body(snap, components, install)?;
+        let socket_path = self.socket_path.clone();
+        let timeouts = self.timeouts;
+        let path = format!("/v2/snaps/{snap}");
+        let handle = gio::spawn_blocking(move || {
+            blocking_start(&socket_path, timeouts, "POST", &path, &body, &cancellation)
+        });
+        match handle.await.map_err(worker_panicked)? {
+            Ok(Started::Change(change_id)) => Ok(Some(change_id)),
+            Ok(Started::Sync) => Ok(None),
             Err(SnapdError::Snapd {
                 kind: Some(kind), ..
             }) if kind == "snap-already-installed" => Ok(None),

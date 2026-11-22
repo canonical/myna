@@ -238,8 +238,12 @@ fn validate_set_up(args: &[&str]) -> Result<(), String> {
     match args {
         ["set", "system", "experimental.user-daemons=true"] => Ok(()),
         ["install", "--edge", snap] if is_mynas(snap) => Ok(()),
+        ["install", "--edge", spec] if spec.contains('+') => validate_plugin_install(spec),
         ["connect", "myna:backend", slot] => match slot.strip_suffix(":provider") {
-            Some(snap) if myna_core::language::ModelFamily::from_snap_name(snap).is_some() => {
+            Some(snap)
+                if myna_core::language::ModelFamily::from_snap_name(snap).is_some()
+                    || TEXT_SNAPS.contains(&snap) =>
+            {
                 Ok(())
             }
             _ => Err(format!("{slot} is not a model's provider slot")),
@@ -247,6 +251,29 @@ fn validate_set_up(args: &[&str]) -> Result<(), String> {
         ["install", "--edge", snap] => Err(format!("{snap} is not one of Myna's snaps")),
         _ => Err(unexpected(args)),
     }
+}
+
+/// The text snaps a plugin installs into; nothing else carries model
+/// components through the set-up.
+const TEXT_SNAPS: [&str; 2] = ["myna-text", "myna-translation"];
+
+/// `<text snap>+<component>...`: components always named, since snapd
+/// installs every component of a store snap when none is.
+fn validate_plugin_install(spec: &str) -> Result<(), String> {
+    let mut parts = spec.split('+');
+    let snap = parts.next().unwrap_or_default();
+    if !TEXT_SNAPS.contains(&snap) {
+        return Err(format!("{snap} is not one of Myna's text snaps"));
+    }
+    let components: Vec<&str> = parts.collect();
+    if components.is_empty()
+        || !components
+            .iter()
+            .all(|c| crate::adapters::snapd_client::is_valid_component_name(c))
+    {
+        return Err(format!("{spec} does not name model components"));
+    }
+    Ok(())
 }
 
 fn validate_apply(args: &[&str]) -> Result<(), String> {
@@ -573,6 +600,52 @@ mod tests {
         // Neither kind accepts the other's operations.
         assert!(validate_plan(PlanKind::Apply, &plan[..1]).is_err());
         assert!(validate_plan(PlanKind::Apply, &plan[1..2]).is_err());
+    }
+
+    #[test]
+    fn set_up_installs_components_of_the_text_snaps_only_and_always_names_them() {
+        let accepted = [
+            op(&["install", "--edge", "myna-text+model-disfluency-en"]),
+            op(&[
+                "install",
+                "--edge",
+                "myna-translation+model-translate-en-fr",
+            ]),
+            op(&["install", "--edge", "myna-translation+model-a+model-b"]),
+            op(&["connect", "myna:backend", "myna-text:provider"]),
+            op(&["connect", "myna:backend", "myna-translation:provider"]),
+        ];
+        for operation in accepted {
+            assert_eq!(
+                validate_plan(PlanKind::SetUp, std::slice::from_ref(&operation)),
+                Ok(()),
+                "{operation:?}"
+            );
+        }
+        let rejected = [
+            op(&["install", "--edge", "myna-text"]),
+            op(&["install", "--edge", "myna-translation"]),
+            op(&["install", "--edge", "myna-text+"]),
+            op(&["install", "--edge", "myna-text+disfluency"]),
+            op(&["install", "--edge", "myna-text+model-"]),
+            op(&["install", "--edge", "myna-text+model-A"]),
+            op(&["install", "--edge", "myna-text+model-a/../b"]),
+            op(&["install", "--edge", "gemma4+model-a"]),
+            op(&["install", "--edge", "myna+model-a"]),
+            op(&["install", "--edge", "myna-parakeet+model-small"]),
+            op(&["install", "--dangerous", "myna-text+model-a"]),
+            op(&["remove", "myna-text+model-a"]),
+            op(&["connect", "myna:backend", "myna-text:other"]),
+            op(&["connect", "myna:backend", "gemma4:provider"]),
+        ];
+        for operation in rejected {
+            assert!(
+                validate_plan(PlanKind::SetUp, std::slice::from_ref(&operation)).is_err(),
+                "{operation:?}"
+            );
+        }
+        let apply = [op(&["install", "--edge", "myna-text+model-a"])];
+        assert!(validate_plan(PlanKind::Apply, &apply).is_err());
     }
 
     #[test]

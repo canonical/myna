@@ -1289,3 +1289,89 @@ fn an_unreadable_change_reaches_the_follower_as_text() {
         "{read:?}"
     );
 }
+
+const COMPONENT_CHANGE: &str = "POST /v2/snaps/myna-translation ";
+
+#[test]
+fn components_are_installed_and_removed_in_one_request_each_naming_them() {
+    for (install, action) in [(true, "install"), (false, "remove")] {
+        let fake = FakeSnapd::start(vec![step(
+            COMPONENT_CHANGE,
+            http_body(202, "Accepted", CHANGE_12_ACCEPTED),
+            None,
+        )]);
+        let components = vec![
+            "model-translate-en-fr".to_owned(),
+            "model-translate-fr-en".to_owned(),
+        ];
+        let started = block_on(fake.client().change_components(
+            "myna-translation",
+            &components,
+            install,
+            CancellationToken::new(),
+        ));
+        assert_eq!(started, Ok(Some("12".to_owned())));
+        let calls = fake.calls.lock().unwrap().clone();
+        assert_eq!(calls.len(), 1, "{calls:?}");
+        assert!(calls[0].contains("X-Allow-Interaction: true\r\n"));
+        assert!(calls[0].ends_with(&format!(
+            "\r\n\r\n{{\"action\":\"{action}\",\"components\":[\"model-translate-en-fr\",\"model-translate-fr-en\"]}}"
+        )));
+    }
+}
+
+#[test]
+fn a_component_request_never_leaves_components_unnamed_or_oddly_named() {
+    let fake = FakeSnapd::start(Vec::new());
+    for components in [
+        vec![],
+        vec!["translate-en-fr".to_owned()],
+        vec!["model-".to_owned()],
+        vec!["model-A".to_owned()],
+        vec!["model-a\",\"x".to_owned()],
+    ] {
+        let refused = block_on(fake.client().change_components(
+            "myna-translation",
+            &components,
+            true,
+            CancellationToken::new(),
+        ));
+        assert!(
+            matches!(refused, Err(SnapdError::Transport { .. })),
+            "{components:?}: {refused:?}"
+        );
+    }
+    let refused = block_on(fake.client().change_components(
+        "../v2/logout",
+        &["model-a".to_owned()],
+        true,
+        CancellationToken::new(),
+    ));
+    assert!(matches!(refused, Err(SnapdError::Transport { .. })));
+    assert!(fake.calls.lock().unwrap().is_empty());
+}
+
+#[test]
+fn a_sideloaded_snap_is_refused_by_snapd_and_the_reason_is_kept() {
+    let fake = FakeSnapd::start(vec![step(
+        COMPONENT_CHANGE,
+        http_body(
+            400,
+            "Bad Request",
+            r#"{"type":"error","status-code":400,"result":{"message":"cannot install components for a snap that is unknown to the store"}}"#,
+        ),
+        None,
+    )]);
+    let refused = block_on(fake.client().change_components(
+        "myna-translation",
+        &["model-a".to_owned()],
+        true,
+        CancellationToken::new(),
+    ));
+    assert!(
+        refused
+            .as_ref()
+            .is_err_and(|e| e.to_string().contains("unknown to the store")),
+        "{refused:?}"
+    );
+}

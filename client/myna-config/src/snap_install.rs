@@ -20,6 +20,12 @@ pub fn install_request(snap: &str) -> String {
     format!("POST /v2/snaps/{snap} (install, {INSTALL_CHANNEL})")
 }
 
+/// How a failure report names the request that changes components of `snap`.
+pub fn components_request(snap: &str, install: bool) -> String {
+    let action = if install { "install" } else { "remove" };
+    format!("POST /v2/snaps/{snap} ({action} components)")
+}
+
 /// How every store error line starts in the journal.
 pub const STORE_ERROR_PREFIX: &str = "myna-config: store: ";
 
