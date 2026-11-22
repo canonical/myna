@@ -52,6 +52,7 @@ The client pushes PCM to a backend; inference snaps never access the microphone.
 - `.kb/build-inputs.md` - How every workshop input is pinned, and the weekly apt snapshot bump.
 - `.kb/versioning.md` - The single version source, how each artifact receives it, and why the manifests say `0.0.0`.
 - `.kb/releasing.md` - Cutting a release: version choice, notes in the tag, what is published from it.
+- `.kb/plugins-snapd.md` - What snapd does when Settings installs, connects and removes text-model components (probe results).
 - `.kb/verification.md` - What done means: the gates, patch coverage, red/green tests and scoped mutation testing.
 - `.kb/plugins-snapd.md` - How snapd installs, connects and removes text-model components for Myna Settings, measured.
 - `.kb/text-plugin-contract.md` - The text plugin contract: manifest and capabilities fields, class to check, versioning rules.
