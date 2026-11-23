@@ -840,7 +840,7 @@ fn a_change_to_the_stored_steps_wakes_the_watchers_and_no_row() {
                 })
                 .unwrap();
             let woken = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-            let _watch = reader.watch_steps({
+            let watch = reader.watch_steps({
                 let woken = Arc::clone(&woken);
                 move || {
                     woken.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -867,6 +867,16 @@ fn a_change_to_the_stored_steps_wakes_the_watchers_and_no_row() {
                 std::thread::sleep(Duration::from_millis(10));
             }
             assert!(observed.lock().unwrap().is_empty());
+            assert_eq!(woken.load(std::sync::atomic::Ordering::SeqCst), 1);
+
+            // A dropped watch hears no more.
+            drop(watch);
+            writer.set_steps(&list(&["tidy"]), &params(&[])).unwrap();
+            let settle = Instant::now() + Duration::from_millis(300);
+            while Instant::now() < settle {
+                while context.iteration(false) {}
+                std::thread::sleep(Duration::from_millis(10));
+            }
             assert_eq!(woken.load(std::sync::atomic::Ordering::SeqCst), 1);
         })
         .unwrap();
