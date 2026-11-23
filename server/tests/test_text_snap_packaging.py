@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import shlex
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -25,11 +26,10 @@ TRANSLATION = ROOT / "translation-snap"
 SNAPS = {"myna-text": TEXT, "myna-translation": TRANSLATION}
 COMPONENT_IDS = {
     "myna-text": {"myna-disfluency-en": "text.cleanup"},
+    # Every translation pair, one plugin file each: the manifests follow them.
     "myna-translation": {
-        "bergamot-base-memory-en-de": "text.translate",
-        "bergamot-base-memory-en-fr": "text.translate",
-        "bergamot-tiny-en-fa": "text.translate",
-        "bergamot-tiny-fr-en": "text.translate",
+        tomllib.loads(path.read_text(encoding="utf-8"))["id"]: "text.translate"
+        for path in sorted((TRANSLATION / "plugins").glob("*.toml"))
     },
 }
 

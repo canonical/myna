@@ -62,10 +62,11 @@ MOZILLA_TO_FLEURS: dict[str, str] = {
     "zh-Hans": "cmn_hans_cn",
 }
 
-# Mozilla languages FLEURS has no locale for (nn: no Nynorsk; sq: no Albanian;
-# zh-Hant: only Cantonese, a different language). Their plugins ship with a
-# vendor score and the spot check, never a measured chrF.
-NO_EVAL: frozenset[str] = frozenset({"nn", "sq", "zh-Hant"})
+# Mozilla languages graded without a slice (nn: no Nynorsk; sq: no Albanian;
+# eu, ug: absent; zh-Hant: only Cantonese, a different language). af_za,
+# gl_es, mr_in and ur_pk exist in FLEURS but are not mapped yet. Their plugins
+# are probed (text_suite.eval_probe), never given a measured chrF.
+NO_EVAL: frozenset[str] = frozenset({"af", "eu", "gl", "mr", "nn", "sq", "ug", "ur", "zh-Hant"})
 
 
 class NoEvalError(LookupError):
