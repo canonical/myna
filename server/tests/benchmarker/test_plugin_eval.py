@@ -384,6 +384,27 @@ def test_measured_json_rounds_latency_up_to_a_step_and_records_the_gate_and_resu
     assert pe.measured_json(results, gate, ["translate_en_fr"], "")["latency_ms"] == 5
 
 
+def test_a_probed_pair_records_the_vendor_comet_as_its_quality_or_zero():
+    gates = [
+        text_suite.Gate("probe_af", "p95_ms", 12.0, 400, "<", "pass"),
+        text_suite.Gate("probe_af", "empty_rate", 0.0, 0.0, "<=", "pass"),
+    ]
+    detail = {"probe_af": {"n": 200, "latency_ms": {"p50": 8.0, "p95": 12.0}}}
+    gate = GateConfig(vendor_comet=0.83)
+    results = pe.build_results(PLUGIN, report_of(gates, detail), ["probe_af"], gate, {})
+    assert results["gate"] == "pass" and results["measured"]["chrf"] is None
+    slim = pe.measured_json(results, gate, ["probe_af"], "h")
+    assert slim["quality"] == 0.83 and slim["latency_ms"] == 15
+    assert slim["quality_source"] == (
+        "not measured: no FLEURS slice for af; served 200 English sentences; "
+        "vendor FLORES COMET 0.83"
+    )
+    bare = pe.build_results(PLUGIN, report_of(gates, detail), ["probe_af"], GateConfig(), {})
+    slim = pe.measured_json(bare, GateConfig(), ["probe_af"], "h")
+    assert slim["quality"] == 0.0
+    assert slim["quality_source"].endswith("quality not measured by the vendor")
+
+
 def test_measured_json_of_a_cleanup_plugin_reports_reduction_and_uer():
     plugin = PLUGIN | {"task": "text.cleanup"}
     gates = [

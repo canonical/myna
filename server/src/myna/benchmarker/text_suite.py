@@ -335,6 +335,49 @@ def eval_translate(
     return gates, detail
 
 
+PROBE_PREFIX = "probe_"
+
+
+def eval_probe(
+    system: System,
+    corpus: text_corpus.TextCorpus,
+    repeats: int,
+    lang: str,
+    gate: GateConfig,
+) -> tuple[list[Gate], dict[str, Any]]:
+    """A pair with no corpus slice: it cannot be scored, only shown to serve.
+
+    The English clean_en sentences go in whatever the source language, so the
+    output is not judged for meaning, only for being there, loop-free and in
+    time; the vendor COMET is the one quality figure, when Mozilla gives one."""
+    suite = PROBE_PREFIX + lang
+    texts = [c.text for c in corpus.clean_en]
+    outputs, millis = _timed(system.translate, texts, repeats) if system.translate else ([], [])
+    latency = _latency(millis)
+    measured = bool(outputs)
+    gates = [
+        Gate(suite, "p95_ms", latency["p95"] if measured else None, gate.p95_max_ms, "<"),
+        Gate(suite, "empty_rate", empty_rate(outputs) if measured else None, gate.empty_max, "<="),
+        Gate(
+            suite,
+            "repeat_loop_rate",
+            repeat_loop_rate(outputs) if measured else None,
+            gate.repeat_max,
+            "<=",
+        ),
+    ]
+    if gate.vendor_comet is not None:
+        gates.append(Gate(suite, "vendor_comet", gate.vendor_comet, gate.comet_min, ">="))
+    detail: dict[str, Any] = {
+        "n": len(texts),
+        "latency_ms": latency,
+        "vendor_comet": gate.vendor_comet,
+        "probe": True,
+        "examples": [{"source": t, "output": o} for t, o in zip(texts[:5], outputs[:5])],
+    }
+    return [g.decide() for g in gates], detail
+
+
 def _latency(millis: list[float]) -> dict[str, float]:
     return {"p50": percentile(millis, 50), "p95": percentile(millis, 95)}
 
@@ -351,6 +394,8 @@ def _run_suite(
 ) -> tuple[list[Gate], dict[str, Any]]:
     if name in ("clean_en", "disfluent_en"):
         return SUITES[name](system, corpus, repeats)
+    if name.startswith(PROBE_PREFIX):
+        return eval_probe(system, corpus, repeats, name[len(PROBE_PREFIX) :], gate or GateConfig())
     match = text_corpus.PAIR_RE.fullmatch(name)
     if not match:
         raise SystemExit(f"unknown suite {name!r}")
@@ -403,7 +448,10 @@ def plugin_plan(plugin: dict[str, Any]) -> tuple[list[str], dict[str, GateConfig
     """The suites a plugin is graded on and the gate config of its pair slice."""
     if plugin.get("task") == "text.cleanup":
         return ["clean_en", "disfluent_en"], {}
-    suite = text_corpus.pair_slice(pair_of(plugin))
+    lang = pair_of(plugin)
+    suite = text_corpus.pair_slice(lang)
+    if not (text_corpus.CORPUS_DIR / f"{suite}.jsonl").is_file():
+        suite = PROBE_PREFIX + lang
     return [suite], {suite: GateConfig.from_plugin(plugin)}
 
 

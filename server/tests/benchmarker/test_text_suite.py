@@ -469,6 +469,31 @@ def test_plugin_plan_picks_the_slice_and_the_gate_of_the_plugin_file():
     assert text_suite.plugin_plan({"task": "text.cleanup"}) == (["clean_en", "disfluent_en"], {})
 
 
+def test_a_pair_with_no_slice_is_probed_instead():
+    suites, plan = text_suite.plugin_plan(
+        {"task": "text.translate", "language": "af", "to": "en", "gate": {"vendor_comet": 0.85}}
+    )
+    assert suites == ["probe_af"] and plan["probe_af"].vendor_comet == 0.85
+
+
+def test_a_probe_passes_a_model_that_answers_and_fails_one_that_does_not():
+    ok = gates(evaluate(System("t", translate=lambda t: f"[{t}]"), ["probe_af"], 1))
+    assert set(ok) == {"probe_af.p95_ms", "probe_af.empty_rate", "probe_af.repeat_loop_rate"}
+    assert {g.status for g in ok.values()} == {"pass"}
+    silent = gates(evaluate(System("t", translate=lambda t: ""), ["probe_af"], 1))
+    assert silent["probe_af.empty_rate"].status == "fail"
+    looping = gates(evaluate(System("t", translate=lambda t: "la " * 60), ["probe_af"], 1))
+    assert looping["probe_af.repeat_loop_rate"].status == "fail"
+    low = evaluate(
+        System("t", translate=str), ["probe_af"], 1, {"probe_af": GateConfig(vendor_comet=0.7)}
+    )
+    assert gates(low)["probe_af.vendor_comet"].status == "fail"
+    assert low.detail["probe_af"]["probe"] is True
+    assert low.detail["probe_af"]["n"] == 200
+    idle = gates(evaluate(System("t"), ["probe_af"], 1))
+    assert {g.status for g in idle.values()} == {"pending"}
+
+
 def test_cmd_text_with_a_plugin_and_a_socket_scores_that_model(tmp_path, capsys, monkeypatch):
     plugin = tmp_path / "translate-en-de.toml"
     plugin.write_text(

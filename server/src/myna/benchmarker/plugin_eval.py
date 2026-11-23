@@ -218,6 +218,12 @@ def spot_check_state(plugin: dict[str, Any]) -> str:
 
 
 def quality_source(gate: GateConfig, score: float | None, n: int, suite: str) -> str:
+    if suite.startswith(text_suite.PROBE_PREFIX):
+        lang = suite[len(text_suite.PROBE_PREFIX) :]
+        probed = f"not measured: no FLEURS slice for {lang}; served {n} English sentences"
+        if gate.vendor_comet is not None:
+            return f"{probed}; vendor FLORES COMET {gate.vendor_comet:g}"
+        return f"{probed}; quality not measured by the vendor"
     if score is None:
         return "not measured"
     measured = f"chrF {score:.3f} on {n} FLEURS pairs ({suite})"
@@ -238,7 +244,7 @@ def build_results(
     measured: dict[str, Any] = {}
     if plugin["task"] == "text.translate":
         detail = report.detail[suites[0]]
-        chrf = next(g["value"] for g in gates if g["metric"] == "chrf")
+        chrf = next((g["value"] for g in gates if g["metric"] == "chrf"), None)
         measured = {
             "chrf": chrf,
             "latency_ms": detail["latency_ms"],
@@ -269,7 +275,8 @@ def measured_json(
     m = results["measured"]
     if m:
         p95 = m["latency_ms"]["p95"]
-        score = round(m["chrf"], 3)
+        evidence = m["chrf"] if m["chrf"] is not None else m["vendor_comet"]
+        score = round(evidence or 0.0, 3)
         source = quality_source(gate or GateConfig(), m["chrf"], m["n"], suites[0])
     else:
         values = {f"{g['suite']}.{g['metric']}": g["value"] for g in results["gates"]}
