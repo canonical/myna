@@ -80,6 +80,8 @@ struct ChainRow {
 /// One step in the editor.
 struct LineWidgets {
     row: adw::ActionRow,
+    /// "Skipped", shown while the text at the step's place does not suit it.
+    skipped: gtk::Label,
     /// Under the step, only when it has something to set or do: its
     /// parameter picker, its install and its fix. On the step's own row
     /// they left the title no room.
@@ -826,6 +828,13 @@ impl StepsPage {
             .css_classes(["dim-label", "caption", "monospace"])
             .valign(gtk::Align::Center)
             .build();
+        let skipped = gtk::Label::builder()
+            // TRANSLATORS: marks a step of a chain that does not run where it stands.
+            .label(gettextrs::gettext("Skipped"))
+            .css_classes(["caption", "skipped-marker"])
+            .valign(gtk::Align::Center)
+            .visible(false)
+            .build();
         let picker = gtk::DropDown::builder()
             .valign(gtk::Align::Center)
             .visible(false)
@@ -876,7 +885,8 @@ impl StepsPage {
             .popover(&popover)
             .build();
         for widget in [
-            badge.upcast_ref::<gtk::Widget>(),
+            skipped.upcast_ref::<gtk::Widget>(),
+            badge.upcast_ref(),
             switch.upcast_ref(),
             up.upcast_ref(),
             down.upcast_ref(),
@@ -1052,6 +1062,7 @@ impl StepsPage {
         row.add_controller(keys);
         LineWidgets {
             row,
+            skipped,
             detail,
             number,
             badge,
@@ -2075,6 +2086,13 @@ fn show_line(widgets: &LineWidgets, line: &Line, total: usize, blocked: bool, it
     widgets
         .row
         .update_property(&[gtk::accessible::Property::Description(&description)]);
+    // A skipped step looks inactive, not only says so: dimmed and marked.
+    if line.skipped {
+        widgets.row.add_css_class("skipped-step");
+    } else {
+        widgets.row.remove_css_class("skipped-step");
+    }
+    widgets.skipped.set_visible(line.skipped);
     widgets.badge.set_label(&line.badge);
     widgets.badge.set_visible(!line.badge.is_empty());
     widgets.switch.set_active(line.on);
@@ -2692,6 +2710,12 @@ mod tests {
                 );
                 assert!(lines[1].fix.label().unwrap().contains("Move above"));
                 assert!(lines[1].row.subtitle().unwrap().starts_with("Skipped here"));
+                // Charles, 2026-11-23: a skipped step looked active.
+                assert!(lines[1].row.has_css_class("skipped-step"));
+                assert!(lines[1].skipped.is_visible());
+                assert!(!lines[1].detail.has_css_class("skipped-step"));
+                assert!(!lines[0].row.has_css_class("skipped-step"));
+                assert!(!lines[0].skipped.is_visible());
             }
             let fix = editor.lines.borrow()[1].fix.clone();
             fix.emit_clicked();
@@ -2700,6 +2724,7 @@ mod tests {
                 [("tidy".into(), true), ("translate".into(), true)]
             );
             assert!(!editor.lines.borrow()[0].fix.is_visible());
+            assert!(!editor.lines.borrow()[0].row.has_css_class("skipped-step"));
             let down = editor.lines.borrow()[0].down.clone();
             down.emit_clicked();
             assert_eq!(steps_of(&rig, "fr")[0].0, "translate");
