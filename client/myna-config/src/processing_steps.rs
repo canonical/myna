@@ -417,6 +417,13 @@ fn target_of(params: &Params) -> Option<&str> {
         .filter(|to| !to.is_empty())
 }
 
+/// Whether some model, installed or offered by the catalogs, translates
+/// `from` to `to`, directly or through English.
+pub fn routable(catalog: &[Entry], daemon: Option<&Offered>, from: &str, to: &str) -> bool {
+    plugin_catalog::translation_legs(catalog, from, to).is_some()
+        || daemon.is_some_and(|d| d.translations.iter().any(|(f, t)| f == from && t == to))
+}
+
 fn translate_row(inputs: &Inputs) -> TranslateRow {
     let Source::One(from) = inputs.source else {
         return TranslateRow {

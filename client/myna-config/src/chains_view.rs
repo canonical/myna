@@ -13,7 +13,7 @@ use myna_core::chains::{fits, Chain, ChainStep, Fit, Misfit};
 use myna_core::processing::{param_key, Params};
 
 use crate::plugin_catalog::Entry;
-use crate::processing_steps::{rows, Inputs, Offered, Row, Source, Standing};
+use crate::processing_steps::{routable, rows, Inputs, Offered, Row, Source, Standing, TRANSLATE};
 
 /// What every step judgement needs besides the chain.
 pub struct Context<'a> {
@@ -56,6 +56,61 @@ pub struct Line {
     /// The Translate target picker and the script picker.
     pub row: Row,
     pub skipped: bool,
+    /// Which moves keep every translation of the chain doable.
+    pub moves: Moves,
+}
+
+/// The moves of a step that leave no translation without a model.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Moves {
+    pub up: bool,
+    pub down: bool,
+    pub top: bool,
+    pub bottom: bool,
+}
+
+/// How many translations of `steps` that run no model can do, installed
+/// or offered: the text reaches them in a language nothing translates from
+/// into their target.
+fn stranded(steps: &[ChainStep], ctx: &Context) -> usize {
+    steps
+        .iter()
+        .zip(fits(steps, ctx.language))
+        .filter(|(step, fit)| {
+            step.step == TRANSLATE
+                && matches!(fit, Fit::Runs { input: Some(from), output: Some(to) }
+                    if !routable(ctx.catalog, ctx.daemon, from, to))
+        })
+        .count()
+}
+
+/// Whether turning `before` into `after` leaves a translation no model can
+/// do that `before` did not have. The editor offers no such change, so a
+/// chain is not built into a pair nothing translates.
+pub fn strands(before: &[ChainStep], after: &[ChainStep], ctx: &Context) -> bool {
+    stranded(after, ctx) > stranded(before, ctx)
+}
+
+/// The language the text is in just before position `at` of `steps`, as
+/// `Source`: where a step inserted there would read it.
+pub fn language_at(steps: &[ChainStep], at: usize, language: Option<&str>) -> Source {
+    let before = &steps[..at.min(steps.len())];
+    fits(before, language)
+        .into_iter()
+        .rev()
+        .find_map(|fit| match fit {
+            Fit::Runs { output, .. } => Some(output),
+            _ => None,
+        })
+        .unwrap_or_else(|| language.map(myna_core::chains::primary_language))
+        .map_or(Source::Unknown, Source::One)
+}
+
+/// `steps` with step `index` translating to `to`.
+fn retargeted(steps: &[ChainStep], index: usize, to: &str) -> Vec<ChainStep> {
+    let mut steps = steps.to_vec();
+    steps[index].params.insert("to".into(), to.to_owned());
+    steps
 }
 
 /// A step's parameters in the `<step>.<param>` form `processing_steps` reads.
@@ -168,6 +223,33 @@ pub fn lines(chain: &Chain, ctx: &Context) -> Vec<Line> {
                     None,
                 ),
             };
+            let keeps = |to: usize| {
+                to == index || !strands(&chain.steps, &moved(&chain.steps, index, to), ctx)
+            };
+            let last = chain.steps.len().saturating_sub(1);
+            let moves = Moves {
+                up: index > 0 && keeps(index - 1),
+                down: index < last && keeps(index + 1),
+                top: index > 0 && keeps(0),
+                bottom: index < last && keeps(last),
+            };
+            let fix = fix.filter(|(at, _)| keeps(*at));
+            let mut row = row.clone();
+            if let Some(translate) = row.translate.as_mut() {
+                let chosen = translate
+                    .selected
+                    .map(|i| translate.targets[i].code.clone());
+                translate.targets.retain(|target| {
+                    Some(&target.code) == chosen.as_ref()
+                        || !strands(
+                            &chain.steps,
+                            &retargeted(&chain.steps, index, &target.code),
+                            ctx,
+                        )
+                });
+                translate.selected =
+                    chosen.and_then(|code| translate.targets.iter().position(|t| t.code == code));
+            }
             Line {
                 index,
                 id: step.step.clone(),
@@ -177,8 +259,9 @@ pub fn lines(chain: &Chain, ctx: &Context) -> Vec<Line> {
                 subtitle,
                 fix,
                 standing: row.standing.clone(),
-                row: row.clone(),
+                row,
                 skipped,
+                moves,
             }
         })
         .collect()
@@ -373,6 +456,116 @@ mod tests {
         assert!(cards[0].steps.contains('\u{2192}'));
         assert_eq!(cards[1].needs, None);
         assert_eq!(cards[2].steps, "No steps");
+    }
+
+    /// en-fa, en-fr and fr-en offered: Farsi reaches nothing but English's
+    /// own legs, and nothing takes Farsi anywhere.
+    fn persian_case() -> Case {
+        let mut case = case();
+        case.catalog.push(entry("en-fa", "translate", "en", "fa"));
+        case.catalog.push(entry("fr-en", "translate", "fr", "en"));
+        case
+    }
+
+    fn translations(targets: &[&str]) -> Vec<ChainStep> {
+        targets
+            .iter()
+            .map(|to| ChainStep::new("translate").with("to", to))
+            .collect()
+    }
+
+    #[test]
+    fn a_move_that_strands_a_translation_is_not_offered() {
+        let case = persian_case();
+        let ctx = ctx(&case);
+        let lines = lines(&chain(translations(&["fr", "en", "fa"])), &ctx);
+        assert_eq!(
+            lines[2].moves,
+            Moves {
+                up: false,
+                down: false,
+                top: false,
+                bottom: false
+            }
+        );
+        assert_eq!(
+            lines[1].moves,
+            Moves {
+                up: true,
+                down: false,
+                top: true,
+                bottom: false
+            }
+        );
+        assert_eq!(
+            lines[0].moves,
+            Moves {
+                up: false,
+                down: true,
+                top: false,
+                bottom: false
+            }
+        );
+    }
+
+    #[test]
+    fn a_target_that_strands_a_later_translation_is_not_listed() {
+        let case = persian_case();
+        let lines = lines(&chain(translations(&["fr", "en"])), &ctx(&case));
+        let codes: Vec<&str> = lines[0]
+            .row
+            .translate
+            .as_ref()
+            .unwrap()
+            .targets
+            .iter()
+            .map(|t| t.code.as_str())
+            .collect();
+        // German and Persian would leave "en" reading text no model takes
+        // to English.
+        assert_eq!(codes, ["fr"]);
+        let translate = lines[0].row.translate.as_ref().unwrap();
+        assert_eq!(translate.targets[translate.selected.unwrap()].code, "fr");
+        let alone = super::lines(&chain(translations(&["fr"])), &ctx(&case));
+        assert!(alone[0]
+            .row
+            .translate
+            .as_ref()
+            .unwrap()
+            .targets
+            .iter()
+            .any(|t| t.code == "fa"));
+    }
+
+    #[test]
+    fn strands_counts_only_new_translations_nothing_can_do() {
+        let case = persian_case();
+        let ctx = ctx(&case);
+        let broken = translations(&["fa", "fr"]);
+        assert!(strands(&translations(&["fa"]), &broken, &ctx));
+        assert!(!strands(&broken, &broken, &ctx));
+        assert!(!strands(&broken, &translations(&["fr"]), &ctx));
+        let unknown = Context {
+            language: None,
+            ..ctx
+        };
+        assert!(!strands(&[], &translations(&["fa"]), &unknown));
+    }
+
+    #[test]
+    fn the_language_at_a_place_is_what_the_steps_before_it_made() {
+        let steps = vec![
+            ChainStep::new("tidy"),
+            ChainStep::new("translate").with("to", "fa"),
+            ChainStep::new("translate").with("to", "fa"),
+        ];
+        let at = |n, language| language_at(&steps, n, language);
+        assert_eq!(at(0, Some("en-GB")), Source::One("en".into()));
+        assert_eq!(at(1, Some("en")), Source::One("en".into()));
+        assert_eq!(at(2, Some("en")), Source::One("fa".into()));
+        assert_eq!(at(3, Some("en")), Source::One("fa".into()));
+        assert_eq!(at(9, Some("en")), Source::One("fa".into()));
+        assert_eq!(at(1, None), Source::Unknown);
     }
 
     /// Farsi to French: no model does it directly, and none takes Farsi to

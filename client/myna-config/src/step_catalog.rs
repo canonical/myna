@@ -62,6 +62,9 @@ pub struct Inputs<'a> {
     pub enabled: &'a [String],
     pub params: &'a Params,
     pub source: &'a Source,
+    /// The language of the text where an added translation would go in the
+    /// chain: the dictation language, or what an earlier Translate made it.
+    pub translate_from: &'a Source,
     pub daemon: Option<&'a Offered>,
     /// Installs running now, by item id, with snapd's percentage.
     pub installing: &'a std::collections::BTreeMap<String, Option<u8>>,
@@ -168,7 +171,7 @@ fn from_entry(entry: &Entry, inputs: &Inputs) -> Item {
     let description = plugin_catalog::label(&entry.step.description_key).unwrap_or_default();
     let example = example(entry);
     let target = (translating
-        && matches!(inputs.source, Source::One(from) if *from != entry.out_lang))
+        && matches!(inputs.translate_from, Source::One(from) if *from != entry.out_lang))
     .then(|| entry.out_lang.clone());
     Item {
         id: entry.id.clone(),
@@ -285,10 +288,10 @@ fn added(entry: &Entry, inputs: &Inputs) -> bool {
     inputs.params.get(&param_key(TRANSLATE, TRANSLATE_TO)) == Some(&entry.out_lang)
 }
 
-/// Why a translation model cannot act on the dictation language: neither it
-/// nor a pivot through English reaches its target.
+/// Why a translation model cannot act on the text where it would go: neither
+/// it nor a pivot through English reaches its target from there.
 fn translate_mismatch(entry: &Entry, inputs: &Inputs) -> Option<String> {
-    let Source::One(from) = inputs.source else {
+    let Source::One(from) = inputs.translate_from else {
         return None;
     };
     if *from == entry.in_lang {
@@ -359,6 +362,9 @@ mod tests {
         enabled: Vec<String>,
         params: Params,
         language: &'static str,
+        /// The text's language where a translation would go, when an
+        /// earlier step changed it.
+        place: Option<&'static str>,
         daemon: Option<Offered>,
         installing: BTreeMap<String, Option<u8>>,
         preparing: BTreeSet<String>,
@@ -371,6 +377,7 @@ mod tests {
             enabled: Vec::new(),
             params: Params::new(),
             language: "en",
+            place: None,
             daemon: Offered::parse(BOTH),
             installing: BTreeMap::new(),
             preparing: BTreeSet::new(),
@@ -393,11 +400,15 @@ mod tests {
             preparing: &case.preparing,
             locales: &case.locales,
         });
+        let place = case
+            .place
+            .map_or_else(|| source.clone(), Source::of_setting);
         items(&Inputs {
             catalog: &catalog,
             enabled: &case.enabled,
             params: &case.params,
             source: &source,
+            translate_from: &place,
             daemon: case.daemon.as_ref(),
             installing: &case.installing,
             preparing: &case.preparing,
@@ -409,6 +420,29 @@ mod tests {
 
     fn find<'a>(items: &'a [Item], id: &str) -> &'a Item {
         items.iter().find(|i| i.id == id).unwrap()
+    }
+
+    /// English dictation, but an earlier step leaves the text in Persian
+    /// where a translation would go: English to French cannot run there and
+    /// nothing takes Persian to French, so it is not offered.
+    #[test]
+    fn a_translation_is_judged_where_it_would_go_in_the_chain() {
+        let here = listed(&case());
+        assert_eq!(find(&here, "en-fr").offer, Offer::Add);
+        let after_persian = listed(&Case {
+            place: Some("fa"),
+            ..case()
+        });
+        assert!(
+            matches!(find(&after_persian, "en-fr").offer, Offer::NotApplicable(_)),
+            "{:?}",
+            find(&after_persian, "en-fr").offer
+        );
+        let after_french = listed(&Case {
+            place: Some("fr"),
+            ..case()
+        });
+        assert_eq!(find(&after_french, "en-fr").target, None);
     }
 
     #[test]
@@ -444,6 +478,7 @@ mod tests {
             enabled: &[],
             params: &Params::new(),
             source: &source,
+            translate_from: &source,
             daemon: None,
             installing: &BTreeMap::new(),
             preparing: &BTreeSet::new(),
@@ -607,6 +642,7 @@ mod tests {
             enabled: &[],
             params: &Params::new(),
             source: &source,
+            translate_from: &source,
             daemon: daemon.as_ref(),
             installing: &BTreeMap::new(),
             preparing: &BTreeSet::new(),
@@ -677,6 +713,7 @@ mod tests {
             enabled: &[],
             params: &Params::new(),
             source: &source,
+            translate_from: &source,
             daemon: None,
             installing: &BTreeMap::new(),
             preparing: &BTreeSet::new(),

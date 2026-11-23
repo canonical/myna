@@ -94,6 +94,8 @@ struct LineWidgets {
     switch: gtk::Switch,
     up: gtk::Button,
     down: gtk::Button,
+    to_top: gtk::Button,
+    to_bottom: gtk::Button,
     menu: gtk::MenuButton,
     remove_model: gtk::Button,
 }
@@ -335,6 +337,16 @@ impl StepsPage {
                 change(&mut chain.steps);
             }
         });
+    }
+
+    /// Whether `change` to chain `id` would leave a translation no model
+    /// can do: the editor never makes one.
+    fn would_strand(&self, id: &str, change: impl FnOnce(&[ChainStep]) -> Vec<ChainStep>) -> bool {
+        let Some(chain) = self.deps.store.processing().chain(id).cloned() else {
+            return false;
+        };
+        let after = change(&chain.steps);
+        self.view(|ctx| chains_view::strands(&chain.steps, &after, ctx))
     }
 
     fn dictation_language(&self) -> Option<String> {
@@ -740,7 +752,11 @@ impl StepsPage {
             .processing()
             .chain(id)
             .map_or(0, |c| c.steps.len());
-        if from == to || from >= len || to >= len {
+        if from == to
+            || from >= len
+            || to >= len
+            || self.would_strand(id, |steps| chains_view::moved(steps, from, to))
+        {
             return;
         }
         self.edit_steps(id, |steps| *steps = chains_view::moved(steps, from, to));
@@ -1015,6 +1031,8 @@ impl StepsPage {
             switch,
             up,
             down,
+            to_top,
+            to_bottom,
             menu,
             remove_model,
         }
@@ -1033,6 +1051,15 @@ impl StepsPage {
             let Some(target) = translate.targets.get(choice as usize).cloned() else {
                 return;
             };
+            if self.would_strand(id, |steps| {
+                let mut steps = steps.to_vec();
+                if let Some(step) = steps.get_mut(index) {
+                    step.params.insert("to".into(), target.code.clone());
+                }
+                steps
+            }) {
+                return;
+            }
             self.edit_steps(id, |steps| {
                 if let Some(step) = steps.get_mut(index) {
                     step.params.insert("to".into(), target.code.clone());
@@ -1129,6 +1156,13 @@ impl StepsPage {
         let (ids, params) = flat;
         let offered = self.offered.borrow().clone();
         let source = Source::of_setting(&self.deps.store.language());
+        let translate_from = target.as_ref().map_or_else(
+            || source.clone(),
+            |chain| {
+                let at = myna_core::chains::insert_position(&chain.steps, TRANSLATE);
+                chains_view::language_at(&chain.steps, at, self.dictation_language().as_deref())
+            },
+        );
         let catalog = self.catalog.borrow();
         let installing = self.installing.borrow();
         let preparing = self.preparing_now();
@@ -1149,6 +1183,7 @@ impl StepsPage {
             enabled: &ids,
             params: &params,
             source: &source,
+            translate_from: &translate_from,
             daemon: offered.as_ref(),
             installing: &installing,
             preparing: &preparing,
@@ -1604,8 +1639,10 @@ fn show_line(widgets: &LineWidgets, line: &Line, total: usize, blocked: bool, it
             // TRANSLATORS: {step} is a step's name, such as "Tidy up speech".
             &gettextrs::gettext("Use {step}").replace("{step}", &line.title),
         )]);
-    widgets.up.set_sensitive(line.index > 0);
-    widgets.down.set_sensitive(line.index + 1 < total);
+    widgets.up.set_sensitive(line.moves.up);
+    widgets.down.set_sensitive(line.moves.down);
+    widgets.to_top.set_sensitive(line.moves.top);
+    widgets.to_bottom.set_sensitive(line.moves.bottom);
     match &line.fix {
         Some((_, above)) => {
             // TRANSLATORS: a button that moves a skipped step above the step named by {step}.
