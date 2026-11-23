@@ -145,8 +145,11 @@ pub struct StepsPage {
     deps: Deps,
     fit_row: adw::SwitchRow,
     chains_group: glib::WeakRef<adw::PreferencesGroup>,
-    none_row: adw::ActionRow,
-    none_check: gtk::CheckButton,
+    /// Never shown: the chain radios' group, active while no chain is, so
+    /// even a lone chain's radio is a radio and not a checkbox.
+    group_leader: gtk::CheckButton,
+    /// In place of the chains while there are none.
+    empty_row: adw::ActionRow,
     new_row: adw::ActionRow,
     chain_rows: RefCell<Vec<(String, ChainRow)>>,
     shown_cards: RefCell<Vec<Card>>,
@@ -210,13 +213,14 @@ impl StepsPage {
             .subtitle_lines(0)
             .build();
         slots.fit.add(&fit_row);
-        let none_check = gtk::CheckButton::new();
-        let none_row = adw::ActionRow::builder()
-            .title(gettextrs::gettext("None"))
-            .subtitle(gettextrs::gettext("Types exactly what you say"))
-            .activatable_widget(&none_check)
+        let group_leader = gtk::CheckButton::new();
+        let empty_row = adw::ActionRow::builder()
+            .title(gettextrs::gettext("No chains yet"))
+            .subtitle(gettextrs::gettext(
+                "Myna types exactly what you say. Make a chain to change that.",
+            ))
+            .subtitle_lines(0)
             .build();
-        none_row.add_prefix(&none_check);
         let new_row = adw::ActionRow::builder()
             .title(gettextrs::gettext("New chain…"))
             .activatable(true)
@@ -242,8 +246,8 @@ impl StepsPage {
             deps,
             fit_row,
             chains_group: slots.chains.downgrade(),
-            none_row,
-            none_check,
+            group_leader,
+            empty_row,
             new_row,
             chain_rows: RefCell::new(Vec::new()),
             shown_cards: RefCell::new(Vec::new()),
@@ -267,7 +271,7 @@ impl StepsPage {
             cancellation: CancellationToken::new(),
             watch: RefCell::new(None),
         });
-        slots.chains.add(&page.none_row);
+        slots.chains.add(&page.empty_row);
         slots.chains.add(&page.new_row);
         let weak = Rc::downgrade(&page);
         page.watch
@@ -283,18 +287,6 @@ impl StepsPage {
                     if !page.updating.get() {
                         let on = row.is_active();
                         page.edit(|p| p.fit_to_field = on);
-                    }
-                }
-            }
-        });
-        page.none_check.connect_toggled({
-            let page = Rc::downgrade(&page);
-            move |check| {
-                if let Some(page) = page.upgrade() {
-                    if !page.updating.get() && check.is_active() {
-                        page.edit(|p| {
-                            p.activate(None);
-                        });
                     }
                 }
             }
@@ -461,14 +453,15 @@ impl StepsPage {
             chain.row.set_subtitle(&escape_markup(&subtitle));
             chain.check.set_active(card.active);
         }
-        self.none_check.set_active(active.is_none());
+        self.group_leader.set_active(active.is_none());
+        self.empty_row.set_visible(cards.is_empty());
         self.updating.set(false);
         self.shown_cards.replace(cards);
     }
 
     fn chain_row(self: &Rc<Self>, id: &str) -> ChainRow {
         let check = gtk::CheckButton::builder()
-            .group(&self.none_check)
+            .group(&self.group_leader)
             .valign(gtk::Align::Center)
             .build();
         let row = adw::ActionRow::builder()
@@ -615,7 +608,8 @@ impl StepsPage {
             move |_| {
                 if let Some(page) = page.upgrade() {
                     page.edit(|p| {
-                        p.activate(Some(&id));
+                        let using = p.active.as_deref() == Some(id.as_str());
+                        p.activate((!using).then_some(id.as_str()));
                     });
                 }
             }
@@ -702,11 +696,13 @@ impl StepsPage {
         }
         editor.page.set_title(&chain.name);
         let active = processing.active.as_deref() == Some(chain.id.as_str());
-        // In use is a state, not a dimmed action: no accent while it is.
-        editor.use_button.set_sensitive(!active);
+        // Stopping is the way back to typing what was heard, now that the
+        // page has no None row: no accent on it.
         if active {
             editor.use_button.remove_css_class("suggested-action");
-            editor.use_button.set_label(&gettextrs::gettext("In use"));
+            editor
+                .use_button
+                .set_label(&gettextrs::gettext("Stop using"));
         } else {
             editor.use_button.add_css_class("suggested-action");
             editor
@@ -2391,6 +2387,7 @@ mod tests {
     struct Rig {
         page: Rc<StepsPage>,
         fit: adw::PreferencesGroup,
+        chains: adw::PreferencesGroup,
         more: adw::PreferencesGroup,
         store: Rc<GioClientSettings>,
         calls: Rc<RefCell<Vec<String>>>,
@@ -2466,6 +2463,7 @@ mod tests {
         Rig {
             page,
             fit,
+            chains: group,
             more,
             store,
             calls,
@@ -2550,32 +2548,82 @@ mod tests {
 
     const TWO: &str = "chains=[('fr', 'French first', [('translate', true, {'to': 'fr'}), ('tidy', true, {})])]\n";
 
+    fn chain_titles(rig: &Rig) -> Vec<String> {
+        all::<adw::ActionRow>(rig.chains.upcast_ref())
+            .iter()
+            .filter(|row| row.is_visible())
+            .map(|row| row.title().to_string())
+            .collect()
+    }
+
     #[test]
-    fn the_page_lists_none_and_every_chain_and_picks_with_a_radio() {
+    fn the_page_lists_every_chain_and_picks_with_a_radio() {
         crate::ui::on_gtk_thread(|| {
             let rig = rig("pick", TIDY, TIDY, TWO);
-            assert!(
-                rig.page.none_check.is_active(),
-                "nothing is active by default"
-            );
+            assert_eq!(chain_titles(&rig), ["French first", "New chain…"]);
             let (row, check) = chain_row(&rig, "French first");
+            assert!(!check.is_active(), "nothing is active by default");
             assert!(
                 row.subtitle().unwrap().contains("(skipped)"),
                 "{:?}",
                 row.subtitle()
             );
-            check.set_active(true);
+            check.emit_by_name::<()>("activate", &[]);
+            assert!(check.is_active());
             assert_eq!(rig.store.processing().active.as_deref(), Some("fr"));
-            assert!(!rig.page.none_check.is_active());
-            rig.page.none_check.set_active(true);
-            assert_eq!(rig.store.processing().active, None);
-            // A change made elsewhere reaches the page.
+            // Charles, 2026-11-23: the only radio turned itself off when
+            // clicked again. A radio is left only by picking another.
+            check.emit_by_name::<()>("activate", &[]);
+            assert!(check.is_active(), "clicking the active radio keeps it");
+            assert_eq!(rig.store.processing().active.as_deref(), Some("fr"));
+            // A change made elsewhere reaches the page, both ways.
+            let mut p = rig.store.processing();
+            p.activate(None);
+            rig.store.set_processing(&p).unwrap();
+            pump_until("the external stop", || {
+                !chain_row(&rig, "French first").1.is_active()
+            });
             let mut p = rig.store.processing();
             p.activate(Some("fr"));
             rig.store.set_processing(&p).unwrap();
             pump_until("the external change", || {
                 chain_row(&rig, "French first").1.is_active()
             });
+        });
+    }
+
+    #[test]
+    fn with_no_chain_the_page_says_what_myna_does() {
+        crate::ui::on_gtk_thread(|| {
+            let rig = rig("empty", TIDY, TIDY, "chains=@a(ssa(sba{ss})) []\n");
+            let titles = chain_titles(&rig);
+            assert_eq!(titles.len(), 2, "{titles:?}");
+            assert_eq!(titles[1], "New chain…");
+            assert!(rig.page.empty_row.is_visible());
+            assert!(
+                rig.page.empty_row.subtitle().unwrap().contains("exactly"),
+                "{:?}",
+                rig.page.empty_row.subtitle()
+            );
+            rig.page.new_row.emit_by_name::<()>("activated", &[]);
+            assert!(!rig.page.empty_row.is_visible());
+        });
+    }
+
+    #[test]
+    fn the_chain_in_use_can_be_stopped_from_its_editor() {
+        crate::ui::on_gtk_thread(|| {
+            let rig = rig("stop", TIDY, TIDY, &format!("{TWO}active-chain='fr'\n"));
+            rig.page.open_editor("fr");
+            let editor = editor(&rig);
+            assert!(editor.use_button.is_sensitive());
+            assert_eq!(editor.use_button.label().unwrap(), "Stop using");
+            editor.use_button.emit_clicked();
+            assert_eq!(rig.store.processing().active, None);
+            assert_eq!(editor.use_button.label().unwrap(), "Use this chain");
+            assert!(!chain_row(&rig, "French first").1.is_active());
+            editor.use_button.emit_clicked();
+            assert_eq!(rig.store.processing().active.as_deref(), Some("fr"));
         });
     }
 
