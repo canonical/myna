@@ -743,13 +743,12 @@ impl StepsPage {
             })
             .collect();
         let shown = example(&rows);
-        let mut text = format!(
-            "\u{201c}{}\u{201d}\n\u{2192} \u{201c}{}\u{201d}",
-            shown.heard, shown.typed
-        );
-        if let Some(note) = &shown.note {
-            text.push_str(&format!("\n{note}"));
-        }
+        let result = match (&shown.typed, &shown.note) {
+            (Some(typed), _) => format!("\u{201c}{typed}\u{201d}"),
+            (None, Some(note)) => format!("({note})"),
+            (None, None) => String::new(),
+        };
+        let text = format!("\u{201c}{}\u{201d}\n\u{2192} {result}", shown.heard);
         editor.example.set_subtitle(&escape_markup(&text));
         editor
             .example
