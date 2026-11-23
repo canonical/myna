@@ -98,8 +98,9 @@ def test_repeat_pairs_hold_a_tandem_repeat_of_their_length(corpus):
 def test_corpus_stays_small():
     base = sum((tc.CORPUS_DIR / f"{n}.jsonl").stat().st_size for n in tc.SLICES)
     assert base < 160_000
+    # Indic and Thai text is three UTF-8 bytes a character.
     for name in tc.slice_names():
-        assert (tc.CORPUS_DIR / f"{name}.jsonl").stat().st_size < 90_000
+        assert (tc.CORPUS_DIR / f"{name}.jsonl").stat().st_size < 130_000
 
 
 def _tsv(rows):
@@ -214,6 +215,14 @@ def test_pair_build_refuses_a_bad_spec_a_noneval_language_and_a_thin_slice(tmp_p
     (fleurs / "de_de" / "test.tsv").write_text(_tsv([(1, "Ein Satz.")]), encoding="utf-8")
     with pytest.raises(tc.CorpusError, match="too few"):
         tc.cmd_build(argparse.Namespace(fleurs=fleurs, out=out, pair="en:de"))
+
+
+def test_thai_targets_need_no_closing_punctuation():
+    english = {str(i): f"This is the English sentence number {i} for testing." for i in range(260)}
+    thai = {str(i): f"\u0e1b\u0e23\u0e30\u0e42\u0e22\u0e04 {i}" for i in range(240)}
+    assert len(tc.select_pair(english, thai, "th")) == tc.N_TRANSLATE
+    with pytest.raises(tc.CorpusError, match="too few"):
+        tc.select_pair(english, thai, "de")
 
 
 def test_a_pinned_slice_that_is_missing_or_changed_is_refused(tmp_path):

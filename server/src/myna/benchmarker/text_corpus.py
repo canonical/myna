@@ -180,8 +180,12 @@ def _is_clean_sentence(text: str) -> bool:
     return text[:1].isupper() and text[-1:] in ".?!" and MIN_WORDS <= count <= MAX_WORDS
 
 
-def _target_done(text: str) -> bool:
-    return bool(text) and not text[-1].isalnum()
+# Languages whose FLEURS transcripts end a sentence with no punctuation.
+UNPUNCTUATED = frozenset({"th"})
+
+
+def _target_done(text: str, lang: str) -> bool:
+    return bool(text) and (lang in UNPUNCTUATED or not text[-1].isalnum())
 
 
 def select_pair(english: dict[str, str], target: dict[str, str], lang: str) -> list[Translation]:
@@ -189,7 +193,7 @@ def select_pair(english: dict[str, str], target: dict[str, str], lang: str) -> l
     aligned = {
         i
         for i in english.keys() & target.keys()
-        if _is_clean_sentence(english[i]) and _target_done(target[i])
+        if _is_clean_sentence(english[i]) and _target_done(target[i], lang)
     }
     ids = _order(pair_slice(lang), aligned)
     if len(ids) < N_TRANSLATE:
