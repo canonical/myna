@@ -379,7 +379,9 @@ def eval_probe(
         "latency_ms": latency,
         "vendor_comet": gate.vendor_comet,
         "probe": True,
-        "examples": [{"source": t, "output": o} for t, o in zip(texts[:5], outputs[:5])],
+        "examples": [
+            {"source": t, "output": o} for t, o in zip(texts[:5], outputs[:5], strict=False)
+        ],
     }
     return [g.decide() for g in gates], detail
 

@@ -126,7 +126,10 @@ def test_a_script_tag_is_lower_case_in_the_names_snapd_sees():
     result = ps.scaffold("en:zh-Hans", records=records, metadata=lambda a, d: None)
     got = tomllib.loads(result.toml)
     assert result.name == "translate-en-zh-hans"
-    assert (got["id"], got["component"]) == ("bergamot-mozilla-en-zh-hans", "model-translate-en-zh-hans")
+    assert (got["id"], got["component"]) == (
+        "bergamot-mozilla-en-zh-hans",
+        "model-translate-en-zh-hans",
+    )
     assert (got["language"], got["to"]) == ("en", "zh-Hans")
     assert got["notice"].startswith("model-translate-en-zh-hans:")
 
