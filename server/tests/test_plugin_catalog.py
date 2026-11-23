@@ -329,7 +329,7 @@ def test_a_gated_plugin_is_listed_only_with_a_passing_gate_and_spot_check(valid)
 
 
 def test_a_waiver_stands_in_for_the_spot_check_but_a_failed_one_overrides_it(valid):
-    plugin = gated(valid, spot_check_waiver="shipped before the gate")
+    plugin = gated(valid, spot_check_waiver="listed during development")
     gen.validate(plugin)
     assert gen.listed(plugin) is True
     plugin["spot_check"] = {"who": "R", "date": "2026-11-22", "passed": False}
