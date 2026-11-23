@@ -639,3 +639,78 @@ async fn the_toast_is_replaced_in_place_and_closed_by_id() {
         ]
     );
 }
+
+/// `ActiveChain` on the bus: a saved chain's id is written to the settings
+/// store, an unknown one is refused by name, and `Chains` and `ActiveChain`
+/// are announced when the daemon publishes them.
+#[tokio::test]
+async fn the_active_chain_is_set_through_the_store_and_announced() {
+    use futures_util::StreamExt;
+    use myna_desktop::dbus::{Bus, PropertyValue, OBJECT_PATH};
+    use std::time::Duration;
+
+    skip_unless_dbus!();
+    let _serial = exclusive().await;
+    // The store is the gated scratch home's, with this tree's schema
+    // (dev/gated-tests.sh).
+    name_is_free().await;
+    let mut owner = ZbusBus::serve().await.expect("serve owns the name");
+    let conn = zbus::Connection::session().await.expect("session bus");
+    let properties = zbus::fdo::PropertiesProxy::builder(&conn)
+        .destination(BUS_NAME)
+        .unwrap()
+        .path(OBJECT_PATH)
+        .unwrap()
+        .build()
+        .await
+        .expect("properties proxy");
+    let interface = zbus::names::InterfaceName::try_from("com.canonical.Myna.Dictation").unwrap();
+
+    let refused = properties
+        .set(interface.clone(), "ActiveChain", "nope".into())
+        .await
+        .expect_err("an unknown chain is refused");
+    assert!(
+        matches!(refused, zbus::fdo::Error::InvalidArgs(_)),
+        "{refused:?}"
+    );
+    properties
+        .set(
+            interface.clone(),
+            "ActiveChain",
+            myna_core::chains::EXAMPLE_ID.into(),
+        )
+        .await
+        .expect("a saved chain is taken");
+    assert_eq!(
+        myna_core::Settings::load().processing.active.as_deref(),
+        Some(myna_core::chains::EXAMPLE_ID),
+        "written to the store, the source of truth"
+    );
+
+    let mut signals = properties
+        .receive_properties_changed()
+        .await
+        .expect("PropertiesChanged stream");
+    for (name, value) in [
+        ("Chains", r#"[{"id":"example"}]"#),
+        ("ActiveChain", "example"),
+    ] {
+        owner
+            .set_property(name, PropertyValue::Str(value.into()))
+            .await;
+        let announced = async {
+            while let Some(signal) = signals.next().await {
+                let args = signal.args().unwrap();
+                if let Some(sent) = args.changed_properties().get(name) {
+                    return String::try_from(sent.try_clone().unwrap()).unwrap();
+                }
+            }
+            unreachable!("stream ended")
+        };
+        let sent = tokio::time::timeout(Duration::from_secs(2), announced)
+            .await
+            .unwrap_or_else(|_| panic!("{name} was never announced"));
+        assert_eq!(sent, value);
+    }
+}

@@ -139,6 +139,24 @@ impl ChainStatus {
 pub struct Catalog {
     pub models: Vec<Candidate>,
     pub steps: Vec<StepReport>,
+    /// Every saved chain, with whether its models are installed.
+    pub chains: Vec<ChainSummary>,
+    /// The active chain's id; empty for none.
+    pub active: String,
+}
+
+/// A saved chain as Settings and the pill list it.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ChainSummary {
+    pub id: String,
+    pub name: String,
+    pub steps: usize,
+    /// Every model step has an installed model (or the chain has none).
+    pub ready: bool,
+    /// What it lacks when not ready: the requests no installed model covers.
+    pub missing: Vec<Request>,
+    /// Steps this build does not know.
+    pub unknown: usize,
 }
 
 /// How often the binder looks for a changed share, and how often it retries
@@ -336,6 +354,41 @@ impl Resolver {
                 uncovered: &|request| rank(request, models.clone()).is_empty(),
             },
         )
+    }
+
+    /// What `steps` need that no installed model covers, bound or not: a
+    /// chain that is not active binds nothing, so only coverage tells.
+    pub fn readiness(&self, steps: &[StepSpec], language: Option<&str>) -> (Vec<Request>, usize) {
+        let models = self.0.catalog.borrow().models.clone();
+        let uncovered = |request: &Request| rank(request, models.clone()).is_empty();
+        let compiled = compile(
+            steps,
+            &Context {
+                language,
+                unavailable: &uncovered,
+                uncovered: &uncovered,
+            },
+        );
+        let mut missing = Vec::new();
+        let mut unknown = 0;
+        for report in compiled.report {
+            match report.state {
+                super::steps::StepState::Unavailable { request } => missing.push(request),
+                super::steps::StepState::Unknown => unknown += 1,
+                _ => {}
+            }
+        }
+        (missing, unknown)
+    }
+
+    /// Publish the saved chains and the active one.
+    pub fn set_chains(&self, chains: Vec<ChainSummary>, active: String) {
+        self.0.catalog.send_if_modified(|now| {
+            let changed = now.chains != chains || now.active != active;
+            now.chains = chains;
+            now.active = active;
+            changed
+        });
     }
 
     /// The `share/model` a request is bound to, if it is.

@@ -129,6 +129,36 @@ pub fn installed_json(catalog: &Catalog) -> String {
     .to_string()
 }
 
+/// `Chains`: JSON list of every saved chain, in the user's order:
+/// `{id, name, steps, ready, missing, missing_requests}`. `missing` is the
+/// tasks no installed model covers, comma separated (`ChainMissing`'s form),
+/// `missing_requests` the same with parameters; a step this build does not
+/// know makes a chain not ready too.
+pub fn chains_json(catalog: &Catalog) -> String {
+    Value::Array(
+        catalog
+            .chains
+            .iter()
+            .map(|chain| {
+                let tasks: Vec<&str> = chain.missing.iter().map(|r| r.task.as_str()).collect();
+                json!({
+                    "id": chain.id,
+                    "name": chain.name,
+                    "steps": chain.steps,
+                    "ready": chain.ready,
+                    "missing": tasks.join(","),
+                    "missing_requests": chain
+                        .missing
+                        .iter()
+                        .map(|r| request(&r.task, &r.params))
+                        .collect::<Vec<_>>(),
+                })
+            })
+            .collect(),
+    )
+    .to_string()
+}
+
 /// Publish the current state, then every change, until the senders drop.
 pub async fn run(
     bus: SharedBus,
@@ -141,8 +171,17 @@ pub async fn run(
             let (status, missing) = wire(&now);
             (status, missing, missing_json(&now))
         };
-        let installed = installed_json(&catalog.borrow_and_update());
+        let (installed, chains, active) = {
+            let now = catalog.borrow_and_update();
+            (installed_json(&now), chains_json(&now), now.active.clone())
+        };
         let mut bus_guard = bus.lock().await;
+        bus_guard
+            .set_property("Chains", PropertyValue::Str(chains))
+            .await;
+        bus_guard
+            .set_property("ActiveChain", PropertyValue::Str(active))
+            .await;
         // The catalog first: a reader woken by the status finds it current.
         bus_guard
             .set_property("InstalledSteps", PropertyValue::Str(installed))
@@ -234,6 +273,8 @@ mod tests {
     #[test]
     fn installed_steps_name_every_share_with_class_params_and_values() {
         let catalog = Catalog {
+            chains: Vec::new(),
+            active: String::new(),
             models: vec![
                 candidate("myna-text", "text.cleanup", None),
                 candidate("myna-translation", "text.translate", Some("translate")),
@@ -287,6 +328,8 @@ mod tests {
     #[test]
     fn an_unknown_step_is_reported_as_such() {
         let catalog = Catalog {
+            chains: Vec::new(),
+            active: String::new(),
             models: vec![],
             steps: vec![StepReport {
                 id: "bogus".into(),
@@ -296,5 +339,40 @@ mod tests {
         let v: Value = serde_json::from_str(&installed_json(&catalog)).unwrap();
         assert_eq!(v["steps"][0]["state"], "unknown");
         assert_eq!(v["models"], json!([]));
+    }
+
+    #[test]
+    fn every_saved_chain_is_listed_with_what_it_lacks() {
+        use crate::process::resolve::ChainSummary;
+        let catalog = Catalog {
+            chains: vec![
+                ChainSummary {
+                    id: "chain-1".into(),
+                    name: "Tidy".into(),
+                    steps: 1,
+                    ready: true,
+                    ..Default::default()
+                },
+                ChainSummary {
+                    id: "chain-2".into(),
+                    name: "French".into(),
+                    steps: 2,
+                    ready: false,
+                    missing: vec![Request::translate("en", "fr")],
+                    unknown: 0,
+                },
+            ],
+            active: "chain-2".into(),
+            ..Default::default()
+        };
+        let v: Value = serde_json::from_str(&chains_json(&catalog)).unwrap();
+        assert_eq!(v[0]["id"], "chain-1");
+        assert_eq!(v[0]["ready"], true);
+        assert_eq!(v[0]["missing"], "");
+        assert_eq!(v[1]["name"], "French");
+        assert_eq!(v[1]["steps"], 2);
+        assert_eq!(v[1]["ready"], false);
+        assert_eq!(v[1]["missing"], "text.translate");
+        assert_eq!(v[1]["missing_requests"][0]["params"]["to"], "fr");
     }
 }

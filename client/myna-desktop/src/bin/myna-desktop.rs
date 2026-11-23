@@ -154,6 +154,8 @@ struct Resolved {
     fit: bool,
     /// The saved chain in use: its id and name.
     chain: Option<(String, String)>,
+    /// Every saved chain, for the bus's `Chains`.
+    chains: Vec<myna_core::chains::Chain>,
     history: bool,
 }
 
@@ -197,6 +199,7 @@ impl Resolved {
             script,
             fit: settings.processing.fit_to_field,
             chain: chain.map(|chain| (chain.id.clone(), chain.name.clone())),
+            chains: settings.processing.chains.clone(),
             history: settings.processing_history,
         }
     }
@@ -206,23 +209,61 @@ impl Resolved {
 /// changes or `RescanModels` is called, when a share changes on disk, and
 /// again while any is unbound. Speech start only has to bind what this has
 /// not. Also publishes what became of each step of the chain.
-fn spawn_binder(
-    resolver: Resolver,
+/// Every saved chain as the bus lists it: whether installed models cover
+/// its model steps, for dictation in `language`.
+fn chain_summaries(
+    resolver: &Resolver,
+    chains: &[myna_core::chains::Chain],
+    language: Option<&str>,
+) -> Vec<myna_desktop::process::resolve::ChainSummary> {
+    chains
+        .iter()
+        .map(|chain| {
+            let steps: Vec<StepSpec> = chain.steps.iter().map(StepSpec::of_chain).collect();
+            let (missing, unknown) = resolver.readiness(&steps, language);
+            myna_desktop::process::resolve::ChainSummary {
+                id: chain.id.clone(),
+                name: chain.name.clone(),
+                steps: chain.steps.len(),
+                ready: missing.is_empty() && unknown == 0,
+                missing,
+                unknown,
+            }
+        })
+        .collect()
+}
+
+struct Binding {
     graph: Live<Graph>,
     steps: Live<Vec<StepSpec>>,
     language: Live<Option<String>>,
-    wake: Arc<tokio::sync::Notify>,
-) {
+    chain: Live<Option<(String, String)>>,
+    chains: Live<Vec<myna_core::chains::Chain>>,
+}
+
+fn spawn_binder(resolver: Resolver, live: Binding, wake: Arc<tokio::sync::Notify>) {
+    let Binding {
+        graph,
+        steps,
+        language,
+        chain,
+        chains,
+    } = live;
     tokio::spawn(async move {
         // The graph the steps compile to given the models installed now: a
         // translation with no direct model pivots through English.
         let refresh = || {
-            let compiled = resolver.compile(&steps.get(), language.get().as_deref());
+            let language = language.get();
+            let compiled = resolver.compile(&steps.get(), language.as_deref());
             let moved = graph.get() != compiled.graph;
             if moved {
                 graph.set(compiled.graph);
             }
             resolver.set_steps(compiled.report);
+            resolver.set_chains(
+                chain_summaries(&resolver, &chains.get(), language.as_deref()),
+                chain.get().map(|(id, _)| id).unwrap_or_default(),
+            );
             moved
         };
         let wanted = || {
@@ -310,6 +351,8 @@ struct LiveSettings {
     fit: Live<bool>,
     /// The saved chain in use, read at each press for the record.
     chain: Live<Option<(String, String)>>,
+    /// Every saved chain, read by the binder for the bus.
+    chains: Live<Vec<myna_core::chains::Chain>>,
     /// Wakes the text model binder.
     graph_changed: Arc<tokio::sync::Notify>,
     /// Read at each commit.
@@ -339,6 +382,7 @@ impl LiveSettings {
             script: Live::new(resolved.script),
             fit: Live::new(resolved.fit),
             chain: Live::new(resolved.chain.clone()),
+            chains: Live::new(resolved.chains.clone()),
             graph_changed: Arc::default(),
             history: Live::new(resolved.history),
             sounds: Live::new(resolved.sounds),
@@ -507,6 +551,11 @@ impl LiveSettings {
                     .map_or("(none)", |(id, _)| id.as_str())
             );
             self.chain.set(resolved.chain.clone());
+            self.graph_changed.notify_one();
+        }
+        if self.chains.get() != resolved.chains {
+            self.chains.set(resolved.chains.clone());
+            self.graph_changed.notify_one();
         }
         if self.fit.get() != resolved.fit {
             myna_core::info_log!(
@@ -923,9 +972,13 @@ async fn run_controller(
             }
             spawn_binder(
                 resolver.clone(),
-                live.graph.clone(),
-                live.steps.clone(),
-                live.language.clone(),
+                Binding {
+                    graph: live.graph.clone(),
+                    steps: live.steps.clone(),
+                    language: live.language.clone(),
+                    chain: live.chain.clone(),
+                    chains: live.chains.clone(),
+                },
                 live.graph_changed.clone(),
             );
             let pipeline = Pipeline::new(live.graph.clone(), resolver)
@@ -1836,6 +1889,34 @@ mod tests {
     /// Settings holding the steps of a preset.
     fn settings_of(chain: myna_core::ProcessingChain) -> myna_core::Settings {
         settings_with(&chain.steps(), &chain.params())
+    }
+
+    /// A chain is ready when installed models cover its model steps, an
+    /// empty one always, and a step this build does not know makes it not.
+    #[test]
+    fn each_saved_chain_says_whether_its_models_are_installed() {
+        use myna_core::chains::{Chain, ChainStep};
+        let chain = |id: &str, steps: &[&str]| Chain {
+            id: id.into(),
+            name: id.to_uppercase(),
+            steps: steps.iter().map(|s| ChainStep::new(s)).collect(),
+        };
+        let resolver = Resolver::open(Vec::new());
+        let summaries = chain_summaries(
+            &resolver,
+            &[
+                chain("empty", &[]),
+                chain("tidy", &["tidy"]),
+                chain("future", &["shout"]),
+            ],
+            Some("en"),
+        );
+        assert!(summaries[0].ready);
+        assert!(!summaries[1].ready);
+        assert_eq!(summaries[1].missing[0].task, "text.cleanup");
+        assert_eq!(summaries[1].name, "TIDY");
+        assert!(!summaries[2].ready);
+        assert_eq!(summaries[2].unknown, 1);
     }
 
     /// The active chain runs as ordered, and switching chains is a live

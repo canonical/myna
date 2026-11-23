@@ -278,6 +278,13 @@ export XDG_STATE_HOME="$SCRATCH/state"
 # in the scratch keyfile. Scoped to this script, never a shell profile: with
 # it set, every GLib program in the shell would write there.
 export GSETTINGS_BACKEND=keyfile
+# This tree's schema, so a suite that writes the store (the bus's
+# ActiveChain) finds the keys it writes. Set for the whole run: GLib reads
+# the schema directory once per process.
+mkdir -p "$SCRATCH/schemas"
+cp "$(dirname "$0")/../client/data/glib-2.0/schemas/"*.gschema.xml "$SCRATCH/schemas/"
+glib-compile-schemas "$SCRATCH/schemas"
+export GSETTINGS_SCHEMA_DIR="$SCRATCH/schemas"
 mkdir -p "$XDG_RUNTIME_DIR" "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME" "$XDG_STATE_HOME"
 chmod 700 "$XDG_RUNTIME_DIR"
 

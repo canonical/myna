@@ -237,6 +237,11 @@ impl Store {
         })
     }
 
+    /// The `gio::Settings` behind this store, for the chain writers.
+    pub(crate) fn gio(&self) -> &gio::Settings {
+        &self.settings
+    }
+
     /// Wrap the `gio::Settings` a signal handed back. The same GObject, one
     /// reference further on, so it stays on the thread that made it.
     fn from_settings(settings: &gio::Settings) -> Self {
@@ -659,6 +664,24 @@ mod tests {
         let read = Settings::from_store(&store).processing;
         assert_eq!(read.active, None);
         assert_eq!(read, p);
+    }
+
+    /// The bus's `ActiveChain` write: a known id or none is stored, an
+    /// unknown one changes nothing.
+    #[test]
+    fn activating_in_the_store_takes_a_saved_chain_or_none() {
+        use crate::chains::{activate_in, ActivateError, EXAMPLE_ID};
+        let store = test_store();
+        assert_eq!(
+            activate_in(&store.settings, Some("nope")),
+            Err(ActivateError::Unknown("nope".into()))
+        );
+        assert_eq!(Settings::from_store(&store).processing.active, None);
+        activate_in(&store.settings, Some(EXAMPLE_ID)).unwrap();
+        let read = Settings::from_store(&store).processing;
+        assert_eq!(read.active.as_deref(), Some(EXAMPLE_ID));
+        activate_in(&store.settings, None).unwrap();
+        assert_eq!(Settings::from_store(&store).processing.active, None);
     }
 
     /// An active id no chain has (a hand edit, a writer between two keys)

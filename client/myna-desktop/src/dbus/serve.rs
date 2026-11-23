@@ -88,6 +88,10 @@ struct ServedState {
     chain_missing_requests: String,
     /// JSON of every connected model and each step's state.
     installed_steps: String,
+    /// JSON of every saved chain and whether it is ready.
+    chains: String,
+    /// The active chain's id; empty for none.
+    active_chain: String,
 }
 
 impl ServedState {
@@ -105,6 +109,7 @@ impl ServedState {
             chain_status: crate::dbus::chain::READY.into(),
             chain_missing_requests: "[]".into(),
             installed_steps: r#"{"models":[],"steps":[]}"#.into(),
+            chains: "[]".into(),
             input_offset: f64::NAN,
             input_noise_floor: f64::NAN,
             input_speech_level: f64::NAN,
@@ -459,6 +464,48 @@ impl DictationObject {
             .clone()
     }
 
+    /// `Chains`: JSON list of every saved chain in the user's order, each
+    /// `{id, name, steps, ready, missing, missing_requests}`
+    /// ([`crate::dbus::chain::chains_json`]).
+    #[zbus(property)]
+    async fn chains(&self) -> String {
+        self.served
+            .lock()
+            .expect("served state poisoned")
+            .chains
+            .clone()
+    }
+
+    /// `ActiveChain`: the id of the chain in use; empty for none.
+    #[zbus(property)]
+    async fn active_chain(&self) -> String {
+        self.served
+            .lock()
+            .expect("served state poisoned")
+            .active_chain
+            .clone()
+    }
+
+    /// Setting `ActiveChain` writes the settings store, which stays the
+    /// source of truth: the property follows once the daemon has read it
+    /// back. An id no saved chain has fails; a chain whose models are
+    /// missing is allowed and runs degraded.
+    #[zbus(property)]
+    async fn set_active_chain(&mut self, id: String) -> zbus::fdo::Result<()> {
+        // On zbus's executor, which is no tokio runtime: a keyfile write is
+        // short enough to make in place.
+        let wanted = (!id.is_empty()).then_some(id.as_str());
+        let result = myna_core::chains::activate_in_store(wanted);
+        myna_core::info_log!("dbus", "ActiveChain {id:?} -> {result:?}");
+        match result {
+            Ok(()) => Ok(()),
+            Err(myna_core::chains::ActivateError::Unknown(id)) => Err(
+                zbus::fdo::Error::InvalidArgs(format!("no saved chain {id:?}")),
+            ),
+            Err(myna_core::chains::ActivateError::Store(why)) => Err(zbus::fdo::Error::Failed(why)),
+        }
+    }
+
     /// `ChainMissing`: the tasks (`text.translate`) no connected model
     /// covers, comma separated; empty while the chain is `ready`.
     #[zbus(property)]
@@ -709,6 +756,8 @@ impl Bus for ZbusBus {
                         served.chain_missing_requests = s.clone()
                     }
                     ("InstalledSteps", PropertyValue::Str(s)) => served.installed_steps = s.clone(),
+                    ("Chains", PropertyValue::Str(s)) => served.chains = s.clone(),
+                    ("ActiveChain", PropertyValue::Str(s)) => served.active_chain = s.clone(),
                     _ => {
                         myna_core::dbg_log!("dbus", "ignoring unknown property set: {name}");
                         return Ok(());
@@ -743,6 +792,8 @@ impl Bus for ZbusBus {
                 "ChainMissing" => iface.chain_missing_changed(emitter).await,
                 "ChainMissingRequests" => iface.chain_missing_requests_changed(emitter).await,
                 "InstalledSteps" => iface.installed_steps_changed(emitter).await,
+                "Chains" => iface.chains_changed(emitter).await,
+                "ActiveChain" => iface.active_chain_changed(emitter).await,
                 _ => Ok(()),
             }
         }

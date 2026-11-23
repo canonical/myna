@@ -302,6 +302,37 @@ impl Processing {
     }
 }
 
+/// Why the active chain could not be set.
+#[derive(Debug, PartialEq, Eq)]
+pub enum ActivateError {
+    /// No saved chain has that id.
+    Unknown(String),
+    /// The settings store is not installed or not writable.
+    Store(String),
+}
+
+/// Make `id` (or none) the active chain in the settings store every process
+/// shares, the one write the bus's `ActiveChain` does. The store stays the
+/// source of truth: the daemon hears it through its watch like any edit.
+pub fn activate_in_store(id: Option<&str>) -> Result<(), ActivateError> {
+    let store = crate::settings::Store::open()
+        .ok_or_else(|| ActivateError::Store("the settings schema is not installed".into()))?;
+    activate_in(store.gio(), id)
+}
+
+/// [`activate_in_store`] over an open `gio::Settings`.
+pub fn activate_in(settings: &gio::Settings, id: Option<&str>) -> Result<(), ActivateError> {
+    let mut processing = Processing::read(settings);
+    if !processing.activate(id) {
+        return Err(ActivateError::Unknown(id.unwrap_or_default().to_owned()));
+    }
+    processing
+        .write(settings)
+        .map_err(|error| ActivateError::Store(error.to_string()))?;
+    gio::Settings::sync();
+    Ok(())
+}
+
 /// Call `callback` once per `change-event` of `settings`: one per batch of
 /// keys written together, where `changed` fires once per key. gio-rs does
 /// not bind the signal.
