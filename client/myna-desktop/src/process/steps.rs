@@ -13,7 +13,6 @@ use super::disfluency::Lang;
 use super::graph::{Builder, Graph, Needs, Src};
 use super::pipeline::{Check, Request};
 use super::rules::Rule;
-use super::script;
 use super::wire::Params;
 
 /// A step as stored: a stable id, its parameters and whether it is on.
@@ -245,26 +244,23 @@ fn primary(tag: &str) -> String {
         .to_ascii_lowercase()
 }
 
-/// Why `kind` does not apply to text in `lang`, if it does not.
+/// Why `kind` does not apply to text in `lang`, if it does not, in words
+/// for the log and the bus; the judgement is `myna_core::chains::misfit`,
+/// which Settings shares.
 fn misfit(kind: Kind, step: &StepSpec, lang: Option<&str>) -> Option<&'static str> {
-    match kind {
-        Kind::Tidy if lang.is_some_and(|l| l != "en") => Some("Applies when the text is English"),
-        Kind::Translate => match step.text("to").map(primary) {
-            None => Some("Needs a language to translate to"),
-            Some(to) if lang == Some(to.as_str()) => Some("The text is already in that language"),
-            Some(_) => None,
-        },
-        Kind::Script if !script::chinese(lang) => Some("Applies when the text is Chinese"),
-        Kind::Script
-            if step
-                .text("mode")
-                .and_then(ChineseScript::from_nick)
-                .is_none() =>
-        {
-            Some("Needs a script to write")
-        }
-        _ => None,
-    }
+    use myna_core::chains::Misfit;
+    let params: myna_core::chains::StepParams = step
+        .params
+        .iter()
+        .filter_map(|(k, v)| Some((k.clone(), v.as_str()?.to_owned())))
+        .collect();
+    Some(match myna_core::chains::misfit(kind.id(), &params, lang)? {
+        Misfit::NotEnglish => "Applies when the text is English",
+        Misfit::NoTarget => "Needs a language to translate to",
+        Misfit::AlreadyInTarget => "The text is already in that language",
+        Misfit::NotChinese => "Applies when the text is Chinese",
+        Misfit::NoScript => "Needs a script to write",
+    })
 }
 
 /// Compile `steps` in their order for dictation in `ctx.language`.

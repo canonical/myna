@@ -302,6 +302,146 @@ impl Processing {
     }
 }
 
+/// Why a step does not fit where it stands in a chain.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Misfit {
+    /// Tidy reads English only.
+    NotEnglish,
+    /// A translation with no target.
+    NoTarget,
+    /// A translation into the language the text is already in.
+    AlreadyInTarget,
+    /// The Chinese script step reads Chinese only.
+    NotChinese,
+    /// The Chinese script step with no script chosen.
+    NoScript,
+}
+
+/// What a step makes of the text where it stands in a chain.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Fit {
+    /// Runs, reading text in `input` and leaving it in `output` (`None`
+    /// when the language is not known).
+    Runs {
+        input: Option<String>,
+        output: Option<String>,
+    },
+    /// Skipped: the text there is not what it reads. `move_above` is the
+    /// index of the earlier step that changed the language, when the step
+    /// would fit above it.
+    Skipped {
+        why: Misfit,
+        input: Option<String>,
+        move_above: Option<usize>,
+    },
+    /// Switched off.
+    Off,
+    /// An id this build does not know.
+    Unknown,
+}
+
+/// The ids of the steps this build knows, in their default insert order.
+pub const KNOWN_STEPS: [&str; 3] = ["tidy", "translate", "script"];
+
+/// The language code before any region: `fr` for `fr-CA`.
+pub fn primary_language(tag: &str) -> String {
+    tag.split(['-', '_'])
+        .next()
+        .unwrap_or_default()
+        .to_ascii_lowercase()
+}
+
+/// Whether text in `language` may be Chinese; an unknown language may.
+pub fn may_be_chinese(language: Option<&str>) -> bool {
+    language.is_none_or(|l| {
+        let l = l.to_ascii_lowercase();
+        ["zh", "yue", "cmn"].iter().any(|c| {
+            l.strip_prefix(c)
+                .is_some_and(|r| r.is_empty() || r.starts_with(['-', '_']))
+        })
+    })
+}
+
+/// Why step `id` with `params` does not fit text in `lang`, if it does not.
+/// One judgement for the daemon's compiler and Settings' editor.
+pub fn misfit(id: &str, params: &StepParams, lang: Option<&str>) -> Option<Misfit> {
+    let param = |name: &str| params.get(name).filter(|v| !v.is_empty());
+    match id {
+        "tidy" if lang.is_some_and(|l| l != "en") => Some(Misfit::NotEnglish),
+        "translate" => match param("to").map(|to| primary_language(to)) {
+            None => Some(Misfit::NoTarget),
+            Some(to) if lang == Some(to.as_str()) => Some(Misfit::AlreadyInTarget),
+            Some(_) => None,
+        },
+        "script" if !may_be_chinese(lang) => Some(Misfit::NotChinese),
+        "script"
+            if param("mode")
+                .and_then(|m| crate::processing::ChineseScript::from_nick(m))
+                .is_none() =>
+        {
+            Some(Misfit::NoScript)
+        }
+        _ => None,
+    }
+}
+
+/// What each step of `steps` makes of the text, in order, for dictation in
+/// `language` (`None` when the speech model decides).
+pub fn fits(steps: &[ChainStep], language: Option<&str>) -> Vec<Fit> {
+    let mut lang = language.map(primary_language);
+    let mut changed: Option<(usize, Option<String>)> = None;
+    steps
+        .iter()
+        .enumerate()
+        .map(|(index, step)| {
+            if !step.on {
+                return Fit::Off;
+            }
+            if !KNOWN_STEPS.contains(&step.step.as_str()) {
+                return Fit::Unknown;
+            }
+            if let Some(why) = misfit(&step.step, &step.params, lang.as_deref()) {
+                return Fit::Skipped {
+                    why,
+                    input: lang.clone(),
+                    move_above: changed
+                        .as_ref()
+                        .filter(|(_, before)| {
+                            misfit(&step.step, &step.params, before.as_deref()).is_none()
+                        })
+                        .map(|(at, _)| *at),
+                };
+            }
+            let input = lang.clone();
+            if step.step == "translate" {
+                let to = step.params.get("to").map(|to| primary_language(to));
+                changed = Some((index, std::mem::replace(&mut lang, to)));
+            }
+            Fit::Runs {
+                input,
+                output: lang.clone(),
+            }
+        })
+        .collect()
+}
+
+/// Where a new step `id` goes in `steps` by default: after the last step
+/// that runs at or before its stage, so Add puts Tidy before Translate and
+/// a script step last.
+pub fn insert_position(steps: &[ChainStep], id: &str) -> usize {
+    let rank = |id: &str| {
+        KNOWN_STEPS
+            .iter()
+            .position(|known| *known == id)
+            .unwrap_or(KNOWN_STEPS.len())
+    };
+    let wanted = rank(id);
+    steps
+        .iter()
+        .rposition(|step| rank(&step.step) <= wanted)
+        .map_or(0, |at| at + 1)
+}
+
 /// Why the active chain could not be set.
 #[derive(Debug, PartialEq, Eq)]
 pub enum ActivateError {
@@ -530,5 +670,121 @@ mod tests {
         let chains = Processing::default().chains;
         assert_eq!(chains_from_variant(&chains_variant(&chains)), Some(chains));
         assert_eq!(chains_from_variant(&"x".to_variant()), None);
+    }
+
+    fn chain(steps: &[(&str, &str)]) -> Vec<ChainStep> {
+        steps
+            .iter()
+            .map(|(id, to)| match *to {
+                "" => ChainStep::new(id),
+                to if *id == "script" => ChainStep::new(id).with("mode", to),
+                to => ChainStep::new(id).with("to", to),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn each_step_reads_the_language_the_one_before_it_leaves() {
+        let fits = fits(&chain(&[("tidy", ""), ("translate", "fr")]), Some("en-GB"));
+        assert_eq!(
+            fits,
+            [
+                Fit::Runs {
+                    input: Some("en".into()),
+                    output: Some("en".into())
+                },
+                Fit::Runs {
+                    input: Some("en".into()),
+                    output: Some("fr".into())
+                },
+            ]
+        );
+        let swapped = super::fits(&chain(&[("translate", "fr"), ("tidy", "")]), Some("en"));
+        assert_eq!(
+            swapped[1],
+            Fit::Skipped {
+                why: Misfit::NotEnglish,
+                input: Some("fr".into()),
+                move_above: Some(0)
+            }
+        );
+    }
+
+    #[test]
+    fn a_skip_with_no_step_to_move_above_says_so() {
+        let fits = fits(&chain(&[("tidy", "")]), Some("fr"));
+        assert!(matches!(
+            fits[0],
+            Fit::Skipped {
+                why: Misfit::NotEnglish,
+                move_above: None,
+                ..
+            }
+        ));
+        let away = super::fits(
+            &chain(&[("translate", "en"), ("script", "simplified")]),
+            Some("zh"),
+        );
+        assert!(matches!(
+            away[1],
+            Fit::Skipped {
+                why: Misfit::NotChinese,
+                move_above: Some(0),
+                ..
+            }
+        ));
+        let blank = super::fits(&chain(&[("translate", ""), ("script", "")]), None);
+        assert!(matches!(
+            blank[0],
+            Fit::Skipped {
+                why: Misfit::NoTarget,
+                ..
+            }
+        ));
+        assert!(matches!(
+            blank[1],
+            Fit::Skipped {
+                why: Misfit::NoScript,
+                ..
+            }
+        ));
+        let same = super::fits(&chain(&[("translate", "en")]), Some("en"));
+        assert!(matches!(
+            same[0],
+            Fit::Skipped {
+                why: Misfit::AlreadyInTarget,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn off_and_unknown_steps_change_nothing_downstream() {
+        let mut steps = chain(&[("translate", "fr"), ("future", ""), ("tidy", "")]);
+        steps[0].on = false;
+        assert_eq!(
+            fits(&steps, Some("en")),
+            [
+                Fit::Off,
+                Fit::Unknown,
+                Fit::Runs {
+                    input: Some("en".into()),
+                    output: Some("en".into())
+                }
+            ]
+        );
+        assert!(may_be_chinese(None));
+        assert!(may_be_chinese(Some("zh_TW")));
+        assert!(!may_be_chinese(Some("zhx")));
+    }
+
+    #[test]
+    fn a_new_step_goes_in_at_its_stage() {
+        let steps = chain(&[("tidy", ""), ("translate", "fr")]);
+        assert_eq!(insert_position(&steps, "script"), 2);
+        assert_eq!(insert_position(&steps, "tidy"), 1);
+        assert_eq!(insert_position(&chain(&[("translate", "fr")]), "tidy"), 0);
+        assert_eq!(insert_position(&[], "translate"), 0);
+        assert_eq!(insert_position(&steps, "future"), 2);
     }
 }
