@@ -229,9 +229,9 @@ pub async fn replay(
                 };
                 let started = Instant::now();
                 let start_ms = clock;
-                let mut out = pipeline
-                    .process(heard.clone(), &Field::after(field.purpose, before))
-                    .await;
+                let at = Field::after(field.purpose, before);
+                let out = pipeline.process(heard.clone(), &at).await;
+                let mut out = pipeline.fit(out, &at);
                 let ms = started.elapsed().as_secs_f64() * 1e3;
                 if field.purpose == FieldPurpose::Terminal {
                     out = fold_control_chars(&out);
@@ -414,7 +414,8 @@ mod tests {
     async fn the_field_follows_what_was_typed() {
         let spec = crate::spec::parse("keyword").unwrap();
         let policy = CommitPolicy::for_needs(spec.graph.needs());
-        let mut pipeline = Pipeline::new(spec.graph, Slow(ms(0)));
+        let mut pipeline =
+            Pipeline::new(spec.graph, Slow(ms(0))).fitted(myna_desktop::live::Live::new(spec.fit));
         let speech = Speech::typed("t".into(), "The end.");
         let mid = FieldSpec {
             mid_sentence: true,

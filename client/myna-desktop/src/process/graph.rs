@@ -401,7 +401,12 @@ mod tests {
 
     #[test]
     fn every_preset_has_a_graph_and_a_unique_one() {
-        let graphs: Vec<_> = ProcessingChain::ALL.map(Graph::preset).into();
+        // `keyword` was fitting alone, which is no graph now (`process::fit`).
+        let graphs: Vec<_> = ProcessingChain::ALL
+            .into_iter()
+            .filter(|chain| *chain != ProcessingChain::KEYWORD)
+            .map(Graph::preset)
+            .collect();
         for (i, graph) in graphs.iter().enumerate() {
             assert!(
                 !graphs[..i].contains(graph),
@@ -471,7 +476,22 @@ mod tests {
 
     #[test]
     fn a_route_runs_only_the_branch_the_field_picks() {
-        let keyword = Graph::preset(ProcessingChain::KEYWORD);
+        let mut g = Builder::default();
+        let address = g.rule(Src::Input, Rule::Address);
+        let go_on = g.rule(Src::Input, Rule::Continue);
+        let go_on = g.rule(go_on, Rule::Vocabulary);
+        let heard = g.rule(Src::Input, Rule::Vocabulary);
+        let out = g.route(
+            vec![
+                (
+                    When::Purpose(&[FieldPurpose::Url, FieldPurpose::Email]),
+                    address,
+                ),
+                (When::MidSentence, go_on),
+            ],
+            heard,
+        );
+        let keyword = g.finish(out);
         let after = |purpose, before| Field::after(purpose, before);
         assert_eq!(
             tasks(&keyword, &after(FieldPurpose::Email, None)),

@@ -10,8 +10,6 @@ use crate::processing_steps::{
     language_name, size, Offered, Row, Source, Standing, SCRIPT, TRANSLATE, TRANSLATE_TO,
 };
 
-const FIT: &str = "fit";
-
 /// The languages the Chinese script step is useful for.
 const CHINESE: [&str; 3] = ["zh", "yue", "cmn"];
 
@@ -79,15 +77,12 @@ pub struct Inputs<'a> {
 /// The items in the order the page lists them: what suits the user's
 /// locales first, then stage order.
 pub fn items(inputs: &Inputs) -> Vec<Item> {
-    let mut found: Vec<(usize, usize, Item)> = Vec::new();
-    for id in [FIT, SCRIPT] {
-        let rank = if id == SCRIPT {
-            plugin_catalog::relevance(&CHINESE.map(str::to_owned), "", inputs.locales)
-        } else {
-            inputs.locales.len()
-        };
-        found.push((rank, stage_of(id), built_in(id, inputs)));
-    }
+    // Fitting to the field is a switch on the Processing page, not a step.
+    let mut found: Vec<(usize, usize, Item)> = vec![(
+        plugin_catalog::relevance(&CHINESE.map(str::to_owned), "", inputs.locales),
+        stage_of(SCRIPT),
+        built_in(SCRIPT, inputs),
+    )];
     for entry in inputs.catalog {
         let rank = plugin_catalog::relevance(&entry.locales, &entry.in_lang, inputs.locales);
         found.push((rank, stage_of(&entry.step.stage), from_entry(entry, inputs)));
@@ -98,7 +93,6 @@ pub fn items(inputs: &Inputs) -> Vec<Item> {
 
 fn stage_of(stage: &str) -> usize {
     match stage {
-        FIT | "field-fit" => 0,
         "clean-up" => 1,
         "translate" => 2,
         _ => 3,
@@ -118,26 +112,13 @@ fn standing<'a>(inputs: &'a Inputs, step: &str) -> Option<&'a Standing> {
 }
 
 fn built_in(id: &str, inputs: &Inputs) -> Item {
-    let (title, description, example, license) = if id == SCRIPT {
-        (
-            gettextrs::gettext("Chinese script"),
-            gettextrs::gettext(
-                "Types Chinese in the characters you choose. Other text is left alone.",
-            ),
-            Some(("\u{8f6f}\u{4ef6}".to_owned(), "\u{8edf}\u{9ad4}".to_owned())),
-            // TRANSLATORS: credits the libraries and word lists behind Chinese script conversion.
-            gettextrs::gettext("opencc-jieba-rs (MIT); OpenCC conversion lists (Apache-2.0)"),
-        )
-    } else {
-        (
-            gettextrs::gettext("Fitted to the field"),
-            gettextrs::gettext(
-                "No capital or full stop in an address, and no capital where you carry on a sentence.",
-            ),
-            None,
-            String::new(),
-        )
-    };
+    let (title, description, example, license) = (
+        gettextrs::gettext("Chinese script"),
+        gettextrs::gettext("Types Chinese in the characters you choose. Other text is left alone."),
+        Some(("\u{8f6f}\u{4ef6}".to_owned(), "\u{8edf}\u{9ad4}".to_owned())),
+        // TRANSLATORS: credits the libraries and word lists behind Chinese script conversion.
+        gettextrs::gettext("opencc-jieba-rs (MIT); OpenCC conversion lists (Apache-2.0)"),
+    );
     let mut details = vec![Detail {
         label: gettextrs::gettext("Size"),
         text: gettextrs::gettext("Built in, nothing to install"),
@@ -434,7 +415,8 @@ mod tests {
     fn built_ins_and_every_entry_are_listed_with_their_facts() {
         let all = listed(&case());
         let ids: Vec<_> = all.iter().map(|i| i.id.as_str()).collect();
-        assert_eq!(ids.len(), 5, "{ids:?}");
+        assert_eq!(ids.len(), 4, "{ids:?}");
+        assert!(!ids.contains(&"fit"), "fitting is a switch, not a step");
         let fr = find(&all, "en-fr");
         assert_eq!(fr.title, "Translate English to Français");
         assert_eq!(fr.step, "translate");
@@ -450,8 +432,6 @@ mod tests {
         let script = find(&all, "script");
         assert_eq!(script.details[0].text, "Built in, nothing to install");
         assert!(script.details[1].text.contains("OpenCC"));
-        assert!(find(&all, "fit").example.is_none());
-        assert_eq!(find(&all, "fit").details.len(), 1);
     }
 
     #[test]
@@ -471,7 +451,7 @@ mod tests {
             locales: &[],
             rows: &[],
         });
-        assert_eq!(all.len(), 2);
+        assert_eq!(all.len(), 1);
     }
 
     #[test]
@@ -484,7 +464,7 @@ mod tests {
         assert_eq!(listed(&chinese)[0].id, "script");
         let english = listed(&case());
         let ids: Vec<_> = english.iter().map(|i| i.id.as_str()).collect();
-        assert_eq!(ids, ["tidy", "en-fr", "fit", "fr-en", "script"], "{ids:?}");
+        assert_eq!(ids, ["tidy", "en-fr", "fr-en", "script"], "{ids:?}");
     }
 
     #[test]
@@ -492,7 +472,6 @@ mod tests {
         let all = listed(&case());
         assert_eq!(find(&all, "tidy").offer, Offer::Add);
         assert_eq!(find(&all, "en-fr").offer, Offer::Add);
-        assert_eq!(find(&all, "fit").offer, Offer::Add);
         let Offer::Install(entry) = &find(&all, "fr-en").offer else {
             panic!("{:?}", find(&all, "fr-en"));
         };
@@ -502,12 +481,11 @@ mod tests {
     #[test]
     fn a_step_already_on_is_added() {
         let mut on = case();
-        on.enabled = vec!["tidy".into(), "fit".into(), "translate".into()];
+        on.enabled = vec!["tidy".into(), "translate".into()];
         on.params
             .insert(param_key(TRANSLATE, TRANSLATE_TO), "fr".into());
         let all = listed(&on);
         assert_eq!(find(&all, "tidy").offer, Offer::Added);
-        assert_eq!(find(&all, "fit").offer, Offer::Added);
         assert_eq!(find(&all, "en-fr").offer, Offer::Added);
         on.params
             .insert(param_key(TRANSLATE, TRANSLATE_TO), "de".into());
@@ -543,7 +521,6 @@ mod tests {
         assert_eq!(find(&all, "tidy").removable.as_ref().unwrap().id, "tidy");
         assert_eq!(find(&all, "en-fr").removable.as_ref().unwrap().id, "en-fr");
         assert!(find(&all, "fr-en").removable.is_none(), "not installed");
-        assert!(find(&all, "fit").removable.is_none(), "built in");
         assert!(find(&all, "script").removable.is_none(), "built in");
         case.removing.insert("en-fr".into());
         let all = listed(&case);
@@ -585,7 +562,10 @@ mod tests {
         none.daemon = None;
         let all = listed(&none);
         assert_eq!(find(&all, "tidy").offer, Offer::Unknown);
-        assert_eq!(find(&all, "fit").offer, Offer::Add);
+        assert!(
+            !matches!(find(&all, "script").offer, Offer::Unknown),
+            "a built-in step needs no daemon"
+        );
     }
 
     #[test]
@@ -661,12 +641,12 @@ mod tests {
     fn adding_switches_the_step_on_and_picks_the_target() {
         let all = listed(&case());
         let (ids, params) = with_added(
-            &["fit".to_owned()],
+            &["tidy".to_owned()],
             &Params::new(),
             find(&all, "en-fr"),
             &[],
         );
-        assert_eq!(ids, ["fit", "translate"]);
+        assert_eq!(ids, ["tidy", "translate"]);
         assert_eq!(params.get("translate.to").map(String::as_str), Some("fr"));
         let (ids, params) = with_added(&[], &Params::new(), find(&all, "tidy"), &[]);
         assert_eq!(ids, ["tidy"]);
@@ -707,7 +687,7 @@ mod tests {
         let ids: Vec<_> = all.iter().map(|i| i.id.as_str()).collect();
         assert_eq!(
             ids,
-            ["m-clean", "z-translate", "a-late", "fit", "script"],
+            ["m-clean", "z-translate", "a-late", "script"],
             "{ids:?}"
         );
     }

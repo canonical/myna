@@ -1125,6 +1125,10 @@ impl Processor for AsHeard<'_> {
         text
     }
 
+    fn fit(&mut self, text: String, field: &Field) -> String {
+        self.0.fit(text, field)
+    }
+
     fn landed(&mut self, landing: Landing) {
         self.0.landed(landing);
     }
@@ -1276,9 +1280,9 @@ impl CommitBuffer {
         } else {
             target.char_before_cursor()
         };
-        let mut text = processor
-            .process(heard, &Field::after(purpose, before))
-            .await;
+        let field = Field::after(purpose, before);
+        let text = processor.process(heard, &field).await;
+        let mut text = processor.fit(text, &field);
         if purpose == FieldPurpose::Terminal {
             text = fold_control_chars(&text);
         }

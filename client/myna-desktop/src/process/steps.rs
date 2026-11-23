@@ -6,11 +6,10 @@
 //! point is skipped statically: not applicable is no fault.
 
 use myna_core::{ChineseScript, ProcessingChain};
-use myna_platform::text_input::FieldPurpose;
 use serde_json::Value;
 
 use super::disfluency::Lang;
-use super::graph::{Builder, Graph, Needs, Src, When};
+use super::graph::{Builder, Graph, Needs, Src};
 use super::pipeline::{Check, Request};
 use super::rules::Rule;
 use super::script;
@@ -68,18 +67,16 @@ impl StepSpec {
 /// The steps this build knows, in stage order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Kind {
-    /// Stage 1: fit the text to the field it lands in.
-    Fit,
-    /// Stage 2: drop hesitations, false starts and repeats.
+    /// Stage 1: drop hesitations, false starts and repeats.
     Tidy,
-    /// Stage 3: translate to `to`.
+    /// Stage 2: translate to `to`.
     Translate,
-    /// Stage 4: write Chinese in `script`.
+    /// Stage 3: write Chinese in `script`.
     Script,
 }
 
 impl Kind {
-    const ALL: [Kind; 4] = [Kind::Fit, Kind::Tidy, Kind::Translate, Kind::Script];
+    const ALL: [Kind; 3] = [Kind::Tidy, Kind::Translate, Kind::Script];
 
     fn of(id: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|k| k.id() == id)
@@ -87,7 +84,6 @@ impl Kind {
 
     fn id(self) -> &'static str {
         match self {
-            Kind::Fit => "fit",
             Kind::Tidy => "tidy",
             Kind::Translate => "translate",
             Kind::Script => "script",
@@ -98,7 +94,7 @@ impl Kind {
         match self {
             Kind::Translate => Some("to"),
             Kind::Script => Some("mode"),
-            Kind::Fit | Kind::Tidy => None,
+            Kind::Tidy => None,
         }
     }
 }
@@ -240,24 +236,16 @@ pub fn compile(steps: &[StepSpec], ctx: &Context) -> Compiled {
     let mut g = Builder::default();
     let mut at = Src::Input;
     let mut lang = ctx.language.map(primary);
-    let mut spelled = false;
     let mut chinese = ChineseScript::AsRecognised;
     for (kind, step) in known {
         let state = match kind {
-            Kind::Fit => {
-                at = fit(&mut g, at);
-                spelled = true;
-                StepState::Applicable
-            }
             Kind::Tidy if lang.as_deref().is_some_and(|l| l != "en") => StepState::NotApplicable {
                 reason: "Applies when the text is English".into(),
             },
             Kind::Tidy => {
                 let language = if lang.is_some() { Lang::En } else { Lang::Any };
                 at = g.rule(at, Rule::Disfluency(language));
-                if !spelled {
-                    at = g.rule(at, Rule::Vocabulary);
-                }
+                at = g.rule(at, Rule::Vocabulary);
                 let request = Request::cleanup(None);
                 let state = ask_state(&request, ctx);
                 at = g.ask(at, request, Check::ConservativeEdit, Needs::Sentence);
@@ -354,25 +342,6 @@ fn ask_state(request: &Request, ctx: &Context) -> StepState {
 
 /// Route by what the field is: an address, a sentence in progress or text
 /// that starts one.
-fn fit(g: &mut Builder, from: Src) -> Src {
-    let address = g.rule(from, Rule::Address);
-    let go_on = g.rule(from, Rule::Continue);
-    // After the recasing, so a term keeps its capitals; an address is no
-    // prose and keeps none of them.
-    let go_on = g.rule(go_on, Rule::Vocabulary);
-    let heard = g.rule(from, Rule::Vocabulary);
-    g.route(
-        vec![
-            (
-                When::Purpose(&[FieldPurpose::Url, FieldPurpose::Email]),
-                address,
-            ),
-            (When::MidSentence, go_on),
-        ],
-        heard,
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -453,32 +422,27 @@ mod tests {
 
     #[test]
     fn stage_order_does_not_depend_on_input_order() {
-        let all = ["fit", "tidy", "translate=fr", "script=simplified"];
+        let all = ["tidy", "translate=fr", "script=simplified"];
         let want = compiled(&all, Some("en"));
         assert_eq!(
             states(&want),
-            [
-                ("fit", "on"),
-                ("tidy", "on"),
-                ("translate", "on"),
-                ("script", "n/a")
-            ]
+            [("tidy", "on"), ("translate", "on"), ("script", "n/a")]
         );
-        // Every permutation of four steps.
-        let mut order = [0, 1, 2, 3];
+        // Every permutation of three steps.
+        let mut order = [0, 1, 2];
         let mut seen = 0;
         loop {
             let ids: Vec<_> = order.iter().map(|&i| all[i]).collect();
             assert_eq!(compiled(&ids, Some("en")), want, "{ids:?}");
             seen += 1;
-            let Some(i) = (0..3).rev().find(|&i| order[i] < order[i + 1]) else {
+            let Some(i) = (0..2).rev().find(|&i| order[i] < order[i + 1]) else {
                 break;
             };
-            let j = (i + 1..4).rev().find(|&j| order[j] > order[i]).unwrap();
+            let j = (i + 1..3).rev().find(|&j| order[j] > order[i]).unwrap();
             order.swap(i, j);
             order[i + 1..].reverse();
         }
-        assert_eq!(seen, 24);
+        assert_eq!(seen, 6);
     }
 
     #[test]
@@ -731,8 +695,8 @@ mod tests {
     }
 
     #[test]
-    fn fit_then_tidy_spells_the_vocabulary_once() {
-        let c = compiled(&["fit", "tidy"], None);
+    fn tidy_spells_the_vocabulary_once() {
+        let c = compiled(&["tidy"], None);
         let vocab = c
             .graph
             .plan(&crate::process::Field::default())
@@ -760,8 +724,13 @@ mod tests {
 
     #[test]
     fn stage_order_here_is_the_order_settings_writes() {
+        // `fit` is the fit-to-field switch, applied after the graph.
         let ids: Vec<&str> = Kind::ALL.iter().map(|k| k.id()).collect();
-        assert_eq!(ids, myna_core::processing::STEP_ORDER);
+        let stored: Vec<&str> = myna_core::processing::STEP_ORDER
+            .into_iter()
+            .filter(|id| *id != "fit")
+            .collect();
+        assert_eq!(ids, stored);
     }
 
     #[test]

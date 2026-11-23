@@ -10,6 +10,7 @@ pub use landing::Landing;
 
 mod check;
 pub mod disfluency;
+pub mod fit;
 pub mod graph;
 pub mod history;
 pub mod landing;
@@ -53,6 +54,12 @@ pub trait Processor: Send {
     /// Never fails: a step that cannot run, is too slow or returns nonsense
     /// passes its input through, so a dictation is never lost to processing.
     async fn process(&mut self, text: String, field: &Field) -> String;
+
+    /// The last change before a piece is typed, after `process` and also
+    /// when text streams unprocessed: fitting it to `field`.
+    fn fit(&mut self, text: String, _field: &Field) -> String {
+        text
+    }
 
     /// A piece that went through `process` (or would have) has landed or been
     /// lost; the controller calls this once per piece.

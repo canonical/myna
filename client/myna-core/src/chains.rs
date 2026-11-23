@@ -151,9 +151,8 @@ impl Processing {
     /// today: its steps that are on, once each, parameters keyed
     /// `<step>.<param>` (the first of a repeated step wins, an off step's
     /// fill in, so a choice outlives its switch). The fit switch is not in
-    /// it: fitting holds a sentence and so ends preedit, and
-    /// `fit-to-field-output-switch` makes it an output stage first. Goes
-    /// once the compiler walks chains in order (`chains-compiler-user-order`).
+    /// it: the daemon fits after the graph, as an output stage. Goes once
+    /// the compiler walks chains in order (`chains-compiler-user-order`).
     pub fn stage_steps(&self) -> (Vec<String>, Params) {
         let steps: Vec<&ChainStep> = self
             .active()

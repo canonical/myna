@@ -1674,7 +1674,7 @@ mod tests {
                 .map(|row| row.title().to_string())
                 .collect();
             assert!(titles.contains(&"Translate English to Français".to_owned()));
-            assert!(titles.contains(&"Fitted to the field".to_owned()));
+            assert!(!titles.contains(&"Fitted to the field".to_owned()));
             let facts: Vec<String> =
                 all::<adw::ActionRow>(catalog_row(&rig, "Tidy up speech").upcast_ref())
                     .iter()

@@ -144,6 +144,8 @@ pub struct Pipeline {
     written: Live<Vec<String>>,
     /// How Chinese is written once the graph is done; none to change.
     script: Live<ChineseScript>,
+    /// Whether each piece is fitted to its field before it is typed.
+    fitted: Live<bool>,
     /// `written` compiled, until it changes.
     vocabulary: (Vec<String>, Vocabulary),
     trace: Trace,
@@ -157,6 +159,7 @@ impl Pipeline {
             models: Box::new(models),
             written: Live::new(Vec::new()),
             script: Live::new(ChineseScript::AsRecognised),
+            fitted: Live::new(false),
             vocabulary: (Vec::new(), Vocabulary::default()),
             trace: Trace::default(),
             joins: Joins::default(),
@@ -177,6 +180,23 @@ impl Pipeline {
     pub fn scripted(mut self, script: Live<ChineseScript>) -> Self {
         self.script = script;
         self
+    }
+
+    /// Whether each piece is fitted to its field ([`super::fit`]) after
+    /// the graph, streamed text included.
+    #[must_use]
+    pub fn fitted(mut self, on: Live<bool>) -> Self {
+        self.fitted = on;
+        self
+    }
+
+    /// The vocabulary compiled from the current entries.
+    fn vocabulary(&mut self) -> &Vocabulary {
+        let entries = self.written.get();
+        if self.vocabulary.0 != entries {
+            self.vocabulary = (entries.clone(), Vocabulary::new(&entries));
+        }
+        &self.vocabulary.1
     }
 
     /// Where the steps of the last piece of text are left.
@@ -259,12 +279,16 @@ impl Processor for Pipeline {
         self.models.prepare(&self.graph.get().requests());
     }
 
+    fn fit(&mut self, text: String, field: &Field) -> String {
+        if !self.fitted.get() {
+            return text;
+        }
+        super::fit::fit(&text, field, self.vocabulary())
+    }
+
     async fn process(&mut self, text: String, field: &Field) -> String {
         let graph = self.graph.get();
-        let entries = self.written.get();
-        if self.vocabulary.0 != entries {
-            self.vocabulary = (entries.clone(), Vocabulary::new(&entries));
-        }
+        self.vocabulary();
         let seq = self.joins.begin();
         let mut trace = Vec::new();
         let mut made: HashMap<Id, String> = HashMap::new();
@@ -676,19 +700,31 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_term_keeps_its_capitals_in_the_keyword_preset() {
-        let mut pipeline = Pipeline::new(graph_of(ProcessingChain::KEYWORD), Scripted::Fails)
-            .written(Live::new(vec!["my sequel => MySQL".to_owned()]));
+    async fn a_term_keeps_its_capitals_when_fitted() {
+        let mut pipeline = Pipeline::new(Graph::passthrough(), Scripted::Fails)
+            .written(Live::new(vec!["my sequel => MySQL".to_owned()]))
+            .fitted(Live::new(true));
         let mid = Field::after(FieldPurpose::Plain, Some('a'));
         assert_eq!(
-            pipeline.process("The my sequel dump.".into(), &mid).await,
+            pipeline.fit("The my sequel dump.".into(), &mid),
             "the MySQL dump."
         );
         let email = Field::after(FieldPurpose::Email, None);
-        assert_eq!(
-            pipeline.process("My sequel.".into(), &email).await,
-            "my sequel"
-        );
+        assert_eq!(pipeline.fit("My sequel.".into(), &email), "my sequel");
+    }
+
+    /// Fitting is the last change: a step that recases after the words
+    /// before it cannot undo it, and off it changes nothing.
+    #[tokio::test]
+    async fn fitting_runs_after_the_graph_and_only_when_on() {
+        let on = Live::new(true);
+        let mut pipeline = cleanup(Scripted::Says("The end.")).fitted(on.clone());
+        let mid = Field::after(FieldPurpose::Plain, Some('s'));
+        let processed = pipeline.process("the end".into(), &mid).await;
+        assert_eq!(processed, "The end.", "the cleanup recased it");
+        assert_eq!(pipeline.fit(processed.clone(), &mid), "the end.");
+        on.set(false);
+        assert_eq!(pipeline.fit(processed, &mid), "The end.");
     }
 
     #[tokio::test]
@@ -787,20 +823,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_route_types_what_the_field_calls_for_and_asks_no_model_it_does_not_need() {
-        let mut pipeline = Pipeline::new(graph_of(ProcessingChain::KEYWORD), Scripted::Fails);
+    async fn fitting_types_what_the_field_calls_for_and_asks_no_model() {
+        let mut pipeline =
+            Pipeline::new(Graph::passthrough(), Scripted::Fails).fitted(Live::new(true));
         let email = Field::after(FieldPurpose::Email, None);
-        assert_eq!(pipeline.process("Maria.".into(), &email).await, "maria");
+        assert_eq!(pipeline.fit("Maria.".into(), &email), "maria");
         let go_on = Field::after(FieldPurpose::Plain, Some('s'));
-        assert_eq!(
-            pipeline.process("The end.".into(), &go_on).await,
-            "the end."
-        );
+        assert_eq!(pipeline.fit("The end.".into(), &go_on), "the end.");
         let fresh = Field::after(FieldPurpose::Plain, Some('.'));
-        assert_eq!(
-            pipeline.process("The end.".into(), &fresh).await,
-            "The end."
-        );
+        assert_eq!(pipeline.fit("The end.".into(), &fresh), "The end.");
         assert!(traced(&pipeline).is_empty());
     }
 

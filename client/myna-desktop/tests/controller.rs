@@ -2390,12 +2390,11 @@ async fn terminal_fields_fold_layout_breaks_across_streaming_and_held_commits() 
     assert_eq!(plain_field.text(), "one\ntwo");
 }
 
-fn keyword() -> myna_desktop::process::pipeline::Pipeline {
+/// No chain, fitted to the field.
+fn fitted() -> myna_desktop::process::pipeline::Pipeline {
     use myna_desktop::process::{graph::Graph, pipeline::*, resolve::Resolver};
-    Pipeline::new(
-        Graph::preset(myna_core::ProcessingChain::KEYWORD),
-        Resolver::open(Vec::new()),
-    )
+    Pipeline::new(Graph::passthrough(), Resolver::open(Vec::new()))
+        .fitted(myna_desktop::live::Live::new(true))
 }
 
 async fn dictate_into(
@@ -2407,20 +2406,21 @@ async fn dictate_into(
     let field = injector.field();
     field.set_purpose(purpose);
     field.set_text(before);
+    // Streaming: fitting holds nothing back.
     let (builder, _) = held(
-        CommitPolicy::Horizon { sentences: 0 },
+        CommitPolicy::Streaming,
         injector,
         events_session(
             vec![OrchestratorEvent::Final(words.into())],
             completed(words),
         ),
     );
-    builder.processor(keyword()).build().run().await;
+    builder.processor(fitted()).build().run().await;
     field.text()
 }
 
 #[tokio::test]
-async fn the_keyword_preset_fits_what_is_typed_to_the_field() {
+async fn streamed_text_is_fitted_to_the_field() {
     use myna_desktop::FieldPurpose::{Email, Plain};
     assert_eq!(
         dictate_into(MockInjector::new(), "Maria.", Email, "").await,
