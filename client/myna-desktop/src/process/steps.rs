@@ -1,9 +1,10 @@
 //! Processing as an ordered list of steps, compiled to a [`Graph`].
 //!
-//! The user switches steps on; where each runs is fixed by its stage, so no
-//! list can order them badly. A step declares the language it reads and the
-//! language it leaves, and one whose input does not match the text at that
-//! point is skipped statically: not applicable is no fault.
+//! The chain runs in the order the user gave it. A step declares the
+//! language it reads and the language it leaves, and one whose input does
+//! not match the text at that point is skipped statically: not applicable is
+//! no fault, and when moving it above the step that changed the language
+//! would fix it, the report says which step that is.
 
 use myna_core::{ChineseScript, ProcessingChain};
 use serde_json::Value;
@@ -15,11 +16,12 @@ use super::rules::Rule;
 use super::script;
 use super::wire::Params;
 
-/// A step as stored: a stable id and its parameters.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+/// A step as stored: a stable id, its parameters and whether it is on.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StepSpec {
     pub id: String,
     pub params: Params,
+    pub on: bool,
 }
 
 impl StepSpec {
@@ -27,6 +29,21 @@ impl StepSpec {
         Self {
             id: id.into(),
             params: Params::new(),
+            on: true,
+        }
+    }
+
+    /// A step of a saved chain.
+    pub fn of_chain(step: &myna_core::chains::ChainStep) -> Self {
+        let spec = step
+            .params
+            .iter()
+            .fold(Self::new(&step.step), |spec, (key, value)| {
+                spec.with(key, value)
+            });
+        Self {
+            on: step.on,
+            ..spec
         }
     }
 
@@ -64,14 +81,14 @@ impl StepSpec {
     }
 }
 
-/// The steps this build knows, in stage order.
+/// The steps this build knows, in their default insert order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Kind {
-    /// Stage 1: drop hesitations, false starts and repeats.
+    /// Drop hesitations, false starts and repeats.
     Tidy,
-    /// Stage 2: translate to `to`.
+    /// Translate to `to`.
     Translate,
-    /// Stage 3: write Chinese in `script`.
+    /// Write Chinese in `script`.
     Script,
 }
 
@@ -105,8 +122,14 @@ pub enum StepState {
     /// In the graph.
     Applicable,
     /// Left out because the text it would read is not what it reads; not a
-    /// fault.
-    NotApplicable { reason: String },
+    /// fault. `move_above` is the index of the earlier step that changed the
+    /// language, when the step would apply above it.
+    NotApplicable {
+        reason: String,
+        move_above: Option<usize>,
+    },
+    /// Switched off in the chain; left out.
+    Off,
     /// In the graph, but no model answers `request`: the step fails open
     /// until one does.
     Unavailable { request: Request },
@@ -148,7 +171,7 @@ pub struct Compiled {
     pub graph: Graph,
     /// How Chinese is written after the graph.
     pub script: ChineseScript,
-    /// One entry per step in stage order, then the unknown ones.
+    /// One entry per step, at the step's index in the chain.
     pub report: Vec<StepReport>,
 }
 
@@ -178,9 +201,16 @@ pub fn describe(steps: &[StepSpec]) -> String {
     if steps.is_empty() {
         return "(none)".into();
     }
-    let one = |step: &StepSpec| match step.params.values().find_map(Value::as_str) {
-        Some(value) => format!("{}={value}", step.id),
-        None => step.id.clone(),
+    let one = |step: &StepSpec| {
+        let named = match step.params.values().find_map(Value::as_str) {
+            Some(value) => format!("{}={value}", step.id),
+            None => step.id.clone(),
+        };
+        if step.on {
+            named
+        } else {
+            format!("{named} (off)")
+        }
     };
     steps.iter().map(one).collect::<Vec<_>>().join(", ")
 }
@@ -215,96 +245,103 @@ fn primary(tag: &str) -> String {
         .to_ascii_lowercase()
 }
 
-/// Compile `steps` in stage order for dictation in `ctx.language`.
-pub fn compile(steps: &[StepSpec], ctx: &Context) -> Compiled {
-    let mut known: Vec<(Kind, &StepSpec)> = Vec::new();
-    let mut report = Vec::new();
-    let mut unknown = Vec::new();
-    for step in steps {
-        match Kind::of(&step.id) {
-            Some(kind) if known.iter().all(|(k, _)| *k != kind) => known.push((kind, step)),
-            Some(_) => {}
-            None if unknown.contains(&step.id) => {}
-            None => {
-                myna_core::info_log!("process", "dropping unknown step {:?}", step.id);
-                unknown.push(step.id.clone());
-            }
+/// Why `kind` does not apply to text in `lang`, if it does not.
+fn misfit(kind: Kind, step: &StepSpec, lang: Option<&str>) -> Option<&'static str> {
+    match kind {
+        Kind::Tidy if lang.is_some_and(|l| l != "en") => Some("Applies when the text is English"),
+        Kind::Translate => match step.text("to").map(primary) {
+            None => Some("Needs a language to translate to"),
+            Some(to) if lang == Some(to.as_str()) => Some("The text is already in that language"),
+            Some(_) => None,
+        },
+        Kind::Script if !script::chinese(lang) => Some("Applies when the text is Chinese"),
+        Kind::Script
+            if step
+                .text("mode")
+                .and_then(ChineseScript::from_nick)
+                .is_none() =>
+        {
+            Some("Needs a script to write")
         }
+        _ => None,
     }
-    known.sort_by_key(|(kind, _)| *kind as u8);
+}
 
+/// Compile `steps` in their order for dictation in `ctx.language`.
+pub fn compile(steps: &[StepSpec], ctx: &Context) -> Compiled {
     let mut g = Builder::default();
     let mut at = Src::Input;
     let mut lang = ctx.language.map(primary);
     let mut chinese = ChineseScript::AsRecognised;
-    for (kind, step) in known {
+    // The last step that changed the language, and the language before it.
+    let mut changed: Option<(usize, Option<String>)> = None;
+    let mut report = Vec::with_capacity(steps.len());
+    for (index, step) in steps.iter().enumerate() {
+        let kind = Kind::of(&step.id);
         let state = match kind {
-            Kind::Tidy if lang.as_deref().is_some_and(|l| l != "en") => StepState::NotApplicable {
-                reason: "Applies when the text is English".into(),
-            },
-            Kind::Tidy => {
-                let language = if lang.is_some() { Lang::En } else { Lang::Any };
-                at = g.rule(at, Rule::Disfluency(language));
-                at = g.rule(at, Rule::Vocabulary);
-                let request = Request::cleanup(None);
-                let state = ask_state(&request, ctx);
-                at = g.ask(at, request, Check::ConservativeEdit, Needs::Sentence);
-                state
+            _ if !step.on => StepState::Off,
+            None => {
+                myna_core::info_log!("process", "dropping unknown step {:?}", step.id);
+                StepState::Unknown
             }
-            Kind::Translate => match step.text("to").map(primary) {
-                None => StepState::NotApplicable {
-                    reason: "Needs a language to translate to".into(),
+            Some(kind) => match misfit(kind, step, lang.as_deref()) {
+                Some(reason) => StepState::NotApplicable {
+                    reason: reason.into(),
+                    move_above: changed
+                        .as_ref()
+                        .filter(|(_, before)| misfit(kind, step, before.as_deref()).is_none())
+                        .map(|(at, _)| *at),
                 },
-                Some(to) if lang.as_deref() == Some(to.as_str()) => StepState::NotApplicable {
-                    reason: "The text is already in that language".into(),
+                None => match kind {
+                    Kind::Tidy => {
+                        let language = if lang.is_some() { Lang::En } else { Lang::Any };
+                        at = g.rule(at, Rule::Disfluency(language));
+                        at = g.rule(at, Rule::Vocabulary);
+                        let request = Request::cleanup(None);
+                        let state = ask_state(&request, ctx);
+                        at = g.ask(at, request, Check::ConservativeEdit, Needs::Sentence);
+                        state
+                    }
+                    Kind::Translate => {
+                        let to = step.text("to").map(primary).expect("misfit checked it");
+                        let from = lang.clone().unwrap_or_else(|| "en".into());
+                        let check = Check::Usable { translation: true };
+                        let state = match pivot_legs(&from, &to, ctx) {
+                            Some((first, second)) => {
+                                let state = [&first, &second]
+                                    .into_iter()
+                                    .find(|leg| (ctx.unavailable)(leg))
+                                    .map_or(StepState::Applicable, |leg| StepState::Unavailable {
+                                        request: leg.clone(),
+                                    });
+                                at = g.pivot(at, first, second, check);
+                                state
+                            }
+                            None => {
+                                let direct = Request::translate(&from, &to);
+                                let state = ask_state(&direct, ctx);
+                                at = g.ask(at, direct, check, Needs::Sentence);
+                                state
+                            }
+                        };
+                        changed = Some((index, lang.replace(to)));
+                        state
+                    }
+                    Kind::Script => {
+                        chinese = step
+                            .text("mode")
+                            .and_then(ChineseScript::from_nick)
+                            .expect("misfit checked it");
+                        StepState::Applicable
+                    }
                 },
-                Some(to) => {
-                    let from = lang.as_deref().unwrap_or("en");
-                    let check = Check::Usable { translation: true };
-                    let direct = Request::translate(from, &to);
-                    let state = match pivot_legs(from, &to, ctx) {
-                        Some((first, second)) => {
-                            let state = [&first, &second]
-                                .into_iter()
-                                .find(|leg| (ctx.unavailable)(leg))
-                                .map_or(StepState::Applicable, |leg| StepState::Unavailable {
-                                    request: leg.clone(),
-                                });
-                            at = g.pivot(at, first, second, check);
-                            state
-                        }
-                        None => {
-                            let state = ask_state(&direct, ctx);
-                            at = g.ask(at, direct, check, Needs::Sentence);
-                            state
-                        }
-                    };
-                    lang = Some(to);
-                    state
-                }
-            },
-            Kind::Script => match step.text("mode").and_then(ChineseScript::from_nick) {
-                _ if !script::chinese(lang.as_deref()) => StepState::NotApplicable {
-                    reason: "Applies when the text is Chinese".into(),
-                },
-                None => StepState::NotApplicable {
-                    reason: "Needs a script to write".into(),
-                },
-                Some(wanted) => {
-                    chinese = wanted;
-                    StepState::Applicable
-                }
             },
         };
         report.push(StepReport {
-            id: kind.id().into(),
+            id: step.id.clone(),
             state,
         });
     }
-    report.extend(unknown.into_iter().map(|id| StepReport {
-        id,
-        state: StepState::Unknown,
-    }));
     Compiled {
         graph: g.finish(at),
         script: chinese,
@@ -370,6 +407,7 @@ mod tests {
                     StepState::NotApplicable { .. } => "n/a",
                     StepState::Unavailable { .. } => "missing",
                     StepState::Unknown => "unknown",
+                    StepState::Off => "off",
                 };
                 (r.id.as_str(), state)
             })
@@ -420,37 +458,89 @@ mod tests {
         assert_eq!(StepSpec::parse("shout=1"), StepSpec::new("shout"));
     }
 
-    #[test]
-    fn stage_order_does_not_depend_on_input_order() {
-        let all = ["tidy", "translate=fr", "script=simplified"];
-        let want = compiled(&all, Some("en"));
-        assert_eq!(
-            states(&want),
-            [("tidy", "on"), ("translate", "on"), ("script", "n/a")]
-        );
-        // Every permutation of three steps.
-        let mut order = [0, 1, 2];
-        let mut seen = 0;
-        loop {
-            let ids: Vec<_> = order.iter().map(|&i| all[i]).collect();
-            assert_eq!(compiled(&ids, Some("en")), want, "{ids:?}");
-            seen += 1;
-            let Some(i) = (0..2).rev().find(|&i| order[i] < order[i + 1]) else {
-                break;
-            };
-            let j = (i + 1..3).rev().find(|&j| order[j] > order[i]).unwrap();
-            order.swap(i, j);
-            order[i + 1..].reverse();
+    fn not_applicable(c: &Compiled, index: usize) -> Option<usize> {
+        match &c.report[index].state {
+            StepState::NotApplicable { move_above, .. } => *move_above,
+            other => panic!("step {index} is {other:?}"),
         }
-        assert_eq!(seen, 6);
     }
 
     #[test]
-    fn a_step_listed_twice_runs_once() {
+    fn the_chain_runs_in_the_order_given() {
+        let tidy_first = compiled(&["tidy", "translate=fr"], Some("en"));
+        assert_eq!(states(&tidy_first), [("tidy", "on"), ("translate", "on")]);
+
+        let translate_first = compiled(&["translate=fr", "tidy"], Some("en"));
         assert_eq!(
-            compiled(&["tidy", "translate=fr", "tidy"], None),
-            compiled(&["tidy", "translate=fr"], None)
+            states(&translate_first),
+            [("translate", "on"), ("tidy", "n/a")]
         );
+        assert_eq!(
+            not_applicable(&translate_first, 1),
+            Some(0),
+            "move above it"
+        );
+        assert_ne!(translate_first.graph, tidy_first.graph);
+        assert!(!translate_first.degraded());
+    }
+
+    #[test]
+    fn a_misfit_the_dictation_language_causes_has_no_step_to_move_above() {
+        let c = compiled(&["tidy"], Some("fr"));
+        assert_eq!(not_applicable(&c, 0), None);
+        // Moving above a translation to German would not make it Chinese.
+        let c = compiled(&["translate=de", "script=simplified"], Some("en"));
+        assert_eq!(not_applicable(&c, 1), None);
+        // Above a translation away from Chinese it would apply.
+        let c = compiled(&["translate=en", "script=simplified"], Some("zh"));
+        assert_eq!(not_applicable(&c, 1), Some(0));
+    }
+
+    #[test]
+    fn a_step_listed_twice_runs_twice_where_it_fits() {
+        let c = compiled(&["tidy", "translate=fr", "tidy"], Some("en"));
+        assert_eq!(
+            states(&c),
+            [("tidy", "on"), ("translate", "on"), ("tidy", "n/a")]
+        );
+        assert_eq!(not_applicable(&c, 2), Some(1));
+        let c = compiled(&["translate=fr", "translate=de"], Some("en"));
+        assert_eq!(states(&c), [("translate", "on"), ("translate", "on")]);
+        let asks: Vec<_> = c
+            .graph
+            .requests()
+            .into_iter()
+            .map(|r| (r.params["language"].clone(), r.params["to"].clone()))
+            .collect();
+        assert_eq!(
+            asks,
+            [("en".into(), "fr".into()), ("fr".into(), "de".into())]
+        );
+    }
+
+    #[test]
+    fn an_empty_chain_and_an_off_step_change_nothing() {
+        let empty = compiled(&[], Some("en"));
+        assert_eq!(empty.graph, Graph::passthrough());
+        assert!(empty.report.is_empty());
+        let mut off = StepSpec::parse("tidy");
+        off.on = false;
+        let c = compile(&[off, StepSpec::parse("translate=fr")], &Context::default());
+        assert_eq!(states(&c), [("tidy", "off"), ("translate", "on")]);
+        assert_eq!(c.graph, compiled(&["translate=fr"], None).graph);
+        assert!(!c.degraded(), "off is no fault");
+    }
+
+    #[test]
+    fn a_chain_step_keeps_its_parameters_and_switch() {
+        let step = myna_core::chains::ChainStep {
+            on: false,
+            ..myna_core::chains::ChainStep::new("translate").with("to", "de")
+        };
+        let spec = StepSpec::of_chain(&step);
+        assert_eq!(spec.id, "translate");
+        assert_eq!(spec.text("to"), Some("de"));
+        assert!(!spec.on);
     }
 
     #[test]
@@ -468,7 +558,8 @@ mod tests {
             assert_eq!(c.graph == Graph::passthrough(), state == "n/a");
             assert!(!c.degraded(), "not applicable is no fault");
         }
-        let StepState::NotApplicable { reason } = &compiled(&["tidy"], Some("fr")).report[0].state
+        let StepState::NotApplicable { reason, .. } =
+            &compiled(&["tidy"], Some("fr")).report[0].state
         else {
             panic!()
         };
@@ -522,7 +613,8 @@ mod tests {
         assert_eq!(
             compile(&[blank], &Context::default()).report[0].state,
             StepState::NotApplicable {
-                reason: "Needs a language to translate to".into()
+                reason: "Needs a language to translate to".into(),
+                move_above: None,
             }
         );
     }
@@ -688,7 +780,12 @@ mod tests {
         let c = compiled(&["shout", "tidy", "shout", "whisper"], None);
         assert_eq!(
             states(&c),
-            [("tidy", "on"), ("shout", "unknown"), ("whisper", "unknown")]
+            [
+                ("shout", "unknown"),
+                ("tidy", "on"),
+                ("shout", "unknown"),
+                ("whisper", "unknown")
+            ]
         );
         assert!(c.degraded());
         assert_eq!(c.graph, Graph::preset(ProcessingChain::TIDY));

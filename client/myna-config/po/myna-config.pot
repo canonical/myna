@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-23 14:46+0000\n"
+"POT-Creation-Date: 2026-11-23 16:32+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -110,7 +110,7 @@ msgid "Model"
 msgstr ""
 
 #: data/main-window.blp:46 src/app.rs:6120 src/diagnostics.rs:582
-#: src/myna_settings.rs:265
+#: src/myna_settings.rs:268
 msgid "Processing"
 msgstr ""
 
@@ -538,21 +538,21 @@ msgstr ""
 msgid "{n} MB"
 msgstr ""
 
-#: src/processing_steps.rs:286 src/step_catalog.rs:133 src/myna_settings.rs:213
+#: src/processing_steps.rs:286 src/myna_settings.rs:213
 msgid "Fitted to the field"
 msgstr ""
 
-#: src/processing_steps.rs:287 src/step_catalog.rs:123
+#: src/processing_steps.rs:287 src/step_catalog.rs:116
 msgid "Chinese script"
 msgstr ""
 
-#: src/processing_steps.rs:294 src/step_catalog.rs:135
+#: src/processing_steps.rs:294
 msgid ""
 "No capital or full stop in an address, and no capital where you carry on a "
 "sentence."
 msgstr ""
 
-#: src/processing_steps.rs:300 src/step_catalog.rs:125
+#: src/processing_steps.rs:300 src/step_catalog.rs:117
 msgid "Types Chinese in the characters you choose. Other text is left alone."
 msgstr ""
 
@@ -569,7 +569,7 @@ msgid "The text is already in that language"
 msgstr ""
 
 #. TRANSLATORS: {language} is a language name, such as "English".
-#: src/processing_steps.rs:527 src/step_catalog.rs:322
+#: src/processing_steps.rs:527 src/step_catalog.rs:303
 msgid "Applies when the text is {language}"
 msgstr ""
 
@@ -583,12 +583,12 @@ msgstr ""
 msgid "the {step} model"
 msgstr ""
 
-#: src/processing_steps.rs:659 src/step_catalog.rs:215
+#: src/processing_steps.rs:659 src/step_catalog.rs:196
 #: src/plugin_catalog.rs:293
 msgid "um so I, I think we should go"
 msgstr ""
 
-#: src/processing_steps.rs:662 src/step_catalog.rs:216
+#: src/processing_steps.rs:662 src/step_catalog.rs:197
 msgid "So I think we should go."
 msgstr ""
 
@@ -598,40 +598,40 @@ msgid "Typed in {language}"
 msgstr ""
 
 #. TRANSLATORS: credits the libraries and word lists behind Chinese script conversion.
-#: src/step_catalog.rs:129
+#: src/step_catalog.rs:120
 msgid "opencc-jieba-rs (MIT); OpenCC conversion lists (Apache-2.0)"
 msgstr ""
 
-#: src/step_catalog.rs:142
+#: src/step_catalog.rs:123
 msgid "Size"
 msgstr ""
 
-#: src/step_catalog.rs:143
+#: src/step_catalog.rs:124
 msgid "Built in, nothing to install"
 msgstr ""
 
-#: src/step_catalog.rs:147 src/step_catalog.rs:247 src/diagnostics.rs:705
+#: src/step_catalog.rs:128 src/step_catalog.rs:228 src/diagnostics.rs:705
 msgid "License"
 msgstr ""
 
 #. TRANSLATORS: {from} and {to} are language names, such as "English" and "Français".
-#: src/step_catalog.rs:180
+#: src/step_catalog.rs:161
 msgid "Translate {from} to {to}"
 msgstr ""
 
-#: src/step_catalog.rs:219 src/plugin_catalog.rs:296
+#: src/step_catalog.rs:200 src/plugin_catalog.rs:296
 msgid "I think we should go"
 msgstr ""
 
-#: src/step_catalog.rs:229
+#: src/step_catalog.rs:210
 msgid "Download"
 msgstr ""
 
-#: src/step_catalog.rs:234
+#: src/step_catalog.rs:215
 msgid "Quality"
 msgstr ""
 
-#: src/step_catalog.rs:257
+#: src/step_catalog.rs:238
 msgid "Not measured on a benchmark yet"
 msgstr ""
 
@@ -1975,75 +1975,79 @@ msgstr ""
 msgid "Speech model"
 msgstr ""
 
-#: src/myna_settings.rs:271
+#: src/myna_settings.rs:266
+msgid "Chain"
+msgstr ""
+
+#: src/myna_settings.rs:275
 msgid "Tidying"
 msgstr ""
 
-#: src/myna_settings.rs:272
+#: src/myna_settings.rs:276
 msgid "Translation"
 msgstr ""
 
-#: src/myna_settings.rs:276
+#: src/myna_settings.rs:280
 msgid "{ms} ms"
 msgstr ""
 
-#: src/myna_settings.rs:283
+#: src/myna_settings.rs:287
 msgid "Not used ({ran}): {why}"
 msgstr ""
 
-#: src/myna_settings.rs:293
+#: src/myna_settings.rs:297
 msgid "{total} ms ({heard} ms to hear, {typed} ms to type)"
 msgstr ""
 
-#: src/myna_settings.rs:297
+#: src/myna_settings.rs:301
 msgid "Wait after you stopped"
 msgstr ""
 
-#: src/myna_settings.rs:300
+#: src/myna_settings.rs:304
 msgid "Myna version"
 msgstr ""
 
-#: src/myna_settings.rs:315
+#: src/myna_settings.rs:319
 msgid "no model was reachable"
 msgstr ""
 
-#: src/myna_settings.rs:316
+#: src/myna_settings.rs:320
 msgid "the model could not answer"
 msgstr ""
 
-#: src/myna_settings.rs:317
+#: src/myna_settings.rs:321
 msgid "the model was too slow"
 msgstr ""
 
-#: src/myna_settings.rs:318
+#: src/myna_settings.rs:322
 msgid "the answer was empty"
 msgstr ""
 
-#: src/myna_settings.rs:319
+#: src/myna_settings.rs:323
 msgid "the answer added or moved words"
 msgstr ""
 
-#: src/myna_settings.rs:320
+#: src/myna_settings.rs:324
 msgid "the answer left out too much"
 msgstr ""
 
-#: src/myna_settings.rs:321
+#: src/myna_settings.rs:325
 msgid "the answer left out too many words in a row"
 msgstr ""
 
-#: src/myna_settings.rs:322
+#: src/myna_settings.rs:326
 msgid "the answer left out a “not”"
 msgstr ""
 
-#: src/myna_settings.rs:323
+#: src/myna_settings.rs:327
 msgid "the answer was a chat reply"
 msgstr ""
 
-#: src/myna_settings.rs:324
+#: src/myna_settings.rs:328
 msgid "the answer was far shorter or longer"
 msgstr ""
 
-#: src/myna_settings.rs:325
+#: src/myna_settings.rs:329
 msgid "for a reason this version does not know"
 msgstr ""
 

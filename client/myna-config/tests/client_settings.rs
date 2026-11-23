@@ -545,6 +545,15 @@ fn a_past_dictation_says_what_made_it() {
             pair("Myna version", "0.3.3+git22"),
         ]
     );
+    let named = myna_core::history::Entry {
+        chain_id: Some("chain-1".into()),
+        chain_name: Some("Tidy then French".into()),
+        ..entry
+    };
+    assert_eq!(
+        past_dictation(&named).made_by[1],
+        pair("Chain", "Tidy then French")
+    );
 }
 
 #[test]

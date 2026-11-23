@@ -140,6 +140,9 @@ pub type Trace = Arc<Mutex<Vec<myna_core::history::Step>>>;
 /// piece of text, so a change in Settings applies from the next one.
 pub struct Pipeline {
     graph: Live<Graph>,
+    /// `graph` as the dictation started: a chain switched mid-dictation
+    /// applies from the next one. `None` until a dictation prepares.
+    started: Option<Graph>,
     models: Box<dyn Models>,
     written: Live<Vec<String>>,
     /// How Chinese is written once the graph is done; none to change.
@@ -156,6 +159,7 @@ impl Pipeline {
     pub fn new(graph: impl Into<Live<Graph>>, models: impl Models + 'static) -> Self {
         Self {
             graph: graph.into(),
+            started: None,
             models: Box::new(models),
             written: Live::new(Vec::new()),
             script: Live::new(ChineseScript::AsRecognised),
@@ -276,7 +280,9 @@ impl Pipeline {
 #[async_trait]
 impl Processor for Pipeline {
     fn prepare(&mut self) {
-        self.models.prepare(&self.graph.get().requests());
+        let graph = self.graph.get();
+        self.models.prepare(&graph.requests());
+        self.started = Some(graph);
     }
 
     fn fit(&mut self, text: String, field: &Field) -> String {
@@ -287,7 +293,7 @@ impl Processor for Pipeline {
     }
 
     async fn process(&mut self, text: String, field: &Field) -> String {
-        let graph = self.graph.get();
+        let graph = self.started.clone().unwrap_or_else(|| self.graph.get());
         self.vocabulary();
         let seq = self.joins.begin();
         let mut trace = Vec::new();
@@ -697,6 +703,25 @@ mod tests {
         assert_eq!(*seen.lock().unwrap(), "I run MySQL");
         written.set(vec!["Postgres".to_owned()]);
         assert_eq!(pipeline.process(said.into(), &here()).await, said);
+    }
+
+    /// The graph is read as a dictation starts: a chain switched while it
+    /// runs applies from the next one.
+    #[tokio::test]
+    async fn a_chain_switched_mid_dictation_applies_from_the_next() {
+        let graph = Live::new(Graph::passthrough());
+        let mut pipeline = Pipeline::new(graph.clone(), Scripted::Says("As heard."));
+        pipeline.prepare();
+        graph.set(graph_of(ProcessingChain::TIDY));
+        assert_eq!(
+            pipeline.process("as heard".into(), &here()).await,
+            "as heard"
+        );
+        pipeline.prepare();
+        assert_eq!(
+            pipeline.process("as heard".into(), &here()).await,
+            "As heard."
+        );
     }
 
     #[tokio::test]

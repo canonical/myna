@@ -394,21 +394,20 @@ fn parse_daemon_report(all: &gio::glib::Variant) -> DaemonReport {
     }
 }
 
-/// The steps in force with their parameters, in the order they run.
+/// The active chain's steps that are on, with their parameters, in the
+/// order they run.
 fn steps_line(settings: &myna_core::Settings) -> Option<String> {
-    let (ids, params) = settings.processing.stage_steps();
-    let steps: Vec<String> = ids
+    let steps: Vec<String> = settings
+        .processing
+        .active()?
+        .steps
         .iter()
-        .map(|id| {
-            let prefix = format!("{id}.");
-            let values: Vec<&str> = params
-                .iter()
-                .filter(|(key, _)| key.starts_with(&prefix))
-                .map(|(_, value)| value.as_str())
-                .collect();
+        .filter(|step| step.on)
+        .map(|step| {
+            let values: Vec<&str> = step.params.values().map(String::as_str).collect();
             match values.as_slice() {
-                [] => id.clone(),
-                values => format!("{id}={}", values.join("/")),
+                [] => step.step.clone(),
+                values => format!("{}={}", step.step, values.join("/")),
             }
         })
         .collect();

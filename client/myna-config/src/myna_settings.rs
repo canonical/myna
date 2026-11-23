@@ -260,11 +260,15 @@ pub fn past_dictation(entry: &myna_core::history::Entry) -> PastDictation {
     if let Some(model) = &entry.speech_model {
         made_by.push((gettextrs::gettext("Speech model"), model.clone()));
     }
-    if let Some(chain) = &entry.chain {
-        made_by.push((
+    // The saved chain's name as it was then; an older record names only
+    // the steps.
+    match (&entry.chain_name, &entry.chain) {
+        (Some(name), _) => made_by.push((gettextrs::gettext("Chain"), name.clone())),
+        (None, Some(chain)) => made_by.push((
             gettextrs::gettext("Processing"),
             choice_display_label(chain),
-        ));
+        )),
+        (None, None) => {}
     }
     for step in &entry.steps {
         let label = match step.task.as_str() {

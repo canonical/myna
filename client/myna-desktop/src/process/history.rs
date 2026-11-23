@@ -14,10 +14,15 @@ use super::{Field, Landing, Processor};
 use crate::live::Live;
 
 /// What a record says besides the text, read as each piece is recorded.
+/// A saved chain as the record names it: its id and its name.
+pub type ChainName = (String, String);
+
 #[derive(Clone, Default)]
 pub struct Context {
     /// The enabled steps, recorded as [`super::steps::label`].
     pub steps: Live<Vec<super::steps::StepSpec>>,
+    /// The saved chain in use: its id and name.
+    pub chain: Live<Option<ChainName>>,
     /// What the steps of the piece just processed did.
     pub trace: Trace,
     /// The model the backend said it serves, once a press has asked.
@@ -34,6 +39,9 @@ pub struct Recorded<P> {
     context: Context,
     /// What the steps did to the piece last processed, until it is delivered.
     steps: Option<Vec<myna_core::history::Step>>,
+    /// The steps and chain as the dictation started: a switch mid-dictation
+    /// applies from the next one, so it is not what made this text.
+    started: Option<(Vec<super::steps::StepSpec>, Option<ChainName>)>,
 }
 
 impl<P> Recorded<P> {
@@ -44,6 +52,7 @@ impl<P> Recorded<P> {
             path,
             context,
             steps: None,
+            started: None,
         }
     }
 }
@@ -52,7 +61,12 @@ impl<P> Recorded<P> {
 impl<P: Processor> Processor for Recorded<P> {
     fn prepare(&mut self) {
         self.steps = None;
+        self.started = Some((self.context.steps.get(), self.context.chain.get()));
         self.inner.prepare();
+    }
+
+    fn fit(&mut self, text: String, field: &Field) -> String {
+        self.inner.fit(text, field)
     }
 
     async fn process(&mut self, text: String, field: &Field) -> String {
@@ -79,13 +93,19 @@ impl<P: Processor> Processor for Recorded<P> {
             return;
         };
         let ms = |d: std::time::Duration| u64::try_from(d.as_millis()).unwrap_or(u64::MAX);
+        let (steps_then, chain_then) = self
+            .started
+            .clone()
+            .unwrap_or_else(|| (self.context.steps.get(), self.context.chain.get()));
         let entry = Entry {
             time: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .map_or(0, |since| since.as_secs()),
             heard: landing.heard,
             typed: landing.typed,
-            chain: Some(super::steps::label(&self.context.steps.get())),
+            chain: Some(super::steps::label(&steps_then)),
+            chain_id: chain_then.as_ref().map(|(id, _)| id.clone()),
+            chain_name: chain_then.map(|(_, name)| name),
             steps,
             speech_model: self.context.speech_model.get(),
             version: self.context.version.map(str::to_owned),
@@ -185,6 +205,46 @@ mod tests {
         assert_eq!(lines[0]["outcome"], "typed");
         let mode = std::fs::metadata(&path).unwrap().permissions().mode();
         assert_eq!(mode & 0o077, 0, "the record is the user's alone");
+    }
+
+    /// A chain switched mid-dictation made none of its text.
+    #[tokio::test]
+    async fn the_chain_recorded_is_the_one_the_dictation_started_with() {
+        let path = scratch("chain");
+        let context = context();
+        context.chain.set(Some(("chain-1".into(), "Mine".into())));
+        let chain = context.chain.clone();
+        let mut recorded = Recorded::new(Shout, Live::new(true), Some(path.clone()), context);
+        recorded.prepare();
+        chain.set(Some(("chain-2".into(), "Other".into())));
+        recorded.landed(landing("a", "A"));
+        recorded.prepare();
+        recorded.landed(landing("b", "B"));
+        let lines = lines(&path);
+        assert_eq!(lines[0]["chain_id"], "chain-1");
+        assert_eq!(lines[0]["chain_name"], "Mine");
+        assert_eq!(lines[1]["chain_id"], "chain-2");
+    }
+
+    struct Fits;
+
+    #[async_trait]
+    impl Processor for Fits {
+        async fn process(&mut self, text: String, _: &Field) -> String {
+            text
+        }
+
+        fn fit(&mut self, text: String, _: &Field) -> String {
+            format!("{text}!")
+        }
+    }
+
+    /// The daemon's processor is recorded; the record must not swallow the
+    /// fit.
+    #[test]
+    fn the_record_passes_the_fit_through() {
+        let mut recorded = Recorded::new(Fits, Live::new(false), None, Context::default());
+        assert_eq!(recorded.fit("a".into(), &Field::default()), "a!");
     }
 
     #[tokio::test]

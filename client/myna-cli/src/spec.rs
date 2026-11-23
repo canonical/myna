@@ -21,8 +21,8 @@ pub struct Spec {
 }
 
 /// `--steps`: a comma list of step ids (`fit, tidy, translate=fr,
-/// script=simplified`) compiled in stage order for dictation in `language`,
-/// by the same compiler the daemon runs.
+/// script=simplified`) compiled in the order given for dictation in
+/// `language`, by the same compiler the daemon runs.
 pub fn parse_steps(list: &str, language: Option<&str>) -> Result<Spec, String> {
     let tokens: Vec<_> = list
         .split(',')
@@ -223,18 +223,19 @@ mod tests {
     }
 
     #[test]
-    fn steps_are_compiled_in_stage_order_like_the_daemon() {
-        for list in [
-            "tidy,translate=fr",
-            "translate=fr,tidy",
-            " tidy , translate=FR ",
-        ] {
+    fn steps_are_compiled_in_their_order_like_the_daemon() {
+        for list in ["tidy,translate=fr", " tidy , translate=FR "] {
             assert_eq!(
                 parse_steps(list, None).unwrap().graph,
                 Graph::preset(ProcessingChain::TIDY_FRENCH),
                 "{list}"
             );
         }
+        assert_ne!(
+            parse_steps("translate=fr,tidy", None).unwrap().graph,
+            Graph::preset(ProcessingChain::TIDY_FRENCH),
+            "the order given is the order run"
+        );
         let fr = parse_steps("tidy,translate=de", Some("fr")).unwrap();
         assert_eq!(fr.graph.requests(), [Request::translate("fr", "de")]);
         assert_eq!(fr.label, "steps: tidy,translate=de");

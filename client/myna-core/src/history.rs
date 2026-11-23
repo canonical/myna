@@ -16,9 +16,15 @@ pub struct Entry {
     pub time: u64,
     pub heard: String,
     pub typed: String,
-    /// The chain that was chosen, by its settings nick.
+    /// The steps that ran, as a short label (a preset's nick, else the ids
+    /// joined by `+`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub chain: Option<String>,
+    /// The saved chain in use, by its stable id, and its name then.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chain_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chain_name: Option<String>,
     /// What each step of the chain did, in the order they ran.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub steps: Vec<Step>,

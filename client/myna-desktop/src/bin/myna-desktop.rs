@@ -58,7 +58,7 @@ use myna_desktop::process::graph::{Graph, Needs};
 use myna_desktop::process::history::{Context, Recorded};
 use myna_desktop::process::pipeline::Pipeline;
 use myna_desktop::process::resolve::Resolver;
-use myna_desktop::process::steps::{compile, stored_steps, StepSpec};
+use myna_desktop::process::steps::{compile, StepSpec};
 use myna_desktop::shortcut::control::{default_socket_path, listen, send_toggle, ControlTrigger};
 use myna_desktop::sound::{
     player::{Player, Previewer},
@@ -152,6 +152,8 @@ struct Resolved {
     script: myna_core::ChineseScript,
     /// Whether each piece is fitted to its field after the chain.
     fit: bool,
+    /// The saved chain in use: its id and name.
+    chain: Option<(String, String)>,
     history: bool,
 }
 
@@ -165,8 +167,10 @@ impl Resolved {
             backend_streams,
         };
         let language = args.language.clone().or_else(|| settings.language.clone());
-        let (ids, params) = settings.processing.stage_steps();
-        let steps = stored_steps(&ids, &params);
+        let chain = settings.processing.active();
+        let steps: Vec<StepSpec> = chain
+            .map(|chain| chain.steps.iter().map(StepSpec::of_chain).collect())
+            .unwrap_or_default();
         let myna_desktop::process::steps::Compiled { graph, script, .. } = compile(
             &steps,
             &myna_desktop::process::steps::Context {
@@ -192,6 +196,7 @@ impl Resolved {
             graph,
             script,
             fit: settings.processing.fit_to_field,
+            chain: chain.map(|chain| (chain.id.clone(), chain.name.clone())),
             history: settings.processing_history,
         }
     }
@@ -303,6 +308,8 @@ struct LiveSettings {
     script: Live<myna_core::ChineseScript>,
     /// Whether text is fitted to the field, read for each piece.
     fit: Live<bool>,
+    /// The saved chain in use, read at each press for the record.
+    chain: Live<Option<(String, String)>>,
     /// Wakes the text model binder.
     graph_changed: Arc<tokio::sync::Notify>,
     /// Read at each commit.
@@ -331,6 +338,7 @@ impl LiveSettings {
             plain: Live::new(resolved.graph.clone()),
             script: Live::new(resolved.script),
             fit: Live::new(resolved.fit),
+            chain: Live::new(resolved.chain.clone()),
             graph_changed: Arc::default(),
             history: Live::new(resolved.history),
             sounds: Live::new(resolved.sounds),
@@ -488,6 +496,17 @@ impl LiveSettings {
                 myna_desktop::process::script::warm();
             }
             self.script.set(resolved.script);
+        }
+        if self.chain.get() != resolved.chain {
+            myna_core::info_log!(
+                "settings",
+                "chain -> {} (live, from the next dictation)",
+                resolved
+                    .chain
+                    .as_ref()
+                    .map_or("(none)", |(id, _)| id.as_str())
+            );
+            self.chain.set(resolved.chain.clone());
         }
         if self.fit.get() != resolved.fit {
             myna_core::info_log!(
@@ -915,6 +934,7 @@ async fn run_controller(
                 .fitted(live.fit.clone());
             let context = Context {
                 steps: live.steps.clone(),
+                chain: live.chain.clone(),
                 trace: pipeline.trace(),
                 speech_model: live.speech_model.clone(),
                 version: Some(env!("MYNA_VERSION")),
@@ -1207,7 +1227,7 @@ fn print_status(args: &Args) -> ExitCode {
     );
     row(
         "steps",
-        settings.processing.stage_steps().0.join(","),
+        myna_desktop::process::steps::describe(&resolved.steps),
         myna_desktop::process::steps::describe(&resolved.steps),
         source(false, chain.is_some()),
     );
@@ -1816,6 +1836,50 @@ mod tests {
     /// Settings holding the steps of a preset.
     fn settings_of(chain: myna_core::ProcessingChain) -> myna_core::Settings {
         settings_with(&chain.steps(), &chain.params())
+    }
+
+    /// The active chain runs as ordered, and switching chains is a live
+    /// settings change: the graph is rebuilt and the record names the chain.
+    #[test]
+    fn the_active_chain_is_compiled_as_ordered_and_switches_live() {
+        use myna_core::chains::ChainStep;
+        let a = Args::default();
+        let mut settings = unset();
+        let french_first = settings.processing.add(
+            "French first",
+            vec![
+                ChainStep::new("translate").with("to", "fr"),
+                ChainStep::new("tidy"),
+            ],
+        );
+        let tidy_first = settings.processing.add(
+            "Tidy first",
+            vec![
+                ChainStep::new("tidy"),
+                ChainStep::new("translate").with("to", "fr"),
+            ],
+        );
+        settings.processing.activate(Some(&french_first));
+        let first = resolved(&a, &settings);
+        let ids: Vec<&str> = first.steps.iter().map(|s| s.id.as_str()).collect();
+        assert_eq!(ids, ["translate", "tidy"]);
+        assert_eq!(
+            first.chain.as_ref().map(|c| c.1.as_str()),
+            Some("French first")
+        );
+
+        let live = LiveSettings::new(&first, Live::new(SoundSet::default()));
+        settings.processing.activate(Some(&tidy_first));
+        let second = resolved(&a, &settings);
+        assert_ne!(second.graph, first.graph);
+        live.apply(&second, "test");
+        assert_eq!(live.graph.get(), second.graph);
+        assert_eq!(live.chain.get().map(|c| c.0), Some(tidy_first));
+
+        settings.processing.activate(None);
+        live.apply(&resolved(&a, &settings), "test");
+        assert_eq!(live.graph.get(), Graph::passthrough());
+        assert_eq!(live.chain.get(), None);
     }
 
     #[test]

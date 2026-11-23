@@ -88,21 +88,43 @@ fn model_json(c: &Candidate) -> Value {
     })
 }
 
-fn step_json(report: &StepReport) -> Value {
+/// One step of the active chain, at `index` in it: a chain may hold one step
+/// twice, so the index and not the id names it. `move_above` is the index
+/// of the step a not-applicable one would apply above, else null.
+fn step_json(index: usize, report: &StepReport) -> Value {
+    let mut move_above = Value::Null;
     let (state, detail) = match &report.state {
         StepState::Applicable => ("applicable", Value::Null),
-        StepState::NotApplicable { reason } => ("not-applicable", json!(reason)),
+        StepState::NotApplicable {
+            reason,
+            move_above: above,
+        } => {
+            move_above = json!(above);
+            ("not-applicable", json!(reason))
+        }
+        StepState::Off => ("off", Value::Null),
         StepState::Unavailable { request: r } => ("unavailable", request(&r.task, &r.params)),
         StepState::Unknown => ("unknown", Value::Null),
     };
-    json!({"id": report.id, "state": state, "detail": detail})
+    json!({
+        "index": index,
+        "id": report.id,
+        "state": state,
+        "detail": detail,
+        "move_above": move_above,
+    })
 }
 
 /// `InstalledSteps`: `{"models": [...], "steps": [...]}`.
 pub fn installed_json(catalog: &Catalog) -> String {
     json!({
         "models": catalog.models.iter().map(model_json).collect::<Vec<_>>(),
-        "steps": catalog.steps.iter().map(step_json).collect::<Vec<_>>(),
+        "steps": catalog
+            .steps
+            .iter()
+            .enumerate()
+            .map(|(index, report)| step_json(index, report))
+            .collect::<Vec<_>>(),
     })
     .to_string()
 }
@@ -231,6 +253,7 @@ mod tests {
                     id: "script".into(),
                     state: StepState::NotApplicable {
                         reason: "Applies when the text is Chinese".into(),
+                        move_above: Some(1),
                     },
                 },
             ],
@@ -255,6 +278,9 @@ mod tests {
         assert_eq!(steps[1]["detail"]["task"], "text.translate");
         assert_eq!(steps[1]["detail"]["params"]["to"], "fr");
         assert_eq!(steps[2]["state"], "not-applicable");
+        assert_eq!(steps[2]["index"], 2);
+        assert_eq!(steps[2]["move_above"], 1);
+        assert!(steps[0]["move_above"].is_null());
         assert_eq!(steps[2]["detail"], "Applies when the text is Chinese");
     }
 
