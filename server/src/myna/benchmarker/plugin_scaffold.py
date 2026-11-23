@@ -244,6 +244,13 @@ def _toml_str(text: str) -> str:
     return json.dumps(text, ensure_ascii=False)
 
 
+def plugin_name(src: str, dst: str) -> str:
+    """The plugin's file stem, and so its component: snapd names components in
+    lower case, so ``zh-Hans`` is ``zh-hans`` there (the language tags in the
+    file keep their case)."""
+    return f"translate-{src}-{dst}".lower()
+
+
 def render_toml(
     src: str,
     dst: str,
@@ -253,6 +260,7 @@ def render_toml(
     comet: float | None,
 ) -> str:
     pair = f"{src}-{dst}"
+    slug = plugin_name(src, dst).removeprefix("translate-")
     from_name, to_name = LANGUAGE_NAMES[src], LANGUAGE_NAMES[dst]
     total = sum(e["bytes"] for e in entries)
     mb = round(total / 1e6)
@@ -262,12 +270,12 @@ def render_toml(
     model_named = f'"{arch}" (version {version})' if known else f"(version {version})"
     head = f"""\
 # One plugin: dev/gen-plugins.py turns this into the snapcraft component,
-# models/translate-{pair}/{{myna-text-model.json,NOTICE}} and catalog.json.
+# models/translate-{slug}/{{myna-text-model.json,NOTICE}} and catalog.json.
 # config.yml stays hand-written. Contract: .kb/text-plugin-contract.md.
 # Scaffolded by myna-bench plugin-scaffold: download_bytes is the file sum
 # until the component is packed, spot_check is for a native speaker to add.
-id = "bergamot-{arch}-{pair}"
-component = "model-translate-{pair}"
+id = "bergamot-{arch}-{slug}"
+component = "model-translate-{slug}"
 snap = "myna-translation"
 kind = "translate"
 task = "text.translate"
@@ -289,7 +297,7 @@ description = \"\"\"\\
 Mozilla's Firefox Translations {from_name} to {to_name} student model
 (MPL-2.0), run by bergamot-translator. About {mb} MB.\"\"\"
 notice = \"\"\"\\
-model-translate-{pair}: the Firefox Translations {from_name} to {to_name} student
+model-translate-{slug}: the Firefox Translations {from_name} to {to_name} student
 model {model_named}, Copyright Mozilla and contributors,
 licensed under the Mozilla Public License 2.0 (LICENSE in this component).
 
@@ -410,7 +418,7 @@ def scaffold(
         warnings.append(f"{ARCHITECTURES[0]} is not published for this pair: using {chosen_arch}")
     text = render_toml(src, dst, chosen_arch, version, entries, comet)
     return Scaffold(
-        name=f"translate-{src}-{dst}",
+        name=plugin_name(src, dst),
         toml=text,
         measured=json.dumps(SEED_MEASURED, indent=2) + "\n",
         config=render_config(entries),

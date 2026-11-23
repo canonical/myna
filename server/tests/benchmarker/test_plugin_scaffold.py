@@ -73,7 +73,7 @@ def test_arch_can_be_forced_and_a_missing_one_is_refused():
 
 
 def _records(src, dst, version, digest, size=1000):
-    pair = f"{src}{dst}"
+    pair = f"{src}{dst}".replace("-Hans", "").replace("-Hant", "")
     files = {
         "model": f"model.{pair}.intgemm.alphas.bin",
         "lex": f"lex.50.50.{pair}.s2t.bin",
@@ -119,6 +119,16 @@ def test_the_newest_model_wins_even_when_no_metadata_describes_it():
     newest = tomllib.loads(ps.scaffold("ru:en", records=records, metadata=meta).toml)
     assert newest["id"] == "bergamot-tiny-ru-en"
     assert newest["pin"].endswith("ru-en tiny 2.1")
+
+
+def test_a_script_tag_is_lower_case_in_the_names_snapd_sees():
+    records = _records("en", "zh-Hans", "1.0", "m")
+    result = ps.scaffold("en:zh-Hans", records=records, metadata=lambda a, d: None)
+    got = tomllib.loads(result.toml)
+    assert result.name == "translate-en-zh-hans"
+    assert (got["id"], got["component"]) == ("bergamot-mozilla-en-zh-hans", "model-translate-en-zh-hans")
+    assert (got["language"], got["to"]) == ("en", "zh-Hans")
+    assert got["notice"].startswith("model-translate-en-zh-hans:")
 
 
 def test_split_vocabs_go_into_the_config():
