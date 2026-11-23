@@ -120,8 +120,9 @@ struct Editor {
     use_button: gtk::Button,
     lines: RefCell<Vec<LineWidgets>>,
     shown: RefCell<Vec<Line>>,
-    /// Below the editor's breakpoint: the ▴/▾ buttons give their room to the
-    /// step's title and parameters, and the row menu's Move up/down remain.
+    /// Below the editor's breakpoint: the ▴/▾ buttons hide (the row menu's
+    /// Move up/down remain) and a step's parameter picker moves to the row
+    /// under it, so the title keeps its room.
     narrow: Rc<Cell<bool>>,
 }
 
@@ -604,6 +605,12 @@ impl StepsPage {
             breakpoint.connect_local(signal, false, move |_| {
                 narrow.set(value);
                 if let Some(page) = page.upgrade() {
+                    // The pickers change rows: build the steps again.
+                    let editor = page.editor.borrow().clone();
+                    if let Some(editor) = editor {
+                        let count = editor.lines.borrow().len();
+                        page.rebuild_lines(&editor, count);
+                    }
                     page.render();
                 }
                 None
@@ -798,7 +805,7 @@ impl StepsPage {
         }
         let mut built = Vec::new();
         for index in 0..count {
-            let widgets = self.line_widgets(&editor.id, index);
+            let widgets = self.line_widgets(&editor.id, index, editor.narrow.get());
             editor.steps.add(&widgets.row);
             editor.steps.add(&widgets.detail);
             built.push(widgets);
@@ -847,7 +854,7 @@ impl StepsPage {
         }
     }
 
-    fn line_widgets(self: &Rc<Self>, id: &str, index: usize) -> LineWidgets {
+    fn line_widgets(self: &Rc<Self>, id: &str, index: usize, narrow: bool) -> LineWidgets {
         let row = adw::ActionRow::builder().subtitle_lines(0).build();
         let number = gtk::Label::builder()
             .css_classes(["dim-label", "numeric"])
@@ -917,22 +924,36 @@ impl StepsPage {
             .valign(gtk::Align::Center)
             .popover(&popover)
             .build();
+        // The picker sits beside the input it reads, unless the window is
+        // too narrow for it and the title both (see `NARROW_EDITOR`).
+        let on_row = (!narrow).then_some(picker.upcast_ref::<gtk::Widget>());
         for widget in [
-            skipped.upcast_ref::<gtk::Widget>(),
-            badge.upcast_ref(),
-            picker.upcast_ref(),
-            switch.upcast_ref(),
-            up.upcast_ref(),
-            down.upcast_ref(),
-            menu.upcast_ref(),
-        ] {
+            Some(skipped.upcast_ref::<gtk::Widget>()),
+            Some(badge.upcast_ref()),
+            on_row,
+            Some(switch.upcast_ref()),
+            Some(up.upcast_ref()),
+            Some(down.upcast_ref()),
+            Some(menu.upcast_ref()),
+        ]
+        .into_iter()
+        .flatten()
+        {
             row.add_suffix(widget);
         }
         let detail = adw::ActionRow::builder()
             .css_classes(["property"])
             .visible(false)
             .build();
-        for widget in [fix.upcast_ref::<gtk::Widget>(), control.upcast_ref()] {
+        let under = narrow.then_some(picker.upcast_ref::<gtk::Widget>());
+        for widget in [
+            Some(fix.upcast_ref::<gtk::Widget>()),
+            under,
+            Some(control.upcast_ref()),
+        ]
+        .into_iter()
+        .flatten()
+        {
             detail.add_suffix(widget);
         }
         let weak = Rc::downgrade(self);
@@ -2249,15 +2270,22 @@ fn show_line(
     } else {
         widgets.control.set_visible(false);
     }
-    // From the line, not the widgets: `is_visible` is false for anything in
-    // a hidden row.
+    // From the line and the layout, not the widgets: `is_visible` is false
+    // for anything in a hidden row.
+    let picker_under = narrow && !names.is_empty();
     let title = if line.fix.is_some() {
         gettextrs::gettext("To make it run")
+    } else if picker_under && line.id == TRANSLATE {
+        gettextrs::gettext("Translate to")
+    } else if picker_under && line.id == SCRIPT {
+        gettextrs::gettext("Write Chinese as")
     } else {
         gettextrs::gettext("Model")
     };
     widgets.detail.set_title(&escape_markup(&title));
-    widgets.detail.set_visible(line.fix.is_some() || installs);
+    widgets
+        .detail
+        .set_visible(line.fix.is_some() || installs || picker_under);
 }
 
 #[cfg(test)]
@@ -2813,11 +2841,11 @@ mod tests {
             let translate = &lines[0];
             assert_eq!(translate.badge.label(), "EN \u{2192}");
             assert!(translate.picker.is_visible());
-            assert!(translate.picker.is_ancestor(&translate.row));
             assert!(
-                !translate.detail.is_visible(),
-                "an installed target needs no row under it"
+                translate.picker.is_ancestor(&translate.detail),
+                "too narrow for the picker beside the title"
             );
+            assert!(translate.detail.is_visible());
             assert!(!translate.up.is_visible() && !translate.down.is_visible());
             assert!(translate.move_down.is_sensitive());
             let title = all::<gtk::Label>(translate.row.upcast_ref())
@@ -2834,7 +2862,16 @@ mod tests {
             drop(lines);
             window.set_default_size(900, 700);
             pump_until("the wide layout", || !editor.narrow.get());
-            assert!(editor.lines.borrow()[0].up.is_visible());
+            let lines = editor.lines.borrow();
+            let translate = &lines[0];
+            assert!(translate.up.is_visible());
+            assert!(translate.picker.is_ancestor(&translate.row));
+            assert!(
+                !translate.detail.is_visible(),
+                "an installed target needs no row under it"
+            );
+            assert_eq!(translate.badge.label(), "EN \u{2192}");
+            drop(lines);
             window.close();
         });
     }
