@@ -80,6 +80,10 @@ struct ChainRow {
 /// One step in the editor.
 struct LineWidgets {
     row: adw::ActionRow,
+    /// Under the step, only when it has something to set or do: its
+    /// parameter picker, its install and its fix. On the step's own row
+    /// they left the title no room.
+    detail: adw::ActionRow,
     number: gtk::Label,
     badge: gtk::Label,
     picker: gtk::DropDown,
@@ -653,12 +657,17 @@ impl StepsPage {
         }
         editor.page.set_title(&chain.name);
         let active = processing.active.as_deref() == Some(chain.id.as_str());
+        // In use is a state, not a dimmed action: no accent while it is.
         editor.use_button.set_sensitive(!active);
-        editor.use_button.set_label(&if active {
-            gettextrs::gettext("In use")
+        if active {
+            editor.use_button.remove_css_class("suggested-action");
+            editor.use_button.set_label(&gettextrs::gettext("In use"));
         } else {
-            gettextrs::gettext("Use this chain")
-        });
+            editor.use_button.add_css_class("suggested-action");
+            editor
+                .use_button
+                .set_label(&gettextrs::gettext("Use this chain"));
+        }
         let lines = self.view(|ctx| chains_view::lines(chain, ctx));
         let rebuild = {
             let built = editor.lines.borrow();
@@ -706,6 +715,7 @@ impl StepsPage {
     fn rebuild_lines(self: &Rc<Self>, editor: &Rc<Editor>, count: usize) {
         for widgets in editor.lines.take() {
             editor.steps.remove(&widgets.row);
+            editor.steps.remove(&widgets.detail);
         }
         if editor.add_row.parent().is_some() {
             editor.steps.remove(&editor.add_row);
@@ -714,6 +724,7 @@ impl StepsPage {
         for index in 0..count {
             let widgets = self.line_widgets(&editor.id, index);
             editor.steps.add(&widgets.row);
+            editor.steps.add(&widgets.detail);
             built.push(widgets);
         }
         editor.steps.add(&editor.add_row);
@@ -819,15 +830,23 @@ impl StepsPage {
             .build();
         for widget in [
             badge.upcast_ref::<gtk::Widget>(),
-            picker.upcast_ref(),
-            control.upcast_ref(),
-            fix.upcast_ref(),
             switch.upcast_ref(),
             up.upcast_ref(),
             down.upcast_ref(),
             menu.upcast_ref(),
         ] {
             row.add_suffix(widget);
+        }
+        let detail = adw::ActionRow::builder()
+            .css_classes(["property"])
+            .visible(false)
+            .build();
+        for widget in [
+            fix.upcast_ref::<gtk::Widget>(),
+            picker.upcast_ref(),
+            control.upcast_ref(),
+        ] {
+            detail.add_suffix(widget);
         }
         let weak = Rc::downgrade(self);
         let chain = id.to_owned();
@@ -986,6 +1005,7 @@ impl StepsPage {
         row.add_controller(keys);
         LineWidgets {
             row,
+            detail,
             number,
             badge,
             picker,
@@ -1651,12 +1671,33 @@ fn show_line(widgets: &LineWidgets, line: &Line, total: usize, blocked: bool, it
             // TRANSLATORS: {step} is a step's name, such as "Tidy up speech".
             &gettextrs::gettext("More actions for {step}").replace("{step}", &line.title),
         )]);
-    if line.on && !line.skipped {
+    let installs = line.on
+        && !line.skipped
+        && matches!(
+            line.standing,
+            Standing::Missing(_) | Standing::Installing(_) | Standing::Preparing
+        );
+    if installs {
         show_standing(&widgets.control, &line.standing);
         widgets.control.button().set_sensitive(!blocked);
     } else {
         widgets.control.set_visible(false);
     }
+    // From the line, not the widgets: `is_visible` is false for anything in
+    // a hidden row.
+    let title = if line.fix.is_some() {
+        gettextrs::gettext("To make it run")
+    } else if line.id == TRANSLATE {
+        gettextrs::gettext("Translate to")
+    } else if line.id == SCRIPT {
+        gettextrs::gettext("Write Chinese as")
+    } else {
+        gettextrs::gettext("Model")
+    };
+    widgets.detail.set_title(&escape_markup(&title));
+    widgets
+        .detail
+        .set_visible(line.fix.is_some() || !names.is_empty() || installs);
 }
 
 #[cfg(test)]
@@ -2184,13 +2225,18 @@ mod tests {
                 "chains=[('fr', 'French', [('translate', true, {'to': 'fr'})])]\n",
             );
             rig.page.open_editor("fr");
-            let row = editor(&rig).lines.borrow()[0].row.clone();
+            let row = editor(&rig).lines.borrow()[0].detail.clone();
             pump_until("the Install button", || {
                 install_control(&row).is_visible() && install_control(&row).button().is_visible()
             });
             install_control(&row).button().emit_clicked();
             pump_until("the request", || !rig.calls.borrow().is_empty());
             assert_eq!(rig.calls.borrow().as_slice(), ["myna-translation fr"]);
+            assert!(editor(&rig).lines.borrow()[0].detail.is_visible());
+            assert!(
+                !editor(&rig).lines.borrow()[0].row.title().is_empty(),
+                "the title keeps its row"
+            );
         });
     }
 
