@@ -32,6 +32,11 @@ use crate::ui::InstallControl;
 
 /// How long a finished install may wait for the daemon to offer its model
 /// before the row offers it again.
+/// Below this the chain editor drops its ▴/▾ buttons (the row menu keeps
+/// Move up/down): at the window's 360 px minimum they left a step's title
+/// a letter per line.
+const NARROW_EDITOR: &str = "max-width: 560sp";
+
 const PREPARING_FOR: Duration = Duration::from_secs(30);
 
 const PAGE_KEY: &str = "myna-steps-page";
@@ -96,6 +101,8 @@ struct LineWidgets {
     switch: gtk::Switch,
     up: gtk::Button,
     down: gtk::Button,
+    move_up: gtk::Button,
+    move_down: gtk::Button,
     to_top: gtk::Button,
     to_bottom: gtk::Button,
     menu: gtk::MenuButton,
@@ -113,6 +120,9 @@ struct Editor {
     use_button: gtk::Button,
     lines: RefCell<Vec<LineWidgets>>,
     shown: RefCell<Vec<Line>>,
+    /// Below the editor's breakpoint: the ▴/▾ buttons give their room to the
+    /// step's title and parameters, and the row menu's Move up/down remain.
+    narrow: Rc<Cell<bool>>,
 }
 
 /// The page Translate opens: a search over the languages the text can be
@@ -565,7 +575,17 @@ impl StepsPage {
         preferences.add(&steps);
         preferences.add(&try_group);
         preferences.add(&actions_group);
-        let page = crate::subpage::subpage(&gettextrs::gettext("Chain"), &preferences);
+        let bin = adw::BreakpointBin::builder()
+            .width_request(300)
+            .height_request(200)
+            .child(&preferences)
+            .build();
+        let breakpoint = adw::Breakpoint::new(
+            adw::BreakpointCondition::parse(NARROW_EDITOR).expect("a valid breakpoint condition"),
+        );
+        bin.add_breakpoint(breakpoint.clone());
+        let narrow = Rc::new(Cell::new(false));
+        let page = crate::subpage::subpage(&gettextrs::gettext("Chain"), &bin);
         let editor = Rc::new(Editor {
             id: id.to_owned(),
             page: page.clone(),
@@ -576,7 +596,19 @@ impl StepsPage {
             use_button: use_button.clone(),
             lines: RefCell::new(Vec::new()),
             shown: RefCell::new(Vec::new()),
+            narrow: narrow.clone(),
         });
+        for (signal, value) in [("apply", true), ("unapply", false)] {
+            let page = Rc::downgrade(self);
+            let narrow = narrow.clone();
+            breakpoint.connect_local(signal, false, move |_| {
+                narrow.set(value);
+                if let Some(page) = page.upgrade() {
+                    page.render();
+                }
+                None
+            });
+        }
         if let Some(chain) = self.deps.store.processing().chain(id) {
             name.set_text(&chain.name);
             page.set_title(&chain.name);
@@ -732,7 +764,7 @@ impl StepsPage {
         let blocked = self.dictating.get() || self.busy();
         let items = self.items.borrow().clone();
         for (widgets, line) in editor.lines.borrow().iter().zip(&lines) {
-            show_line(widgets, line, total, blocked, &items);
+            show_line(widgets, line, total, blocked, editor.narrow.get(), &items);
         }
         self.updating.set(false);
         let rows: Vec<Row> = lines
@@ -872,6 +904,8 @@ impl StepsPage {
             menu_box.append(&button);
             button
         };
+        let move_up = item(&gettextrs::gettext("Move up"));
+        let move_down = item(&gettextrs::gettext("Move down"));
         let to_top = item(&gettextrs::gettext("Move to top"));
         let to_bottom = item(&gettextrs::gettext("Move to bottom"));
         let remove = item(&gettextrs::gettext("Remove step"));
@@ -886,6 +920,7 @@ impl StepsPage {
         for widget in [
             skipped.upcast_ref::<gtk::Widget>(),
             badge.upcast_ref(),
+            picker.upcast_ref(),
             switch.upcast_ref(),
             up.upcast_ref(),
             down.upcast_ref(),
@@ -897,11 +932,7 @@ impl StepsPage {
             .css_classes(["property"])
             .visible(false)
             .build();
-        for widget in [
-            fix.upcast_ref::<gtk::Widget>(),
-            picker.upcast_ref(),
-            control.upcast_ref(),
-        ] {
+        for widget in [fix.upcast_ref::<gtk::Widget>(), control.upcast_ref()] {
             detail.add_suffix(widget);
         }
         let weak = Rc::downgrade(self);
@@ -951,6 +982,26 @@ impl StepsPage {
                 }
             }
         };
+        move_up.connect_clicked({
+            let close = popdown(&popover);
+            let act = on_page(Box::new(move |page, chain| {
+                page.move_step(chain, index, index.saturating_sub(1), Focus::Row)
+            }));
+            move |_| {
+                close();
+                act()
+            }
+        });
+        move_down.connect_clicked({
+            let close = popdown(&popover);
+            let act = on_page(Box::new(move |page, chain| {
+                page.move_step(chain, index, index + 1, Focus::Row)
+            }));
+            move |_| {
+                close();
+                act()
+            }
+        });
         to_top.connect_clicked({
             let close = popdown(&popover);
             let act = on_page(Box::new(move |page, chain| {
@@ -1072,6 +1123,8 @@ impl StepsPage {
             switch,
             up,
             down,
+            move_up,
+            move_down,
             to_top,
             to_bottom,
             menu,
@@ -2073,7 +2126,14 @@ enum Focus {
     Row,
 }
 
-fn show_line(widgets: &LineWidgets, line: &Line, total: usize, blocked: bool, items: &[Item]) {
+fn show_line(
+    widgets: &LineWidgets,
+    line: &Line,
+    total: usize,
+    blocked: bool,
+    narrow: bool,
+    items: &[Item],
+) {
     widgets.number.set_label(&(line.index + 1).to_string());
     widgets.row.set_title(&escape_markup(&line.title));
     widgets.row.set_subtitle(&escape_markup(&line.subtitle));
@@ -2103,6 +2163,10 @@ fn show_line(widgets: &LineWidgets, line: &Line, total: usize, blocked: bool, it
         )]);
     widgets.up.set_sensitive(line.moves.up);
     widgets.down.set_sensitive(line.moves.down);
+    widgets.up.set_visible(!narrow);
+    widgets.down.set_visible(!narrow);
+    widgets.move_up.set_sensitive(line.moves.up);
+    widgets.move_down.set_sensitive(line.moves.down);
     widgets.to_top.set_sensitive(line.moves.top);
     widgets.to_bottom.set_sensitive(line.moves.bottom);
     match &line.fix {
@@ -2189,17 +2253,11 @@ fn show_line(widgets: &LineWidgets, line: &Line, total: usize, blocked: bool, it
     // a hidden row.
     let title = if line.fix.is_some() {
         gettextrs::gettext("To make it run")
-    } else if line.id == TRANSLATE {
-        gettextrs::gettext("Translate to")
-    } else if line.id == SCRIPT {
-        gettextrs::gettext("Write Chinese as")
     } else {
         gettextrs::gettext("Model")
     };
     widgets.detail.set_title(&escape_markup(&title));
-    widgets
-        .detail
-        .set_visible(line.fix.is_some() || !names.is_empty() || installs);
+    widgets.detail.set_visible(line.fix.is_some() || installs);
 }
 
 #[cfg(test)]
@@ -2731,6 +2789,53 @@ mod tests {
             switch.set_active(false);
             assert_eq!(steps_of(&rig, "fr")[0], ("translate".into(), false));
             assert_eq!(line_titles(&rig).len(), 2);
+        });
+    }
+
+    /// Charles, 2026-11-23: the target belongs on the step's own row, its
+    /// input read-only beside it; adcd7307 moved the picker off the row
+    /// because at the window's 360 px minimum the title went a letter per
+    /// line.
+    #[test]
+    fn a_step_shows_its_input_and_target_on_its_row_even_at_360_px() {
+        crate::ui::on_gtk_thread(|| {
+            let rig = rig("row", BOTH, BOTH, TWO);
+            let window = adw::Window::builder()
+                .default_width(360)
+                .default_height(700)
+                .content(&rig.nav)
+                .build();
+            window.present();
+            rig.page.open_editor("fr");
+            let editor = editor(&rig);
+            pump_until("the narrow layout", || editor.narrow.get());
+            let lines = editor.lines.borrow();
+            let translate = &lines[0];
+            assert_eq!(translate.badge.label(), "EN \u{2192}");
+            assert!(translate.picker.is_visible());
+            assert!(translate.picker.is_ancestor(&translate.row));
+            assert!(
+                !translate.detail.is_visible(),
+                "an installed target needs no row under it"
+            );
+            assert!(!translate.up.is_visible() && !translate.down.is_visible());
+            assert!(translate.move_down.is_sensitive());
+            let title = all::<gtk::Label>(translate.row.upcast_ref())
+                .into_iter()
+                .find(|label| label.has_css_class("title"))
+                .expect("the row's title");
+            pump_until("the title laid out", || title.height() > 0);
+            let (_, one_line, _, _) = title.measure(gtk::Orientation::Vertical, 10_000);
+            assert!(
+                title.height() <= 2 * one_line,
+                "title {}px high, one line is {one_line}px",
+                title.height()
+            );
+            drop(lines);
+            window.set_default_size(900, 700);
+            pump_until("the wide layout", || !editor.narrow.get());
+            assert!(editor.lines.borrow()[0].up.is_visible());
+            window.close();
         });
     }
 

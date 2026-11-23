@@ -150,11 +150,12 @@ fn row_of(step: &ChainStep, input: Option<&str>, ctx: &Context) -> Row {
     })
 }
 
+/// The language a step reads, read-only: the graph deduces it. A step that
+/// changes the language ends in an arrow, its target being the picker
+/// beside it ("EN →" then "Italiano").
 fn badge(input: Option<&str>, output: Option<&str>) -> String {
     match (input, output) {
-        (Some(i), Some(o)) if i != o => {
-            format!("{} \u{2192} {}", i.to_uppercase(), o.to_uppercase())
-        }
+        (Some(i), Some(o)) if i != o => format!("{} \u{2192}", i.to_uppercase()),
         (Some(i), _) => i.to_uppercase(),
         _ => String::new(),
     }
@@ -420,7 +421,7 @@ mod tests {
             ]),
             &ctx(&case),
         );
-        assert_eq!(lines[0].badge, "EN \u{2192} FR");
+        assert_eq!(lines[0].badge, "EN \u{2192}");
         assert!(!lines[0].skipped);
         assert!(lines[1].skipped);
         assert_eq!(lines[1].badge, "FR");
@@ -581,7 +582,7 @@ mod tests {
             ChainStep::new("translate").with("to", "fr"),
         ]);
         let lines = lines(&chain, &ctx(&case));
-        assert_eq!(lines[1].badge, "FA \u{2192} FR");
+        assert_eq!(lines[1].badge, "FA \u{2192}");
         assert!(
             matches!(lines[1].standing, Standing::Unavailable(_)),
             "{:?}",
