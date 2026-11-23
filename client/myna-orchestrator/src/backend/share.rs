@@ -130,7 +130,7 @@ impl ResolveError {
                 tr("Model not connected")
             }
             ResolveError::NotConnected(unusable) if unusable.unmounted > 0 => {
-                tr("Model connected. Retry shortly")
+                tr("Model connecting… Retry shortly")
             }
             ResolveError::NotConnected(unusable) if !unusable.not_serving.is_empty() => {
                 tr("Model not running")
@@ -624,7 +624,7 @@ mod tests {
             }
         );
         let error = resolve_with(&dir, |_| false).expect_err("still nothing");
-        assert_eq!(error.headline(), "Model connected. Retry shortly");
+        assert_eq!(error.headline(), "Model connecting… Retry shortly");
         assert_eq!(
             error.to_string(),
             "a model was connected after Dictation started"

@@ -287,7 +287,7 @@ fn problem_state_faults(pill: &Pill) -> Vec<String> {
 /// live-mic glyph, and the text on the pill's vertical centre.
 fn check_problem_states(pill: Rc<Pill>, then: impl FnOnce(Vec<String>) + 'static) {
     let cases = [
-        (wire::NOTICE, "Model connected. Retry shortly"),
+        (wire::NOTICE, "Model connecting… Retry shortly"),
         (wire::ERROR, "Error: Model not connected"),
     ];
     let problems: Rc<RefCell<Vec<String>>> = Rc::default();

@@ -2039,7 +2039,7 @@ async fn a_model_connected_after_login_is_a_notice_not_an_error() {
     assert_eq!(
         indicate_log.lock().unwrap().last(),
         Some(&IndicatorState::recoverable(
-            "Model connected. Retry shortly"
+            "Model connecting… Retry shortly"
         ))
     );
     assert!(last_errors.lock().unwrap().is_empty(), "nothing failed");
