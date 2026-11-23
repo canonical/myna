@@ -176,23 +176,45 @@ def pair_versions(records: list[dict[str, Any]], src: str, dst: str) -> dict[str
     return complete
 
 
+# The architecture named for a record no metadata.json describes: Mozilla's
+# newer models are served from Remote Settings without one in the repo.
+UNDESCRIBED = "mozilla"
+
+
+def _matches(meta: dict[str, Any] | None, model: dict[str, Any]) -> bool:
+    return (
+        meta is not None
+        and meta.get("hash", model["hash"]) == model["hash"]
+        and meta.get("byteSize", model["size"]) == model["size"]
+    )
+
+
 def pick_version(
     versions: dict[str, dict[str, Any]],
     metadata_for: Callable[[str], dict[str, Any] | None],
     archs: tuple[str, ...],
+    *,
+    forced: bool = False,
 ) -> tuple[str, str, dict[str, Any], dict[str, Any]]:
-    """(arch, version, files, metadata) of the newest version of the first arch found."""
-    for arch in archs:
-        meta = metadata_for(arch)
-        if meta is None:
-            continue
-        for version in sorted(versions, key=_version_key, reverse=True):
-            model = versions[version]["model"]["attachment"]
-            if (
-                meta.get("hash", model["hash"]) == model["hash"]
-                and meta.get("byteSize", model["size"]) == model["size"]
-            ):
-                return arch, version, versions[version], meta
+    """(arch, version, files, metadata) of the version to ship.
+
+    The newest version is what Firefox serves today, so it wins; its
+    architecture and vendor COMET come from the first metadata.json that
+    describes its model, else it is ``UNDESCRIBED`` with no metadata. A forced
+    architecture takes the newest version of that architecture instead."""
+    metas = {arch: metadata_for(arch) for arch in archs}
+    ordered = sorted(versions, key=_version_key, reverse=True)
+    if not forced:
+        newest = ordered[0]
+        model = versions[newest]["model"]["attachment"]
+        for arch, meta in metas.items():
+            if _matches(meta, model):
+                return arch, newest, versions[newest], meta or {}
+        return UNDESCRIBED, newest, versions[newest], {}
+    for arch, meta in metas.items():
+        for version in ordered:
+            if _matches(meta, versions[version]["model"]["attachment"]):
+                return arch, version, versions[version], meta or {}
     raise ScaffoldError(
         f"no record version matches the metadata.json of {', '.join(archs)}: "
         "the pair is not published in those architectures"
@@ -234,6 +256,10 @@ def render_toml(
     from_name, to_name = LANGUAGE_NAMES[src], LANGUAGE_NAMES[dst]
     total = sum(e["bytes"] for e in entries)
     mb = round(total / 1e6)
+    known = arch != UNDESCRIBED
+    release = f"{arch} {version}" if known else f"version {version}"
+    flavour = f" {arch}" if known else ""
+    model_named = f'"{arch}" (version {version})' if known else f"(version {version})"
     head = f"""\
 # One plugin: dev/gen-plugins.py turns this into the snapcraft component,
 # models/translate-{pair}/{{myna-text-model.json,NOTICE}} and catalog.json.
@@ -251,20 +277,20 @@ language = "{src}"
 to = "{dst}"
 config = "config.yml"
 license = "MPL-2.0"
-attribution = "Mozilla and contributors, Firefox Translations ({arch} {version})"
+attribution = "Mozilla and contributors, Firefox Translations ({release})"
 source = "https://github.com/mozilla/firefox-translations-models"
 download_bytes = {total}
 entry_revision = 1
 curated = true
 pin = "mozilla firefox-translations {pair} {arch} {version}"
 locales = ["{src}"]
-summary = "{from_name} to {to_name} translation (Firefox Translations {arch})"
+summary = "{from_name} to {to_name} translation (Firefox Translations{flavour})"
 description = \"\"\"\\
 Mozilla's Firefox Translations {from_name} to {to_name} student model
 (MPL-2.0), run by bergamot-translator. About {mb} MB.\"\"\"
 notice = \"\"\"\\
 model-translate-{pair}: the Firefox Translations {from_name} to {to_name} student
-model "{arch}" (version {version}), Copyright Mozilla and contributors,
+model {model_named}, Copyright Mozilla and contributors,
 licensed under the Mozilla Public License 2.0 (LICENSE in this component).
 
 Source: Mozilla's Firefox Translations models,
@@ -369,13 +395,18 @@ def scaffold(
     directory = pair_dir(any_files["model"]["attachment"]["filename"])
     archs = (arch,) if arch else ARCHITECTURES
     chosen_arch, version, files, meta = pick_version(
-        versions, lambda a: metadata(a, directory), archs
+        versions, lambda a: metadata(a, directory), archs, forced=arch is not None
     )
     entries = _file_entries(files)
     comet = (meta.get("flores") or {}).get("comet")
     if comet is None:
         warnings.append("metadata.json has no flores.comet: labelled quality not measured")
-    if chosen_arch != ARCHITECTURES[0]:
+    if chosen_arch == UNDESCRIBED:
+        warnings.append(
+            f"no metadata.json describes the newest model (version {version}): "
+            "architecture unknown, no vendor COMET"
+        )
+    elif chosen_arch != ARCHITECTURES[0]:
         warnings.append(f"{ARCHITECTURES[0]} is not published for this pair: using {chosen_arch}")
     text = render_toml(src, dst, chosen_arch, version, entries, comet)
     return Scaffold(

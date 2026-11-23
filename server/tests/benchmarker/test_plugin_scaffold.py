@@ -72,6 +72,55 @@ def test_arch_can_be_forced_and_a_missing_one_is_refused():
         make("en:fa", arch="base-memory")
 
 
+def _records(src, dst, version, digest, size=1000):
+    pair = f"{src}{dst}"
+    files = {
+        "model": f"model.{pair}.intgemm.alphas.bin",
+        "lex": f"lex.50.50.{pair}.s2t.bin",
+        "vocab": f"vocab.{pair}.spm",
+    }
+    return [
+        {
+            "fromLang": src,
+            "toLang": dst,
+            "version": version,
+            "fileType": kind,
+            "filter_expression": "",
+            "attachment": {
+                "hash": digest if kind == "model" else f"{kind}-{version}",
+                "size": size,
+                "filename": name,
+                "location": f"main-workspace/translations-models/{kind}-{version}.bin",
+            },
+        }
+        for kind, name in files.items()
+    ]
+
+
+def test_the_newest_model_wins_even_when_no_metadata_describes_it():
+    records = _records("ru", "en", "1.1", "old") + _records("ru", "en", "2.1", "new")
+    described = {"hash": "old", "byteSize": 1000, "flores": {"comet": 0.85}}
+
+    def meta(arch, directory):
+        return described if arch == "tiny" else None
+
+    result = ps.scaffold("ru:en", records=records, metadata=meta)
+    got = tomllib.loads(result.toml)
+    assert got["id"] == "bergamot-mozilla-ru-en"
+    assert got["pin"] == "mozilla firefox-translations ru-en mozilla 2.1"
+    assert got["attribution"].endswith("(version 2.1)")
+    assert got["summary"] == "Russian to English translation (Firefox Translations)"
+    assert got["gate"] == {}
+    assert any("no metadata.json describes" in w for w in result.warnings)
+    forced = tomllib.loads(ps.scaffold("ru:en", records=records, metadata=meta, arch="tiny").toml)
+    assert forced["pin"].endswith("ru-en tiny 1.1")
+    assert forced["gate"] == {"vendor_comet": 0.85}
+    described["hash"] = "new"
+    newest = tomllib.loads(ps.scaffold("ru:en", records=records, metadata=meta).toml)
+    assert newest["id"] == "bergamot-tiny-ru-en"
+    assert newest["pin"].endswith("ru-en tiny 2.1")
+
+
 def test_split_vocabs_go_into_the_config():
     config = make("en:ja", no_eval=False).config
     assert "vocabs: [srcvocab.enja.spm, trgvocab.enja.spm]" in config
