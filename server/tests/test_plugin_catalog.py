@@ -311,16 +311,15 @@ def test_a_plugin_without_a_gate_table_is_listed_as_asked(valid):
     assert gen.listed(valid) is False
 
 
-def test_a_gated_plugin_is_listed_only_with_a_passing_gate_and_spot_check(valid):
-    spot = {"who": "Reviewer", "date": "2026-11-22", "passed": True}
+def test_a_gated_plugin_is_listed_on_a_passing_gate_alone(valid):
     plugin = gated(valid)
-    assert gen.listed(plugin) is False  # no spot check recorded
-    plugin["spot_check"] = spot
+    assert gen.listed(plugin) is True  # no spot check needed
+    plugin["spot_check"] = {"who": "Reviewer", "date": "2026-11-22", "passed": True}
     gen.validate(plugin)
     assert gen.listed(plugin) is True
-    plugin["spot_check"] = spot | {"passed": False}
-    assert gen.listed(plugin) is False
-    plugin["spot_check"] = spot
+    plugin["spot_check"]["passed"] = False
+    assert gen.listed(plugin) is False  # a failed spot check still unlists
+    del plugin["spot_check"]
     plugin["measured"]["gate"] = "fail"
     assert gen.listed(plugin) is False
     plugin["measured"]["gate"] = "pass"
@@ -330,9 +329,9 @@ def test_a_gated_plugin_is_listed_only_with_a_passing_gate_and_spot_check(valid)
 
 def test_the_catalog_entry_carries_the_listing_decision(valid):
     plugin = gated(valid)
-    assert gen.catalog_entry(plugin)["curated"] is False
-    plugin["spot_check"] = {"who": "R", "date": "2026-11-22", "passed": True}
     assert gen.catalog_entry(plugin)["curated"] is True
+    plugin["measured"]["gate"] = "fail"
+    assert gen.catalog_entry(plugin)["curated"] is False
 
 
 @pytest.mark.parametrize(

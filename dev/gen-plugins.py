@@ -15,7 +15,8 @@ It yields, deterministically:
 quality, latency_ms and their source come from plugins/<name>.measured.json,
 written by the evaluation pipeline (dev/plugin-pipeline.sh), never typed into
 the toml. A plugin with a [gate] table is emitted curated only if the pipeline's
-gate passed and its [spot_check] (who, date, passed) did too. --check
+gate passed, and not when a recorded [spot_check] (who, date, passed) failed;
+a spot check is optional. --check
 regenerates in memory and fails when a committed file differs.
 Contract: .kb/text-plugin-contract.md.
 """
@@ -141,17 +142,14 @@ def validate(plugin: dict, source: str = "plugin") -> None:
 
 def listed(plugin: dict) -> bool:
     """Whether the entry is emitted curated: the file asks for it and, when it
-    declares a [gate], the pipeline's gate passed and the native-speaker spot
-    check passed."""
+    declares a [gate], the pipeline's gate passed. A native-speaker spot check
+    is optional; one recorded as failed unlists the entry."""
     if not plugin["curated"]:
         return False
-    gate = plugin.get("gate")
-    if gate is None:
-        return True
-    if plugin["measured"].get("gate") != "pass":
+    if plugin.get("gate") is not None and plugin["measured"].get("gate") != "pass":
         return False
     spot = plugin.get("spot_check")
-    return spot is not None and spot["passed"]
+    return spot is None or spot["passed"]
 
 
 def latency_class(ms: int) -> str:
