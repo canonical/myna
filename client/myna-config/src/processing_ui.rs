@@ -79,8 +79,8 @@ pub struct Slots {
 /// One saved chain on the page.
 struct ChainRow {
     row: adw::ActionRow,
-    /// "In use", on the active chain only.
-    in_use: gtk::Label,
+    /// On for the chain in use; turning one on turns the others off.
+    switch: gtk::Switch,
     delete: gtk::Button,
 }
 
@@ -463,7 +463,12 @@ impl StepsPage {
                 None => card.steps.clone(),
             };
             chain.row.set_subtitle(&escape_markup(&subtitle));
-            chain.in_use.set_visible(card.active);
+            chain.switch.set_active(card.active);
+            // TRANSLATORS: the accessible name of a chain's on/off switch; {name} is the chain's name.
+            let use_it = gettextrs::gettext("Use {name}").replace("{name}", &card.name);
+            chain
+                .switch
+                .update_property(&[gtk::accessible::Property::Label(&use_it)]);
             // TRANSLATORS: the accessible name of a chain's delete button; {name} is the chain's name.
             let delete = gettextrs::gettext("Delete {name}").replace("{name}", &card.name);
             chain
@@ -483,20 +488,34 @@ impl StepsPage {
             .subtitle_lines(0)
             .activatable(true)
             .build();
-        let in_use = gtk::Label::builder()
-            .label(gettextrs::gettext("In use"))
-            .css_classes(["accent", "caption-heading"])
-            .valign(gtk::Align::Center)
-            .visible(false)
-            .build();
+        let switch = gtk::Switch::builder().valign(gtk::Align::Center).build();
         let delete = gtk::Button::builder()
             .icon_name("user-trash-symbolic")
             .css_classes(["flat"])
             .valign(gtk::Align::Center)
             .build();
-        row.add_suffix(&in_use);
+        row.add_suffix(&switch);
         row.add_suffix(&delete);
         row.add_suffix(&gtk::Image::from_icon_name("go-next-symbolic"));
+        switch.connect_active_notify({
+            let page = Rc::downgrade(self);
+            let id = id.to_owned();
+            move |switch| {
+                if let Some(page) = page.upgrade() {
+                    if page.updating.get() {
+                        return;
+                    }
+                    let on = switch.is_active();
+                    page.edit(|p| {
+                        if on {
+                            p.activate(Some(&id));
+                        } else if p.active.as_deref() == Some(id.as_str()) {
+                            p.activate(None);
+                        }
+                    });
+                }
+            }
+        });
         row.connect_activated({
             let page = Rc::downgrade(self);
             let id = id.to_owned();
@@ -517,7 +536,7 @@ impl StepsPage {
         });
         ChainRow {
             row,
-            in_use,
+            switch,
             delete,
         }
     }
@@ -2625,13 +2644,13 @@ mod tests {
         all::<InstallControl>(row.upcast_ref()).remove(0)
     }
 
-    fn chain_row(rig: &Rig, name: &str) -> (adw::ActionRow, gtk::Label, gtk::Button) {
+    fn chain_row(rig: &Rig, name: &str) -> (adw::ActionRow, gtk::Switch, gtk::Button) {
         let rows = rig.page.chain_rows.borrow();
         let (_, row) = rows
             .iter()
             .find(|(_, row)| row.row.title() == name)
             .unwrap_or_else(|| panic!("no chain row {name}"));
-        (row.row.clone(), row.in_use.clone(), row.delete.clone())
+        (row.row.clone(), row.switch.clone(), row.delete.clone())
     }
 
     fn editor(rig: &Rig) -> Rc<Editor> {
@@ -2665,32 +2684,52 @@ mod tests {
             .collect()
     }
 
-    /// Charles, 2026-11-23: a delete button on each chain, not a radio;
-    /// which chain is in use is set from its editor.
+    /// Charles, 2026-11-23: a switch turns a chain on or off without
+    /// deleting it, one chain on at a time, and a delete button removes it.
     #[test]
-    fn the_page_lists_every_chain_marks_the_one_in_use_and_deletes() {
+    fn a_chain_is_switched_on_and_off_from_its_row_and_deleted() {
         crate::ui::on_gtk_thread(|| {
-            let rig = rig("pick", TIDY, TIDY, TWO);
-            assert_eq!(chain_titles(&rig), ["French first", "New chain…"]);
-            let (row, in_use, _) = chain_row(&rig, "French first");
-            assert!(!in_use.is_visible(), "nothing is in use by default");
+            let rig = rig(
+                "pick",
+                TIDY,
+                TIDY,
+                "chains=[('fr', 'French first', [('translate', true, {'to': 'fr'}), ('tidy', true, {})]), ('t', 'Tidy', [('tidy', true, {})])]\n",
+            );
+            assert_eq!(chain_titles(&rig), ["French first", "Tidy", "New chain…"]);
+            let (row, french, _) = chain_row(&rig, "French first");
+            let (_, tidy, _) = chain_row(&rig, "Tidy");
+            assert!(
+                !french.is_active() && !tidy.is_active(),
+                "none on by default"
+            );
             assert!(
                 row.subtitle().unwrap().contains("(skipped)"),
                 "{:?}",
                 row.subtitle()
+            );
+            french.set_active(true);
+            assert_eq!(rig.store.processing().active.as_deref(), Some("fr"));
+            tidy.set_active(true);
+            assert_eq!(rig.store.processing().active.as_deref(), Some("t"));
+            assert!(!french.is_active(), "one chain on at a time");
+            tidy.set_active(false);
+            assert_eq!(rig.store.processing().active, None);
+            assert!(
+                rig.store.processing().chain("t").is_some(),
+                "off is not deleted"
             );
             // A change made elsewhere reaches the page, both ways.
             let mut p = rig.store.processing();
             p.activate(Some("fr"));
             rig.store.set_processing(&p).unwrap();
             pump_until("the external change", || {
-                chain_row(&rig, "French first").1.is_visible()
+                chain_row(&rig, "French first").1.is_active()
             });
             let mut p = rig.store.processing();
             p.activate(None);
             rig.store.set_processing(&p).unwrap();
             pump_until("the external stop", || {
-                !chain_row(&rig, "French first").1.is_visible()
+                !chain_row(&rig, "French first").1.is_active()
             });
             row.emit_by_name::<()>("activated", &[]);
             assert_eq!(editor(&rig).id, "fr", "the row opens its editor");
@@ -2699,7 +2738,7 @@ mod tests {
             assert_eq!(delete.tooltip_text().unwrap(), "Delete French first");
             delete.emit_clicked();
             assert!(rig.store.processing().chain("fr").is_none());
-            assert_eq!(chain_titles(&rig).last().unwrap(), "New chain…");
+            assert_eq!(chain_titles(&rig), ["Tidy", "New chain…"]);
         });
     }
 
@@ -2732,7 +2771,7 @@ mod tests {
             editor.use_button.emit_clicked();
             assert_eq!(rig.store.processing().active, None);
             assert_eq!(editor.use_button.label().unwrap(), "Use this chain");
-            assert!(!chain_row(&rig, "French first").1.is_visible());
+            assert!(!chain_row(&rig, "French first").1.is_active());
             editor.use_button.emit_clicked();
             assert_eq!(rig.store.processing().active.as_deref(), Some("fr"));
         });
