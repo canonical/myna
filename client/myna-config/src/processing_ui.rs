@@ -681,7 +681,9 @@ impl StepsPage {
                 .set_label(&gettextrs::gettext("Use this chain"));
         }
         let lines = self.view(|ctx| chains_view::lines(chain, ctx));
-        let rebuild = {
+        // A new editor has no rows at all, not even Add step, whatever the
+        // chain holds.
+        let rebuild = editor.add_row.parent().is_none() || {
             let built = editor.lines.borrow();
             built.len() != lines.len()
                 || editor
@@ -1233,6 +1235,12 @@ impl StepsPage {
         let target = self
             .catalog_chain(&self.deps.store.processing())
             .map(|c| c.id);
+        // Opened for a chain that is gone since: add to nothing rather than
+        // to a chain the user never made.
+        if target.is_none() && self.catalog_for.borrow().is_some() {
+            self.deps.nav.pop();
+            return;
+        }
         self.edit(|p| {
             let id = match target {
                 Some(id) => id,
@@ -2235,6 +2243,55 @@ mod tests {
                 [("tidy".into(), true), ("translate".into(), true)]
             );
             assert_eq!(rig.nav.visible_page().unwrap(), editor(&rig).page);
+        });
+    }
+
+    /// Charles, 2026-11-23: an empty chain's editor had no Add step row.
+    #[test]
+    fn adding_to_an_empty_chain_puts_the_step_in_that_chain() {
+        crate::ui::on_gtk_thread(|| {
+            let rig = rig(
+                "add-empty",
+                TIDY,
+                TIDY,
+                "chains=[('chain-1', 'New chain', [])]\nactive-chain='chain-1'\n",
+            );
+            rig.page.open_editor("chain-1");
+            let add_row = editor(&rig).add_row.clone();
+            assert!(
+                add_row.parent().is_some() && add_row.is_visible(),
+                "an empty chain shows Add step"
+            );
+            add_row.emit_by_name::<()>("activated", &[]);
+            assert_eq!(rig.nav.visible_page().unwrap(), rig.page.catalog_page);
+            let row = catalog_row(&rig, "Tidy up speech");
+            pump_until("Add", || {
+                add_button(&row).is_visible() && add_button(&row).is_sensitive()
+            });
+            add_button(&row).emit_clicked();
+            let p = rig.store.processing();
+            assert_eq!(p.chains.len(), 1, "{:?}", p.chains);
+            assert_eq!(steps_of(&rig, "chain-1"), [("tidy".into(), true)]);
+        });
+    }
+
+    #[test]
+    fn adding_for_a_chain_that_is_gone_makes_no_chain() {
+        crate::ui::on_gtk_thread(|| {
+            let rig = rig("add-gone", TIDY, TIDY, "chains=[('fr', 'French', [])]\n");
+            rig.page.open_editor("fr");
+            rig.page.open_catalog(Some("fr"));
+            let row = catalog_row(&rig, "Tidy up speech");
+            pump_until("Add", || {
+                add_button(&row).is_visible() && add_button(&row).is_sensitive()
+            });
+            let mut p = rig.store.processing();
+            p.delete("fr");
+            rig.store.set_processing(&p).unwrap();
+            add_button(&row).emit_clicked();
+            let p = rig.store.processing();
+            assert!(p.chains.is_empty(), "{:?}", p.chains);
+            assert_eq!(p.active, None);
         });
     }
 
