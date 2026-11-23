@@ -32,6 +32,9 @@
 set -uo pipefail
 # shellcheck source=e2e-tests/suites/lib.sh
 source "$(dirname "$0")/lib.sh"
+# No translation pair is curated until a native speaker checks it, so Settings
+# lists the uncurated ones here, as on a developer's machine.
+shot() { on "MYNA_LIST_UNCURATED=1 myna-shot/shot.sh --display $SHOT_DISPLAY $(printf '%q ' "$@")"; }
 
 REPO=$(git -C "$(dirname "$0")" rev-parse --show-toplevel)
 FULL="The quick brown fox jumps over the lazy dog."

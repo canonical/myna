@@ -6089,9 +6089,12 @@ fn attach_steps(groups: &ProcessingGroups, overlay: &adw::ToastOverlay, nav: &ad
             std::sync::Arc::new(crate::adapters::snapd_client::UnixSocketSnapdClient::new()),
         )),
         catalog: Box::new(|| {
-            crate::plugin_catalog::load(
+            crate::plugin_catalog::load_listing(
                 std::path::Path::new(crate::plugin_catalog::SNAPSHOT_DIR),
                 std::path::Path::new("/snap"),
+                crate::plugin_catalog::Listing::from_env(
+                    std::env::var("MYNA_LIST_UNCURATED").ok().as_deref(),
+                ),
             )
             .entries
         }),

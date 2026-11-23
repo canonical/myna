@@ -128,9 +128,34 @@ pub struct Catalog {
     pub skipped: Vec<String>,
 }
 
+/// Which entries a catalog lists besides those of a known contract.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Listing {
+    /// Only curated entries: what users see.
+    Curated,
+    /// Uncurated entries too, for development and E2E.
+    All,
+}
+
+impl Listing {
+    /// `All` when `MYNA_LIST_UNCURATED` is `1`.
+    pub fn from_env(value: Option<&str>) -> Self {
+        if value == Some("1") {
+            Self::All
+        } else {
+            Self::Curated
+        }
+    }
+}
+
+/// [`load_listing`] of the curated entries.
+pub fn load(snapshot_dir: &Path, snap_root: &Path) -> Catalog {
+    load_listing(snapshot_dir, snap_root, Listing::Curated)
+}
+
 /// Merge by entry `id`: an installed snap's entry wins over a snapshot's, the
 /// higher `entry_revision` between equal sources; hidden entries drop out.
-pub fn load(snapshot_dir: &Path, snap_root: &Path) -> Catalog {
+pub fn load_listing(snapshot_dir: &Path, snap_root: &Path, listing: Listing) -> Catalog {
     let mut skipped = Vec::new();
     let mut best: BTreeMap<String, (Source, Entry)> = BTreeMap::new();
     for snap in SNAPS {
@@ -154,7 +179,9 @@ pub fn load(snapshot_dir: &Path, snap_root: &Path) -> Catalog {
     let entries = best
         .into_values()
         .map(|(_, entry)| entry)
-        .filter(|entry| entry.curated && entry.contract <= SUPPORTED_CONTRACT)
+        .filter(|entry| {
+            (entry.curated || listing == Listing::All) && entry.contract <= SUPPORTED_CONTRACT
+        })
         .filter(|entry| {
             let listed = entry.listable();
             if !listed {
@@ -439,6 +466,34 @@ mod tests {
     }
 
     #[test]
+    fn listing_all_shows_uncurated_entries_but_not_unknown_contracts() {
+        let (_dir, snapshot, root) = rig();
+        write(
+            &snapshot,
+            "myna-text.json",
+            &[
+                with(entry("new", 1), "contract", 3.into()),
+                with(entry("uncurated", 1), "curated", false.into()),
+                with(entry("curated", 1), "curated", true.into()),
+            ],
+        );
+        let ids: Vec<_> = load_listing(&snapshot, &root, Listing::All)
+            .entries
+            .into_iter()
+            .map(|e| e.id)
+            .collect();
+        assert_eq!(ids, ["curated", "uncurated"]);
+    }
+
+    #[test]
+    fn only_a_one_lists_uncurated_entries() {
+        assert_eq!(Listing::from_env(Some("1")), Listing::All);
+        for value in [None, Some(""), Some("0"), Some("yes")] {
+            assert_eq!(Listing::from_env(value), Listing::Curated, "{value:?}");
+        }
+    }
+
+    #[test]
     fn hidden_installed_entry_still_shadows_the_snapshot() {
         let (_dir, snapshot, root) = rig();
         write(&snapshot, "myna-text.json", &[entry("a", 1)]);
@@ -466,7 +521,7 @@ mod tests {
             )
             .unwrap();
         }
-        let catalog = load(&snapshot, &root);
+        let catalog = load_listing(&snapshot, &root, Listing::All);
         assert!(catalog.skipped.is_empty(), "{:?}", catalog.skipped);
         let ids: Vec<_> = catalog.entries.iter().map(|e| e.id.as_str()).collect();
         assert!(ids.contains(&"model-disfluency-en"));
