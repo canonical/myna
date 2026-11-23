@@ -79,7 +79,9 @@ pub struct Slots {
 /// One saved chain on the page.
 struct ChainRow {
     row: adw::ActionRow,
-    check: gtk::CheckButton,
+    /// "In use", on the active chain only.
+    in_use: gtk::Label,
+    delete: gtk::Button,
 }
 
 /// One step in the editor.
@@ -160,7 +162,6 @@ pub struct StepsPage {
     chains_group: glib::WeakRef<adw::PreferencesGroup>,
     /// Never shown: the chain radios' group, active while no chain is, so
     /// even a lone chain's radio is a radio and not a checkbox.
-    group_leader: gtk::CheckButton,
     /// In place of the chains while there are none.
     empty_row: adw::ActionRow,
     new_row: adw::ActionRow,
@@ -226,7 +227,6 @@ impl StepsPage {
             .subtitle_lines(0)
             .build();
         slots.fit.add(&fit_row);
-        let group_leader = gtk::CheckButton::new();
         let empty_row = adw::ActionRow::builder()
             .title(gettextrs::gettext("No chains yet"))
             .subtitle(gettextrs::gettext(
@@ -259,7 +259,6 @@ impl StepsPage {
             deps,
             fit_row,
             chains_group: slots.chains.downgrade(),
-            group_leader,
             empty_row,
             new_row,
             chain_rows: RefCell::new(Vec::new()),
@@ -464,44 +463,41 @@ impl StepsPage {
                 None => card.steps.clone(),
             };
             chain.row.set_subtitle(&escape_markup(&subtitle));
-            chain.check.set_active(card.active);
+            chain.in_use.set_visible(card.active);
+            // TRANSLATORS: the accessible name of a chain's delete button; {name} is the chain's name.
+            let delete = gettextrs::gettext("Delete {name}").replace("{name}", &card.name);
+            chain
+                .delete
+                .update_property(&[gtk::accessible::Property::Label(&delete)]);
+            chain.delete.set_tooltip_text(Some(&delete));
         }
-        self.group_leader.set_active(active.is_none());
         self.empty_row.set_visible(cards.is_empty());
         self.updating.set(false);
         self.shown_cards.replace(cards);
     }
 
+    /// A chain on the page: opens its editor, marks the one in use, and
+    /// deletes with an Undo toast.
     fn chain_row(self: &Rc<Self>, id: &str) -> ChainRow {
-        let check = gtk::CheckButton::builder()
-            .group(&self.group_leader)
-            .valign(gtk::Align::Center)
-            .build();
         let row = adw::ActionRow::builder()
             .subtitle_lines(0)
-            .activatable_widget(&check)
+            .activatable(true)
             .build();
-        row.add_prefix(&check);
-        let edit = gtk::Button::builder()
-            .icon_name("go-next-symbolic")
+        let in_use = gtk::Label::builder()
+            .label(gettextrs::gettext("In use"))
+            .css_classes(["accent", "caption-heading"])
+            .valign(gtk::Align::Center)
+            .visible(false)
+            .build();
+        let delete = gtk::Button::builder()
+            .icon_name("user-trash-symbolic")
             .css_classes(["flat"])
             .valign(gtk::Align::Center)
             .build();
-        row.add_suffix(&edit);
-        check.connect_toggled({
-            let page = Rc::downgrade(self);
-            let id = id.to_owned();
-            move |check| {
-                if let Some(page) = page.upgrade() {
-                    if !page.updating.get() && check.is_active() {
-                        page.edit(|p| {
-                            p.activate(Some(&id));
-                        });
-                    }
-                }
-            }
-        });
-        edit.connect_clicked({
+        row.add_suffix(&in_use);
+        row.add_suffix(&delete);
+        row.add_suffix(&gtk::Image::from_icon_name("go-next-symbolic"));
+        row.connect_activated({
             let page = Rc::downgrade(self);
             let id = id.to_owned();
             move |_| {
@@ -510,10 +506,20 @@ impl StepsPage {
                 }
             }
         });
-        let label = gettextrs::gettext("Edit chain");
-        edit.update_property(&[gtk::accessible::Property::Label(&label)]);
-        edit.set_tooltip_text(Some(&label));
-        ChainRow { row, check }
+        delete.connect_clicked({
+            let page = Rc::downgrade(self);
+            let id = id.to_owned();
+            move |_| {
+                if let Some(page) = page.upgrade() {
+                    page.delete_chain(&id);
+                }
+            }
+        });
+        ChainRow {
+            row,
+            in_use,
+            delete,
+        }
     }
 
     /// A copy of the active chain under a new name, opened for editing.
@@ -2619,13 +2625,13 @@ mod tests {
         all::<InstallControl>(row.upcast_ref()).remove(0)
     }
 
-    fn chain_row(rig: &Rig, name: &str) -> (adw::ActionRow, gtk::CheckButton) {
+    fn chain_row(rig: &Rig, name: &str) -> (adw::ActionRow, gtk::Label, gtk::Button) {
         let rows = rig.page.chain_rows.borrow();
         let (_, row) = rows
             .iter()
             .find(|(_, row)| row.row.title() == name)
             .unwrap_or_else(|| panic!("no chain row {name}"));
-        (row.row.clone(), row.check.clone())
+        (row.row.clone(), row.in_use.clone(), row.delete.clone())
     }
 
     fn editor(rig: &Rig) -> Rc<Editor> {
@@ -2659,39 +2665,41 @@ mod tests {
             .collect()
     }
 
+    /// Charles, 2026-11-23: a delete button on each chain, not a radio;
+    /// which chain is in use is set from its editor.
     #[test]
-    fn the_page_lists_every_chain_and_picks_with_a_radio() {
+    fn the_page_lists_every_chain_marks_the_one_in_use_and_deletes() {
         crate::ui::on_gtk_thread(|| {
             let rig = rig("pick", TIDY, TIDY, TWO);
             assert_eq!(chain_titles(&rig), ["French first", "New chain…"]);
-            let (row, check) = chain_row(&rig, "French first");
-            assert!(!check.is_active(), "nothing is active by default");
+            let (row, in_use, _) = chain_row(&rig, "French first");
+            assert!(!in_use.is_visible(), "nothing is in use by default");
             assert!(
                 row.subtitle().unwrap().contains("(skipped)"),
                 "{:?}",
                 row.subtitle()
             );
-            check.emit_by_name::<()>("activate", &[]);
-            assert!(check.is_active());
-            assert_eq!(rig.store.processing().active.as_deref(), Some("fr"));
-            // Charles, 2026-11-23: the only radio turned itself off when
-            // clicked again. A radio is left only by picking another.
-            check.emit_by_name::<()>("activate", &[]);
-            assert!(check.is_active(), "clicking the active radio keeps it");
-            assert_eq!(rig.store.processing().active.as_deref(), Some("fr"));
             // A change made elsewhere reaches the page, both ways.
-            let mut p = rig.store.processing();
-            p.activate(None);
-            rig.store.set_processing(&p).unwrap();
-            pump_until("the external stop", || {
-                !chain_row(&rig, "French first").1.is_active()
-            });
             let mut p = rig.store.processing();
             p.activate(Some("fr"));
             rig.store.set_processing(&p).unwrap();
             pump_until("the external change", || {
-                chain_row(&rig, "French first").1.is_active()
+                chain_row(&rig, "French first").1.is_visible()
             });
+            let mut p = rig.store.processing();
+            p.activate(None);
+            rig.store.set_processing(&p).unwrap();
+            pump_until("the external stop", || {
+                !chain_row(&rig, "French first").1.is_visible()
+            });
+            row.emit_by_name::<()>("activated", &[]);
+            assert_eq!(editor(&rig).id, "fr", "the row opens its editor");
+            rig.nav.pop();
+            let delete = chain_row(&rig, "French first").2;
+            assert_eq!(delete.tooltip_text().unwrap(), "Delete French first");
+            delete.emit_clicked();
+            assert!(rig.store.processing().chain("fr").is_none());
+            assert_eq!(chain_titles(&rig).last().unwrap(), "New chain…");
         });
     }
 
@@ -2724,7 +2732,7 @@ mod tests {
             editor.use_button.emit_clicked();
             assert_eq!(rig.store.processing().active, None);
             assert_eq!(editor.use_button.label().unwrap(), "Use this chain");
-            assert!(!chain_row(&rig, "French first").1.is_active());
+            assert!(!chain_row(&rig, "French first").1.is_visible());
             editor.use_button.emit_clicked();
             assert_eq!(rig.store.processing().active.as_deref(), Some("fr"));
         });
@@ -2778,12 +2786,8 @@ mod tests {
     fn steps_move_switch_off_and_a_skipped_one_offers_its_fix() {
         crate::ui::on_gtk_thread(|| {
             let rig = rig("editor", TIDY, TIDY, TWO);
-            let (row, _) = chain_row(&rig, "French first");
-            let edit = all::<gtk::Button>(row.upcast_ref())
-                .into_iter()
-                .find(|b| b.icon_name().as_deref() == Some("go-next-symbolic"))
-                .unwrap();
-            edit.emit_clicked();
+            let (row, _, _) = chain_row(&rig, "French first");
+            row.emit_by_name::<()>("activated", &[]);
             let editor = editor(&rig);
             {
                 let lines = editor.lines.borrow();
