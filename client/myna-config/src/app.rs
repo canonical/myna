@@ -6045,8 +6045,12 @@ fn build_myna_page(
 struct ProcessingGroups {
     /// Advice when the chosen chain has no model for a step; hidden otherwise.
     notice: adw::Banner,
-    /// What is done to the text: one row per step.
+    /// The fit-to-field switch.
+    fit: adw::PreferencesGroup,
+    /// The saved chains, one to pick.
     chain: adw::PreferencesGroup,
+    /// Get more steps.
+    more: adw::PreferencesGroup,
     /// The Past dictations sub-page: the record switch and the list.
     past: crate::past_dictations_ui::PastPage,
     /// The link to it, at the bottom of the page.
@@ -6056,10 +6060,12 @@ struct ProcessingGroups {
 fn processing_group() -> ProcessingGroups {
     ProcessingGroups {
         notice: adw::Banner::builder().use_markup(false).build(),
+        fit: adw::PreferencesGroup::new(),
+        more: adw::PreferencesGroup::new(),
         chain: adw::PreferencesGroup::builder()
-            .title(gettextrs::gettext("Steps"))
+            .title(gettextrs::gettext("Chains"))
             .description(gettextrs::gettext(
-                "Switch on what Myna does to what you say, in the order shown. Any step is shown on screen while you speak and typed a sentence at a time. This is experimental.",
+                "What Myna does to what you say. Pick one; open it to change its steps. Text a chain changes is shown on screen while you speak and typed a sentence at a time. This is experimental.",
             ))
             .build(),
         past: crate::past_dictations_ui::PastPage::new(),
@@ -6104,13 +6110,22 @@ fn attach_steps(groups: &ProcessingGroups, overlay: &adw::ToastOverlay, nav: &ad
         follow_interval: Duration::from_secs(1),
         refresh_every: crate::processing_ui::Deps::refresh_default(),
     };
-    crate::processing_ui::StepsPage::attach(deps, &groups.chain);
+    crate::processing_ui::StepsPage::attach(
+        deps,
+        &crate::processing_ui::Slots {
+            fit: groups.fit.clone(),
+            chains: groups.chain.clone(),
+            more: groups.more.clone(),
+        },
+    );
 }
 
 fn processing_page(groups: &ProcessingGroups, nav: &adw::NavigationView) -> adw::NavigationPage {
     let preferences = adw::PreferencesPage::new();
     preferences.set_vexpand(true);
+    preferences.add(&groups.fit);
     preferences.add(&groups.chain);
+    preferences.add(&groups.more);
     groups.past_link.add(&groups.past.link_row(nav));
     preferences.add(&groups.past_link);
     let content = gtk::Box::new(gtk::Orientation::Vertical, 0);

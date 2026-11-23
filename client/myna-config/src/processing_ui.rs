@@ -1,6 +1,8 @@
-//! The Steps group of the Processing tab: one row per step, a Translate row
-//! with its target, the example line, and the installs a missing model needs.
-//! The decisions are `processing_steps`; this binds them to widgets.
+//! The Processing tab: the fit-to-field switch, the saved chains as a radio
+//! list, a chain's editor (its steps in order, each movable, switchable and
+//! set up in place), and the catalog the editor adds from. The decisions are
+//! `chains_view`, `processing_steps` and `step_catalog`; this binds them to
+//! widgets.
 
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
@@ -11,8 +13,10 @@ use adw::prelude::*;
 use gtk4 as gtk;
 use gtk4::glib;
 use libadwaita as adw;
+use myna_core::chains::{Chain, ChainStep, Processing};
 
 use crate::adapters::client_settings::GioClientSettings;
+use crate::chains_view::{self, Card, Line};
 use crate::command::CancellationToken;
 use crate::markup::escape_markup;
 use crate::plugin_catalog::{self, Entry};
@@ -21,8 +25,7 @@ use crate::ports::{
     BackendRepository, ClientSettingsSubscription, DictationDaemon, SystemConfigurator,
 };
 use crate::processing_steps::{
-    example, rows, with_enabled, with_script_mode, with_script_on, with_target, Inputs, Offered,
-    Row, Source, Standing, SCRIPT, TRANSLATE,
+    example, rows, Inputs, Offered, Row, Source, Standing, SCRIPT, TRANSLATE,
 };
 use crate::step_catalog::{self, Item, Offer};
 use crate::ui::InstallControl;
@@ -31,9 +34,9 @@ use crate::ui::InstallControl;
 /// before the row offers it again.
 const PREPARING_FOR: Duration = Duration::from_secs(30);
 
-/// How often the daemon is asked what it offers.
 const PAGE_KEY: &str = "myna-steps-page";
 
+/// How often the daemon is asked what it offers.
 const REFRESH_EVERY: Duration = Duration::from_secs(5);
 
 pub struct Deps {
@@ -44,7 +47,7 @@ pub struct Deps {
     pub catalog: Box<dyn Fn() -> Vec<Entry>>,
     pub locales: Vec<String>,
     pub overlay: adw::ToastOverlay,
-    /// Where the Add step page is pushed.
+    /// Where the editor and the catalog are pushed.
     pub nav: adw::NavigationView,
     /// How often an install's change is read for its progress.
     pub follow_interval: Duration,
@@ -58,38 +61,53 @@ impl Deps {
     }
 }
 
-enum Widgets {
-    Switch {
-        row: adw::SwitchRow,
-        control: InstallControl,
-        /// The row's menu, with Remove model in it, while a model is installed.
-        menu: gtk::MenuButton,
-    },
-    Translate {
-        row: adw::ExpanderRow,
-        combo: adw::ComboRow,
-        from: adw::ActionRow,
-        control: InstallControl,
-        /// The names the combo lists now, to refill it only when they change.
-        listed: RefCell<Vec<String>>,
-    },
-    Script {
-        row: adw::ExpanderRow,
-        combo: adw::ComboRow,
-    },
+/// The groups of the Processing tab the page fills.
+pub struct Slots {
+    /// The fit-to-field switch, on top.
+    pub fit: adw::PreferencesGroup,
+    /// The chains: none, each saved chain, New chain.
+    pub chains: adw::PreferencesGroup,
+    /// Get more steps goes first in it.
+    pub more: adw::PreferencesGroup,
 }
 
-impl Widgets {
-    fn widget(&self) -> gtk::Widget {
-        match self {
-            Self::Switch { row, .. } => row.clone().upcast(),
-            Self::Translate { row, .. } => row.clone().upcast(),
-            Self::Script { row, .. } => row.clone().upcast(),
-        }
-    }
+/// One saved chain on the page.
+struct ChainRow {
+    row: adw::ActionRow,
+    check: gtk::CheckButton,
 }
 
-/// One item of the Add step page.
+/// One step in the editor.
+struct LineWidgets {
+    row: adw::ActionRow,
+    number: gtk::Label,
+    badge: gtk::Label,
+    picker: gtk::DropDown,
+    /// What the picker lists now, to refill it only when it changes.
+    listed: RefCell<Vec<String>>,
+    control: InstallControl,
+    fix: gtk::Button,
+    switch: gtk::Switch,
+    up: gtk::Button,
+    down: gtk::Button,
+    menu: gtk::MenuButton,
+    remove_model: gtk::Button,
+}
+
+/// The open editor of one chain.
+struct Editor {
+    id: String,
+    page: adw::NavigationPage,
+    name: adw::EntryRow,
+    steps: adw::PreferencesGroup,
+    add_row: adw::ActionRow,
+    example: adw::ActionRow,
+    use_button: gtk::Button,
+    lines: RefCell<Vec<LineWidgets>>,
+    shown: RefCell<Vec<Line>>,
+}
+
+/// One item of the catalog page.
 struct CatalogWidgets {
     row: adw::ExpanderRow,
     control: InstallControl,
@@ -101,17 +119,23 @@ struct CatalogWidgets {
 
 pub struct StepsPage {
     deps: Deps,
-    group: glib::WeakRef<adw::PreferencesGroup>,
-    example: adw::ActionRow,
-    add_row: adw::ActionRow,
+    fit_row: adw::SwitchRow,
+    chains_group: glib::WeakRef<adw::PreferencesGroup>,
+    none_row: adw::ActionRow,
+    none_check: gtk::CheckButton,
+    new_row: adw::ActionRow,
+    chain_rows: RefCell<Vec<(String, ChainRow)>>,
+    shown_cards: RefCell<Vec<Card>>,
+    editor: RefCell<Option<Rc<Editor>>>,
     catalog_page: adw::NavigationPage,
     catalog_group: adw::PreferencesGroup,
     catalog_widgets: RefCell<Vec<(String, CatalogWidgets)>>,
+    /// The chain the catalog adds to: the one being edited, else the
+    /// active one.
+    catalog_for: RefCell<Option<String>>,
     items: RefCell<Vec<Item>>,
     /// A dictation is running: installs wait.
     dictating: Cell<bool>,
-    widgets: RefCell<Vec<(String, Widgets)>>,
-    shown: RefCell<Vec<Row>>,
     catalog: RefCell<Vec<Entry>>,
     offered: RefCell<Option<Offered>>,
     installing: RefCell<BTreeMap<String, Option<u8>>>,
@@ -131,43 +155,71 @@ impl Drop for StepsPage {
     }
 }
 
+fn link_row(title: &str, subtitle: &str) -> adw::ActionRow {
+    let row = adw::ActionRow::builder()
+        .title(escape_markup(title))
+        .subtitle(escape_markup(subtitle))
+        .subtitle_lines(0)
+        .activatable(true)
+        .build();
+    row.add_suffix(&gtk::Image::from_icon_name("go-next-symbolic"));
+    row
+}
+
 impl StepsPage {
-    /// Fill `group` with the steps and keep it current for as long as the
-    /// group lives: the group owns the page, the page only watches the group.
-    pub fn attach(deps: Deps, group: &adw::PreferencesGroup) -> Rc<Self> {
-        let example = adw::ActionRow::builder()
-            .title(gettextrs::gettext("For example"))
+    /// Fill the slots and keep them current for as long as the chains group
+    /// lives: the group owns the page, the page only watches the groups.
+    pub fn attach(deps: Deps, slots: &Slots) -> Rc<Self> {
+        let fit_row = adw::SwitchRow::builder()
+            .title(gettextrs::gettext("Fitted to the field"))
+            .subtitle(gettextrs::gettext(
+                "No capital or full stop in an address, and no capital where you carry on a sentence.",
+            ))
             .subtitle_lines(0)
-            .css_classes(["property"])
             .build();
-        let catalog = (deps.catalog)();
-        let add_row = adw::ActionRow::builder()
-            .title(gettextrs::gettext("Add step"))
-            .subtitle(gettextrs::gettext("Installed and available steps"))
+        slots.fit.add(&fit_row);
+        let none_check = gtk::CheckButton::new();
+        let none_row = adw::ActionRow::builder()
+            .title(gettextrs::gettext("None"))
+            .subtitle(gettextrs::gettext("Types exactly what you say"))
+            .activatable_widget(&none_check)
+            .build();
+        none_row.add_prefix(&none_check);
+        let new_row = adw::ActionRow::builder()
+            .title(gettextrs::gettext("New chain…"))
             .activatable(true)
             .build();
-        add_row.add_prefix(&gtk::Image::from_icon_name("list-add-symbolic"));
-        add_row.add_suffix(&gtk::Image::from_icon_name("go-next-symbolic"));
+        new_row.add_prefix(&gtk::Image::from_icon_name("list-add-symbolic"));
+        let more_row = link_row(
+            &gettextrs::gettext("Get more steps"),
+            &gettextrs::gettext("Translation languages, clean-up, scripts"),
+        );
+        slots.more.add(&more_row);
         let catalog_group = adw::PreferencesGroup::builder()
             .description(gettextrs::gettext(
-                "Steps your catalogs offer. Add one to switch it on; one that is not installed downloads first.",
+                "Steps your catalogs offer. Add one to put it in the chain; one that is not installed downloads first.",
             ))
             .build();
         let preferences = adw::PreferencesPage::new();
         preferences.add(&catalog_group);
         let catalog_page = crate::subpage::subpage(&gettextrs::gettext("Add step"), &preferences);
+        let catalog = (deps.catalog)();
         let page = Rc::new(Self {
             deps,
-            group: group.downgrade(),
-            example,
-            add_row,
+            fit_row,
+            chains_group: slots.chains.downgrade(),
+            none_row,
+            none_check,
+            new_row,
+            chain_rows: RefCell::new(Vec::new()),
+            shown_cards: RefCell::new(Vec::new()),
+            editor: RefCell::new(None),
             catalog_page,
             catalog_group,
             catalog_widgets: RefCell::new(Vec::new()),
+            catalog_for: RefCell::new(None),
             items: RefCell::new(Vec::new()),
             dictating: Cell::new(false),
-            widgets: RefCell::new(Vec::new()),
-            shown: RefCell::new(Vec::new()),
             catalog: RefCell::new(catalog),
             offered: RefCell::new(None),
             installing: RefCell::new(BTreeMap::new()),
@@ -177,6 +229,8 @@ impl StepsPage {
             cancellation: CancellationToken::new(),
             watch: RefCell::new(None),
         });
+        slots.chains.add(&page.none_row);
+        slots.chains.add(&page.new_row);
         let weak = Rc::downgrade(&page);
         page.watch
             .replace(Some(page.deps.store.watch_steps(move || {
@@ -184,17 +238,48 @@ impl StepsPage {
                     page.render();
                 }
             })));
-        page.add_row.connect_activated({
+        page.fit_row.connect_active_notify({
+            let page = Rc::downgrade(&page);
+            move |row| {
+                if let Some(page) = page.upgrade() {
+                    if !page.updating.get() {
+                        let on = row.is_active();
+                        page.edit(|p| p.fit_to_field = on);
+                    }
+                }
+            }
+        });
+        page.none_check.connect_toggled({
+            let page = Rc::downgrade(&page);
+            move |check| {
+                if let Some(page) = page.upgrade() {
+                    if !page.updating.get() && check.is_active() {
+                        page.edit(|p| {
+                            p.activate(None);
+                        });
+                    }
+                }
+            }
+        });
+        page.new_row.connect_activated({
             let page = Rc::downgrade(&page);
             move |_| {
                 if let Some(page) = page.upgrade() {
-                    page.deps.nav.push(&page.catalog_page);
+                    page.new_chain();
+                }
+            }
+        });
+        more_row.connect_activated({
+            let page = Rc::downgrade(&page);
+            move |_| {
+                if let Some(page) = page.upgrade() {
+                    page.open_catalog(None);
                 }
             }
         });
         page.render();
         // SAFETY: the key is private to this module and always holds a page.
-        unsafe { group.set_data(PAGE_KEY, page.clone()) };
+        unsafe { slots.chains.set_data(PAGE_KEY, page.clone()) };
         let weak = Rc::downgrade(&page);
         let every = page.deps.refresh_every;
         glib::spawn_future_local(async move {
@@ -224,26 +309,59 @@ impl StepsPage {
         self.render();
     }
 
-    fn inputs_rows(&self, daemon: Option<&Offered>) -> Vec<Row> {
-        let (ids, params) = self.deps.store.steps();
-        let source = Source::of_setting(&self.deps.store.language());
-        let catalog = self.catalog.borrow();
-        let installing = self.installing.borrow();
+    /// Change the stored chains in one write; a failure is a toast.
+    fn edit(self: &Rc<Self>, change: impl FnOnce(&mut Processing)) {
+        let mut processing = self.deps.store.processing();
+        change(&mut processing);
+        if let Err(error) = self.deps.store.set_processing(&processing) {
+            glib::g_warning!(crate::LOG_DOMAIN, "chains not stored: {error}");
+            self.deps
+                .overlay
+                .add_toast(adw::Toast::new(&gettextrs::gettext(
+                    "The change could not be saved.",
+                )));
+        }
+        self.render();
+    }
+
+    /// Change the steps of chain `id`.
+    fn edit_steps(self: &Rc<Self>, id: &str, change: impl FnOnce(&mut Vec<ChainStep>)) {
+        self.edit(|p| {
+            if let Some(chain) = p.chains.iter_mut().find(|c| c.id == id) {
+                change(&mut chain.steps);
+            }
+        });
+    }
+
+    fn dictation_language(&self) -> Option<String> {
+        let language = self.deps.store.language();
+        match Source::of_setting(&language) {
+            Source::One(code) => Some(code),
+            Source::Unknown => None,
+        }
+    }
+
+    fn preparing_now(&self) -> BTreeSet<String> {
         let now = Instant::now();
-        let preparing: BTreeSet<String> = self
-            .preparing
+        self.preparing
             .borrow()
             .iter()
             .filter(|(_, since)| now.duration_since(**since) < PREPARING_FOR)
             .map(|(id, _)| id.clone())
-            .collect();
-        rows(&Inputs {
-            language_unset: self.deps.store.language().trim().is_empty(),
-            enabled: &ids,
-            params: &params,
-            source: &source,
+            .collect()
+    }
+
+    /// The view of `chains` given what is installed now.
+    fn view<T>(&self, f: impl FnOnce(&chains_view::Context) -> T) -> T {
+        let offered = self.offered.borrow().clone();
+        let catalog = self.catalog.borrow();
+        let installing = self.installing.borrow();
+        let preparing = self.preparing_now();
+        let language = self.dictation_language();
+        f(&chains_view::Context {
+            language: language.as_deref(),
             catalog: &catalog,
-            daemon,
+            daemon: offered.as_ref(),
             installing: &installing,
             preparing: &preparing,
             locales: &self.deps.locales,
@@ -251,28 +369,325 @@ impl StepsPage {
     }
 
     fn render(self: &Rc<Self>) {
-        let offered = self.offered.borrow().clone();
-        let rows = self.inputs_rows(offered.as_ref());
-        self.render_catalog(offered.as_ref(), &rows);
-        self.show_row_menus();
-        if *self.shown.borrow() == rows && !self.widgets.borrow().is_empty() {
+        let processing = self.deps.store.processing();
+        self.updating.set(true);
+        self.fit_row.set_active(processing.fit_to_field);
+        self.updating.set(false);
+        self.render_chains(&processing);
+        self.render_editor(&processing);
+        self.render_catalog(&processing);
+    }
+
+    fn render_chains(self: &Rc<Self>, processing: &Processing) {
+        let Some(group) = self.chains_group.upgrade() else {
             return;
-        }
-        let same_steps = {
-            let widgets = self.widgets.borrow();
-            widgets.len() == rows.len()
-                && widgets
-                    .iter()
-                    .zip(&rows)
-                    .all(|((id, _), row)| *id == row.id)
         };
-        if !same_steps {
-            self.rebuild(&rows);
+        let active = processing.active().map(|c| c.id.clone());
+        let cards = self.view(|ctx| chains_view::cards(&processing.chains, active.as_deref(), ctx));
+        let same_ids = {
+            let rows = self.chain_rows.borrow();
+            rows.len() == cards.len() && rows.iter().zip(&cards).all(|((id, _), c)| *id == c.id)
+        };
+        if !same_ids {
+            for (_, chain) in self.chain_rows.take() {
+                group.remove(&chain.row);
+            }
+            group.remove(&self.new_row);
+            let mut built = Vec::new();
+            for card in &cards {
+                let chain = self.chain_row(&card.id);
+                group.add(&chain.row);
+                built.push((card.id.clone(), chain));
+            }
+            group.add(&self.new_row);
+            self.chain_rows.replace(built);
         }
         self.updating.set(true);
-        for ((_, widgets), row) in self.widgets.borrow().iter().zip(&rows) {
-            update(widgets, row);
+        for ((_, chain), card) in self.chain_rows.borrow().iter().zip(&cards) {
+            chain.row.set_title(&escape_markup(&card.name));
+            let subtitle = match &card.needs {
+                Some(needs) => format!("{}\n{needs}", card.steps),
+                None => card.steps.clone(),
+            };
+            chain.row.set_subtitle(&escape_markup(&subtitle));
+            chain.check.set_active(card.active);
         }
+        self.none_check.set_active(active.is_none());
+        self.updating.set(false);
+        self.shown_cards.replace(cards);
+    }
+
+    fn chain_row(self: &Rc<Self>, id: &str) -> ChainRow {
+        let check = gtk::CheckButton::builder()
+            .group(&self.none_check)
+            .valign(gtk::Align::Center)
+            .build();
+        let row = adw::ActionRow::builder()
+            .subtitle_lines(0)
+            .activatable_widget(&check)
+            .build();
+        row.add_prefix(&check);
+        let edit = gtk::Button::builder()
+            .icon_name("go-next-symbolic")
+            .css_classes(["flat"])
+            .valign(gtk::Align::Center)
+            .build();
+        row.add_suffix(&edit);
+        check.connect_toggled({
+            let page = Rc::downgrade(self);
+            let id = id.to_owned();
+            move |check| {
+                if let Some(page) = page.upgrade() {
+                    if !page.updating.get() && check.is_active() {
+                        page.edit(|p| {
+                            p.activate(Some(&id));
+                        });
+                    }
+                }
+            }
+        });
+        edit.connect_clicked({
+            let page = Rc::downgrade(self);
+            let id = id.to_owned();
+            move |_| {
+                if let Some(page) = page.upgrade() {
+                    page.open_editor(&id);
+                }
+            }
+        });
+        let label = gettextrs::gettext("Edit chain");
+        edit.update_property(&[gtk::accessible::Property::Label(&label)]);
+        edit.set_tooltip_text(Some(&label));
+        ChainRow { row, check }
+    }
+
+    /// A copy of the active chain under a new name, opened for editing.
+    fn new_chain(self: &Rc<Self>) {
+        let mut id = String::new();
+        self.edit(|p| {
+            let steps = p.active().map(|c| c.steps.clone()).unwrap_or_default();
+            let name = chains_view::new_name(&p.chains);
+            id = p.add(&name, steps);
+        });
+        self.open_editor(&id);
+    }
+
+    fn open_editor(self: &Rc<Self>, id: &str) {
+        let name = adw::EntryRow::builder()
+            .title(gettextrs::gettext("Name"))
+            .show_apply_button(true)
+            .build();
+        let name_group = adw::PreferencesGroup::new();
+        name_group.add(&name);
+        let steps = adw::PreferencesGroup::builder()
+            .title(gettextrs::gettext("Steps"))
+            .description(gettextrs::gettext(
+                "They run top to bottom. Changes are saved as you make them.",
+            ))
+            .build();
+        let add_row = adw::ActionRow::builder()
+            .title(gettextrs::gettext("Add step…"))
+            .activatable(true)
+            .build();
+        add_row.add_prefix(&gtk::Image::from_icon_name("list-add-symbolic"));
+        let example = adw::ActionRow::builder()
+            .title(gettextrs::gettext("For example"))
+            .subtitle_lines(0)
+            .css_classes(["property"])
+            .build();
+        let try_group = adw::PreferencesGroup::new();
+        try_group.add(&example);
+        let use_button = gtk::Button::builder()
+            .label(gettextrs::gettext("Use this chain"))
+            .css_classes(["suggested-action", "pill"])
+            .halign(gtk::Align::Center)
+            .build();
+        let delete = gtk::Button::builder()
+            .label(gettextrs::gettext("Delete chain"))
+            .css_classes(["destructive-action", "pill"])
+            .halign(gtk::Align::Center)
+            .build();
+        let actions = gtk::Box::builder()
+            .orientation(gtk::Orientation::Horizontal)
+            .spacing(12)
+            .halign(gtk::Align::Center)
+            .build();
+        actions.append(&use_button);
+        actions.append(&delete);
+        let actions_group = adw::PreferencesGroup::new();
+        actions_group.add(&actions);
+        let preferences = adw::PreferencesPage::new();
+        preferences.add(&name_group);
+        preferences.add(&steps);
+        preferences.add(&try_group);
+        preferences.add(&actions_group);
+        let page = crate::subpage::subpage(&gettextrs::gettext("Chain"), &preferences);
+        let editor = Rc::new(Editor {
+            id: id.to_owned(),
+            page: page.clone(),
+            name: name.clone(),
+            steps,
+            add_row: add_row.clone(),
+            example,
+            use_button: use_button.clone(),
+            lines: RefCell::new(Vec::new()),
+            shown: RefCell::new(Vec::new()),
+        });
+        if let Some(chain) = self.deps.store.processing().chain(id) {
+            name.set_text(&chain.name);
+            page.set_title(&chain.name);
+        }
+        name.connect_apply({
+            let page = Rc::downgrade(self);
+            let id = id.to_owned();
+            move |entry| {
+                if let Some(page) = page.upgrade() {
+                    let text = entry.text().trim().to_owned();
+                    if !text.is_empty() {
+                        page.edit(|p| {
+                            p.rename(&id, &text);
+                        });
+                    }
+                }
+            }
+        });
+        add_row.connect_activated({
+            let page = Rc::downgrade(self);
+            let id = id.to_owned();
+            move |_| {
+                if let Some(page) = page.upgrade() {
+                    page.open_catalog(Some(&id));
+                }
+            }
+        });
+        use_button.connect_clicked({
+            let page = Rc::downgrade(self);
+            let id = id.to_owned();
+            move |_| {
+                if let Some(page) = page.upgrade() {
+                    page.edit(|p| {
+                        p.activate(Some(&id));
+                    });
+                }
+            }
+        });
+        delete.connect_clicked({
+            let page = Rc::downgrade(self);
+            let id = id.to_owned();
+            move |_| {
+                if let Some(page) = page.upgrade() {
+                    page.delete_chain(&id);
+                }
+            }
+        });
+        page.connect_hidden({
+            let page = Rc::downgrade(self);
+            let id = id.to_owned();
+            move |_| {
+                if let Some(page) = page.upgrade() {
+                    let open = page.editor.borrow().as_ref().map(|e| e.id.clone());
+                    if open.as_deref() == Some(id.as_str())
+                        && page.deps.nav.visible_page().as_ref() != Some(&page.catalog_page)
+                    {
+                        page.editor.replace(None);
+                    }
+                }
+            }
+        });
+        self.editor.replace(Some(editor));
+        self.deps.nav.push(&page);
+        self.render();
+    }
+
+    /// Delete chain `id` and go back; a toast offers it back.
+    fn delete_chain(self: &Rc<Self>, id: &str) {
+        let before = self.deps.store.processing();
+        let Some(at) = before.chains.iter().position(|c| c.id == id) else {
+            return;
+        };
+        let chain = before.chains[at].clone();
+        let was_active = before.active.as_deref() == Some(id);
+        self.edit(|p| {
+            p.delete(id);
+        });
+        self.editor.replace(None);
+        self.deps.nav.pop();
+        let toast = adw::Toast::builder()
+            // TRANSLATORS: {name} is the name of a chain of steps that was just deleted.
+            .title(escape_markup(
+                &gettextrs::gettext("{name} deleted").replace("{name}", &chain.name),
+            ))
+            .button_label(gettextrs::gettext("Undo"))
+            .build();
+        toast.connect_button_clicked({
+            let page = Rc::downgrade(self);
+            move |_| {
+                if let Some(page) = page.upgrade() {
+                    let chain = chain.clone();
+                    page.edit(|p| {
+                        let at = at.min(p.chains.len());
+                        if p.chain(&chain.id).is_none() {
+                            let id = chain.id.clone();
+                            p.chains.insert(at, chain);
+                            if was_active {
+                                p.activate(Some(&id));
+                            }
+                        }
+                    });
+                }
+            }
+        });
+        self.deps.overlay.add_toast(toast);
+    }
+
+    fn render_editor(self: &Rc<Self>, processing: &Processing) {
+        let Some(editor) = self.editor.borrow().clone() else {
+            return;
+        };
+        let Some(chain) = processing.chain(&editor.id) else {
+            self.editor.replace(None);
+            return;
+        };
+        if !editor.name.has_focus() && editor.name.text() != chain.name {
+            editor.name.set_text(&chain.name);
+        }
+        editor.page.set_title(&chain.name);
+        let active = processing.active.as_deref() == Some(chain.id.as_str());
+        editor.use_button.set_sensitive(!active);
+        editor.use_button.set_label(&if active {
+            gettextrs::gettext("In use")
+        } else {
+            gettextrs::gettext("Use this chain")
+        });
+        let lines = self.view(|ctx| chains_view::lines(chain, ctx));
+        let rebuild = {
+            let built = editor.lines.borrow();
+            built.len() != lines.len()
+                || editor
+                    .shown
+                    .borrow()
+                    .iter()
+                    .zip(&lines)
+                    .any(|(a, b)| a.id != b.id)
+        };
+        if rebuild {
+            self.rebuild_lines(&editor, lines.len());
+        }
+        self.updating.set(true);
+        let total = lines.len();
+        let blocked = self.dictating.get() || self.busy();
+        let items = self.items.borrow().clone();
+        for (widgets, line) in editor.lines.borrow().iter().zip(&lines) {
+            show_line(widgets, line, total, blocked, &items);
+        }
+        self.updating.set(false);
+        let rows: Vec<Row> = lines
+            .iter()
+            .map(|line| Row {
+                enabled: line.on && !line.skipped,
+                ..line.row.clone()
+            })
+            .collect();
         let shown = example(&rows);
         let mut text = format!(
             "\u{201c}{}\u{201d}\n\u{2192} \u{201c}{}\u{201d}",
@@ -281,344 +696,368 @@ impl StepsPage {
         if let Some(note) = &shown.note {
             text.push_str(&format!("\n{note}"));
         }
-        self.example.set_subtitle(&escape_markup(&text));
-        self.example
+        editor.example.set_subtitle(&escape_markup(&text));
+        editor
+            .example
             .update_property(&[gtk::accessible::Property::Description(&text)]);
-        self.updating.set(false);
-        self.shown.replace(rows);
+        editor.shown.replace(lines);
     }
 
-    fn rebuild(self: &Rc<Self>, rows: &[Row]) {
-        let Some(group) = self.group.upgrade() else {
-            return;
-        };
-        let built_before = !self.widgets.borrow().is_empty();
-        for (_, widgets) in self.widgets.take() {
-            group.remove(&widgets.widget());
+    fn rebuild_lines(self: &Rc<Self>, editor: &Rc<Editor>, count: usize) {
+        for widgets in editor.lines.take() {
+            editor.steps.remove(&widgets.row);
         }
-        if built_before {
-            group.remove(&self.example);
-            group.remove(&self.add_row);
+        if editor.add_row.parent().is_some() {
+            editor.steps.remove(&editor.add_row);
         }
         let mut built = Vec::new();
-        for row in rows {
-            let widgets = if row.id == TRANSLATE {
-                self.translate_widgets(&row.id)
-            } else if row.id == SCRIPT {
-                self.script_widgets(&row.id)
-            } else {
-                self.switch_widgets(&row.id)
-            };
-            group.add(&widgets.widget());
-            built.push((row.id.clone(), widgets));
+        for index in 0..count {
+            let widgets = self.line_widgets(&editor.id, index);
+            editor.steps.add(&widgets.row);
+            built.push(widgets);
         }
-        group.add(&self.example);
-        group.add(&self.add_row);
-        self.widgets.replace(built);
+        editor.steps.add(&editor.add_row);
+        editor.lines.replace(built);
     }
 
-    fn control(self: &Rc<Self>, id: &str) -> InstallControl {
+    /// Move step `from` of chain `id` to `to`, say so, and keep the focus on
+    /// the step that moved.
+    fn move_step(self: &Rc<Self>, id: &str, from: usize, to: usize, focus: Focus) {
+        let len = self
+            .deps
+            .store
+            .processing()
+            .chain(id)
+            .map_or(0, |c| c.steps.len());
+        if from == to || from >= len || to >= len {
+            return;
+        }
+        self.edit_steps(id, |steps| *steps = chains_view::moved(steps, from, to));
+        let Some(editor) = self.editor.borrow().clone() else {
+            return;
+        };
+        let lines = editor.lines.borrow();
+        let shown = editor.shown.borrow();
+        if let (Some(widgets), Some(line)) = (lines.get(to), shown.get(to)) {
+            // TRANSLATORS: said after a step moved; {step} is its name, {n} and {total} its new place.
+            let said = gettextrs::gettext("{step} moved to step {n} of {total}")
+                .replace("{step}", &line.title)
+                .replace("{n}", &(to + 1).to_string())
+                .replace("{total}", &len.to_string());
+            widgets
+                .row
+                .announce(&said, gtk::AccessibleAnnouncementPriority::Medium);
+            let target: gtk::Widget = match focus {
+                Focus::Up if widgets.up.is_sensitive() => widgets.up.clone().upcast(),
+                Focus::Down if widgets.down.is_sensitive() => widgets.down.clone().upcast(),
+                _ => widgets.row.clone().upcast(),
+            };
+            target.grab_focus();
+        }
+    }
+
+    fn line_widgets(self: &Rc<Self>, id: &str, index: usize) -> LineWidgets {
+        let row = adw::ActionRow::builder().subtitle_lines(0).build();
+        let number = gtk::Label::builder()
+            .css_classes(["dim-label", "numeric"])
+            .valign(gtk::Align::Center)
+            .width_chars(2)
+            .build();
+        row.add_prefix(&number);
+        let badge = gtk::Label::builder()
+            .css_classes(["dim-label", "caption", "monospace"])
+            .valign(gtk::Align::Center)
+            .build();
+        let picker = gtk::DropDown::builder()
+            .valign(gtk::Align::Center)
+            .visible(false)
+            .build();
         let control = InstallControl::new();
         control.set_visible(false);
-        control.button().connect_clicked({
-            let page = Rc::downgrade(self);
-            let id = id.to_owned();
-            move |_| {
-                if let Some(page) = page.upgrade() {
-                    page.install_missing(&id);
-                }
-            }
-        });
-        control
-    }
-
-    fn switch_widgets(self: &Rc<Self>, id: &str) -> Widgets {
-        let row = adw::SwitchRow::builder().subtitle_lines(0).build();
-        let control = self.control(id);
-        row.add_suffix(&control);
-        let menu = self.row_menu(id);
-        row.add_suffix(&menu);
-        row.connect_active_notify({
-            let page = Rc::downgrade(self);
-            let id = id.to_owned();
-            move |row| {
-                if let Some(page) = page.upgrade() {
-                    if !page.updating.get() {
-                        page.set_enabled(&id, row.is_active());
-                    }
-                }
-            }
-        });
-        Widgets::Switch { row, control, menu }
-    }
-
-    /// The menu of a step's row: Remove model, for a model that is installed.
-    fn row_menu(self: &Rc<Self>, id: &str) -> gtk::MenuButton {
-        let remove = gtk::Button::builder()
-            .label(gettextrs::gettext("Remove model"))
-            .css_classes(["flat"])
+        let fix = gtk::Button::builder()
+            .valign(gtk::Align::Center)
+            .visible(false)
             .build();
-        let popover = gtk::Popover::builder().child(&remove).build();
+        let switch = gtk::Switch::builder().valign(gtk::Align::Center).build();
+        let up = gtk::Button::builder()
+            .icon_name("go-up-symbolic")
+            .css_classes(["flat"])
+            .valign(gtk::Align::Center)
+            .tooltip_text(gettextrs::gettext("Move up"))
+            .build();
+        up.update_property(&[gtk::accessible::Property::Label(&gettextrs::gettext(
+            "Move up",
+        ))]);
+        let down = gtk::Button::builder()
+            .icon_name("go-down-symbolic")
+            .css_classes(["flat"])
+            .valign(gtk::Align::Center)
+            .tooltip_text(gettextrs::gettext("Move down"))
+            .build();
+        down.update_property(&[gtk::accessible::Property::Label(&gettextrs::gettext(
+            "Move down",
+        ))]);
+        let menu_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        let item = |label: &str| {
+            let button = gtk::Button::builder()
+                .label(label)
+                .css_classes(["flat"])
+                .build();
+            menu_box.append(&button);
+            button
+        };
+        let to_top = item(&gettextrs::gettext("Move to top"));
+        let to_bottom = item(&gettextrs::gettext("Move to bottom"));
+        let remove = item(&gettextrs::gettext("Remove step"));
+        let remove_model = item(&gettextrs::gettext("Remove model"));
+        let popover = gtk::Popover::builder().child(&menu_box).build();
         let menu = gtk::MenuButton::builder()
             .icon_name("view-more-symbolic")
             .css_classes(["flat"])
             .valign(gtk::Align::Center)
             .popover(&popover)
-            .visible(false)
             .build();
-        remove.connect_clicked({
-            let page = Rc::downgrade(self);
-            let id = id.to_owned();
+        for widget in [
+            badge.upcast_ref::<gtk::Widget>(),
+            picker.upcast_ref(),
+            control.upcast_ref(),
+            fix.upcast_ref(),
+            switch.upcast_ref(),
+            up.upcast_ref(),
+            down.upcast_ref(),
+            menu.upcast_ref(),
+        ] {
+            row.add_suffix(widget);
+        }
+        let weak = Rc::downgrade(self);
+        let chain = id.to_owned();
+        let on_page = move |f: PageAction| {
+            let weak = weak.clone();
+            let chain = chain.clone();
+            move || {
+                if let Some(page) = weak.upgrade() {
+                    f(&page, &chain);
+                }
+            }
+        };
+        switch.connect_active_notify({
+            let weak = Rc::downgrade(self);
+            let chain = id.to_owned();
+            move |switch| {
+                if let Some(page) = weak.upgrade() {
+                    if !page.updating.get() {
+                        let on = switch.is_active();
+                        page.edit_steps(&chain, |steps| {
+                            if let Some(step) = steps.get_mut(index) {
+                                step.on = on;
+                            }
+                        });
+                    }
+                }
+            }
+        });
+        up.connect_clicked({
+            let act = on_page(Box::new(move |page, chain| {
+                page.move_step(chain, index, index.saturating_sub(1), Focus::Up)
+            }));
+            move |_| act()
+        });
+        down.connect_clicked({
+            let act = on_page(Box::new(move |page, chain| {
+                page.move_step(chain, index, index + 1, Focus::Down)
+            }));
+            move |_| act()
+        });
+        let popdown = |popover: &gtk::Popover| {
             let popover = popover.downgrade();
-            move |_| {
+            move || {
                 if let Some(popover) = popover.upgrade() {
                     popover.popdown();
                 }
-                if let Some(page) = page.upgrade() {
-                    page.remove_step_model(&id);
-                }
+            }
+        };
+        to_top.connect_clicked({
+            let close = popdown(&popover);
+            let act = on_page(Box::new(move |page, chain| {
+                page.move_step(chain, index, 0, Focus::Row)
+            }));
+            move |_| {
+                close();
+                act()
             }
         });
-        menu
-    }
-
-    /// Show each switch row's menu while its step has a model to remove.
-    fn show_row_menus(&self) {
-        let items = self.items.borrow();
-        let blocked = self.dictating.get() || self.busy();
-        for (id, widgets) in self.widgets.borrow().iter() {
-            let Widgets::Switch { menu, row, .. } = widgets else {
-                continue;
-            };
-            let removable = items
-                .iter()
-                .any(|item| item.step == *id && item.removable.is_some());
-            menu.set_visible(removable);
-            menu.set_sensitive(!blocked);
-            menu.update_property(&[gtk::accessible::Property::Label(
-                // TRANSLATORS: {step} is a step's name, such as "Tidy up speech".
-                &gettextrs::gettext("More actions for {step}").replace("{step}", &row.title()),
-            )]);
-        }
-    }
-
-    /// An install or a removal is running.
-    fn busy(&self) -> bool {
-        !self.installing.borrow().is_empty() || !self.removing.borrow().is_empty()
-    }
-
-    fn remove_step_model(self: &Rc<Self>, step: &str) {
-        let entry = self
-            .items
-            .borrow()
-            .iter()
-            .find(|item| item.step == step && item.removable.is_some())
-            .and_then(|item| item.removable.clone());
-        if let Some(entry) = entry {
-            self.start_remove(*entry);
-        }
-    }
-
-    /// Remove an installed model. The steps stay as they are: a step whose
-    /// model is gone says what it needs and the chain skips it.
-    fn start_remove(self: &Rc<Self>, entry: Entry) {
-        if self.dictating.get() || self.busy() {
-            return;
-        }
-        self.removing.borrow_mut().insert(entry.id.clone());
-        self.render();
-        let page = Rc::downgrade(self);
-        glib::spawn_future_local(async move {
-            let outcome = run_remove(&page, &entry).await;
-            let Some(page) = page.upgrade() else { return };
-            page.removing.borrow_mut().remove(&entry.id);
-            match outcome {
-                Ok(()) | Err(Failure::Dismissed) => {}
-                Err(Failure::Dictating) => {
-                    page.deps
-                        .overlay
-                        .add_toast(adw::Toast::new(&gettextrs::gettext(
-                            "Finish dictating, then try again.",
-                        )));
-                }
-                Err(Failure::Failed(error)) => {
-                    page.toast_failure(&gettextrs::gettext("Removing the model failed"), &error);
-                }
+        to_bottom.connect_clicked({
+            let close = popdown(&popover);
+            let act = on_page(Box::new(move |page, chain| {
+                let last = page
+                    .deps
+                    .store
+                    .processing()
+                    .chain(chain)
+                    .map_or(0, |c| c.steps.len().saturating_sub(1));
+                page.move_step(chain, index, last, Focus::Row)
+            }));
+            move |_| {
+                close();
+                act()
             }
-            page.refresh().await;
         });
-    }
-
-    fn translate_widgets(self: &Rc<Self>, id: &str) -> Widgets {
-        let row = adw::ExpanderRow::builder()
-            .show_enable_switch(true)
-            .subtitle_lines(0)
-            .build();
-        let control = self.control(id);
-        row.add_suffix(&control);
-        let combo = adw::ComboRow::builder()
-            .title(gettextrs::gettext("Translate to"))
-            .enable_search(true)
-            .build();
-        combo.set_expression(Some(gtk::PropertyExpression::new(
-            gtk::StringObject::static_type(),
-            None::<&gtk::Expression>,
-            "string",
-        )));
-        let from = adw::ActionRow::builder()
-            .title(gettextrs::gettext("From"))
-            .subtitle(gettextrs::gettext("Your dictation language"))
-            .css_classes(["property"])
-            .visible(false)
-            .build();
-        row.add_row(&combo);
-        row.add_row(&from);
-        row.connect_enable_expansion_notify({
-            let page = Rc::downgrade(self);
-            let id = id.to_owned();
-            move |row| {
-                if let Some(page) = page.upgrade() {
+        remove.connect_clicked({
+            let close = popdown(&popover);
+            let act = on_page(Box::new(move |page, chain| {
+                page.edit_steps(chain, |steps| {
+                    if index < steps.len() {
+                        steps.remove(index);
+                    }
+                });
+            }));
+            move |_| {
+                close();
+                act()
+            }
+        });
+        remove_model.connect_clicked({
+            let close = popdown(&popover);
+            let act = on_page(Box::new(move |page, chain| {
+                let step = page
+                    .deps
+                    .store
+                    .processing()
+                    .chain(chain)
+                    .and_then(|c| c.steps.get(index).map(|s| s.step.clone()));
+                if let Some(step) = step {
+                    page.remove_step_model(&step);
+                }
+            }));
+            move |_| {
+                close();
+                act()
+            }
+        });
+        fix.connect_clicked({
+            let act = on_page(Box::new(move |page, chain| {
+                let above = page
+                    .editor
+                    .borrow()
+                    .as_ref()
+                    .and_then(|e| e.shown.borrow().get(index).and_then(|l| l.fix.clone()));
+                if let Some((above, _)) = above {
+                    page.move_step(chain, index, above, Focus::Row);
+                }
+            }));
+            move |_| act()
+        });
+        control.button().connect_clicked({
+            let act = on_page(Box::new(move |page, chain| page.install_line(chain, index)));
+            move |_| act()
+        });
+        picker.connect_selected_notify({
+            let weak = Rc::downgrade(self);
+            let chain = id.to_owned();
+            move |picker| {
+                if let Some(page) = weak.upgrade() {
                     if !page.updating.get() {
-                        if row.enables_expansion() {
-                            row.set_expanded(true);
-                        }
-                        page.set_enabled(&id, row.enables_expansion());
+                        page.choose(&chain, index, picker.selected());
                     }
                 }
             }
         });
-        combo.connect_selected_notify({
-            let page = Rc::downgrade(self);
-            move |combo| {
-                if let Some(page) = page.upgrade() {
-                    if !page.updating.get() {
-                        page.choose_target(combo.selected());
-                    }
+        let keys = gtk::EventControllerKey::new();
+        keys.set_propagation_phase(gtk::PropagationPhase::Capture);
+        keys.connect_key_pressed({
+            let act_up = on_page(Box::new(move |page, chain| {
+                page.move_step(chain, index, index.saturating_sub(1), Focus::Row)
+            }));
+            let act_down = on_page(Box::new(move |page, chain| {
+                page.move_step(chain, index, index + 1, Focus::Row)
+            }));
+            move |_, key, _, modifiers| {
+                if !modifiers.contains(gtk::gdk::ModifierType::ALT_MASK) {
+                    return glib::Propagation::Proceed;
                 }
+                match key {
+                    gtk::gdk::Key::Up => act_up(),
+                    gtk::gdk::Key::Down => act_down(),
+                    _ => return glib::Propagation::Proceed,
+                }
+                glib::Propagation::Stop
             }
         });
-        Widgets::Translate {
+        row.add_controller(keys);
+        LineWidgets {
             row,
-            combo,
-            from,
-            control,
+            number,
+            badge,
+            picker,
             listed: RefCell::new(Vec::new()),
+            control,
+            fix,
+            switch,
+            up,
+            down,
+            menu,
+            remove_model,
         }
     }
 
-    fn script_widgets(self: &Rc<Self>, id: &str) -> Widgets {
-        let row = adw::ExpanderRow::builder()
-            .show_enable_switch(true)
-            .subtitle_lines(0)
-            .build();
-        let combo = adw::ComboRow::builder()
-            .title(gettextrs::gettext("Write Chinese as"))
-            .build();
-        row.add_row(&combo);
-        row.connect_enable_expansion_notify({
-            let page = Rc::downgrade(self);
-            let id = id.to_owned();
-            move |row| {
-                if let Some(page) = page.upgrade() {
-                    if !page.updating.get() {
-                        if row.enables_expansion() {
-                            row.set_expanded(true);
-                        }
-                        page.set_enabled(&id, row.enables_expansion());
-                    }
-                }
-            }
-        });
-        combo.connect_selected_notify({
-            let page = Rc::downgrade(self);
-            move |combo| {
-                if let Some(page) = page.upgrade() {
-                    if !page.updating.get() {
-                        page.choose_script(combo.selected());
-                    }
-                }
-            }
-        });
-        Widgets::Script { row, combo }
-    }
-
-    fn write(&self, ids: &[String], params: &myna_core::processing::Params) {
-        if let Err(error) = self.deps.store.set_steps(ids, params) {
-            glib::g_warning!(crate::LOG_DOMAIN, "steps not stored: {error}");
-            self.deps
-                .overlay
-                .add_toast(adw::Toast::new(&gettextrs::gettext(
-                    "The change could not be saved.",
-                )));
-        }
-    }
-
-    fn set_enabled(self: &Rc<Self>, id: &str, on: bool) {
-        let (ids, mut params) = self.deps.store.steps();
-        if on && id == SCRIPT {
-            params = with_script_on(&params, &self.deps.locales);
-        }
-        self.write(&with_enabled(&ids, id, on), &params);
-        self.render();
-    }
-
-    fn choose_script(self: &Rc<Self>, index: u32) {
-        let nick = {
-            let shown = self.shown.borrow();
-            shown
-                .iter()
-                .find(|row| row.id == SCRIPT)
-                .and_then(|row| row.script.as_ref())
-                .and_then(|script| script.modes.get(index as usize))
-                .map(|(nick, _)| nick.clone())
-        };
-        let Some(nick) = nick else {
-            return;
-        };
-        let (ids, params) = self.deps.store.steps();
-        self.write(&ids, &with_script_mode(&params, &nick));
-        self.render();
-    }
-
-    fn choose_target(self: &Rc<Self>, index: u32) {
-        let target = {
-            let shown = self.shown.borrow();
-            let Some(translate) = shown
-                .iter()
-                .find(|row| row.id == TRANSLATE)
-                .and_then(|row| row.translate.as_ref())
-            else {
+    /// The picker of step `index` chose its entry `choice`: a translation's
+    /// target (installing it when missing) or a script.
+    fn choose(self: &Rc<Self>, id: &str, index: usize, choice: u32) {
+        let line = self
+            .editor
+            .borrow()
+            .as_ref()
+            .and_then(|e| e.shown.borrow().get(index).cloned());
+        let Some(line) = line else { return };
+        if let Some(translate) = &line.row.translate {
+            let Some(target) = translate.targets.get(choice as usize).cloned() else {
                 return;
             };
-            index
-                .checked_sub(1)
-                .and_then(|i| translate.targets.get(i as usize))
-                .map(|target| (target.code.clone(), target.installed))
-        };
-        let (ids, params) = self.deps.store.steps();
-        self.write(
-            &ids,
-            &with_target(&params, target.as_ref().map(|(code, _)| code.as_str())),
-        );
-        self.render();
-        if matches!(target, Some((_, false))) {
-            self.install_missing(TRANSLATE);
+            self.edit_steps(id, |steps| {
+                if let Some(step) = steps.get_mut(index) {
+                    step.params.insert("to".into(), target.code.clone());
+                }
+            });
+            if !target.installed {
+                self.install_line(id, index);
+            }
+        } else if let Some(script) = &line.row.script {
+            let Some((nick, _)) = script.modes.get(choice as usize).cloned() else {
+                return;
+            };
+            self.edit_steps(id, |steps| {
+                if let Some(step) = steps.get_mut(index) {
+                    step.params.insert("mode".into(), nick);
+                }
+            });
         }
     }
 
-    /// Install what the enabled step `id` lacks.
-    fn install_missing(self: &Rc<Self>, id: &str) {
-        let offered = self.offered.borrow().clone().unwrap_or_default();
-        let need = self
-            .inputs_rows(Some(&offered))
-            .into_iter()
-            .find(|row| row.id == id)
-            .and_then(|row| match row.standing {
-                Standing::Missing(need) => Some(need),
-                _ => None,
-            });
-        let Some(need) = need else { return };
-        self.start_install(id, &need.entries);
+    /// Install what step `index` of chain `id` lacks.
+    fn install_line(self: &Rc<Self>, id: &str, index: usize) {
+        let processing = self.deps.store.processing();
+        let Some(chain) = processing.chain(id) else {
+            return;
+        };
+        let lines = self.view(|ctx| chains_view::lines(chain, ctx));
+        let Some(line) = lines.get(index) else { return };
+        if let Standing::Missing(need) = &line.standing {
+            self.start_install(&line.id, &need.entries);
+        }
+    }
+
+    fn open_catalog(self: &Rc<Self>, chain: Option<&str>) {
+        self.catalog_for.replace(chain.map(str::to_owned));
+        self.render();
+        self.deps.nav.push(&self.catalog_page);
+    }
+
+    /// The chain the catalog adds to now.
+    fn catalog_chain(&self, processing: &Processing) -> Option<Chain> {
+        match self.catalog_for.borrow().as_deref() {
+            Some(id) => processing.chain(id).cloned(),
+            None => processing.active().cloned(),
+        }
     }
 
     /// Install `entries` as one operation, shown under `id`.
@@ -657,31 +1096,45 @@ impl StepsPage {
         });
     }
 
-    fn render_catalog(self: &Rc<Self>, offered: Option<&Offered>, rows: &[Row]) {
-        let (ids, params) = self.deps.store.steps();
+    fn render_catalog(self: &Rc<Self>, processing: &Processing) {
+        let target = self.catalog_chain(processing);
+        let flat = target.as_ref().map_or_else(Default::default, |chain| {
+            Processing {
+                chains: vec![chain.clone()],
+                active: Some(chain.id.clone()),
+                fit_to_field: false,
+            }
+            .stage_steps()
+        });
+        let (ids, params) = flat;
+        let offered = self.offered.borrow().clone();
         let source = Source::of_setting(&self.deps.store.language());
         let catalog = self.catalog.borrow();
         let installing = self.installing.borrow();
-        let now = Instant::now();
-        let preparing: BTreeSet<String> = self
-            .preparing
-            .borrow()
-            .iter()
-            .filter(|(_, since)| now.duration_since(**since) < PREPARING_FOR)
-            .map(|(id, _)| id.clone())
-            .collect();
+        let preparing = self.preparing_now();
         let removing = self.removing.borrow();
+        let step_rows = rows(&Inputs {
+            language_unset: self.deps.store.language().trim().is_empty(),
+            enabled: &ids,
+            params: &params,
+            source: &source,
+            catalog: &catalog,
+            daemon: offered.as_ref(),
+            installing: &installing,
+            preparing: &preparing,
+            locales: &self.deps.locales,
+        });
         let items = step_catalog::items(&step_catalog::Inputs {
             catalog: &catalog,
             enabled: &ids,
             params: &params,
             source: &source,
-            daemon: offered,
+            daemon: offered.as_ref(),
             installing: &installing,
             preparing: &preparing,
             removing: &removing,
             locales: &self.deps.locales,
-            rows,
+            rows: &step_rows,
         });
         let same = {
             let widgets = self.catalog_widgets.borrow();
@@ -711,6 +1164,36 @@ impl StepsPage {
         drop(removing);
         drop(catalog);
         self.items.replace(items);
+    }
+
+    /// Put the step of catalog item `id` in the catalog's chain, at its
+    /// stage's place, and go back. With no chain to add to, a new one is
+    /// made and used.
+    fn add_item(self: &Rc<Self>, id: &str) {
+        let Some(item) = self.item(id) else { return };
+        if item.offer != Offer::Add {
+            return;
+        }
+        let step = chains_view::step_of(&item, &self.deps.locales);
+        let target = self
+            .catalog_chain(&self.deps.store.processing())
+            .map(|c| c.id);
+        self.edit(|p| {
+            let id = match target {
+                Some(id) => id,
+                None => {
+                    let name = chains_view::new_name(&p.chains);
+                    let id = p.add(&name, Vec::new());
+                    p.activate(Some(&id));
+                    id
+                }
+            };
+            if let Some(chain) = p.chains.iter_mut().find(|c| c.id == id) {
+                let at = myna_core::chains::insert_position(&chain.steps, &step.step);
+                chain.steps.insert(at, step);
+            }
+        });
+        self.deps.nav.pop();
     }
 
     fn catalog_item(self: &Rc<Self>, item: &Item) -> CatalogWidgets {
@@ -830,17 +1313,51 @@ impl StepsPage {
             .cloned()
     }
 
-    /// Switch the step of `id` on and return to the list.
-    fn add_item(self: &Rc<Self>, id: &str) {
-        let Some(item) = self.item(id) else { return };
-        if item.offer != Offer::Add {
+    /// An install or a removal is running.
+    fn busy(&self) -> bool {
+        !self.installing.borrow().is_empty() || !self.removing.borrow().is_empty()
+    }
+
+    fn remove_step_model(self: &Rc<Self>, step: &str) {
+        let entry = self
+            .items
+            .borrow()
+            .iter()
+            .find(|item| item.step == step && item.removable.is_some())
+            .and_then(|item| item.removable.clone());
+        if let Some(entry) = entry {
+            self.start_remove(*entry);
+        }
+    }
+
+    /// Remove an installed model. The steps stay as they are: a step whose
+    /// model is gone says what it needs and the chain skips it.
+    fn start_remove(self: &Rc<Self>, entry: Entry) {
+        if self.dictating.get() || self.busy() {
             return;
         }
-        let (ids, params) = self.deps.store.steps();
-        let (ids, params) = step_catalog::with_added(&ids, &params, &item, &self.deps.locales);
-        self.write(&ids, &params);
+        self.removing.borrow_mut().insert(entry.id.clone());
         self.render();
-        self.deps.nav.pop();
+        let page = Rc::downgrade(self);
+        glib::spawn_future_local(async move {
+            let outcome = run_remove(&page, &entry).await;
+            let Some(page) = page.upgrade() else { return };
+            page.removing.borrow_mut().remove(&entry.id);
+            match outcome {
+                Ok(()) | Err(Failure::Dismissed) => {}
+                Err(Failure::Dictating) => {
+                    page.deps
+                        .overlay
+                        .add_toast(adw::Toast::new(&gettextrs::gettext(
+                            "Finish dictating, then try again.",
+                        )));
+                }
+                Err(Failure::Failed(error)) => {
+                    page.toast_failure(&gettextrs::gettext("Removing the model failed"), &error);
+                }
+            }
+            page.refresh().await;
+        });
     }
 
     /// The same install as the inline button, for one catalog entry.
@@ -967,76 +1484,6 @@ async fn run_remove(page: &std::rc::Weak<StepsPage>, entry: &Entry) -> Result<()
     Ok(())
 }
 
-fn update(widgets: &Widgets, row: &Row) {
-    let subtitle = escape_markup(&row.subtitle());
-    match widgets {
-        Widgets::Switch {
-            row: widget,
-            control,
-            ..
-        } => {
-            widget.set_title(&escape_markup(&row.title));
-            widget.set_subtitle(&subtitle);
-            widget.set_active(row.enabled);
-            widget.set_sensitive(row.switchable());
-            show_standing(control, row);
-        }
-        Widgets::Translate {
-            row: widget,
-            combo,
-            from,
-            control,
-            listed,
-        } => {
-            widget.set_title(&escape_markup(&row.title));
-            widget.set_subtitle(&subtitle);
-            widget.set_enable_expansion(row.enabled);
-            widget.set_sensitive(row.switchable());
-            show_standing(control, row);
-            let Some(translate) = &row.translate else {
-                return;
-            };
-            let names: Vec<String> = std::iter::once(gettextrs::gettext("Choose a language"))
-                .chain(translate.targets.iter().map(|target| {
-                    if target.installed {
-                        target.name.clone()
-                    } else {
-                        // TRANSLATORS: {language} is a language name; its model is not installed yet.
-                        let frame = gettextrs::gettext("{language} (not installed)");
-                        frame.replace("{language}", &target.name)
-                    }
-                }))
-                .collect();
-            if *listed.borrow() != names {
-                let refs: Vec<&str> = names.iter().map(String::as_str).collect();
-                combo.set_model(Some(&gtk::StringList::new(&refs)));
-                listed.replace(names);
-            }
-            combo.set_selected(translate.selected.map_or(0, |i| i as u32 + 1));
-            combo.set_sensitive(row.enabled);
-            from.set_visible(translate.from.is_some());
-            if let Some(name) = &translate.from {
-                from.set_subtitle(&escape_markup(name));
-            }
-        }
-        Widgets::Script { row: widget, combo } => {
-            widget.set_title(&escape_markup(&row.title));
-            widget.set_subtitle(&subtitle);
-            widget.set_enable_expansion(row.enabled);
-            widget.set_sensitive(row.switchable());
-            let Some(script) = &row.script else {
-                return;
-            };
-            if combo.model().is_none() {
-                let names: Vec<&str> = script.modes.iter().map(|(_, n)| n.as_str()).collect();
-                combo.set_model(Some(&gtk::StringList::new(&names)));
-            }
-            combo.set_selected(script.selected as u32);
-            combo.set_sensitive(row.enabled);
-        }
-    }
-}
-
 fn show_item(widgets: &CatalogWidgets, item: &Item, blocked: bool) {
     widgets.row.set_title(&escape_markup(&item.title));
     let subtitle = match &item.offer {
@@ -1082,9 +1529,9 @@ fn show_item(widgets: &CatalogWidgets, item: &Item, blocked: bool) {
     }
 }
 
-fn show_standing(control: &InstallControl, row: &Row) {
+fn show_standing(control: &InstallControl, standing: &Standing) {
     control.set_visible(true);
-    match &row.standing {
+    match standing {
         Standing::Missing(need) => {
             // TRANSLATORS: {what} names a model, such as "the French model".
             let frame = gettextrs::gettext("Install {what}");
@@ -1102,6 +1549,113 @@ fn show_standing(control: &InstallControl, row: &Row) {
                 .set_label(&gettextrs::gettext("Preparing…"));
         }
         _ => control.set_visible(false),
+    }
+}
+
+/// Something a step's widget does to the page, given the chain's id.
+type PageAction = Box<dyn Fn(&Rc<StepsPage>, &str)>;
+
+/// Where the focus goes after a step moved.
+#[derive(Clone, Copy)]
+enum Focus {
+    Up,
+    Down,
+    Row,
+}
+
+fn show_line(widgets: &LineWidgets, line: &Line, total: usize, blocked: bool, items: &[Item]) {
+    widgets.number.set_label(&(line.index + 1).to_string());
+    widgets.row.set_title(&escape_markup(&line.title));
+    widgets.row.set_subtitle(&escape_markup(&line.subtitle));
+    // TRANSLATORS: a step's place in its chain, read by screen readers: "Step 2 of 3".
+    let place = gettextrs::gettext("Step {n} of {total}")
+        .replace("{n}", &(line.index + 1).to_string())
+        .replace("{total}", &total.to_string());
+    let description = format!("{place}. {}", line.subtitle);
+    widgets
+        .row
+        .update_property(&[gtk::accessible::Property::Description(&description)]);
+    widgets.badge.set_label(&line.badge);
+    widgets.badge.set_visible(!line.badge.is_empty());
+    widgets.switch.set_active(line.on);
+    widgets
+        .switch
+        .update_property(&[gtk::accessible::Property::Label(
+            // TRANSLATORS: {step} is a step's name, such as "Tidy up speech".
+            &gettextrs::gettext("Use {step}").replace("{step}", &line.title),
+        )]);
+    widgets.up.set_sensitive(line.index > 0);
+    widgets.down.set_sensitive(line.index + 1 < total);
+    match &line.fix {
+        Some((_, above)) => {
+            // TRANSLATORS: a button that moves a skipped step above the step named by {step}.
+            widgets
+                .fix
+                .set_label(&gettextrs::gettext("Move above {step}").replace("{step}", above));
+            widgets.fix.set_visible(true);
+        }
+        None => widgets.fix.set_visible(false),
+    }
+    let names: Vec<String> = if let Some(translate) = &line.row.translate {
+        translate
+            .targets
+            .iter()
+            .map(|target| {
+                if target.installed {
+                    target.name.clone()
+                } else {
+                    // TRANSLATORS: {language} is a language name; its model is not installed yet.
+                    gettextrs::gettext("{language} (not installed)")
+                        .replace("{language}", &target.name)
+                }
+            })
+            .collect()
+    } else if let Some(script) = &line.row.script {
+        script.modes.iter().map(|(_, name)| name.clone()).collect()
+    } else {
+        Vec::new()
+    };
+    if *widgets.listed.borrow() != names {
+        let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+        widgets.picker.set_model(Some(&gtk::StringList::new(&refs)));
+        widgets.listed.replace(names.clone());
+    }
+    widgets.picker.set_visible(!names.is_empty());
+    let selected = line
+        .row
+        .translate
+        .as_ref()
+        .map(|t| t.selected)
+        .or_else(|| line.row.script.as_ref().map(|s| Some(s.selected)))
+        .flatten();
+    widgets
+        .picker
+        .set_selected(selected.map_or(gtk::INVALID_LIST_POSITION, |i| i as u32));
+    widgets.picker.update_property(
+        &[gtk::accessible::Property::Label(&if line.id == TRANSLATE {
+            gettextrs::gettext("Translate to")
+        } else if line.id == SCRIPT {
+            gettextrs::gettext("Write Chinese as")
+        } else {
+            line.title.clone()
+        })],
+    );
+    let removable = items
+        .iter()
+        .any(|item| item.step == line.id && item.removable.is_some());
+    widgets.remove_model.set_visible(removable);
+    widgets.remove_model.set_sensitive(!blocked);
+    widgets
+        .menu
+        .update_property(&[gtk::accessible::Property::Label(
+            // TRANSLATORS: {step} is a step's name, such as "Tidy up speech".
+            &gettextrs::gettext("More actions for {step}").replace("{step}", &line.title),
+        )]);
+    if line.on && !line.skipped {
+        show_standing(&widgets.control, &line.standing);
+        widgets.control.button().set_sensitive(!blocked);
+    } else {
+        widgets.control.set_visible(false);
     }
 }
 
@@ -1124,6 +1678,7 @@ mod tests {
     const TIDY: &str = r#"{"models":[{"model":"m-tidy","task":"text.cleanup"}],"steps":[]}"#;
     const FRENCH: &str = r#"{"models":[{"model":"m-fr","task":"text.translate","params":[{"name":"language","values":["en"]},{"name":"to","values":["fr"]}]}],"steps":[]}"#;
     const NOTHING: &str = r#"{"models":[],"steps":[]}"#;
+    const BOTH: &str = r#"{"models":[{"model":"m-tidy","task":"text.cleanup"},{"model":"m-fr","task":"text.translate","params":[{"name":"language","values":["en"]},{"name":"to","values":["fr"]}]}],"steps":[]}"#;
 
     struct Daemon(Rc<RefCell<String>>);
 
@@ -1305,9 +1860,9 @@ mod tests {
 
     struct Rig {
         page: Rc<StepsPage>,
-        group: adw::PreferencesGroup,
+        fit: adw::PreferencesGroup,
+        more: adw::PreferencesGroup,
         store: Rc<GioClientSettings>,
-        daemon: Rc<RefCell<String>>,
         calls: Rc<RefCell<Vec<String>>>,
         nav: adw::NavigationView,
         _dir: std::path::PathBuf,
@@ -1331,13 +1886,7 @@ mod tests {
             .success());
         std::fs::write(
             dir.join("keyfile"),
-            // These rigs were written with fitting off; the schema default
-            // (on) is the adapter's to test.
-            if keyfile.contains("fit-to-field") || keyfile.contains("processing-steps") {
-                format!("[com/canonical/myna/dictation]\n{keyfile}")
-            } else {
-                format!("[com/canonical/myna/dictation]\nfit-to-field=false\n{keyfile}")
-            },
+            format!("[com/canonical/myna/dictation]\n{keyfile}"),
         )
         .unwrap();
         myna_core::processing::migrate_steps(&dir.join("keyfile"));
@@ -1348,11 +1897,17 @@ mod tests {
         let daemon = Rc::new(RefCell::new(daemon.to_owned()));
         let calls = Rc::new(RefCell::new(Vec::new()));
         let group = adw::PreferencesGroup::new();
+        let fit = adw::PreferencesGroup::new();
+        let more = adw::PreferencesGroup::new();
+        let column = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        column.append(&fit);
+        column.append(&group);
+        column.append(&more);
         let nav = adw::NavigationView::new();
         nav.push(
             &adw::NavigationPage::builder()
                 .title("Processing")
-                .child(&group)
+                .child(&column)
                 .build(),
         );
         let page = StepsPage::attach(
@@ -1372,13 +1927,17 @@ mod tests {
                 refresh_every: Duration::from_millis(60),
                 nav: nav.clone(),
             },
-            &group,
+            &Slots {
+                fit: fit.clone(),
+                chains: group.clone(),
+                more: more.clone(),
+            },
         );
         Rig {
             page,
-            group,
+            fit,
+            more,
             store,
-            daemon,
             calls,
             nav,
             _dir: dir,
@@ -1407,236 +1966,6 @@ mod tests {
         found
     }
 
-    fn switch(rig: &Rig, title: &str) -> adw::SwitchRow {
-        all::<adw::SwitchRow>(rig.group.upcast_ref())
-            .into_iter()
-            .find(|row| row.title() == title)
-            .unwrap_or_else(|| panic!("no switch row {title}"))
-    }
-
-    fn expander(rig: &Rig) -> adw::ExpanderRow {
-        all::<adw::ExpanderRow>(rig.group.upcast_ref()).remove(0)
-    }
-
-    fn combo(rig: &Rig) -> adw::ComboRow {
-        all::<adw::ComboRow>(rig.group.upcast_ref()).remove(0)
-    }
-
-    fn controls(rig: &Rig) -> Vec<InstallControl> {
-        all::<InstallControl>(rig.group.upcast_ref())
-    }
-
-    fn visible_button(rig: &Rig) -> Option<InstallControl> {
-        controls(rig)
-            .into_iter()
-            .find(|c| c.is_visible() && c.button().is_visible())
-    }
-
-    fn catalog_widgets(rig: &Rig, id: &str) -> (adw::ExpanderRow, gtk::Button, adw::ActionRow) {
-        let widgets = rig.page.catalog_widgets.borrow();
-        let (_, w) = widgets.iter().find(|(i, _)| i == id).unwrap();
-        (w.row.clone(), w.remove.clone(), w.remove_row.clone())
-    }
-
-    #[test]
-    fn removing_a_model_leaves_the_step_on_and_offers_that_installs_again() {
-        crate::ui::on_gtk_thread(|| {
-            let rig = rig("remove", TIDY, TIDY, "processing-steps=['tidy']\n");
-            pump_until("the remove row", || {
-                rig.page
-                    .catalog_widgets
-                    .borrow()
-                    .iter()
-                    .any(|(id, w)| id == "tidy" && w.remove_row.is_visible())
-            });
-            let (_, remove, _) = catalog_widgets(&rig, "tidy");
-            assert_eq!(remove.label().as_deref(), Some("Remove"));
-            remove.emit_clicked();
-            pump_until("the removal", || {
-                rig.calls.borrow().as_slice() == ["remove myna-translation tidy"]
-            });
-            pump_until("the step to need its model", || {
-                switch(&rig, "Tidy up speech")
-                    .subtitle()
-                    .is_some_and(|s| s.starts_with("Needs the Tidy up speech model"))
-            });
-            assert_eq!(rig.store.steps().0, ["tidy"], "the steps are never edited");
-            assert!(rig.page.removing.borrow().is_empty());
-            let (_, _, remove_row) = catalog_widgets(&rig, "tidy");
-            assert!(!remove_row.is_visible());
-            let again = rig.page.item("tidy").unwrap();
-            assert!(matches!(again.offer, Offer::Install(_)));
-            assert!(rig.daemon.borrow().contains("models\":[]"));
-        });
-    }
-
-    #[test]
-    fn a_removal_waits_for_the_dictation_to_end() {
-        crate::ui::on_gtk_thread(|| {
-            let rig = rig("remove-busy", TIDY, TIDY, "processing-steps=['tidy']\n");
-            pump_until("the remove row", || {
-                rig.page
-                    .catalog_widgets
-                    .borrow()
-                    .iter()
-                    .any(|(id, w)| id == "tidy" && w.remove_row.is_visible())
-            });
-            rig.page.dictating.set(true);
-            let entry = *rig.page.item("tidy").unwrap().removable.unwrap();
-            rig.page.start_remove(entry);
-            assert!(rig.calls.borrow().is_empty());
-            assert!(rig.page.removing.borrow().is_empty());
-        });
-    }
-
-    #[test]
-    fn a_step_row_has_a_menu_that_removes_its_model() {
-        crate::ui::on_gtk_thread(|| {
-            let rig = rig("row-menu", TIDY, TIDY, "processing-steps=['tidy']\n");
-            let menu =
-                || all::<gtk::MenuButton>(switch(&rig, "Tidy up speech").upcast_ref()).remove(0);
-            pump_until("the menu", || menu().is_visible());
-            let remove = menu()
-                .popover()
-                .and_then(|popover| popover.child())
-                .and_then(|child| child.downcast::<gtk::Button>().ok())
-                .expect("the menu's Remove model button");
-            assert_eq!(remove.label().as_deref(), Some("Remove model"));
-            remove.emit_clicked();
-            pump_until("the removal", || {
-                rig.calls.borrow().as_slice() == ["remove myna-translation tidy"]
-            });
-            pump_until("the menu to go", || !menu().is_visible());
-        });
-    }
-
-    #[test]
-    fn the_rows_are_the_catalogs_steps_in_stage_order_with_the_example() {
-        crate::ui::on_gtk_thread(|| {
-            let rig = rig("order", NOTHING, NOTHING, "");
-            let titles: Vec<String> = all::<adw::PreferencesRow>(rig.group.upcast_ref())
-                .iter()
-                .map(|row| row.title().to_string())
-                .filter(|t| !t.is_empty())
-                .collect();
-            let at = |t: &str| titles.iter().position(|x| x == t).unwrap();
-            assert!(at("Fitted to the field") < at("Tidy up speech"));
-            assert!(at("Tidy up speech") < at("Translate"));
-            assert_eq!(titles.last().unwrap(), "Add step");
-            assert!(at("For example") < at("Add step"));
-            assert!(!switch(&rig, "Tidy up speech").is_active());
-        });
-    }
-
-    #[test]
-    fn a_switch_writes_the_step_and_the_example_follows() {
-        crate::ui::on_gtk_thread(|| {
-            let rig = rig("switch", TIDY, TIDY, "");
-            let tidy = switch(&rig, "Tidy up speech");
-            tidy.set_active(true);
-            assert_eq!(rig.store.steps().0, ["tidy"]);
-            pump_until("the example", || {
-                rig.page
-                    .example
-                    .subtitle()
-                    .is_some_and(|s| s.contains("So I think we should go."))
-            });
-            tidy.set_active(false);
-            assert!(rig.store.steps().0.is_empty());
-        });
-    }
-
-    #[test]
-    fn a_step_that_cannot_apply_is_dimmed_with_its_reason() {
-        crate::ui::on_gtk_thread(|| {
-            let rig = rig(
-                "dim",
-                TIDY,
-                TIDY,
-                "language='fr'\nprocessing-steps=['tidy']\n",
-            );
-            let tidy = switch(&rig, "Tidy up speech");
-            assert!(!tidy.is_sensitive());
-            assert_eq!(tidy.subtitle().unwrap(), "Applies when the text is English");
-            let several = self::rig("several", TIDY, TIDY, "language='en,fr'\n");
-            assert!(!expander(&several).is_sensitive());
-            assert_eq!(
-                expander(&several).subtitle(),
-                "Needs a single dictation language"
-            );
-        });
-    }
-
-    #[test]
-    fn an_enabled_step_without_its_model_offers_an_install_that_runs() {
-        crate::ui::on_gtk_thread(|| {
-            let rig = rig("install", NOTHING, TIDY, "processing-steps=['tidy']\n");
-            let tidy = switch(&rig, "Tidy up speech");
-            pump_until("the daemon's answer", || {
-                tidy.subtitle()
-                    .is_some_and(|s| s.starts_with("Needs the Tidy up speech model"))
-            });
-            let control = visible_button(&rig).expect("an Install button");
-            assert_eq!(control.button().label().as_deref(), Some("Install"));
-            control.button().emit_clicked();
-            pump_until("the install to show", || {
-                controls(&rig)
-                    .iter()
-                    .any(|c| c.progress().container.is_visible())
-            });
-            pump_until("the request", || !rig.calls.borrow().is_empty());
-            assert_eq!(rig.calls.borrow().as_slice(), ["myna-translation tidy"]);
-            pump_until("the row to be ready", || {
-                visible_button(&rig).is_none()
-                    && controls(&rig).iter().all(|c| !c.is_visible())
-                    && !tidy.subtitle().unwrap().starts_with("Needs")
-            });
-            assert!(rig.daemon.borrow().contains("m-tidy"));
-        });
-    }
-
-    #[test]
-    fn choosing_an_available_language_starts_its_install_and_the_row_prepares() {
-        crate::ui::on_gtk_thread(|| {
-            let rig = rig(
-                "choose",
-                NOTHING,
-                FRENCH,
-                "processing-steps=['translate']\n",
-            );
-            let combo = combo(&rig);
-            let listed: Vec<String> = (0..combo.model().unwrap().n_items())
-                .filter_map(|i| combo.model()?.item(i)?.downcast::<gtk::StringObject>().ok())
-                .map(|s| s.string().to_string())
-                .collect();
-            assert_eq!(
-                listed,
-                [
-                    "Choose a language",
-                    "Français (not installed)",
-                    "Deutsch (not installed)"
-                ]
-            );
-            combo.set_selected(1);
-            assert_eq!(rig.store.steps().1["translate.to"], "fr");
-            pump_until("the install to show", || {
-                controls(&rig)
-                    .iter()
-                    .any(|c| c.progress().container.is_visible())
-            });
-            pump_until("the request", || !rig.calls.borrow().is_empty());
-            assert_eq!(rig.calls.borrow().as_slice(), ["myna-translation fr"]);
-            pump_until("French to be installed", || {
-                combo
-                    .model()
-                    .unwrap()
-                    .item(1)
-                    .and_then(|i| i.downcast::<gtk::StringObject>().ok())
-                    .is_some_and(|s| s.string() == "Français")
-            });
-        });
-    }
-
     fn catalog_rows(rig: &Rig) -> Vec<adw::ExpanderRow> {
         all::<adw::ExpanderRow>(rig.page.catalog_group.upcast_ref())
     }
@@ -1655,253 +1984,241 @@ mod tests {
             .expect("an Add button")
     }
 
-    fn install_control(row: &adw::ExpanderRow) -> InstallControl {
+    fn install_control(row: &impl IsA<gtk::Widget>) -> InstallControl {
         all::<InstallControl>(row.upcast_ref()).remove(0)
     }
 
+    fn chain_row(rig: &Rig, name: &str) -> (adw::ActionRow, gtk::CheckButton) {
+        let rows = rig.page.chain_rows.borrow();
+        let (_, row) = rows
+            .iter()
+            .find(|(_, row)| row.row.title() == name)
+            .unwrap_or_else(|| panic!("no chain row {name}"));
+        (row.row.clone(), row.check.clone())
+    }
+
+    fn editor(rig: &Rig) -> Rc<Editor> {
+        rig.page.editor.borrow().clone().expect("an open editor")
+    }
+
+    fn line_titles(rig: &Rig) -> Vec<String> {
+        editor(rig)
+            .lines
+            .borrow()
+            .iter()
+            .map(|w| w.row.title().to_string())
+            .collect()
+    }
+
+    fn steps_of(rig: &Rig, id: &str) -> Vec<(String, bool)> {
+        rig.store
+            .processing()
+            .chain(id)
+            .map(|c| c.steps.iter().map(|s| (s.step.clone(), s.on)).collect())
+            .unwrap_or_default()
+    }
+
+    const TWO: &str = "chains=[('fr', 'French first', [('translate', true, {'to': 'fr'}), ('tidy', true, {})])]\n";
+
     #[test]
-    fn the_add_step_row_opens_the_catalog_with_its_facts() {
+    fn the_page_lists_none_and_every_chain_and_picks_with_a_radio() {
+        crate::ui::on_gtk_thread(|| {
+            let rig = rig("pick", TIDY, TIDY, TWO);
+            assert!(
+                rig.page.none_check.is_active(),
+                "nothing is active by default"
+            );
+            let (row, check) = chain_row(&rig, "French first");
+            assert!(
+                row.subtitle().unwrap().contains("(skipped)"),
+                "{:?}",
+                row.subtitle()
+            );
+            check.set_active(true);
+            assert_eq!(rig.store.processing().active.as_deref(), Some("fr"));
+            assert!(!rig.page.none_check.is_active());
+            rig.page.none_check.set_active(true);
+            assert_eq!(rig.store.processing().active, None);
+            // A change made elsewhere reaches the page.
+            let mut p = rig.store.processing();
+            p.activate(Some("fr"));
+            rig.store.set_processing(&p).unwrap();
+            pump_until("the external change", || {
+                chain_row(&rig, "French first").1.is_active()
+            });
+        });
+    }
+
+    #[test]
+    fn the_fit_switch_reads_and_writes_the_store() {
+        crate::ui::on_gtk_thread(|| {
+            let rig = rig("fit", TIDY, TIDY, "");
+            assert!(rig.page.fit_row.is_active(), "on by default");
+            rig.page.fit_row.set_active(false);
+            assert!(!rig.store.processing().fit_to_field);
+            assert!(all::<adw::SwitchRow>(rig.fit.upcast_ref()).len() == 1);
+            assert!(all::<adw::ActionRow>(rig.more.upcast_ref())
+                .iter()
+                .any(|r| r.title() == "Get more steps"));
+        });
+    }
+
+    #[test]
+    fn a_new_chain_copies_the_active_one_and_opens_for_editing() {
+        crate::ui::on_gtk_thread(|| {
+            let rig = rig("new", TIDY, TIDY, &format!("{TWO}active-chain='fr'\n"));
+            rig.page.new_row.emit_by_name::<()>("activated", &[]);
+            let editor = editor(&rig);
+            assert_eq!(rig.nav.visible_page().unwrap(), editor.page);
+            let p = rig.store.processing();
+            let new = p.chain(&editor.id).unwrap();
+            assert_eq!(new.name, "New chain");
+            assert_eq!(steps_of(&rig, &editor.id), steps_of(&rig, "fr"));
+            assert_eq!(
+                p.active.as_deref(),
+                Some("fr"),
+                "a new chain is not used yet"
+            );
+            editor.name.set_text("Mine");
+            editor.name.emit_by_name::<()>("apply", &[]);
+            assert_eq!(
+                rig.store.processing().chain(&editor.id).unwrap().name,
+                "Mine"
+            );
+            editor.use_button.emit_clicked();
+            assert_eq!(
+                rig.store.processing().active.as_deref(),
+                Some(editor.id.as_str())
+            );
+        });
+    }
+
+    #[test]
+    fn steps_move_switch_off_and_a_skipped_one_offers_its_fix() {
+        crate::ui::on_gtk_thread(|| {
+            let rig = rig("editor", TIDY, TIDY, TWO);
+            let (row, _) = chain_row(&rig, "French first");
+            let edit = all::<gtk::Button>(row.upcast_ref())
+                .into_iter()
+                .find(|b| b.icon_name().as_deref() == Some("go-next-symbolic"))
+                .unwrap();
+            edit.emit_clicked();
+            let editor = editor(&rig);
+            {
+                let lines = editor.lines.borrow();
+                assert!(!lines[0].up.is_sensitive());
+                assert!(!lines[1].down.is_sensitive());
+                assert!(
+                    lines[1].fix.is_visible(),
+                    "tidy after a translation is skipped"
+                );
+                assert!(lines[1].fix.label().unwrap().contains("Move above"));
+                assert!(lines[1].row.subtitle().unwrap().starts_with("Skipped here"));
+            }
+            let fix = editor.lines.borrow()[1].fix.clone();
+            fix.emit_clicked();
+            assert_eq!(
+                steps_of(&rig, "fr"),
+                [("tidy".into(), true), ("translate".into(), true)]
+            );
+            assert!(!editor.lines.borrow()[0].fix.is_visible());
+            let down = editor.lines.borrow()[0].down.clone();
+            down.emit_clicked();
+            assert_eq!(steps_of(&rig, "fr")[0].0, "translate");
+            let switch = editor.lines.borrow()[0].switch.clone();
+            switch.set_active(false);
+            assert_eq!(steps_of(&rig, "fr")[0], ("translate".into(), false));
+            assert_eq!(line_titles(&rig).len(), 2);
+        });
+    }
+
+    #[test]
+    fn a_step_added_from_the_editor_goes_in_at_its_stage() {
+        crate::ui::on_gtk_thread(|| {
+            let rig = rig(
+                "add",
+                BOTH,
+                BOTH,
+                "chains=[('fr', 'French', [('translate', true, {'to': 'fr'})])]\n",
+            );
+            rig.page.open_editor("fr");
+            editor(&rig).add_row.emit_by_name::<()>("activated", &[]);
+            assert_eq!(rig.nav.visible_page().unwrap().title(), "Add step");
+            let row = catalog_row(&rig, "Tidy up speech");
+            pump_until("Add", || {
+                add_button(&row).is_visible() && add_button(&row).is_sensitive()
+            });
+            add_button(&row).emit_clicked();
+            assert_eq!(
+                steps_of(&rig, "fr"),
+                [("tidy".into(), true), ("translate".into(), true)]
+            );
+            assert_eq!(rig.nav.visible_page().unwrap(), editor(&rig).page);
+        });
+    }
+
+    #[test]
+    fn adding_with_no_chain_makes_one_and_uses_it() {
+        crate::ui::on_gtk_thread(|| {
+            let rig = rig("add-none", TIDY, TIDY, "");
+            rig.page.open_catalog(None);
+            let row = catalog_row(&rig, "Tidy up speech");
+            pump_until("Add", || {
+                add_button(&row).is_visible() && add_button(&row).is_sensitive()
+            });
+            add_button(&row).emit_clicked();
+            let p = rig.store.processing();
+            let active = p.active().expect("made and used");
+            assert_eq!(active.name, "New chain");
+            assert_eq!(active.steps[0].step, "tidy");
+        });
+    }
+
+    #[test]
+    fn a_missing_model_is_installed_from_its_step() {
+        crate::ui::on_gtk_thread(|| {
+            let rig = rig(
+                "install",
+                NOTHING,
+                FRENCH,
+                "chains=[('fr', 'French', [('translate', true, {'to': 'fr'})])]\n",
+            );
+            rig.page.open_editor("fr");
+            let row = editor(&rig).lines.borrow()[0].row.clone();
+            pump_until("the Install button", || {
+                install_control(&row).is_visible() && install_control(&row).button().is_visible()
+            });
+            install_control(&row).button().emit_clicked();
+            pump_until("the request", || !rig.calls.borrow().is_empty());
+            assert_eq!(rig.calls.borrow().as_slice(), ["myna-translation fr"]);
+        });
+    }
+
+    #[test]
+    fn deleting_a_chain_goes_back_and_clears_it_if_in_use() {
+        crate::ui::on_gtk_thread(|| {
+            let rig = rig("delete", TIDY, TIDY, &format!("{TWO}active-chain='fr'\n"));
+            rig.page.open_editor("fr");
+            rig.page.delete_chain("fr");
+            let p = rig.store.processing();
+            assert!(p.chain("fr").is_none());
+            assert_eq!(p.active, None);
+            assert!(rig.page.editor.borrow().is_none());
+            assert_eq!(rig.nav.visible_page().unwrap().title(), "Processing");
+        });
+    }
+
+    #[test]
+    fn the_catalog_lists_no_fit_step() {
         crate::ui::on_gtk_thread(|| {
             let rig = rig("catalog", TIDY, TIDY, "");
-            rig.page.add_row.emit_by_name::<()>("activated", &[]);
-            assert_eq!(rig.nav.visible_page().unwrap().title(), "Add step");
-            pump_until("the daemon's answer", || {
-                !add_button(&catalog_row(&rig, "Tidy up speech")).is_sensitive()
-                    || !install_control(&catalog_row(&rig, "Tidy up speech")).is_visible()
-            });
+            rig.page.open_catalog(None);
             let titles: Vec<String> = catalog_rows(&rig)
                 .iter()
                 .map(|row| row.title().to_string())
                 .collect();
             assert!(titles.contains(&"Translate English to Français".to_owned()));
             assert!(!titles.contains(&"Fitted to the field".to_owned()));
-            let facts: Vec<String> =
-                all::<adw::ActionRow>(catalog_row(&rig, "Tidy up speech").upcast_ref())
-                    .iter()
-                    .map(|row| row.title().to_string())
-                    .collect();
-            assert!(facts.contains(&"For example".to_owned()), "{facts:?}");
-            assert!(facts.contains(&"Download".to_owned()), "{facts:?}");
-        });
-    }
-
-    #[test]
-    fn the_catalog_page_has_a_back_button_that_returns() {
-        crate::ui::on_gtk_thread(|| {
-            let rig = rig("back", TIDY, TIDY, "");
-            rig.page.add_row.emit_by_name::<()>("activated", &[]);
-            let page = rig.nav.visible_page().unwrap();
-            let back = all::<gtk::Button>(page.upcast_ref())
-                .into_iter()
-                .filter(|b| b.has_css_class("back"))
-                .count();
-            assert_eq!(back, 1);
-            rig.nav.pop();
-            assert_eq!(rig.nav.visible_page().unwrap().title(), "Processing");
-        });
-    }
-
-    #[test]
-    fn adding_an_installed_step_switches_it_on_and_returns_to_the_list() {
-        crate::ui::on_gtk_thread(|| {
-            let rig = rig("add", TIDY, TIDY, "");
-            rig.page.add_row.emit_by_name::<()>("activated", &[]);
-            let row = catalog_row(&rig, "Tidy up speech");
-            pump_until("Tidy to be installed", || {
-                add_button(&row).is_visible() && add_button(&row).is_sensitive()
-            });
-            add_button(&row).emit_clicked();
-            assert_eq!(rig.store.steps().0, ["tidy"]);
-            assert_eq!(rig.nav.visible_page().unwrap().title(), "Processing");
-            assert!(switch(&rig, "Tidy up speech").is_active());
-            pump_until("Added", || !add_button(&row).is_visible());
-        });
-    }
-
-    #[test]
-    fn installing_from_the_catalog_is_the_inline_install_and_then_adds() {
-        crate::ui::on_gtk_thread(|| {
-            let rig = rig("catalog-install", NOTHING, FRENCH, "");
-            rig.page.add_row.emit_by_name::<()>("activated", &[]);
-            let row = catalog_row(&rig, "Translate English to Français");
-            pump_until("the Install button", || {
-                install_control(&row).button().is_visible()
-            });
-            install_control(&row).button().emit_clicked();
-            pump_until("the install to show", || {
-                install_control(&row).progress().container.is_visible()
-            });
-            pump_until("the request", || !rig.calls.borrow().is_empty());
-            assert_eq!(rig.calls.borrow().as_slice(), ["myna-translation fr"]);
-            pump_until("Add", || {
-                add_button(&row).is_visible() && add_button(&row).is_sensitive()
-            });
-            add_button(&row).emit_clicked();
-            assert_eq!(rig.store.steps().0, ["translate"]);
-            assert_eq!(rig.store.steps().1["translate.to"], "fr");
-        });
-    }
-
-    #[test]
-    fn install_waits_while_dictating_or_another_install_runs() {
-        crate::ui::on_gtk_thread(|| {
-            let rig = rig("blocked", NOTHING, FRENCH, "");
-            let row = catalog_row(&rig, "Translate English to Français");
-            pump_until("the Install button", || {
-                install_control(&row).button().is_visible()
-            });
-            rig.page.dictating.set(true);
-            rig.page.render();
-            assert!(!install_control(&row).button().is_sensitive());
-            install_control(&row).button().emit_clicked();
-            assert!(rig.page.installing.borrow().is_empty());
-            rig.page.dictating.set(false);
-            rig.page.render();
-            assert!(install_control(&row).button().is_sensitive());
-        });
-    }
-
-    #[test]
-    fn the_dictation_language_is_shown_when_it_is_not_english() {
-        crate::ui::on_gtk_thread(|| {
-            let rig = rig(
-                "from",
-                NOTHING,
-                NOTHING,
-                "language='de'\nprocessing-steps=['translate']\n",
-            );
-            let from = all::<adw::ActionRow>(rig.group.upcast_ref())
-                .into_iter()
-                .find(|row| row.title() == "From")
-                .unwrap();
-            assert!(from.is_visible());
-            assert_eq!(from.subtitle().unwrap(), "Deutsch");
-        });
-    }
-
-    #[test]
-    fn the_group_keeps_the_page_alive_without_anyone_holding_it() {
-        crate::ui::on_gtk_thread(|| {
-            let Rig {
-                page, group, store, ..
-            } = rig("owned", TIDY, TIDY, "");
-            drop(page);
-            let tidy = all::<adw::SwitchRow>(group.upcast_ref())
-                .into_iter()
-                .find(|row| row.title() == "Tidy up speech")
-                .unwrap();
-            tidy.set_active(true);
-            assert_eq!(store.steps().0, ["tidy"]);
-        });
-    }
-
-    #[test]
-    fn a_change_to_the_store_moves_the_rows() {
-        crate::ui::on_gtk_thread(|| {
-            let rig = rig("watch", TIDY, TIDY, "");
-            rig.store
-                .set_steps(&["fit".to_owned()], &Default::default())
-                .unwrap();
-            pump_until("the switch", || {
-                switch(&rig, "Fitted to the field").is_active()
-            });
-        });
-    }
-
-    fn script_row(rig: &Rig) -> (adw::ExpanderRow, adw::ComboRow) {
-        let row = all::<adw::ExpanderRow>(rig.group.upcast_ref())
-            .into_iter()
-            .find(|row| row.title() == "Chinese script")
-            .expect("the Chinese script row");
-        let combo = all::<adw::ComboRow>(row.upcast_ref())
-            .into_iter()
-            .next()
-            .expect("its mode combo");
-        (row, combo)
-    }
-
-    #[test]
-    fn the_chinese_script_row_is_dimmed_for_english_with_no_snap_installed() {
-        crate::ui::on_gtk_thread(|| {
-            let rig = rig("script-dim", NOTHING, NOTHING, "");
-            let (row, _) = script_row(&rig);
-            assert!(!row.is_sensitive());
-            assert_eq!(row.subtitle(), "Applies when the text is Chinese");
-            assert!(!row.enables_expansion());
-        });
-    }
-
-    #[test]
-    fn switching_chinese_script_on_stores_a_mode_and_the_combo_changes_it() {
-        crate::ui::on_gtk_thread(|| {
-            let rig = rig("script-on", NOTHING, NOTHING, "language='zh'\n");
-            let (row, combo) = script_row(&rig);
-            assert!(row.is_sensitive());
-            assert!(row.subtitle().starts_with("Types Chinese"));
-            assert!(!combo.is_sensitive());
-            row.set_enable_expansion(true);
-            let (ids, params) = rig.store.steps();
-            assert_eq!(ids, ["script"]);
-            assert_eq!(params["script.mode"], "simplified");
-            assert!(combo.is_sensitive());
-            let shown: Vec<String> = (0..4)
-                .map(|i| {
-                    combo
-                        .model()
-                        .unwrap()
-                        .item(i)
-                        .and_downcast::<gtk::StringObject>()
-                        .unwrap()
-                        .string()
-                        .to_string()
-                })
-                .collect();
-            assert_eq!(shown[2], "Traditional, Taiwan (繁體)");
-            combo.set_selected(2);
-            assert_eq!(rig.store.steps().1["script.mode"], "traditional-taiwan");
-            assert_eq!(rig.store.steps().0, ["script"]);
-            row.set_enable_expansion(false);
-            assert!(rig.store.steps().0.is_empty());
-            assert_eq!(
-                rig.store.steps().1["script.mode"],
-                "traditional-taiwan",
-                "the choice outlives the switch"
-            );
-        });
-    }
-
-    #[test]
-    fn only_switching_the_script_on_stores_a_mode() {
-        crate::ui::on_gtk_thread(|| {
-            let rig = rig(
-                "script-mode-only",
-                NOTHING,
-                TIDY,
-                "language='zh'\nprocessing-steps=['script']\n",
-            );
-            let (row, _) = script_row(&rig);
-            row.set_enable_expansion(false);
-            assert!(rig.store.steps().0.is_empty());
-            assert!(rig.store.steps().1.is_empty(), "off stores no mode");
-            let tidy = switch(&rig, "Tidy up speech");
-            tidy.set_active(true);
-            assert!(rig.store.steps().1.is_empty(), "another step stores none");
-        });
-    }
-
-    #[test]
-    fn a_chinese_users_stored_choice_shows_on_the_row() {
-        crate::ui::on_gtk_thread(|| {
-            let rig = rig(
-                "script-stored",
-                NOTHING,
-                NOTHING,
-                "language='zh-Hant'\nprocessing-steps=['script']\n\
-                 processing-params={'script.mode': 'traditional-hongkong'}\n",
-            );
-            let (row, combo) = script_row(&rig);
-            assert!(row.enables_expansion());
-            assert_eq!(combo.selected(), 3);
         });
     }
 }

@@ -15,6 +15,7 @@ src/app.rs
 src/chain_notice.rs
 src/past_dictations_ui.rs
 src/processing_steps.rs
+src/chains_view.rs
 src/step_catalog.rs
 src/processing_ui.rs
 src/plugin_catalog.rs
