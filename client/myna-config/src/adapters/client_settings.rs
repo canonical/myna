@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use gio::glib::prelude::ObjectExt;
 use gio::glib::{self, variant::ToVariant};
-use gio::prelude::{SettingsExt, SettingsExtManual};
+use gio::prelude::SettingsExt;
 
 use crate::domain::{
     ClientSetting, ClientSettingKey, ClientSettingMetadata, ClientSettingValue, SettingRange,
@@ -10,25 +10,12 @@ use crate::domain::{
 use crate::ports::{
     ClientSettings, ClientSettingsCallback, ClientSettingsError, ClientSettingsSubscription,
 };
+use myna_core::chains::Processing;
 use myna_core::processing::Params;
-use myna_core::settings::{KEY_PROCESSING_PARAMS, KEY_PROCESSING_STEPS, SCHEMA_ID};
+use myna_core::settings::SCHEMA_ID;
 
-/// The stored step list, which has its own page and no row of its own.
-const STORED_KEYS: [&str; 2] = [KEY_PROCESSING_STEPS, KEY_PROCESSING_PARAMS];
-
-/// The stored steps and parameters, as the daemon reads them.
-fn stored(settings: &gio::Settings) -> (Vec<String>, Params) {
-    let ids = settings
-        .strv(KEY_PROCESSING_STEPS)
-        .iter()
-        .map(|id| id.to_string())
-        .collect();
-    let params = settings
-        .value(KEY_PROCESSING_PARAMS)
-        .get::<Params>()
-        .unwrap_or_default();
-    (ids, params)
-}
+/// The chain keys, which have their own page and no row of their own.
+const STORED_KEYS: [&str; 3] = myna_core::chains::KEYS;
 
 #[derive(Debug)]
 pub struct GioClientSettings {
@@ -74,44 +61,50 @@ impl GioClientSettings {
         Ok(Self { schema, settings })
     }
 
-    /// The enabled steps and their parameters, as stored.
-    pub fn steps(&self) -> (Vec<String>, Params) {
-        stored(&self.settings)
+    /// The saved chains, the active one and the fit switch.
+    pub fn processing(&self) -> Processing {
+        Processing::read(&self.settings)
     }
 
-    /// Store `ids` and `params`. Parameters go first: a daemon that reads
-    /// between the two writes sees a parameter no step uses yet, never a
-    /// step without its parameter.
-    pub fn set_steps(&self, ids: &[String], params: &Params) -> Result<(), ClientSettingsError> {
+    /// Store `processing` in one apply.
+    pub fn set_processing(&self, processing: &Processing) -> Result<(), ClientSettingsError> {
         for key in STORED_KEYS {
             self.ensure_writable(key)?;
         }
-        let (now_ids, now_params) = stored(&self.settings);
-        let write = |key: &str, variant: glib::Variant| {
-            self.settings.set_value(key, &variant).map_err(|error| {
-                ClientSettingsError::InvalidValue {
-                    key: key.to_owned(),
-                    message: error.to_string(),
-                }
+        processing
+            .write(&self.settings)
+            .map_err(|error| ClientSettingsError::InvalidValue {
+                key: myna_core::chains::KEY_CHAINS.to_owned(),
+                message: error.to_string(),
             })
-        };
-        if *params != now_params {
-            write(KEY_PROCESSING_PARAMS, params.to_variant())?;
-        }
-        if ids != now_ids {
-            write(KEY_PROCESSING_STEPS, ids.to_variant())?;
-        }
-        Ok(())
     }
 
-    /// Call `callback` whenever the stored steps or parameters change, until
-    /// the returned value is dropped.
+    /// The steps as the step-switch page shows them
+    /// ([`Processing::page_steps`]).
+    pub fn steps(&self) -> (Vec<String>, Params) {
+        self.processing().page_steps()
+    }
+
+    /// Store a flat step list from the step-switch page into the active
+    /// chain and the fit switch ([`Processing::set_stage_steps`]).
+    pub fn set_steps(&self, ids: &[String], params: &Params) -> Result<(), ClientSettingsError> {
+        let mut processing = self.processing();
+        processing.set_stage_steps(ids, params);
+        self.set_processing(&processing)
+    }
+
+    /// Call `callback` once per change to the chains, the active chain or
+    /// the fit switch, however many of them changed together, until the
+    /// returned value is dropped.
     pub fn watch_steps(
         &self,
         callback: impl Fn() + 'static,
     ) -> Box<dyn ClientSettingsSubscription> {
-        let handler = self.settings.connect_changed(None, move |_, key| {
-            if STORED_KEYS.contains(&key) {
+        let last = std::cell::RefCell::new(self.processing());
+        let handler = myna_core::chains::on_change_event(&self.settings, move |settings| {
+            let now = Processing::read(settings);
+            if now != *last.borrow() {
+                last.replace(now);
                 callback();
             }
         });

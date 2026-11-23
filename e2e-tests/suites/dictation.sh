@@ -284,10 +284,11 @@ echo "-- 12. the Processing tab's switches drive the steps"
 STORE='$HOME/snap/myna/common/.config/glib-2.0/settings/keyfile'
 shot waitfor:General tab:Processing "waitfor:Tidy up speech@switch" \
     "click:Tidy up speech@switch" \
-    "$(poll "grep -q \"processing-steps=\\['tidy'\\]\" $STORE")" \
+    "$(poll "grep -qF \"'My steps', [('tidy', true, {})]\" $STORE")" \
     "click:Translate@switch" "waitfor:Needs the" shot:shots/dictation/12-processing.png \
     || { echo "processing run failed" >&2; FAILED=1; }
-assert_on "the switches are stored as steps" "grep -q \"processing-steps=\\['tidy', 'translate'\\]\" $STORE"
+assert_on "the switches are stored as the active chain" \
+    "grep -qF \"'My steps', [('tidy', true, {}), ('translate', true\" $STORE && grep -q \"active-chain='chain-1'\" $STORE"
 assert_dict "the daemon reads the steps" \
     "wait_until 20 sh -c 'snap run myna --status 2>&1 | grep -q \"step tidy\"'"
 assert_dict "the field is cleared" 'field_clear'
@@ -301,7 +302,7 @@ assert_dict "the dictation lands whole with a step missing its model" \
 evidence 12
 shot waitfor:General tab:Processing "waitfor:Tidy up speech@switch" \
     "click:Tidy up speech@switch" "click:Translate@switch" \
-    "$(poll "! grep -q processing-steps $STORE || grep -q \"processing-steps=\\[\\]\" $STORE")" \
+    "$(poll "grep -qF \"'My steps', []\" $STORE")" \
     || { echo "processing reset failed" >&2; FAILED=1; }
 
 echo "-- 13. Chinese script is a step"
@@ -311,16 +312,16 @@ shot waitfor:General tab:Processing "waitfor:Chinese script@switch" \
 assert_on "Chinese dictation makes the row usable" "snap run myna.config set language zh"
 shot waitfor:General tab:Processing "waitfor:Chinese script@switch" \
     "click:Chinese script@switch" \
-    "$(poll "grep -q \"processing-steps=\\['script'\\]\" $STORE")" \
+    "$(poll "grep -qF \"'My steps', [('script', true\" $STORE")" \
     "click:Write Chinese as@combo box" "click:Traditional, Taiwan (繁體)" \
-    "$(poll "grep -q \"'script.mode': 'traditional-taiwan'\" $STORE")" \
+    "$(poll "grep -qF \"('script', true, {'mode': 'traditional-taiwan'})\" $STORE")" \
     shot:shots/dictation/13-script-taiwan.png \
     || { echo "script run failed" >&2; FAILED=1; }
 assert_dict "the daemon reads the script step" \
     "wait_until 20 sh -c 'snap run myna --status 2>&1 | grep -q \"step script\"'"
 shot waitfor:General tab:Processing "waitfor:Chinese script@switch" \
     "click:Chinese script@switch" \
-    "$(poll "! grep -q \"processing-steps=\\['script'\\]\" $STORE")" \
+    "$(poll "! grep -qF \"('script', true\" $STORE")" \
     || { echo "script reset failed" >&2; FAILED=1; }
 on "snap run myna.config set language ''" >/dev/null 2>&1
 
@@ -344,15 +345,16 @@ shot waitfor:General tab:Processing "click:Past dictations" \
     "$(poll "grep -q \"processing-history=false\" $STORE")" \
     || { echo "record switch reset failed" >&2; FAILED=1; }
 
-echo "-- 15. Add step lists the catalog and adding returns to the Steps list"
+echo "-- 15. Add step lists the catalog; Fitted to the field is on out of the box"
 shot waitfor:General tab:Processing "waitfor:Add step" "click:Add step" \
     "waitfor:Chinese script" "waitfor:Translate English to Français" \
     shot:shots/dictation/15-add-step.png \
-    "click:Add Fitted to the field@$BTN" "waitfor:Tidy up speech@switch" \
-    "$(poll "grep -q \"processing-steps=\\['fit'\\]\" $STORE")" \
-    "click:Fitted to the field@switch" \
-    "$(poll "! grep -q \"processing-steps=\\['fit'\\]\" $STORE")" \
     || { echo "add step run failed" >&2; FAILED=1; }
+assert_on "fitted to the field is on by default" "! grep -q fit-to-field=false $STORE"
+shot waitfor:General tab:Processing "waitfor:Fitted to the field@switch" \
+    "click:Fitted to the field@switch" "$(poll "grep -q fit-to-field=false $STORE")" \
+    "click:Fitted to the field@switch" "$(poll "grep -q fit-to-field=true $STORE")" \
+    || { echo "fit switch run failed" >&2; FAILED=1; }
 
 dict 'mic_stop' >/dev/null 2>&1
 if [ -n "$HOSTED" ]; then

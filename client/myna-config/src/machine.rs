@@ -394,15 +394,14 @@ fn parse_daemon_report(all: &gio::glib::Variant) -> DaemonReport {
     }
 }
 
-/// The enabled steps with their parameters, in the order stored.
+/// The steps in force with their parameters, in the order they run.
 fn steps_line(settings: &myna_core::Settings) -> Option<String> {
-    let steps: Vec<String> = settings
-        .processing_steps
+    let (ids, params) = settings.processing.stage_steps();
+    let steps: Vec<String> = ids
         .iter()
         .map(|id| {
             let prefix = format!("{id}.");
-            let values: Vec<&str> = settings
-                .processing_params
+            let values: Vec<&str> = params
                 .iter()
                 .filter(|(key, _)| key.starts_with(&prefix))
                 .map(|(_, value)| value.as_str())
@@ -447,13 +446,16 @@ mod tests {
 
     #[test]
     fn the_steps_line_names_each_step_with_its_parameters() {
-        let settings = |ids: &[&str], params: &[(&str, &str)]| myna_core::Settings {
-            processing_steps: ids.iter().map(|s| s.to_string()).collect(),
-            processing_params: params
-                .iter()
-                .map(|(k, v)| (k.to_string(), v.to_string()))
-                .collect(),
-            ..Default::default()
+        let settings = |ids: &[&str], params: &[(&str, &str)]| {
+            let mut settings = myna_core::Settings::default();
+            settings.processing.set_stage_steps(
+                &ids.iter().map(|s| s.to_string()).collect::<Vec<_>>(),
+                &params
+                    .iter()
+                    .map(|(k, v)| (k.to_string(), v.to_string()))
+                    .collect(),
+            );
+            settings
         };
         assert_eq!(steps_line(&settings(&[], &[])), None);
         assert_eq!(
@@ -467,6 +469,7 @@ mod tests {
             )),
             Some("tidy, translate=fr, script=simplified".to_owned())
         );
+        assert_eq!(steps_line(&myna_core::Settings::default()), None);
     }
 
     #[test]

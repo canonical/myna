@@ -163,7 +163,8 @@ impl Resolved {
             backend_streams,
         };
         let language = args.language.clone().or_else(|| settings.language.clone());
-        let steps = stored_steps(&settings.processing_steps, &settings.processing_params);
+        let (ids, params) = settings.processing.stage_steps();
+        let steps = stored_steps(&ids, &params);
         let myna_desktop::process::steps::Compiled { graph, script, .. } = compile(
             &steps,
             &myna_desktop::process::steps::Context {
@@ -1175,15 +1176,25 @@ fn print_status(args: &Args) -> ExitCode {
             (None, myna_core::ModeSource::Unknown) => "built-in",
         },
     );
+    let chain = settings.processing.active();
+    row(
+        "chain",
+        chain.map_or_else(|| "(none)".into(), |chain| chain.name.clone()),
+        format!(
+            "fit to field {}",
+            if settings.processing.fit_to_field {
+                "on"
+            } else {
+                "off"
+            }
+        ),
+        source(false, chain.is_some()),
+    );
     row(
         "steps",
-        if settings.processing_steps.is_empty() {
-            "(none)".into()
-        } else {
-            settings.processing_steps.join(",")
-        },
+        settings.processing.stage_steps().0.join(","),
         myna_desktop::process::steps::describe(&resolved.steps),
-        source(false, !settings.processing_steps.is_empty()),
+        source(false, chain.is_some()),
     );
 
     println!("\nbackend");
@@ -1777,19 +1788,27 @@ mod tests {
         Resolved::new(args, settings, backend_streams)
     }
 
+    /// Settings holding `ids` with `params` as the active chain.
+    fn settings_with(
+        ids: &[String],
+        params: &myna_core::processing::Params,
+    ) -> myna_core::Settings {
+        let mut settings = unset();
+        settings.processing.set_stage_steps(ids, params);
+        settings
+    }
+
     /// Settings holding the steps of a preset.
     fn settings_of(chain: myna_core::ProcessingChain) -> myna_core::Settings {
-        myna_core::Settings {
-            processing_steps: chain.steps(),
-            processing_params: chain.params(),
-            ..unset()
-        }
+        settings_with(&chain.steps(), &chain.params())
     }
 
     #[test]
     fn a_chain_holds_the_dictation_as_far_as_its_nodes_need() {
         let a = Args::default();
-        assert_eq!(resolved(&a, &unset()).commit, CommitPolicy::Streaming);
+        let plain = unset();
+        assert!(plain.processing.fit_to_field);
+        assert_eq!(resolved(&a, &plain).commit, CommitPolicy::Streaming);
         let tidy = settings_of(myna_core::ProcessingChain::TIDY);
         assert_eq!(
             resolved(&a, &tidy).commit,
@@ -1800,7 +1819,7 @@ mod tests {
             CommitPolicy::AtEnd
         );
 
-        let live = LiveSettings::new(&resolved(&a, &unset()), Live::new(SoundSet::default()));
+        let live = LiveSettings::new(&resolved(&a, &plain), Live::new(SoundSet::default()));
         assert_eq!(live.graph.get(), Graph::passthrough());
         live.apply(&resolved(&a, &tidy), "test");
         assert_eq!(live.commit.get(), CommitPolicy::Horizon { sentences: 1 });
@@ -1837,7 +1856,9 @@ mod tests {
         assert_ne!(graph, Graph::passthrough());
 
         let mut future = tidy.clone();
-        future.processing_steps.push("from-the-future".into());
+        let (mut ids, params) = future.processing.stage_steps();
+        ids.push("from-the-future".into());
+        future.processing.set_stage_steps(&ids, &params);
         live.apply(&resolved(&a, &future), "test");
         assert_eq!(live.steps.get().len(), 2);
         assert_eq!(live.graph.get(), graph);
@@ -1863,9 +1884,7 @@ mod tests {
             let (steps, params) = myna_core::processing::with_script(&steps, &params, script);
             myna_core::Settings {
                 language: language.map(str::to_owned),
-                processing_steps: steps,
-                processing_params: params,
-                ..unset()
+                ..settings_with(&steps, &params)
             }
         };
         let exact = myna_core::ProcessingChain::EXACT;

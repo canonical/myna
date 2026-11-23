@@ -1331,9 +1331,16 @@ mod tests {
             .success());
         std::fs::write(
             dir.join("keyfile"),
-            format!("[com/canonical/myna/dictation]\n{keyfile}"),
+            // These rigs were written with fitting off; the schema default
+            // (on) is the adapter's to test.
+            if keyfile.contains("fit-to-field") || keyfile.contains("processing-steps") {
+                format!("[com/canonical/myna/dictation]\n{keyfile}")
+            } else {
+                format!("[com/canonical/myna/dictation]\nfit-to-field=false\n{keyfile}")
+            },
         )
         .unwrap();
+        myna_core::processing::migrate_steps(&dir.join("keyfile"));
         let source =
             gio::SettingsSchemaSource::from_directory(dir.join("schemas"), None, false).unwrap();
         let store =

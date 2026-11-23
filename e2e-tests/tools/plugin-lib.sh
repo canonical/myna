@@ -69,15 +69,21 @@ YAML
 STORE_FILE=$HOME/snap/myna/common/.config/glib-2.0/settings/keyfile
 HISTORY_FILE=$HOME/snap/myna/common/processing-history.jsonl
 
-# chain_set STEPS PARAMS: the processing steps and their parameters as
-# GVariant literals, with the record of past dictations on, written the way
-# GSettings writes its keyfile (a rename), which the daemon reads live.
+# chain_set STEPS: one active chain of STEPS, a GVariant a(sba{ss}) literal
+# such as "[('tidy', true, {})]", fit to the field off and the record of past
+# dictations on, written the way GSettings writes its keyfile (a rename),
+# which the daemon reads live.
 chain_set() {
-    python3 - "$STORE_FILE" "$1" "$2" <<'PY'
+    python3 - "$STORE_FILE" "$1" <<'PY'
 import os, sys
-path, steps, params = sys.argv[1:]
+path, steps = sys.argv[1:]
 group = "[com/canonical/myna/dictation]"
-want = {"processing-steps": steps, "processing-params": params, "processing-history": "true"}
+want = {
+    "chains": f"[('e2e', 'E2E', {steps})]",
+    "active-chain": "'e2e'",
+    "fit-to-field": "false",
+    "processing-history": "true",
+}
 lines = open(path).read().splitlines() if os.path.exists(path) else []
 if group not in lines:
     lines.append(group)

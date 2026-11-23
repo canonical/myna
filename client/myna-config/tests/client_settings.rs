@@ -99,8 +99,8 @@ fn enumerates_the_real_schema_and_its_metadata() {
     let adapter =
         GioClientSettings::open_with_source(&source, files.0.join("settings/keyfile")).unwrap();
 
-    // The two stored step keys have their own page, not rows.
-    let stored = ["processing-steps", "processing-params"];
+    // The chain keys have their own page, not rows.
+    let stored = myna_core::chains::KEYS;
     let settings = adapter.list().unwrap();
     assert_eq!(settings.len(), expected.len() - stored.len());
     assert!(expected
@@ -751,7 +751,7 @@ fn the_steps_are_read_and_written_whole() {
         adapter.get("chinese-script"),
         Err(ClientSettingsError::UnknownKey { .. })
     ));
-    assert_eq!(adapter.steps(), (Vec::new(), Default::default()));
+    assert_eq!(adapter.steps(), (list(&["fit"]), Default::default()));
 
     adapter
         .set_steps(
@@ -765,15 +765,15 @@ fn the_steps_are_read_and_written_whole() {
     assert_eq!(params["script.mode"], "simplified");
 }
 
-/// What the daemon reads is what the page wrote: the step ids in stage
-/// order and their parameters, in the keyfile.
+/// What the daemon reads is what the page wrote: the page's steps as the
+/// active chain, with each step's own parameters, in the keyfile.
 #[test]
-fn a_choice_reaches_the_keyfile_as_steps_and_parameters() {
+fn a_choice_reaches_the_keyfile_as_the_active_chain() {
     let files = TestFiles::new("views-keyfile");
     let adapter = open_adapter(&files);
     adapter
         .set_steps(
-            &list(&["tidy", "translate"]),
+            &list(&["fit", "tidy", "translate"]),
             &params(&[("translate.to", "fr")]),
         )
         .unwrap();
@@ -789,18 +789,18 @@ fn a_choice_reaches_the_keyfile_as_steps_and_parameters() {
     gio::Settings::sync();
     let text = std::fs::read_to_string(files.0.join("settings/keyfile")).unwrap();
     assert!(
-        text.contains("processing-steps=['tidy', 'translate', 'script']"),
+        text.contains(
+            "('chain-1', 'My steps', [('tidy', true, {}), ('translate', true, {'to': 'fr'}), \
+             ('script', true, {'mode': 'traditional-taiwan'})])"
+        ),
         "{text}"
     );
-    assert!(text.contains("'translate.to': 'fr'"), "{text}");
-    assert!(
-        text.contains("'script.mode': 'traditional-taiwan'"),
-        "{text}"
-    );
-    assert!(!text.contains("processing-chain"), "{text}");
+    assert!(text.contains("active-chain='chain-1'"), "{text}");
+    assert!(text.contains("fit-to-field=false"), "{text}");
+    assert!(!text.contains("processing-steps"), "{text}");
 }
 
-/// Reading the steps and the script changes nothing in the store.
+/// Reading the steps changes nothing in the store.
 #[test]
 fn reading_the_steps_writes_nothing() {
     let files = TestFiles::new("views-nearest");
@@ -808,8 +808,8 @@ fn reading_the_steps_writes_nothing() {
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(
         &path,
-        "[com/canonical/myna/dictation]\nprocessing-steps=['fit', 'tidy', 'script']\n\
-         processing-params={'script.mode': 'traditional'}\n",
+        "[com/canonical/myna/dictation]\nactive-chain='c'\n\
+         chains=[('c', 'C', [('tidy', true, {}), ('script', true, {'mode': 'traditional'})])]\n",
     )
     .unwrap();
     let adapter = open_adapter(&files);
@@ -817,6 +817,7 @@ fn reading_the_steps_writes_nothing() {
     assert_eq!(adapter.steps().1["script.mode"], "traditional");
     let before = std::fs::read_to_string(&path).unwrap();
     let _ = adapter.list().unwrap();
+    let _ = adapter.processing();
     assert_eq!(std::fs::read_to_string(&path).unwrap(), before);
 }
 
@@ -859,8 +860,14 @@ fn a_change_to_the_stored_steps_wakes_the_watchers_and_no_row() {
                 while context.iteration(false) {}
                 std::thread::sleep(Duration::from_millis(10));
             }
+            // Settle: a second wake for the same edit would arrive by now.
+            let settle = Instant::now() + Duration::from_millis(300);
+            while Instant::now() < settle {
+                while context.iteration(false) {}
+                std::thread::sleep(Duration::from_millis(10));
+            }
             assert!(observed.lock().unwrap().is_empty());
-            assert!(woken.load(std::sync::atomic::Ordering::SeqCst) > 0);
+            assert_eq!(woken.load(std::sync::atomic::Ordering::SeqCst), 1);
         })
         .unwrap();
 }

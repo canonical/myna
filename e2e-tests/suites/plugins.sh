@@ -156,15 +156,15 @@ evidence 3
 echo "-- 4. Translate is added before Tidy, and the steps are stored in stage order"
 shot waitfor:General tab:Processing "waitfor:Add step" "click:Add step" \
     "click:Add $FR@$BTN" "waitfor:Tidy up speech@switch" \
-    "$(poll "grep -q \"'translate.to': 'fr'\" $STORE")" \
+    "$(poll "grep -qF \"('translate', true, {'to': 'fr'})\" $STORE")" \
     || { echo "add translate run failed" >&2; FAILED=1; }
 shot waitfor:General tab:Processing "waitfor:Add step" "click:Add step" \
     "click:Add Tidy up speech@$BTN" "waitfor:Tidy up speech@switch" \
-    "$(poll "grep -q \"processing-steps=\\['tidy', 'translate'\\]\" $STORE")" \
+    "$(poll "grep -qF \"'My steps', [('tidy', true, {}), ('translate', true\" $STORE")" \
     shot:shots/plugins/04-steps.png \
     || { echo "add tidy run failed" >&2; FAILED=1; }
 assert_on "stage order: Tidy comes before Translate whatever order they were added in" \
-    "grep -q \"processing-steps=\\['tidy', 'translate'\\]\" $STORE"
+    "grep -qF \"'My steps', [('tidy', true, {}), ('translate', true\" $STORE"
 assert_dict "the daemon reads both steps as applicable" \
     'wait_until 20 sh -c "snap run myna --status 2>&1 | grep -q \"step .*tidy applicable\" && snap run myna --status 2>&1 | grep -q \"step .*translate applicable\""'
 shot waitfor:General tab:Processing "waitfor:Chinese script@switch" \
@@ -244,7 +244,7 @@ evidence 8
 echo "-- 9. the steps are switched off and the rig is put back"
 shot waitfor:General tab:Processing "waitfor:Tidy up speech@switch" \
     "click:Tidy up speech@switch" "click:Translate@switch" \
-    "$(poll "! grep -q processing-steps $STORE || grep -q \"processing-steps=\\[\\]\" $STORE")" \
+    "$(poll "grep -qF \"'My steps', []\" $STORE")" \
     || { echo "reset run failed" >&2; FAILED=1; }
 dict 'snap run myna.config set language ""; mic_stop' >/dev/null 2>&1
 suite_status

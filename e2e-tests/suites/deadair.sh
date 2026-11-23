@@ -69,7 +69,7 @@ assert_dict "myna-translation is installed and connected" "seed_text_snap myna-t
 assert_dict "the disfluency model is installed" "sideload \$BLOBS/myna-text+model-disfluency-en.comp"
 assert_dict "the translation model is installed" "sideload \$BLOBS/$FR_MODEL.comp"
 assert_dict "the dictation language is English" 'snap run myna.config set language en'
-assert_dict "Tidy is the chain, the record is on" "chain_set \"['tidy']\" '{}'"
+assert_dict "Tidy is the chain, the record is on" "chain_set \"[('tidy', true, {})]\""
 assert_dict "the daemon is restarted for the mounts and the settings" 'daemon_restart'
 assert_dict "the daemon binds the disfluency model" \
     'wait_until 30 status_has "model .*myna-text/.*text\.cleanup"'
@@ -88,7 +88,7 @@ stat_dict "warm Tidy: p95 under 100 ms" 'dead_air_stats tidy 100 100'
 dict 'cp "$HISTORY_FILE" myna-shot/out/history-tidy.jsonl'
 
 echo "-- 4. Tidy then French: the first dictation after start, then $N warm"
-assert_dict "Tidy then French is the chain" "chain_set \"['tidy', 'translate']\" \"{'translate.to': 'fr'}\""
+assert_dict "Tidy then French is the chain" "chain_set \"[('tidy', true, {}), ('translate', true, {'to': 'fr'})]\""
 assert_dict "the daemon is restarted" 'daemon_restart'
 assert_dict "the daemon binds both models" \
     'wait_until 30 status_has "model .*myna-translation/.*text\.translate" && status_has "model .*myna-text/.*text\.cleanup"'
@@ -100,7 +100,7 @@ stat_dict "warm Tidy then French: p95 under 1000 ms" 'dead_air_stats tidy-french
 dict 'cp "$HISTORY_FILE" myna-shot/out/history-tidy-french.jsonl'
 
 echo "-- 5. a broken myna-text: the words that were heard are typed, every time"
-assert_dict "Tidy is the chain" "chain_set \"['tidy']\" '{}'"
+assert_dict "Tidy is the chain" "chain_set \"[('tidy', true, {})]\""
 assert_dict "the daemon is restarted" 'daemon_restart'
 dict journal_mark
 # fault NAME: N dictations, each typing exactly what was heard.

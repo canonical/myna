@@ -19,6 +19,7 @@
 pub mod audio;
 pub mod capabilities;
 pub mod capture;
+pub mod chains;
 pub mod control;
 pub mod debug;
 pub mod events;

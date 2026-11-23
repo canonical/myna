@@ -11,7 +11,15 @@ use std::path::Path;
 
 use gio::glib;
 
-use crate::settings::{store_path, KEY_PROCESSING_PARAMS, KEY_PROCESSING_STEPS};
+use crate::chains::{
+    chains_from_variant, chains_variant, Chain, ChainStep, Processing, KEY_ACTIVE_CHAIN,
+    KEY_CHAINS, KEY_FIT_TO_FIELD, MIGRATED_ID,
+};
+use crate::settings::store_path;
+
+/// The flat step list and its parameters, before chains; never released.
+const KEY_PROCESSING_STEPS: &str = "processing-steps";
+const KEY_PROCESSING_PARAMS: &str = "processing-params";
 
 /// Step parameters as stored: `<step>.<param>` to its value.
 pub type Params = BTreeMap<String, String>;
@@ -231,7 +239,10 @@ pub fn with_script(
 /// [`migrate_legacy`] on the settings store every process shares; the daemon
 /// and Myna Settings call it before they read a setting.
 pub fn migrate_legacy_store() -> bool {
-    store_path().is_some_and(|path| migrate_legacy(&path))
+    store_path().is_some_and(|path| {
+        let legacy = migrate_legacy(&path);
+        migrate_steps(&path) || legacy
+    })
 }
 
 const LEGACY_KEYS: [&str; 6] = [
@@ -350,6 +361,89 @@ pub fn migrate_legacy(path: &Path) -> bool {
     for key in present {
         let _ = file.remove_key(group, key);
     }
+    file.save_to_file(path).is_ok()
+}
+
+/// Move a flat `processing-steps` list to a chain, once: its steps but
+/// `fit`, in stage order with their parameters, become the chain "My steps",
+/// made active; whether `fit` was among them becomes `fit-to-field`. Values
+/// already set in the new keys win. Both old keys are removed. Returns
+/// whether the file changed.
+///
+/// Like [`migrate_legacy`], only development keyfiles carry the old keys
+/// (no tag has them). Delete this in the first release after it ships.
+pub fn migrate_steps(path: &Path) -> bool {
+    let file = glib::KeyFile::new();
+    if file.load_from_file(path, glib::KeyFileFlags::NONE).is_err() {
+        return false;
+    }
+    let group = "com/canonical/myna/dictation";
+    let raw = |key: &str| file.value(group, key).ok().map(|v| v.to_string());
+    let parse = |key: &str, ty: &glib::VariantTy| {
+        raw(key).and_then(|text| glib::Variant::parse(Some(ty), &text).ok())
+    };
+    let Some(steps) = raw(KEY_PROCESSING_STEPS) else {
+        if raw(KEY_PROCESSING_PARAMS).is_none() {
+            return false;
+        }
+        let _ = file.remove_key(group, KEY_PROCESSING_PARAMS);
+        return file.save_to_file(path).is_ok();
+    };
+    let ids: Vec<String> = glib::Variant::parse(Some(glib::VariantTy::STRING_ARRAY), &steps)
+        .ok()
+        .and_then(|value| value.get())
+        .unwrap_or_default();
+    let params: Params = parse(
+        KEY_PROCESSING_PARAMS,
+        glib::VariantTy::new("a{ss}").unwrap(),
+    )
+    .and_then(|value| value.get())
+    .unwrap_or_default();
+    if raw(KEY_FIT_TO_FIELD).is_none() {
+        let fit = ids.iter().any(|id| id == "fit");
+        file.set_value(group, KEY_FIT_TO_FIELD, if fit { "true" } else { "false" });
+    }
+    let kept: Vec<String> = ids
+        .iter()
+        .filter(|id| !id.is_empty() && *id != "fit")
+        .cloned()
+        .collect();
+    let kept = in_stage_order(&kept);
+    if !kept.is_empty() {
+        let mut chains = parse(KEY_CHAINS, chains_variant(&[]).type_())
+            .and_then(|value| chains_from_variant(&value))
+            .unwrap_or_else(|| Processing::default().chains);
+        let steps = kept
+            .iter()
+            .map(|id| {
+                let prefix = format!("{id}.");
+                params
+                    .iter()
+                    .filter_map(|(key, value)| Some((key.strip_prefix(&prefix)?, value)))
+                    .fold(ChainStep::new(id), |step, (name, value)| {
+                        step.with(name, value)
+                    })
+            })
+            .collect();
+        let id = (1..)
+            .map(|n| match n {
+                1 => MIGRATED_ID.to_owned(),
+                n => format!("{MIGRATED_ID}-{n}"),
+            })
+            .find(|id| chains.iter().all(|chain| &chain.id != id))
+            .expect("an unbounded range has a free id");
+        chains.push(Chain {
+            id: id.clone(),
+            name: "My steps".into(),
+            steps,
+        });
+        file.set_value(group, KEY_CHAINS, &chains_variant(&chains).print(false));
+        if raw(KEY_ACTIVE_CHAIN).is_none() {
+            file.set_value(group, KEY_ACTIVE_CHAIN, &format!("'{id}'"));
+        }
+    }
+    let _ = file.remove_key(group, KEY_PROCESSING_STEPS);
+    let _ = file.remove_key(group, KEY_PROCESSING_PARAMS);
     file.save_to_file(path).is_ok()
 }
 
@@ -599,5 +693,112 @@ mod tests {
         }
         assert_eq!(ProcessingChain::from_nick("summary"), None);
         assert_eq!(ChineseScript::from_nick("pinyin"), None);
+    }
+
+    /// Migrate `before` through both steps, as `migrate_legacy_store` does.
+    fn migrate_both(before: &str) -> (bool, Vec<String>) {
+        let dir = tempdir();
+        let path = dir.join("keyfile");
+        std::fs::write(&path, format!("{GROUP}{before}")).unwrap();
+        let legacy = migrate_legacy(&path);
+        let changed = migrate_steps(&path) || legacy;
+        let after = std::fs::read_to_string(&path).unwrap();
+        let mut lines: Vec<String> = after
+            .lines()
+            .filter(|l| !l.is_empty() && !l.starts_with('['))
+            .map(str::to_owned)
+            .collect();
+        lines.sort();
+        (changed, lines)
+    }
+
+    const EXAMPLE: &str = "('example', 'Tidy and translate', [('tidy', true, {}), \
+                           ('translate', true, {'to': 'fr'})])";
+
+    #[test]
+    fn a_step_list_becomes_the_active_chain_and_the_fit_switch() {
+        let (changed, lines) = migrate_both(
+            "processing-steps=['translate', 'fit', 'tidy', 'future']\n\
+             processing-params={'translate.to': 'de', 'future.x': '1', 'gone.y': '2'}\n\
+             sounds=false\n",
+        );
+        assert!(changed);
+        assert_eq!(
+            lines,
+            [
+                "active-chain='my-steps'".to_owned(),
+                format!(
+                    "chains=[{EXAMPLE}, ('my-steps', 'My steps', [('tidy', true, {{}}), \
+                     ('translate', true, {{'to': 'de'}}), ('future', true, {{'x': '1'}})])]"
+                ),
+                "fit-to-field=true".to_owned(),
+                "sounds=false".to_owned(),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_list_of_fit_alone_or_nothing_makes_no_chain() {
+        assert_eq!(
+            migrate_both("processing-steps=['fit']\n"),
+            (true, vec!["fit-to-field=true".to_owned()])
+        );
+        assert_eq!(
+            migrate_both("processing-steps=@as []\nprocessing-params=@a{ss} {}\n"),
+            (true, vec!["fit-to-field=false".to_owned()])
+        );
+        assert_eq!(
+            migrate_both("processing-params={'translate.to': 'de'}\n"),
+            (true, Vec::new())
+        );
+        assert_eq!(
+            migrate_both("sounds=false\n"),
+            (false, vec!["sounds=false".to_owned()])
+        );
+    }
+
+    /// Values already in the new keys win, and an id already taken is not
+    /// reused.
+    #[test]
+    fn the_step_migration_never_overwrites_the_new_keys() {
+        let (_, lines) = migrate_both(
+            "processing-steps=['tidy']\nactive-chain='mine'\nfit-to-field=true\n\
+             chains=[('my-steps', 'Mine', @a(sba{ss}) [])]\n",
+        );
+        assert_eq!(
+            lines,
+            [
+                "active-chain='mine'",
+                "chains=[('my-steps', 'Mine', []), ('my-steps-2', 'My steps', [('tidy', true, {})])]",
+                "fit-to-field=true",
+            ]
+        );
+    }
+
+    #[test]
+    fn a_legacy_keyfile_migrates_all_the_way_once() {
+        let (changed, lines) = migrate_both("processing-chain='tidy-french'\n");
+        assert!(changed);
+        assert_eq!(
+            lines,
+            [
+                "active-chain='my-steps'".to_owned(),
+                format!(
+                    "chains=[{EXAMPLE}, ('my-steps', 'My steps', [('tidy', true, {{}}), \
+                     ('translate', true, {{'to': 'fr'}})])]"
+                ),
+                "fit-to-field=false".to_owned(),
+            ]
+        );
+        let dir = tempdir();
+        let path = dir.join("keyfile");
+        std::fs::write(&path, format!("{GROUP}processing-chain='tidy'\n")).unwrap();
+        assert!(migrate_legacy(&path));
+        assert!(migrate_steps(&path));
+        let once = std::fs::read(&path).unwrap();
+        assert!(!migrate_steps(&path));
+        assert!(!migrate_legacy(&path));
+        assert_eq!(std::fs::read(&path).unwrap(), once);
+        assert!(!migrate_steps(&dir.join("absent")));
     }
 }

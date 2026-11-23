@@ -36,24 +36,33 @@
   </enum>
 
   <schema id="com.canonical.Myna.Dictation" path="/com/canonical/myna/dictation/">
-    <key name="processing-steps" type="as">
-      <default>[]</default>
-      <summary>Steps applied to what you say</summary>
+    <key name="chains" type="a(ssa(sba{ss}))">
+      <default>[('example', 'Tidy and translate', [('tidy', true, {}), ('translate', true, {'to': 'fr'})])]</default>
+      <summary>Saved chains of steps</summary>
       <description>
-        The processing steps that are switched on, by their ids, in the order
-        they run: field-fit, clean-up, translation, then script conversion.
-        Nothing switched on types exactly what you say. Any step is shown on
-        screen while you speak and typed a sentence at a time.
+        Each chain is an id that never changes, the name shown for it, and
+        its steps in the order they run. A step is its id, whether it is on,
+        and its settings, for example to for the language a translation
+        writes. A step this version does not know is kept as it is.
       </description>
     </key>
 
-    <key name="processing-params" type="a{ss}">
-      <default>{}</default>
-      <summary>Settings of the steps</summary>
+    <key name="active-chain" type="s">
+      <default>''</default>
+      <summary>The chain applied to what you say</summary>
       <description>
-        What each step is set to, keyed step.setting, for example
-        translate.to for the language to translate into, and script.mode for
-        how Chinese is written.
+        The id of the chain in use. Empty, or an id no chain has, types
+        exactly what you say.
+      </description>
+    </key>
+
+    <key name="fit-to-field" type="b">
+      <default>true</default>
+      <summary>Fit the text to the field</summary>
+      <description>
+        After any chain, adjust the text to where it is typed: no capital or
+        full stop in an address or e-mail field, and no capital in the middle
+        of a sentence.
       </description>
     </key>
 

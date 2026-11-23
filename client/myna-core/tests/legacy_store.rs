@@ -16,7 +16,8 @@ fn the_shared_store_is_migrated_where_the_environment_puts_it() {
 
     assert!(myna_core::processing::migrate_legacy_store());
     let text = std::fs::read_to_string(settings.join("keyfile")).unwrap();
-    assert!(text.contains("processing-steps=['fit']"), "{text}");
+    assert!(text.contains("fit-to-field=true"), "{text}");
+    assert!(!text.contains("processing-steps"), "{text}");
     assert!(text.contains("sounds=false"), "{text}");
     assert!(!text.contains("processing-chain"), "{text}");
     assert!(!myna_core::processing::migrate_legacy_store());
