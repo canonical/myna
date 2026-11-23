@@ -1,0 +1,17 @@
+model-translate-ta-en: the Firefox Translations Tamil to English student
+model (version 2.0), Copyright Mozilla and contributors,
+licensed under the Mozilla Public License 2.0 (LICENSE in this component).
+
+Source: Mozilla's Firefox Translations models,
+https://github.com/mozilla/firefox-translations-models (the files themselves
+are served from the Remote Settings collection "translations-models" of
+https://firefox.settings.services.mozilla.com). The model files are shipped
+unmodified; their sha256 are:
+
+  model.taen.intgemm.alphas.bin  5413fca6c35cd9c50157df1ebd425d6ca02713bfedc1ba7e5fb3050a437b13b6
+  lex.50.50.taen.s2t.bin         2eb77117d9997984fe700c386126865a6ca951fcfb78b3c29b2921a6a770d63a
+  vocab.taen.spm                 5ce5f840335d9cbbbd76ef160ee2566ebe239d820d66a827996f40dd01467a92
+
+config.yml and myna-text-model.json are Canonical's own (AGPL-3.0-or-later).
+The runtime that executes the model, bergamot-translator (MPL-2.0), and its
+bundled libraries are noted in the myna-translation snap's NOTICE.

@@ -1,0 +1,18 @@
+model-translate-en-zh-hant: the Firefox Translations English to Traditional Chinese student
+model (version 2.0), Copyright Mozilla and contributors,
+licensed under the Mozilla Public License 2.0 (LICENSE in this component).
+
+Source: Mozilla's Firefox Translations models,
+https://github.com/mozilla/firefox-translations-models (the files themselves
+are served from the Remote Settings collection "translations-models" of
+https://firefox.settings.services.mozilla.com). The model files are shipped
+unmodified; their sha256 are:
+
+  model.enzh.intgemm.alphas.bin  559ab90d723a58c1f1e2ab7cc12137bc667af5ba3e325e3eb30b5cdc930db520
+  lex.50.50.enzh.s2t.bin         d891404d1436a7334df12539fe30a26f9e9f2b80bd42fdb8b5f8849e8a1e942b
+  srcvocab.enzh.spm              2266df70492162a249ab1c0154f929bd6098b246544c666c1a0d5a24dde7d2ea
+  trgvocab.enzh.spm              22b91a4436d70b91ab8777c677252ab5fae2bc284d71f977df5206c110e3444c
+
+config.yml and myna-text-model.json are Canonical's own (AGPL-3.0-or-later).
+The runtime that executes the model, bergamot-translator (MPL-2.0), and its
+bundled libraries are noted in the myna-translation snap's NOTICE.

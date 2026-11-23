@@ -1,0 +1,17 @@
+model-translate-bs-en: the Firefox Translations Bosnian to English student
+model (version 2.0), Copyright Mozilla and contributors,
+licensed under the Mozilla Public License 2.0 (LICENSE in this component).
+
+Source: Mozilla's Firefox Translations models,
+https://github.com/mozilla/firefox-translations-models (the files themselves
+are served from the Remote Settings collection "translations-models" of
+https://firefox.settings.services.mozilla.com). The model files are shipped
+unmodified; their sha256 are:
+
+  model.bsen.intgemm.alphas.bin  744c61ec0b987c44717f192fcebda7c2a1ac34f5cbfb56672771d28ff79c82c7
+  lex.50.50.bsen.s2t.bin         dccff06320cb87aaa6f93c246038b453d0d0c6f47fa3acd1162f104ac6a2c43f
+  vocab.bsen.spm                 320561e2cef014a6d626a64822add3a387c91f609f23ea3b7f421d194075c14c
+
+config.yml and myna-text-model.json are Canonical's own (AGPL-3.0-or-later).
+The runtime that executes the model, bergamot-translator (MPL-2.0), and its
+bundled libraries are noted in the myna-translation snap's NOTICE.

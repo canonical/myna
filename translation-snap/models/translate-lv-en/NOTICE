@@ -1,0 +1,17 @@
+model-translate-lv-en: the Firefox Translations Latvian to English student
+model "tiny" (version 1.0), Copyright Mozilla and contributors,
+licensed under the Mozilla Public License 2.0 (LICENSE in this component).
+
+Source: Mozilla's Firefox Translations models,
+https://github.com/mozilla/firefox-translations-models (the files themselves
+are served from the Remote Settings collection "translations-models" of
+https://firefox.settings.services.mozilla.com). The model files are shipped
+unmodified; their sha256 are:
+
+  model.lven.intgemm.alphas.bin  7a96dd363ae9b4485aa254ddbff042223a565a20bfe5ba0ba29b94d8ded0406a
+  lex.50.50.lven.s2t.bin         dff852d317f80169899e2e1132277cf922fa7a117b060e09a14dd19c0e1a02b8
+  vocab.lven.spm                 585a265757c071f5694d1bb7e65b73f38b1d065a62cda61510fa6c54fb87d2c9
+
+config.yml and myna-text-model.json are Canonical's own (AGPL-3.0-or-later).
+The runtime that executes the model, bergamot-translator (MPL-2.0), and its
+bundled libraries are noted in the myna-translation snap's NOTICE.

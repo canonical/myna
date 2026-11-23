@@ -1,0 +1,17 @@
+model-translate-fi-en: the Firefox Translations Finnish to English student
+model "base-memory" (version 2.0), Copyright Mozilla and contributors,
+licensed under the Mozilla Public License 2.0 (LICENSE in this component).
+
+Source: Mozilla's Firefox Translations models,
+https://github.com/mozilla/firefox-translations-models (the files themselves
+are served from the Remote Settings collection "translations-models" of
+https://firefox.settings.services.mozilla.com). The model files are shipped
+unmodified; their sha256 are:
+
+  model.fien.intgemm.alphas.bin  e3887341f18bcc7787d9b59eb1229b56eefce18d49b7ebf1e62c55d65a377321
+  lex.50.50.fien.s2t.bin         8bad431e07b062ba47f363b76e4656cc743fd608316d8a4830a4315e44ac9abb
+  vocab.fien.spm                 6a866911427f2916609ae89c7f2f04a78de3fdd8aa183039ecba986635d4f246
+
+config.yml and myna-text-model.json are Canonical's own (AGPL-3.0-or-later).
+The runtime that executes the model, bergamot-translator (MPL-2.0), and its
+bundled libraries are noted in the myna-translation snap's NOTICE.

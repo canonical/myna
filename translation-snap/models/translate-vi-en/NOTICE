@@ -1,0 +1,17 @@
+model-translate-vi-en: the Firefox Translations Vietnamese to English student
+model "tiny" (version 1.0), Copyright Mozilla and contributors,
+licensed under the Mozilla Public License 2.0 (LICENSE in this component).
+
+Source: Mozilla's Firefox Translations models,
+https://github.com/mozilla/firefox-translations-models (the files themselves
+are served from the Remote Settings collection "translations-models" of
+https://firefox.settings.services.mozilla.com). The model files are shipped
+unmodified; their sha256 are:
+
+  model.vien.intgemm.alphas.bin  de4bf2b9ffb4d910e32720ec3a43655fb6f4062ce5219332f824fc1bdca7a5f4
+  lex.50.50.vien.s2t.bin         3a071ed3d982f6eb6ee116b84067bf70041e4229e43ea65ecb6d7c2796e8851b
+  vocab.vien.spm                 cb152765d1e71ea3cf96fdb339c764b7201be7b9ab32e20cfebcf16a20fc0939
+
+config.yml and myna-text-model.json are Canonical's own (AGPL-3.0-or-later).
+The runtime that executes the model, bergamot-translator (MPL-2.0), and its
+bundled libraries are noted in the myna-translation snap's NOTICE.

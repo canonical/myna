@@ -1,0 +1,17 @@
+model-translate-pl-en: the Firefox Translations Polish to English student
+model "base-memory" (version 2.0), Copyright Mozilla and contributors,
+licensed under the Mozilla Public License 2.0 (LICENSE in this component).
+
+Source: Mozilla's Firefox Translations models,
+https://github.com/mozilla/firefox-translations-models (the files themselves
+are served from the Remote Settings collection "translations-models" of
+https://firefox.settings.services.mozilla.com). The model files are shipped
+unmodified; their sha256 are:
+
+  model.plen.intgemm.alphas.bin  06dbab3baa3bbceab746bc6a3bba807878f38536382c03acddf59d3edf3b5d94
+  lex.50.50.plen.s2t.bin         b295dfefa7022a62e105276e8c39fdfd67bffe588f4fd78583edd4e04ee0cb3b
+  vocab.plen.spm                 2000f182efa8ce5f69bc3f9e574666b5bc2c0af684eedd32f69d15aa9021ea85
+
+config.yml and myna-text-model.json are Canonical's own (AGPL-3.0-or-later).
+The runtime that executes the model, bergamot-translator (MPL-2.0), and its
+bundled libraries are noted in the myna-translation snap's NOTICE.

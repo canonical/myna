@@ -1,0 +1,17 @@
+model-translate-en-es: the Firefox Translations English to Spanish student
+model "base-memory" (version 2.1), Copyright Mozilla and contributors,
+licensed under the Mozilla Public License 2.0 (LICENSE in this component).
+
+Source: Mozilla's Firefox Translations models,
+https://github.com/mozilla/firefox-translations-models (the files themselves
+are served from the Remote Settings collection "translations-models" of
+https://firefox.settings.services.mozilla.com). The model files are shipped
+unmodified; their sha256 are:
+
+  model.enes.intgemm.alphas.bin  3b1c399511c01c84c36fae5c0524df44096288efdc8236e182b5c97d7ad2244c
+  lex.50.50.enes.s2t.bin         7d51237c0a07027dcd61643cfbbb0f8c48597d19907ef53d2cae9d6bec2cf25c
+  vocab.enes.spm                 5ae254fa9b15aa182e70fd2a6186b1333c63a29a48043a9224c6aa4fcac058ad
+
+config.yml and myna-text-model.json are Canonical's own (AGPL-3.0-or-later).
+The runtime that executes the model, bergamot-translator (MPL-2.0), and its
+bundled libraries are noted in the myna-translation snap's NOTICE.

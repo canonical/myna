@@ -1,0 +1,17 @@
+model-translate-nb-en: the Firefox Translations Norwegian Bokmal to English student
+model (version 2.0), Copyright Mozilla and contributors,
+licensed under the Mozilla Public License 2.0 (LICENSE in this component).
+
+Source: Mozilla's Firefox Translations models,
+https://github.com/mozilla/firefox-translations-models (the files themselves
+are served from the Remote Settings collection "translations-models" of
+https://firefox.settings.services.mozilla.com). The model files are shipped
+unmodified; their sha256 are:
+
+  model.nben.intgemm.alphas.bin  00ab7b969156f6c948be59dad4755e47a24eeb31aa39f02f1de7bce43081cc2a
+  lex.50.50.nben.s2t.bin         cc07976874c905e859918be71d3fe993c9ec8696d986db2418bb1a16ff4ea500
+  vocab.nben.spm                 23eb1743070efac5a447f4f72aafda69b1985af272cece85a2f0bb08e6fcdeef
+
+config.yml and myna-text-model.json are Canonical's own (AGPL-3.0-or-later).
+The runtime that executes the model, bergamot-translator (MPL-2.0), and its
+bundled libraries are noted in the myna-translation snap's NOTICE.

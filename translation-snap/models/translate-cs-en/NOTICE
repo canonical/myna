@@ -1,0 +1,17 @@
+model-translate-cs-en: the Firefox Translations Czech to English student
+model "base-memory" (version 2.0), Copyright Mozilla and contributors,
+licensed under the Mozilla Public License 2.0 (LICENSE in this component).
+
+Source: Mozilla's Firefox Translations models,
+https://github.com/mozilla/firefox-translations-models (the files themselves
+are served from the Remote Settings collection "translations-models" of
+https://firefox.settings.services.mozilla.com). The model files are shipped
+unmodified; their sha256 are:
+
+  model.csen.intgemm.alphas.bin  c815273b31074492eaab0ccd78d33d7ac16f94088707ab2492abaedcb9ee0b75
+  lex.50.50.csen.s2t.bin         eba6bd9575251525f1941640ea0b6527a06e72a46421579eafea04d635ee20a8
+  vocab.csen.spm                 ee4b8ce15c8e1237c5f7a2d04741341beb0a5d5c09820f7ec08f13ee2b212755
+
+config.yml and myna-text-model.json are Canonical's own (AGPL-3.0-or-later).
+The runtime that executes the model, bergamot-translator (MPL-2.0), and its
+bundled libraries are noted in the myna-translation snap's NOTICE.

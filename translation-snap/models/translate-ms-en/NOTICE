@@ -1,0 +1,17 @@
+model-translate-ms-en: the Firefox Translations Malay to English student
+model "tiny" (version 1.0), Copyright Mozilla and contributors,
+licensed under the Mozilla Public License 2.0 (LICENSE in this component).
+
+Source: Mozilla's Firefox Translations models,
+https://github.com/mozilla/firefox-translations-models (the files themselves
+are served from the Remote Settings collection "translations-models" of
+https://firefox.settings.services.mozilla.com). The model files are shipped
+unmodified; their sha256 are:
+
+  model.msen.intgemm.alphas.bin  db5c9415591f8a35c5c72046227b9c9398acade5df8afb5e6ac9f11f7d6650d5
+  lex.50.50.msen.s2t.bin         1ef575be54a310eeace84c52e609f2a8c292f3c4b170376ee6ee3524c0c30316
+  vocab.msen.spm                 6db8c20803d5f9c9fff2b6c3950f5bda4a9fa14aaef1d92818f8a3d53fd850f9
+
+config.yml and myna-text-model.json are Canonical's own (AGPL-3.0-or-later).
+The runtime that executes the model, bergamot-translator (MPL-2.0), and its
+bundled libraries are noted in the myna-translation snap's NOTICE.

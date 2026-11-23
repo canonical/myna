@@ -1,0 +1,17 @@
+model-translate-tr-en: the Firefox Translations Turkish to English student
+model "tiny" (version 1.0), Copyright Mozilla and contributors,
+licensed under the Mozilla Public License 2.0 (LICENSE in this component).
+
+Source: Mozilla's Firefox Translations models,
+https://github.com/mozilla/firefox-translations-models (the files themselves
+are served from the Remote Settings collection "translations-models" of
+https://firefox.settings.services.mozilla.com). The model files are shipped
+unmodified; their sha256 are:
+
+  model.tren.intgemm.alphas.bin  bd18594ac5a7f1d9997e7ea5bd80272082219cf8b1ce604766e4f207eb86abbf
+  lex.50.50.tren.s2t.bin         d3374ab5267a73ee1aa1d926a298bd349426835f40856991ee959bc5cd4f9fce
+  vocab.tren.spm                 ed328e589a3ccd70fd3ce7773fc3c01d8b7b18c687464cacf17fd40a8c0daadd
+
+config.yml and myna-text-model.json are Canonical's own (AGPL-3.0-or-later).
+The runtime that executes the model, bergamot-translator (MPL-2.0), and its
+bundled libraries are noted in the myna-translation snap's NOTICE.

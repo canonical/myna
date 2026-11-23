@@ -1,0 +1,17 @@
+model-translate-ur-en: the Firefox Translations Urdu to English student
+model (version 2.1), Copyright Mozilla and contributors,
+licensed under the Mozilla Public License 2.0 (LICENSE in this component).
+
+Source: Mozilla's Firefox Translations models,
+https://github.com/mozilla/firefox-translations-models (the files themselves
+are served from the Remote Settings collection "translations-models" of
+https://firefox.settings.services.mozilla.com). The model files are shipped
+unmodified; their sha256 are:
+
+  model.uren.intgemm.alphas.bin  4915518d1699fb72c390603605d3ead9fb87a8c2f70092089a27df22a7c540d0
+  lex.50.50.uren.s2t.bin         afe891a57dc54974e322fc30feda41f32b5d7d2697a03bfc649dac5e079ae81e
+  vocab.uren.spm                 48304e0f0e30cd69a0d50f0fc61ba6ac2d75f86bab70d7ee59f7af14099e2e28
+
+config.yml and myna-text-model.json are Canonical's own (AGPL-3.0-or-later).
+The runtime that executes the model, bergamot-translator (MPL-2.0), and its
+bundled libraries are noted in the myna-translation snap's NOTICE.

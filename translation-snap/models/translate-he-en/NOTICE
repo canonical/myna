@@ -1,0 +1,17 @@
+model-translate-he-en: the Firefox Translations Hebrew to English student
+model "tiny" (version 1.0), Copyright Mozilla and contributors,
+licensed under the Mozilla Public License 2.0 (LICENSE in this component).
+
+Source: Mozilla's Firefox Translations models,
+https://github.com/mozilla/firefox-translations-models (the files themselves
+are served from the Remote Settings collection "translations-models" of
+https://firefox.settings.services.mozilla.com). The model files are shipped
+unmodified; their sha256 are:
+
+  model.heen.intgemm.alphas.bin  7291cab3ec483b8cf524da96201fe947dca8c550132be21a06badeb946b5c079
+  lex.50.50.heen.s2t.bin         427c88732cb93b28d2a947cace79f62aabceb7d6f4438516e85994b14a73b68e
+  vocab.heen.spm                 45f5d413b9208c5f24340ab0e20a63604a572784d289baa2d788deea946f79a2
+
+config.yml and myna-text-model.json are Canonical's own (AGPL-3.0-or-later).
+The runtime that executes the model, bergamot-translator (MPL-2.0), and its
+bundled libraries are noted in the myna-translation snap's NOTICE.

@@ -1,0 +1,17 @@
+model-translate-el-en: the Firefox Translations Greek to English student
+model "tiny" (version 1.1), Copyright Mozilla and contributors,
+licensed under the Mozilla Public License 2.0 (LICENSE in this component).
+
+Source: Mozilla's Firefox Translations models,
+https://github.com/mozilla/firefox-translations-models (the files themselves
+are served from the Remote Settings collection "translations-models" of
+https://firefox.settings.services.mozilla.com). The model files are shipped
+unmodified; their sha256 are:
+
+  model.elen.intgemm.alphas.bin  0a43c3716156061494d995d0c88113e789f8d919e0c88a15bc1ad360e0482a8c
+  lex.50.50.elen.s2t.bin         2c969b069b3d230feddd17db2d74eb658a9b33b960d2d40adbca5496c9784e85
+  vocab.elen.spm                 e1a1298cc2cf3968f3d7cc3b36bc463a4e1bf154272e8fb2f15142b54edc4349
+
+config.yml and myna-text-model.json are Canonical's own (AGPL-3.0-or-later).
+The runtime that executes the model, bergamot-translator (MPL-2.0), and its
+bundled libraries are noted in the myna-translation snap's NOTICE.

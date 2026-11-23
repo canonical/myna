@@ -1,0 +1,17 @@
+model-translate-en-nl: the Firefox Translations English to Dutch student
+model "base-memory" (version 2.1), Copyright Mozilla and contributors,
+licensed under the Mozilla Public License 2.0 (LICENSE in this component).
+
+Source: Mozilla's Firefox Translations models,
+https://github.com/mozilla/firefox-translations-models (the files themselves
+are served from the Remote Settings collection "translations-models" of
+https://firefox.settings.services.mozilla.com). The model files are shipped
+unmodified; their sha256 are:
+
+  model.ennl.intgemm.alphas.bin  7e8402da61972dc2fdcf7147c7f1e12f7916a6d9349514ee7a731288357575a9
+  lex.50.50.ennl.s2t.bin         bb4922718f8ca6d746ad090c0a88110a664dc050ee3f311bce33698b4e1679e9
+  vocab.ennl.spm                 c09588ca5662b230ed65bd39a07f58d9f7dd21c3a19e4aeb1bff39bf3b297c56
+
+config.yml and myna-text-model.json are Canonical's own (AGPL-3.0-or-later).
+The runtime that executes the model, bergamot-translator (MPL-2.0), and its
+bundled libraries are noted in the myna-translation snap's NOTICE.

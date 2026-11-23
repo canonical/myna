@@ -1,0 +1,17 @@
+model-translate-en-sv: the Firefox Translations English to Swedish student
+model "tiny" (version 1.0), Copyright Mozilla and contributors,
+licensed under the Mozilla Public License 2.0 (LICENSE in this component).
+
+Source: Mozilla's Firefox Translations models,
+https://github.com/mozilla/firefox-translations-models (the files themselves
+are served from the Remote Settings collection "translations-models" of
+https://firefox.settings.services.mozilla.com). The model files are shipped
+unmodified; their sha256 are:
+
+  model.ensv.intgemm.alphas.bin  65ea0db8e658435846f297384face62dbf1804cfc92de8388b0e368e6ecc25a7
+  lex.50.50.ensv.s2t.bin         5761c39887a0e0cd3dd38d22cadc31cecd2a43b0514c4bba96b426736e7fd72d
+  vocab.ensv.spm                 ff7e366ff4228107e58d76ca348e7dea2eb325452363d68e0047e97fb483e40e
+
+config.yml and myna-text-model.json are Canonical's own (AGPL-3.0-or-later).
+The runtime that executes the model, bergamot-translator (MPL-2.0), and its
+bundled libraries are noted in the myna-translation snap's NOTICE.

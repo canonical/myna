@@ -1,0 +1,17 @@
+model-translate-sk-en: the Firefox Translations Slovak to English student
+model "tiny" (version 1.0), Copyright Mozilla and contributors,
+licensed under the Mozilla Public License 2.0 (LICENSE in this component).
+
+Source: Mozilla's Firefox Translations models,
+https://github.com/mozilla/firefox-translations-models (the files themselves
+are served from the Remote Settings collection "translations-models" of
+https://firefox.settings.services.mozilla.com). The model files are shipped
+unmodified; their sha256 are:
+
+  model.sken.intgemm.alphas.bin  1686f94838ace314719e945606a09a66dafd40847dd3fd352ad3f7a969aac62f
+  lex.50.50.sken.s2t.bin         18577a7ded6b9957c948f2a384683f7ce09def42336c8141eee7ba86b79e2c8e
+  vocab.sken.spm                 7d25655bd15f34d77db5d2cb96a51c7943c5528f37f83b677a09bb0ea4e4f59b
+
+config.yml and myna-text-model.json are Canonical's own (AGPL-3.0-or-later).
+The runtime that executes the model, bergamot-translator (MPL-2.0), and its
+bundled libraries are noted in the myna-translation snap's NOTICE.

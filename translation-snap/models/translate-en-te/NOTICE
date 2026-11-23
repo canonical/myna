@@ -1,0 +1,17 @@
+model-translate-en-te: the Firefox Translations English to Telugu student
+model "tiny" (version 1.0), Copyright Mozilla and contributors,
+licensed under the Mozilla Public License 2.0 (LICENSE in this component).
+
+Source: Mozilla's Firefox Translations models,
+https://github.com/mozilla/firefox-translations-models (the files themselves
+are served from the Remote Settings collection "translations-models" of
+https://firefox.settings.services.mozilla.com). The model files are shipped
+unmodified; their sha256 are:
+
+  model.ente.intgemm.alphas.bin  a3fee2fcd39df975da28666c536adff60147dce59062fca6097bb42fb2a52500
+  lex.50.50.ente.s2t.bin         ea44d146f6b4614586654d91d7b677ee617e2367be2eccd72e81aa0fa359b92c
+  vocab.ente.spm                 41d0828d103a07e0608c604102ba4418fcb06e82b3742c1abc6d3ec343673e93
+
+config.yml and myna-text-model.json are Canonical's own (AGPL-3.0-or-later).
+The runtime that executes the model, bergamot-translator (MPL-2.0), and its
+bundled libraries are noted in the myna-translation snap's NOTICE.

@@ -1,0 +1,17 @@
+model-translate-ru-en: the Firefox Translations Russian to English student
+model (version 2.1), Copyright Mozilla and contributors,
+licensed under the Mozilla Public License 2.0 (LICENSE in this component).
+
+Source: Mozilla's Firefox Translations models,
+https://github.com/mozilla/firefox-translations-models (the files themselves
+are served from the Remote Settings collection "translations-models" of
+https://firefox.settings.services.mozilla.com). The model files are shipped
+unmodified; their sha256 are:
+
+  model.ruen.intgemm.alphas.bin  aa0efa194b3dbd2da129ba0b8db8ef139126cb0914e57072f62061294746f1e2
+  lex.50.50.ruen.s2t.bin         c944e753f298bbdf6506388de7257fb48cbd12c83e2807e2c284fc323771895b
+  vocab.ruen.spm                 de8af5f87e231ee4016cec4bb482e6b584cb1ca34dcb624fc7b8398f25bb35df
+
+config.yml and myna-text-model.json are Canonical's own (AGPL-3.0-or-later).
+The runtime that executes the model, bergamot-translator (MPL-2.0), and its
+bundled libraries are noted in the myna-translation snap's NOTICE.

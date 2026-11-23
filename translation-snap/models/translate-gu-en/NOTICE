@@ -1,0 +1,17 @@
+model-translate-gu-en: the Firefox Translations Gujarati to English student
+model "tiny" (version 1.0), Copyright Mozilla and contributors,
+licensed under the Mozilla Public License 2.0 (LICENSE in this component).
+
+Source: Mozilla's Firefox Translations models,
+https://github.com/mozilla/firefox-translations-models (the files themselves
+are served from the Remote Settings collection "translations-models" of
+https://firefox.settings.services.mozilla.com). The model files are shipped
+unmodified; their sha256 are:
+
+  model.guen.intgemm.alphas.bin  7b16e4e64f2776c73d87db01922c091738566b6a6092a42488cbaee1385cb4ab
+  lex.50.50.guen.s2t.bin         af01dbec5a1555ddad7c4b19878ecda00e6f9d179ca76a40ab2413de6b081cb0
+  vocab.guen.spm                 6ad2aa442cc04398bd06b4f03a1027939bbfbaac5f87b3d21f667406f4f62704
+
+config.yml and myna-text-model.json are Canonical's own (AGPL-3.0-or-later).
+The runtime that executes the model, bergamot-translator (MPL-2.0), and its
+bundled libraries are noted in the myna-translation snap's NOTICE.

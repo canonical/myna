@@ -1,0 +1,17 @@
+model-translate-bn-en: the Firefox Translations Bengali to English student
+model "tiny" (version 1.0), Copyright Mozilla and contributors,
+licensed under the Mozilla Public License 2.0 (LICENSE in this component).
+
+Source: Mozilla's Firefox Translations models,
+https://github.com/mozilla/firefox-translations-models (the files themselves
+are served from the Remote Settings collection "translations-models" of
+https://firefox.settings.services.mozilla.com). The model files are shipped
+unmodified; their sha256 are:
+
+  model.bnen.intgemm.alphas.bin  14c1d9e92918e8d04cb0ed351ae386c3b5d5c62a6dc601d9515f4c7e6c2a3a56
+  lex.50.50.bnen.s2t.bin         aea901a6bd8722962551c0349b8570af684444028b62bbff465be9931e6e9800
+  vocab.bnen.spm                 8a6a4de992ccd47bae4227ec6420866374137d6cc88ed6e8b2f16b36322a9d37
+
+config.yml and myna-text-model.json are Canonical's own (AGPL-3.0-or-later).
+The runtime that executes the model, bergamot-translator (MPL-2.0), and its
+bundled libraries are noted in the myna-translation snap's NOTICE.

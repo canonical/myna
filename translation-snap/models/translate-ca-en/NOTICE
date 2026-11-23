@@ -1,0 +1,17 @@
+model-translate-ca-en: the Firefox Translations Catalan to English student
+model "base-memory" (version 2.0), Copyright Mozilla and contributors,
+licensed under the Mozilla Public License 2.0 (LICENSE in this component).
+
+Source: Mozilla's Firefox Translations models,
+https://github.com/mozilla/firefox-translations-models (the files themselves
+are served from the Remote Settings collection "translations-models" of
+https://firefox.settings.services.mozilla.com). The model files are shipped
+unmodified; their sha256 are:
+
+  model.caen.intgemm.alphas.bin  b7f9c70823052f60c257eb1c4eff893abea3648aa9d1c23c8774e1e5ef061434
+  lex.50.50.caen.s2t.bin         74880047539925630601d61aa6c29a0672046236ca6cf33eeaf6f6f6690e914e
+  vocab.caen.spm                 6d22da90905873c2793d0805e34e5c27901b16e7e7a7a427696696f67dfe1f0e
+
+config.yml and myna-text-model.json are Canonical's own (AGPL-3.0-or-later).
+The runtime that executes the model, bergamot-translator (MPL-2.0), and its
+bundled libraries are noted in the myna-translation snap's NOTICE.

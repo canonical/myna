@@ -1,0 +1,17 @@
+model-translate-en-hi: the Firefox Translations English to Hindi student
+model "tiny" (version 1.0), Copyright Mozilla and contributors,
+licensed under the Mozilla Public License 2.0 (LICENSE in this component).
+
+Source: Mozilla's Firefox Translations models,
+https://github.com/mozilla/firefox-translations-models (the files themselves
+are served from the Remote Settings collection "translations-models" of
+https://firefox.settings.services.mozilla.com). The model files are shipped
+unmodified; their sha256 are:
+
+  model.enhi.intgemm.alphas.bin  18682fa6aa1c1b2f78a6fcbcb354755094d623e65436ef7821720c5213e11a49
+  lex.50.50.enhi.s2t.bin         b473f6fe41cdb7c1dbeeb714fc50314feab77b0af2b2da6f7830ee14492dd847
+  vocab.enhi.spm                 8017cbf812bae400794c424699b89de90db06ac7a4ca67a420013a9f68b270c1
+
+config.yml and myna-text-model.json are Canonical's own (AGPL-3.0-or-later).
+The runtime that executes the model, bergamot-translator (MPL-2.0), and its
+bundled libraries are noted in the myna-translation snap's NOTICE.
