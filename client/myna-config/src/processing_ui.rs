@@ -25,9 +25,9 @@ use crate::ports::{
     BackendRepository, ClientSettingsSubscription, DictationDaemon, SystemConfigurator,
 };
 use crate::processing_steps::{
-    example, rows, Inputs, Offered, Row, Source, Standing, SCRIPT, TRANSLATE,
+    example, language_name, rows, size, Inputs, Offered, Row, Source, Standing, SCRIPT, TRANSLATE,
 };
-use crate::step_catalog::{self, Item, Offer};
+use crate::step_catalog::{self, Item, Job, Language, LanguageState, Offer};
 use crate::ui::InstallControl;
 
 /// How long a finished install may wait for the daemon to offer its model
@@ -113,6 +113,24 @@ struct Editor {
     shown: RefCell<Vec<Line>>,
 }
 
+/// The page Translate opens: a search over the languages the text can be
+/// translated into, and the installed translation models to remove.
+struct LanguagePage {
+    page: adw::NavigationPage,
+    search: gtk::SearchEntry,
+    /// Says which language the text is in where the step would go.
+    list: adw::PreferencesGroup,
+    empty: adw::ActionRow,
+    rows: RefCell<Vec<(String, LanguageWidgets)>>,
+    installed: adw::PreferencesGroup,
+    installed_rows: RefCell<Vec<(String, adw::ActionRow, gtk::Button)>>,
+}
+
+struct LanguageWidgets {
+    row: adw::ActionRow,
+    state: gtk::Label,
+}
+
 /// One item of the catalog page.
 struct CatalogWidgets {
     row: adw::ExpanderRow,
@@ -135,7 +153,15 @@ pub struct StepsPage {
     editor: RefCell<Option<Rc<Editor>>>,
     catalog_page: adw::NavigationPage,
     catalog_group: adw::PreferencesGroup,
-    catalog_widgets: RefCell<Vec<(String, CatalogWidgets)>>,
+    /// The catalog's rows by job, in order; `None` is the Translate row.
+    catalog_widgets: RefCell<Vec<(String, Option<CatalogWidgets>)>>,
+    /// The catalog's Translate row: it opens the language page.
+    translate_row: adw::ActionRow,
+    languages: LanguagePage,
+    /// The languages the language page lists now.
+    shown_languages: RefCell<Vec<Language>>,
+    /// The language whose models the last choice is installing.
+    installing_language: RefCell<Option<String>>,
     /// The chain the catalog adds to: the one being edited, else the
     /// active one.
     catalog_for: RefCell<Option<String>>,
@@ -209,6 +235,8 @@ impl StepsPage {
         let preferences = adw::PreferencesPage::new();
         preferences.add(&catalog_group);
         let catalog_page = crate::subpage::subpage(&gettextrs::gettext("Add step"), &preferences);
+        let translate_row = link_row(&gettextrs::gettext("Translate"), "");
+        let languages = language_page();
         let catalog = (deps.catalog)();
         let page = Rc::new(Self {
             deps,
@@ -223,6 +251,10 @@ impl StepsPage {
             catalog_page,
             catalog_group,
             catalog_widgets: RefCell::new(Vec::new()),
+            translate_row,
+            languages,
+            shown_languages: RefCell::new(Vec::new()),
+            installing_language: RefCell::new(None),
             catalog_for: RefCell::new(None),
             items: RefCell::new(Vec::new()),
             dictating: Cell::new(false),
@@ -283,6 +315,7 @@ impl StepsPage {
                 }
             }
         });
+        page.connect_language_page();
         page.render();
         // SAFETY: the key is private to this module and always holds a page.
         unsafe { slots.chains.set_data(PAGE_KEY, page.clone()) };
@@ -1193,34 +1226,355 @@ impl StepsPage {
             locales: &self.deps.locales,
             rows: &step_rows,
         });
+        let likely = self.likely_languages(processing);
+        let steps = target.as_ref().map(|c| c.steps.clone()).unwrap_or_default();
+        let at = myna_core::chains::insert_position(&steps, TRANSLATE);
+        let strands = |code: &str| {
+            let mut after = steps.clone();
+            after.insert(at, ChainStep::new(TRANSLATE).with("to", code));
+            self.view(|ctx| chains_view::strands(&steps, &after, ctx))
+        };
+        let mut language_installs = BTreeMap::new();
+        if let (Some(code), Some(percent)) = (
+            self.installing_language.borrow().as_ref(),
+            installing.get(TRANSLATE),
+        ) {
+            language_installs.insert(step_catalog::language_key(code), *percent);
+        }
+        let languages = step_catalog::languages(&step_catalog::LanguageInputs {
+            catalog: &catalog,
+            daemon: offered.as_ref(),
+            from: &translate_from,
+            installing: &language_installs,
+            preparing: &BTreeSet::new(),
+            likely: &likely,
+            strands: &strands,
+        });
+        let jobs = step_catalog::jobs(&items, &translate_from, &languages);
+        let key = |job: &Job| match job {
+            Job::Step(item) => item.id.clone(),
+            Job::Translate(_) => TRANSLATE.to_owned(),
+        };
         let same = {
             let widgets = self.catalog_widgets.borrow();
-            widgets.len() == items.len()
+            widgets.len() == jobs.len()
                 && widgets
                     .iter()
-                    .zip(&items)
-                    .all(|((id, _), item)| *id == item.id)
+                    .zip(&jobs)
+                    .all(|((id, _), job)| *id == key(job))
         };
         if !same {
             for (_, widgets) in self.catalog_widgets.take() {
-                self.catalog_group.remove(&widgets.row);
+                match widgets {
+                    Some(widgets) => self.catalog_group.remove(&widgets.row),
+                    None => self.catalog_group.remove(&self.translate_row),
+                }
             }
             let mut built = Vec::new();
-            for item in &items {
-                let widgets = self.catalog_item(item);
-                self.catalog_group.add(&widgets.row);
-                built.push((item.id.clone(), widgets));
+            for job in &jobs {
+                match job {
+                    Job::Step(item) => {
+                        let widgets = self.catalog_item(item);
+                        self.catalog_group.add(&widgets.row);
+                        built.push((key(job), Some(widgets)));
+                    }
+                    Job::Translate(_) => {
+                        self.catalog_group.add(&self.translate_row);
+                        built.push((key(job), None));
+                    }
+                }
             }
             self.catalog_widgets.replace(built);
         }
         let blocked = self.dictating.get() || !installing.is_empty() || !removing.is_empty();
-        for ((_, widgets), item) in self.catalog_widgets.borrow().iter().zip(&items) {
-            show_item(widgets, item, blocked);
+        for ((_, widgets), job) in self.catalog_widgets.borrow().iter().zip(&jobs) {
+            match (widgets, job) {
+                (Some(widgets), Job::Step(item)) => show_item(widgets, item, blocked),
+                (None, Job::Translate(translate)) => {
+                    self.translate_row
+                        .set_subtitle(&escape_markup(&translate.subtitle));
+                    self.translate_row.set_sensitive(translate.open);
+                }
+                _ => {}
+            }
         }
+        let removable: Vec<Entry> = catalog
+            .iter()
+            .filter(|e| e.step.id == TRANSLATE)
+            .filter(|e| offered.as_ref().is_some_and(|d| d.offers(&e.model)))
+            .cloned()
+            .collect();
         drop(installing);
         drop(removing);
         drop(catalog);
         self.items.replace(items);
+        self.render_languages(&translate_from, languages, &removable, blocked);
+    }
+
+    /// The user's own languages, most likely first: the desktop locales,
+    /// then the targets of the Translate steps already in a chain.
+    fn likely_languages(&self, processing: &Processing) -> Vec<String> {
+        let mut likely: Vec<String> = Vec::new();
+        let locales = self
+            .deps
+            .locales
+            .iter()
+            .map(|l| myna_core::chains::primary_language(l));
+        let targets = processing
+            .chains
+            .iter()
+            .flat_map(|c| &c.steps)
+            .filter(|s| s.step == TRANSLATE)
+            .filter_map(|s| s.params.get("to").cloned());
+        for code in locales.chain(targets) {
+            if !code.is_empty() && !likely.contains(&code) {
+                likely.push(code);
+            }
+        }
+        likely
+    }
+
+    fn connect_language_page(self: &Rc<Self>) {
+        self.translate_row.connect_activated({
+            let page = Rc::downgrade(self);
+            move |_| {
+                if let Some(page) = page.upgrade() {
+                    page.languages.search.set_text("");
+                    page.deps.nav.push(&page.languages.page);
+                    page.languages.search.grab_focus();
+                }
+            }
+        });
+        self.languages.search.connect_search_changed({
+            let page = Rc::downgrade(self);
+            move |_| {
+                if let Some(page) = page.upgrade() {
+                    page.filter_languages(true);
+                }
+            }
+        });
+        self.languages.search.connect_activate({
+            let page = Rc::downgrade(self);
+            move |_| {
+                if let Some(page) = page.upgrade() {
+                    let first = page
+                        .languages
+                        .rows
+                        .borrow()
+                        .iter()
+                        .find(|(_, w)| w.row.is_visible())
+                        .map(|(code, _)| code.clone());
+                    if let Some(code) = first {
+                        page.choose_language(&code);
+                    }
+                }
+            }
+        });
+    }
+
+    fn render_languages(
+        self: &Rc<Self>,
+        from: &Source,
+        languages: Vec<Language>,
+        removable: &[Entry],
+        blocked: bool,
+    ) {
+        let lp = &self.languages;
+        let description = match from {
+            Source::One(code) => {
+                // TRANSLATORS: {language} is the language the text is in where the step goes, such as "English".
+                let frame = gettextrs::gettext(
+                    "From {language}. Choosing a language adds the step; one that is not installed downloads first.",
+                );
+                frame.replace("{language}", &language_name(code))
+            }
+            Source::Unknown => gettextrs::gettext("Needs a single dictation language"),
+        };
+        lp.list.set_description(Some(&escape_markup(&description)));
+        let same = {
+            let rows = lp.rows.borrow();
+            rows.len() == languages.len()
+                && rows.iter().zip(&languages).all(|((c, _), l)| *c == l.code)
+        };
+        if !same {
+            for (_, widgets) in lp.rows.take() {
+                lp.list.remove(&widgets.row);
+            }
+            lp.list.remove(&lp.empty);
+            let mut built = Vec::new();
+            for language in &languages {
+                let widgets = self.language_row(&language.code);
+                lp.list.add(&widgets.row);
+                built.push((language.code.clone(), widgets));
+            }
+            lp.list.add(&lp.empty);
+            lp.rows.replace(built);
+        }
+        for ((_, widgets), language) in lp.rows.borrow().iter().zip(&languages) {
+            show_language(widgets, language, blocked);
+        }
+        self.shown_languages.replace(languages);
+        self.filter_languages(false);
+        let keys: Vec<String> = removable.iter().map(|e| e.id.clone()).collect();
+        let same = {
+            let rows = lp.installed_rows.borrow();
+            rows.len() == keys.len() && rows.iter().zip(&keys).all(|((k, _, _), id)| k == id)
+        };
+        if !same {
+            for (_, row, _) in lp.installed_rows.take() {
+                lp.installed.remove(&row);
+            }
+            let mut built = Vec::new();
+            for entry in removable {
+                // TRANSLATORS: {from} and {to} are language names, such as "English" and "Français".
+                let frame = gettextrs::gettext("{from} to {to}");
+                let title = frame
+                    .replace("{from}", &language_name(&entry.in_lang))
+                    .replace("{to}", &language_name(&entry.out_lang));
+                let row = adw::ActionRow::builder()
+                    .title(escape_markup(&title))
+                    .subtitle(escape_markup(&size(entry.download_bytes)))
+                    .build();
+                let remove = gtk::Button::builder()
+                    .label(gettextrs::gettext("Remove"))
+                    .css_classes(["flat"])
+                    .valign(gtk::Align::Center)
+                    .build();
+                remove.reset_relation(gtk::AccessibleRelation::LabelledBy);
+                remove.update_property(&[gtk::accessible::Property::Label(
+                    // TRANSLATORS: {model} names a translation model, such as "English to Français".
+                    &gettextrs::gettext("Remove {model}").replace("{model}", &title),
+                )]);
+                remove.connect_clicked({
+                    let page = Rc::downgrade(self);
+                    let entry = entry.clone();
+                    move |_| {
+                        if let Some(page) = page.upgrade() {
+                            page.start_remove(entry.clone());
+                        }
+                    }
+                });
+                row.add_suffix(&remove);
+                lp.installed.add(&row);
+                built.push((entry.id.clone(), row, remove));
+            }
+            lp.installed_rows.replace(built);
+        }
+        let removing = !self.removing.borrow().is_empty();
+        for (_, _, remove) in lp.installed_rows.borrow().iter() {
+            remove.set_sensitive(!blocked && !removing);
+        }
+        lp.installed.set_visible(!removable.is_empty());
+    }
+
+    /// Show the languages the search matches; `announce` says how many.
+    fn filter_languages(&self, announce: bool) {
+        let lp = &self.languages;
+        let query = lp.search.text();
+        let shown = self.shown_languages.borrow();
+        let mut count = 0u32;
+        for ((_, widgets), language) in lp.rows.borrow().iter().zip(shown.iter()) {
+            let hit = step_catalog::matches(language, &query);
+            widgets.row.set_visible(hit);
+            count += u32::from(hit);
+        }
+        lp.empty.set_visible(count == 0);
+        if announce {
+            // TRANSLATORS: read by screen readers as the language search narrows; {count} is a number.
+            let said = gettextrs::ngettext("{count} language", "{count} languages", count)
+                .replace("{count}", &count.to_string());
+            lp.search
+                .announce(&said, gtk::AccessibleAnnouncementPriority::Medium);
+        }
+    }
+
+    fn language_row(self: &Rc<Self>, code: &str) -> LanguageWidgets {
+        let row = adw::ActionRow::builder().activatable(true).build();
+        let state = gtk::Label::builder()
+            .css_classes(["dim-label"])
+            .valign(gtk::Align::Center)
+            .build();
+        row.add_suffix(&state);
+        row.connect_activated({
+            let page = Rc::downgrade(self);
+            let code = code.to_owned();
+            move |_| {
+                if let Some(page) = page.upgrade() {
+                    page.choose_language(&code);
+                }
+            }
+        });
+        LanguageWidgets { row, state }
+    }
+
+    /// Put a Translate step into `code` in the catalog's chain, at its
+    /// stage's place, install what it lacks, and go back to the chain.
+    fn choose_language(self: &Rc<Self>, code: &str) {
+        let Some(language) = self
+            .shown_languages
+            .borrow()
+            .iter()
+            .find(|l| l.code == code)
+            .cloned()
+        else {
+            return;
+        };
+        // A download waits for the dictation or the other operation to end.
+        if (self.dictating.get() || self.busy())
+            && matches!(language.state, LanguageState::Download { .. })
+        {
+            return;
+        }
+        let target = self
+            .catalog_chain(&self.deps.store.processing())
+            .map(|c| c.id);
+        if target.is_none() && self.catalog_for.borrow().is_some() {
+            self.leave_catalog();
+            return;
+        }
+        let step = ChainStep::new(TRANSLATE).with("to", code);
+        let mut placed: Option<(String, usize)> = None;
+        self.edit(|p| {
+            let id = match target {
+                Some(id) => id,
+                None => {
+                    let name = chains_view::new_name(&p.chains);
+                    let id = p.add(&name, Vec::new());
+                    p.activate(Some(&id));
+                    id
+                }
+            };
+            if let Some(chain) = p.chains.iter_mut().find(|c| c.id == id) {
+                let at = myna_core::chains::insert_position(&chain.steps, TRANSLATE);
+                chain.steps.insert(at, step);
+                placed = Some((id, at));
+            }
+        });
+        if let (Some((chain, at)), LanguageState::Download { .. }) = (placed, &language.state) {
+            self.installing_language.replace(Some(code.to_owned()));
+            self.install_line(&chain, at);
+        }
+        self.leave_catalog();
+    }
+
+    /// Back from the catalog and its language page to where it was opened.
+    fn leave_catalog(&self) {
+        let editor = self.editor.borrow().as_ref().map(|e| e.page.clone());
+        match editor {
+            Some(page) => {
+                self.deps.nav.pop_to_page(&page);
+            }
+            None => {
+                let nav = &self.deps.nav;
+                while nav.visible_page().as_ref() == Some(&self.languages.page)
+                    || nav.visible_page().as_ref() == Some(&self.catalog_page)
+                {
+                    if !nav.pop() {
+                        break;
+                    }
+                }
+            }
+        }
     }
 
     /// Put the step of catalog item `id` in the catalog's chain, at its
@@ -1238,7 +1592,7 @@ impl StepsPage {
         // Opened for a chain that is gone since: add to nothing rather than
         // to a chain the user never made.
         if target.is_none() && self.catalog_for.borrow().is_some() {
-            self.deps.nav.pop();
+            self.leave_catalog();
             return;
         }
         self.edit(|p| {
@@ -1545,6 +1899,93 @@ async fn run_remove(page: &std::rc::Weak<StepsPage>, entry: &Entry) -> Result<()
         plugin_install::remove(&ctx, &request, &|_| {}).await?;
     }
     Ok(())
+}
+
+fn language_page() -> LanguagePage {
+    let search = gtk::SearchEntry::builder()
+        .placeholder_text(gettextrs::gettext("Search languages"))
+        .hexpand(true)
+        .build();
+    search.update_property(&[gtk::accessible::Property::Label(&gettextrs::gettext(
+        "Search languages",
+    ))]);
+    let list = adw::PreferencesGroup::new();
+    let empty = adw::ActionRow::builder()
+        .title(gettextrs::gettext("No language matches"))
+        .subtitle(gettextrs::gettext(
+            "Only languages a model can translate into from here are listed.",
+        ))
+        .subtitle_lines(0)
+        .visible(false)
+        .build();
+    list.add(&empty);
+    let installed = adw::PreferencesGroup::builder()
+        .title(gettextrs::gettext("Installed translation models"))
+        .description(gettextrs::gettext(
+            "A step that uses a removed model stays and shows what it needs, so it can be installed again.",
+        ))
+        .visible(false)
+        .build();
+    let preferences = adw::PreferencesPage::builder().vexpand(true).build();
+    preferences.add(&list);
+    preferences.add(&installed);
+    let bar = adw::Clamp::builder()
+        .maximum_size(600)
+        .margin_top(12)
+        .margin_start(12)
+        .margin_end(12)
+        .child(&search)
+        .build();
+    let content = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    content.append(&bar);
+    content.append(&preferences);
+    let page = crate::subpage::subpage(&gettextrs::gettext("Translate to"), &content);
+    LanguagePage {
+        page,
+        search,
+        list,
+        empty,
+        rows: RefCell::new(Vec::new()),
+        installed,
+        installed_rows: RefCell::new(Vec::new()),
+    }
+}
+
+fn show_language(widgets: &LanguageWidgets, language: &Language, blocked: bool) {
+    widgets.row.set_title(&escape_markup(&language.name));
+    widgets
+        .row
+        .set_subtitle(&escape_markup(language.english.as_deref().unwrap_or("")));
+    let (state, sensitive) = match &language.state {
+        LanguageState::Ready => (gettextrs::gettext("Installed"), true),
+        LanguageState::Download { bytes, entries } => {
+            let text = if entries.len() > 1 {
+                // TRANSLATORS: {size} is a download size, such as "66 MB"; two models make the translation, through English.
+                gettextrs::gettext("Downloads {size}, through English")
+            } else {
+                // TRANSLATORS: {size} is a download size, such as "33 MB".
+                gettextrs::gettext("Downloads {size}")
+            };
+            (text.replace("{size}", &size(*bytes)), !blocked)
+        }
+        LanguageState::Installing(Some(percent)) => {
+            // TRANSLATORS: {percent} is a number from 0 to 100.
+            let frame = gettextrs::gettext("Installing, {percent}%");
+            (frame.replace("{percent}", &percent.to_string()), false)
+        }
+        LanguageState::Installing(None) => (gettextrs::gettext("Installing…"), false),
+        LanguageState::Preparing => (gettextrs::gettext("Preparing…"), false),
+        LanguageState::Unknown => (gettextrs::gettext("Myna is not running"), true),
+    };
+    widgets.state.set_label(&state);
+    widgets.row.set_sensitive(sensitive);
+    let description = match &language.english {
+        Some(english) => format!("{english}. {state}"),
+        None => state,
+    };
+    widgets
+        .row
+        .update_property(&[gtk::accessible::Property::Description(&description)]);
 }
 
 fn show_item(widgets: &CatalogWidgets, item: &Item, blocked: bool) {
@@ -2352,7 +2793,7 @@ mod tests {
     }
 
     #[test]
-    fn the_catalog_lists_no_fit_step() {
+    fn the_catalog_lists_each_job_once_and_no_fit_step() {
         crate::ui::on_gtk_thread(|| {
             let rig = rig("catalog", TIDY, TIDY, "");
             rig.page.open_catalog(None);
@@ -2360,8 +2801,105 @@ mod tests {
                 .iter()
                 .map(|row| row.title().to_string())
                 .collect();
-            assert!(titles.contains(&"Translate English to Français".to_owned()));
-            assert!(!titles.contains(&"Fitted to the field".to_owned()));
+            assert_eq!(titles, ["Tidy up speech", "Chinese script"]);
+            assert!(rig.page.translate_row.parent().is_some());
+            assert_eq!(rig.page.translate_row.title(), "Translate");
+            assert!(rig.page.translate_row.is_sensitive());
+            assert!(
+                rig.page
+                    .translate_row
+                    .subtitle()
+                    .unwrap()
+                    .contains("English"),
+                "{:?}",
+                rig.page.translate_row.subtitle()
+            );
+        });
+    }
+
+    fn language_titles(rig: &Rig) -> Vec<String> {
+        rig.page
+            .languages
+            .rows
+            .borrow()
+            .iter()
+            .filter(|(_, w)| w.row.is_visible())
+            .map(|(_, w)| w.row.title().to_string())
+            .collect()
+    }
+
+    fn open_languages(rig: &Rig, chain: &str) {
+        rig.page.open_editor(chain);
+        editor(rig).add_row.emit_by_name::<()>("activated", &[]);
+        pump_until("the Translate row", || {
+            rig.page.translate_row.is_sensitive()
+        });
+        rig.page.translate_row.emit_by_name::<()>("activated", &[]);
+        assert_eq!(rig.nav.visible_page().unwrap(), rig.page.languages.page);
+    }
+
+    /// Charles, 2026-11-23: Translate is one job whose page is searched by
+    /// language; choosing one adds the step and goes back to the chain.
+    #[test]
+    fn translate_opens_a_searchable_language_page_and_adds_the_choice() {
+        crate::ui::on_gtk_thread(|| {
+            let rig = rig(
+                "languages",
+                BOTH,
+                BOTH,
+                "chains=[('c', 'Mine', [('tidy', true, {})])]\n",
+            );
+            open_languages(&rig, "c");
+            assert_eq!(language_titles(&rig), ["Français", "Deutsch"]);
+            rig.page.languages.search.set_text("germ");
+            pump_until("the search", || language_titles(&rig) == ["Deutsch"]);
+            assert!(!rig.page.languages.empty.is_visible());
+            rig.page.languages.search.set_text("klingon");
+            pump_until("nothing", || language_titles(&rig).is_empty());
+            assert!(rig.page.languages.empty.is_visible());
+            rig.page.languages.search.set_text("fran");
+            pump_until("French", || language_titles(&rig) == ["Français"]);
+            rig.page
+                .languages
+                .search
+                .emit_by_name::<()>("activate", &[]);
+            let p = rig.store.processing();
+            let steps = &p.chain("c").unwrap().steps;
+            assert_eq!(steps.len(), 2);
+            assert_eq!(steps[1].step, "translate");
+            assert_eq!(steps[1].params.get("to").map(String::as_str), Some("fr"));
+            assert_eq!(rig.nav.visible_page().unwrap(), editor(&rig).page);
+            assert!(rig.calls.borrow().is_empty(), "French is installed");
+            // The installed model is listed to remove.
+            assert_eq!(rig.page.languages.installed_rows.borrow().len(), 1);
+        });
+    }
+
+    #[test]
+    fn choosing_a_language_that_is_not_installed_installs_it() {
+        crate::ui::on_gtk_thread(|| {
+            let rig = rig(
+                "languages-install",
+                TIDY,
+                BOTH,
+                "chains=[('c', 'Mine', [])]\n",
+            );
+            open_languages(&rig, "c");
+            // The rig's locale is French: it comes first.
+            let code = rig.page.languages.rows.borrow()[0].0.clone();
+            assert_eq!(code, "fr");
+            pump_until("the download size", || {
+                rig.page.languages.rows.borrow()[0]
+                    .1
+                    .state
+                    .label()
+                    .starts_with("Downloads")
+            });
+            rig.page.choose_language("fr");
+            assert_eq!(steps_of(&rig, "c"), [("translate".into(), true)]);
+            pump_until("the request", || !rig.calls.borrow().is_empty());
+            assert_eq!(rig.calls.borrow().as_slice(), ["myna-translation fr"]);
+            assert_eq!(rig.nav.visible_page().unwrap(), editor(&rig).page);
         });
     }
 }

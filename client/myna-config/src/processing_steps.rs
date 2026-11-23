@@ -135,6 +135,74 @@ pub fn language_name(code: &str) -> String {
     }
 }
 
+/// `code`'s name in the interface language, beside its own name, so a
+/// search for "German" finds Deutsch. `None` for a language with no entry;
+/// the endonym alone then names it. Chinese scripts are already named so by
+/// `language_name`.
+pub fn exonym(code: &str) -> Option<String> {
+    let name = match code {
+        "af" => gettextrs::gettext("Afrikaans"),
+        "ar" => gettextrs::gettext("Arabic"),
+        "az" => gettextrs::gettext("Azerbaijani"),
+        "be" => gettextrs::gettext("Belarusian"),
+        "bg" => gettextrs::gettext("Bulgarian"),
+        "bn" => gettextrs::gettext("Bengali"),
+        "bs" => gettextrs::gettext("Bosnian"),
+        "ca" => gettextrs::gettext("Catalan"),
+        "cs" => gettextrs::gettext("Czech"),
+        "da" => gettextrs::gettext("Danish"),
+        "de" => gettextrs::gettext("German"),
+        "el" => gettextrs::gettext("Greek"),
+        "en" => gettextrs::gettext("English"),
+        "es" => gettextrs::gettext("Spanish"),
+        "et" => gettextrs::gettext("Estonian"),
+        "eu" => gettextrs::gettext("Basque"),
+        "fa" => gettextrs::gettext("Persian"),
+        "fi" => gettextrs::gettext("Finnish"),
+        "fr" => gettextrs::gettext("French"),
+        "gl" => gettextrs::gettext("Galician"),
+        "gu" => gettextrs::gettext("Gujarati"),
+        "he" => gettextrs::gettext("Hebrew"),
+        "hi" => gettextrs::gettext("Hindi"),
+        "hr" => gettextrs::gettext("Croatian"),
+        "hu" => gettextrs::gettext("Hungarian"),
+        "id" => gettextrs::gettext("Indonesian"),
+        "is" => gettextrs::gettext("Icelandic"),
+        "it" => gettextrs::gettext("Italian"),
+        "ja" => gettextrs::gettext("Japanese"),
+        "kn" => gettextrs::gettext("Kannada"),
+        "ko" => gettextrs::gettext("Korean"),
+        "lt" => gettextrs::gettext("Lithuanian"),
+        "lv" => gettextrs::gettext("Latvian"),
+        "ml" => gettextrs::gettext("Malayalam"),
+        "mr" => gettextrs::gettext("Marathi"),
+        "ms" => gettextrs::gettext("Malay"),
+        "nb" => gettextrs::gettext("Norwegian Bokmål"),
+        "nl" => gettextrs::gettext("Dutch"),
+        "pl" => gettextrs::gettext("Polish"),
+        "pt" => gettextrs::gettext("Portuguese"),
+        "ro" => gettextrs::gettext("Romanian"),
+        "ru" => gettextrs::gettext("Russian"),
+        "sk" => gettextrs::gettext("Slovak"),
+        "sl" => gettextrs::gettext("Slovenian"),
+        "sq" => gettextrs::gettext("Albanian"),
+        "sr" => gettextrs::gettext("Serbian"),
+        "sv" => gettextrs::gettext("Swedish"),
+        "ta" => gettextrs::gettext("Tamil"),
+        "te" => gettextrs::gettext("Telugu"),
+        "th" => gettextrs::gettext("Thai"),
+        "tl" => gettextrs::gettext("Tagalog"),
+        "tr" => gettextrs::gettext("Turkish"),
+        "ug" => gettextrs::gettext("Uyghur"),
+        "uk" => gettextrs::gettext("Ukrainian"),
+        "ur" => gettextrs::gettext("Urdu"),
+        "vi" => gettextrs::gettext("Vietnamese"),
+        "zh" => gettextrs::gettext("Chinese"),
+        _ => return None,
+    };
+    Some(name)
+}
+
 /// What a step needs before it can run.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Need {
