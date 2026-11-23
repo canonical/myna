@@ -322,9 +322,20 @@ def test_a_gated_plugin_is_listed_on_a_passing_gate_alone(valid):
     del plugin["spot_check"]
     plugin["measured"]["gate"] = "fail"
     assert gen.listed(plugin) is False
+    plugin["measured"]["runs"] = True  # misses the numbers but serves
+    assert gen.listed(plugin) is True
+    plugin["measured"]["runs"] = False
+    assert gen.listed(plugin) is False
     plugin["measured"]["gate"] = "pass"
     plugin["curated"] = False
     assert gen.listed(plugin) is False
+
+
+def test_runs_must_be_a_boolean(valid):
+    plugin = gated(valid)
+    plugin["measured"]["runs"] = "yes"
+    with pytest.raises(gen.PluginError, match="runs must be a boolean"):
+        gen.validate(plugin)
 
 
 def test_the_catalog_entry_carries_the_listing_decision(valid):

@@ -375,6 +375,7 @@ def test_measured_json_rounds_latency_up_to_a_step_and_records_the_gate_and_resu
         "quality": 0.701,
         "quality_source": "chrF 0.701 on 200 FLEURS pairs (translate_en_fr); vendor FLORES COMET 0.87",
         "gate": "pass",
+        "runs": True,
         "results_sha256": "abc",
     }
     exact = pe.build_results(PLUGIN, translate_report(p95=20.0), ["translate_en_fr"], gate, {})
@@ -382,6 +383,17 @@ def test_measured_json_rounds_latency_up_to_a_step_and_records_the_gate_and_resu
     fast = translate_report(p95=0.2)
     results = pe.build_results(PLUGIN, fast, ["translate_en_fr"], gate, {})
     assert pe.measured_json(results, gate, ["translate_en_fr"], "")["latency_ms"] == 5
+
+
+def test_runs_is_the_health_gates_alone():
+    def gate(metric, status):
+        return {"metric": metric, "status": status}
+
+    health = [gate("p95_ms", "pass"), gate("empty_rate", "pass"), gate("repeat_loop_rate", "pass")]
+    assert pe.runs(health + [gate("chrf", "fail"), gate("vendor_comet", "fail")])
+    assert not pe.runs([gate("p95_ms", "pass"), gate("empty_rate", "fail")])
+    assert not pe.runs([gate("repeat_loop_rate", "pending")])
+    assert not pe.runs([gate("chrf", "pass")])
 
 
 def test_a_probed_pair_records_the_vendor_comet_as_its_quality_or_zero():

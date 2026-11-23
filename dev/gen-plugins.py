@@ -15,8 +15,8 @@ It yields, deterministically:
 quality, latency_ms and their source come from plugins/<name>.measured.json,
 written by the evaluation pipeline (dev/plugin-pipeline.sh), never typed into
 the toml. A plugin with a [gate] table is emitted curated only if the pipeline's
-gate passed, and not when a recorded [spot_check] (who, date, passed) failed;
-a spot check is optional. --check
+gate passed or the model runs, and not when a recorded [spot_check] (who,
+date, passed) failed; a spot check is optional. --check
 regenerates in memory and fails when a committed file differs.
 Contract: .kb/text-plugin-contract.md.
 """
@@ -130,6 +130,8 @@ def validate(plugin: dict, source: str = "plugin") -> None:
     measured = plugin["measured"]
     if gate is not None and measured.get("gate") not in ("pass", "fail"):
         raise bad("a plugin with a [gate] needs measured.json from the pipeline (gate pass|fail)")
+    if "runs" in measured and not isinstance(measured["runs"], bool):
+        raise bad("measured.json runs must be a boolean")
     if not (
         isinstance(measured.get("quality"), (int, float))
         and 0 <= measured["quality"] <= 1
@@ -142,11 +144,15 @@ def validate(plugin: dict, source: str = "plugin") -> None:
 
 def listed(plugin: dict) -> bool:
     """Whether the entry is emitted curated: the file asks for it and, when it
-    declares a [gate], the pipeline's gate passed. A native-speaker spot check
-    is optional; one recorded as failed unlists the entry."""
+    declares a [gate], the pipeline's gate passed or the model at least runs
+    (answers every input, loop-free, in time: a prototype ships on that). A
+    native-speaker spot check is optional; one recorded as failed unlists it."""
     if not plugin["curated"]:
         return False
-    if plugin.get("gate") is not None and plugin["measured"].get("gate") != "pass":
+    measured = plugin["measured"]
+    if plugin.get("gate") is not None and not (
+        measured.get("gate") == "pass" or measured.get("runs") is True
+    ):
         return False
     spot = plugin.get("spot_check")
     return spot is None or spot["passed"]

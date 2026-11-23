@@ -289,8 +289,19 @@ def measured_json(
         "quality": score,
         "quality_source": source,
         "gate": results["gate"],
+        "runs": runs(results["gates"]),
         "results_sha256": results_sha,
     }
+
+
+# The gates that say a model answers at all, whatever its quality.
+HEALTH = ("p95_ms", "empty_rate", "repeat_loop_rate")
+
+
+def runs(gates: list[dict[str, Any]]) -> bool:
+    """Whether the model served every input: some output, no loops, in time."""
+    health = [g for g in gates if g["metric"] in HEALTH]
+    return bool(health) and all(g["status"] == "pass" for g in health)
 
 
 def results_dir_default() -> Path:
