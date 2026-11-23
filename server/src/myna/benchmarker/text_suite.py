@@ -348,8 +348,9 @@ def eval_probe(
     """A pair with no corpus slice: it cannot be scored, only shown to serve.
 
     The English clean_en sentences go in whatever the source language, so the
-    output is not judged for meaning, only for being there, loop-free and in
-    time; the vendor COMET is the one quality figure, when Mozilla gives one."""
+    output is not judged for meaning, only for being there and in time, and
+    loop-free when English is the model's own source; the vendor COMET is the
+    one quality figure, when Mozilla gives one."""
     suite = PROBE_PREFIX + lang
     texts = [c.text for c in corpus.clean_en]
     outputs, millis = _timed(system.translate, texts, repeats) if system.translate else ([], [])
@@ -358,14 +359,19 @@ def eval_probe(
     gates = [
         Gate(suite, "p95_ms", latency["p95"] if measured else None, gate.p95_max_ms, "<"),
         Gate(suite, "empty_rate", empty_rate(outputs) if measured else None, gate.empty_max, "<="),
-        Gate(
-            suite,
-            "repeat_loop_rate",
-            repeat_loop_rate(outputs) if measured else None,
-            gate.repeat_max,
-            "<=",
-        ),
     ]
+    if not gate.reverse:
+        # A model into English fed English is out of its language: its loops
+        # say nothing about the language it is for.
+        gates.append(
+            Gate(
+                suite,
+                "repeat_loop_rate",
+                repeat_loop_rate(outputs) if measured else None,
+                gate.repeat_max,
+                "<=",
+            )
+        )
     if gate.vendor_comet is not None:
         gates.append(Gate(suite, "vendor_comet", gate.vendor_comet, gate.comet_min, ">="))
     detail: dict[str, Any] = {

@@ -492,6 +492,13 @@ def test_a_probe_passes_a_model_that_answers_and_fails_one_that_does_not():
     assert low.detail["probe_af"]["n"] == 200
     idle = gates(evaluate(System("t"), ["probe_af"], 1))
     assert {g.status for g in idle.values()} == {"pending"}
+    into_english = evaluate(
+        System("t", translate=lambda t: "la " * 60),
+        ["probe_af"],
+        1,
+        {"probe_af": GateConfig(reverse=True)},
+    )
+    assert set(gates(into_english)) == {"probe_af.p95_ms", "probe_af.empty_rate"}
 
 
 def test_cmd_text_with_a_plugin_and_a_socket_scores_that_model(tmp_path, capsys, monkeypatch):
