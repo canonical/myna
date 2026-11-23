@@ -22,6 +22,27 @@ snap install --edge myna-whisper+model-tiny
 SNAP_UNDER_TEST=myna-whisper MODELCTL=myna-whisper.whisper MODEL=tiny \
     "$HERE/../spread/adapter-smoke/smoke.sh"
 
+# The bench reinstalls every target itself; the smoke's server would
+# otherwise sit resident through the sweep.
+snap remove --purge myna-whisper
+
+# Lab images boot on powersave, which the bench refuses: its numbers are
+# not comparable. The machine is throwaway, so nothing is restored.
+for g in /sys/devices/system/cpu/cpu[0-9]*/cpufreq/scaling_governor; do
+    [ -e "$g" ] || continue
+    echo performance > "$g" || true
+done
+{
+    echo "driver: $(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_driver 2>&1)"
+    echo "available: $(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_available_governors 2>&1)"
+    grep -H . /sys/devices/system/cpu/cpu[0-9]*/cpufreq/scaling_governor 2>&1
+} > cpufreq.out
+cat cpufreq.out
+if grep -H . /sys/devices/system/cpu/cpu[0-9]*/cpufreq/scaling_governor 2>/dev/null | grep -qv ':performance$'; then
+    echo "cannot set the performance governor on this machine, see cpufreq.out" >&2
+    exit 1
+fi
+
 apt-get install -y -q python3-venv
 "$HERE/../../dev/build-bench.sh"
 BENCH="python3 $HERE/../../myna-bench.pyz"
