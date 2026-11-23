@@ -73,6 +73,11 @@ ALLOWED: tuple[Allowed, ...] = (
         " modelctl's lscompute falls back to uname(2)",
     ),
     Allowed(
+        {"operation": "open", "name": r"/proc/self/environ"},
+        "Intel MKL, linked into CTranslate2, reads INTEL_ISA_DISABLE from its own"
+        " environ and takes it as unset; snapd's base template lacks the rule",
+    ),
+    Allowed(
         {
             "subject": r"snap\.myna\.hud",
             "operation": "open",
@@ -105,6 +110,9 @@ def parse(line: str) -> dict[str, str] | None:
     fields["subject"] = subject
     if fields.get("name", "").startswith(":"):
         fields["name"] = ":unique"
+    pid = fields.get("pid")
+    if pid and fields.get("name", "").startswith(f"/proc/{pid}/"):
+        fields["name"] = "/proc/self/" + fields["name"][len(f"/proc/{pid}/") :]
     return fields
 
 
