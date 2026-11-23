@@ -214,7 +214,7 @@
       "locales": [
         "en"
       ],
-      "curated": true,
+      "curated": false,
       "license": "MPL-2.0",
       "attribution": "Mozilla and contributors, Firefox Translations (base-memory 2.0)",
       "source": "https://github.com/mozilla/firefox-translations-models",

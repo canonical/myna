@@ -328,14 +328,6 @@ def test_a_gated_plugin_is_listed_only_with_a_passing_gate_and_spot_check(valid)
     assert gen.listed(plugin) is False
 
 
-def test_a_waiver_stands_in_for_the_spot_check_but_a_failed_one_overrides_it(valid):
-    plugin = gated(valid, spot_check_waiver="listed during development")
-    gen.validate(plugin)
-    assert gen.listed(plugin) is True
-    plugin["spot_check"] = {"who": "R", "date": "2026-11-22", "passed": False}
-    assert gen.listed(plugin) is False
-
-
 def test_the_catalog_entry_carries_the_listing_decision(valid):
     plugin = gated(valid)
     assert gen.catalog_entry(plugin)["curated"] is False
@@ -356,7 +348,6 @@ def test_the_catalog_entry_carries_the_listing_decision(valid):
             lambda p: p.update(spot_check={"who": "R", "date": "d", "passed": True, "extra": 1}),
             "spot_check needs",
         ),
-        (lambda p: p["gate"].update(spot_check_waiver=" "), "must say why"),
         (lambda p: p["measured"].pop("gate"), "from the pipeline"),
         (lambda p: p["measured"].update(gate="maybe"), "from the pipeline"),
     ],

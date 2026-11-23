@@ -206,7 +206,7 @@ def start_daemon(
 
 
 def spot_check_state(plugin: dict[str, Any]) -> str:
-    """``passed``, ``waived``, ``failed`` or ``missing``."""
+    """``passed``, ``failed`` or ``missing``."""
     spot = plugin.get("spot_check")
     if spot:
         if not all(spot.get(k) for k in ("who", "date")) or not isinstance(
@@ -214,7 +214,7 @@ def spot_check_state(plugin: dict[str, Any]) -> str:
         ):
             raise PipelineError("spot_check needs who, date and passed")
         return "passed" if spot["passed"] else "failed"
-    return "waived" if plugin.get("gate", {}).get("spot_check_waiver") else "missing"
+    return "missing"
 
 
 def quality_source(gate: GateConfig, score: float | None, n: int, suite: str) -> str:

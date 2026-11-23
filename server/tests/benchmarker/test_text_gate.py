@@ -45,7 +45,7 @@ def test_from_plugin_reads_the_gate_table_and_the_direction():
     plugin = {
         "language": "de",
         "to": "en",
-        "gate": {"vendor_comet": 0.9, "p95_max_ms": 300, "spot_check_waiver": "x"},
+        "gate": {"vendor_comet": 0.9, "p95_max_ms": 300},
     }
     g = GateConfig.from_plugin(plugin)
     assert g.vendor_comet == 0.9 and g.p95_max_ms == 300.0 and g.reverse
@@ -60,7 +60,7 @@ def test_from_plugin_reads_the_gate_table_and_the_direction():
         ({"vendor_comat": 0.9}, "unknown gate keys: vendor_comat"),
         ({"vendor_comet": "high"}, "must be a number"),
         ({"vendor_comet": True}, "must be a number"),
-        ({"spot_check_waiver": " "}, "^gate.spot_check_waiver must say why$"),
+        ({"spot_check_waiver": "x"}, "^unknown gate keys: spot_check_waiver$"),
         ({"b_key": 1, "a_key": 2}, "^unknown gate keys: a_key, b_key$"),
         ({"reverse": 1}, "unknown gate keys: reverse"),
     ],

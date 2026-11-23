@@ -59,9 +59,6 @@ class GateConfig:
     @classmethod
     def from_plugin(cls, plugin: dict[str, Any]) -> GateConfig:
         table = dict(plugin.get("gate", {}))
-        waiver = table.pop("spot_check_waiver", None)
-        if waiver is not None and not (isinstance(waiver, str) and waiver.strip()):
-            raise GateError("gate.spot_check_waiver must say why")
         known = {f.name for f in fields(cls)} - {"reverse"}
         unknown = sorted(set(table) - known)
         if unknown:

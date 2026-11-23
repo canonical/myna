@@ -55,7 +55,6 @@ required = true
 [gate]
 vendor_comet = 0.8697
 chrf_min = 0.58
-spot_check_waiver = "listed unchecked so the Add step flow and its E2E suite have a pair; never released; native-speaker-spot-checks removes it"
 
 [step]
 id = "translate"

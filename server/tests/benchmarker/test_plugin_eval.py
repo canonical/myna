@@ -301,16 +301,8 @@ def test_process_tree_and_rss_read_proc_for_this_process_and_its_children():
     ("extra", "state"),
     [
         ({}, "missing"),
-        ({"gate": {"spot_check_waiver": "shipped before the gate"}}, "waived"),
         ({"spot_check": {"who": "A", "date": "2026-11-22", "passed": True}}, "passed"),
         ({"spot_check": {"who": "A", "date": "2026-11-22", "passed": False}}, "failed"),
-        (
-            {
-                "gate": {"spot_check_waiver": "x"},
-                "spot_check": {"who": "A", "date": "2026-11-22", "passed": False},
-            },
-            "failed",
-        ),
     ],
 )
 def test_spot_check_state(extra, state):

@@ -126,9 +126,6 @@ def validate(plugin: dict, source: str = "plugin") -> None:
         and set(spot) <= {"who", "date", "passed", "notes"}
     ):
         raise bad("spot_check needs who, date, passed (and optional notes)")
-    waiver = (gate or {}).get("spot_check_waiver")
-    if waiver is not None and not (isinstance(waiver, str) and waiver.strip()):
-        raise bad("gate.spot_check_waiver must say why")
     measured = plugin["measured"]
     if gate is not None and measured.get("gate") not in ("pass", "fail"):
         raise bad("a plugin with a [gate] needs measured.json from the pipeline (gate pass|fail)")
@@ -145,7 +142,7 @@ def validate(plugin: dict, source: str = "plugin") -> None:
 def listed(plugin: dict) -> bool:
     """Whether the entry is emitted curated: the file asks for it and, when it
     declares a [gate], the pipeline's gate passed and the native-speaker spot
-    check passed (or is waived, with the reason on record)."""
+    check passed."""
     if not plugin["curated"]:
         return False
     gate = plugin.get("gate")
@@ -154,9 +151,7 @@ def listed(plugin: dict) -> bool:
     if plugin["measured"].get("gate") != "pass":
         return False
     spot = plugin.get("spot_check")
-    if spot is not None:
-        return spot["passed"]
-    return bool(gate.get("spot_check_waiver"))
+    return spot is not None and spot["passed"]
 
 
 def latency_class(ms: int) -> str:
