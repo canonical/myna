@@ -8,6 +8,7 @@ weights from a local CTranslate2 model-component directory (T15).
 
 import asyncio
 import sys
+import threading
 
 import pytest
 from hypothesis import assume, given
@@ -164,7 +165,13 @@ class _RecordingWhisperModel:
         return segments(), type("Info", (), {"language": "en"})()
 
 
+_TQDM_LOCKS: list = []
+
+
 def _fake_whisper_stack(monkeypatch, cuda_devices):
+    _TQDM_LOCKS.clear()
+    tqdm = type("tqdm", (), {"set_lock": staticmethod(_TQDM_LOCKS.append)})
+    monkeypatch.setitem(sys.modules, "tqdm", type("T", (), {"tqdm": tqdm}))
     module = type(
         "M",
         (),
@@ -322,3 +329,14 @@ def test_a_session_on_a_cpu_fallback_says_so_when_ready(monkeypatch):
     assert [(e.phase, e.warning, e.warning_code) for e in warned] == [
         (PHASE_READY, GPU_UNAVAILABLE_MESSAGE, WARNING_GPU_UNAVAILABLE)
     ]
+
+
+def test_tqdm_gets_a_thread_lock_before_the_model_loads(monkeypatch):
+    """faster-whisper builds a disabled tqdm bar per decode, and tqdm's default
+    lock is a multiprocessing RLock: a /dev/shm semaphore the snap's AppArmor
+    profile denies. A thread lock leaves it nothing to create."""
+    _fake_whisper_stack(monkeypatch, cuda_devices=0)
+
+    asyncio.run(FasterWhisperAdapter("small")._load_model())
+
+    assert [type(lock) for lock in _TQDM_LOCKS] == [type(threading.RLock())]

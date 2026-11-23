@@ -176,6 +176,7 @@ module = [
     "onnxruntime.*",
     "pyarrow.*",
     "soundfile.*",
+    "tqdm.*",
     "tracy_client.*",
 ]
 ignore_missing_imports = true

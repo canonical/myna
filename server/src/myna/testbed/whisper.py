@@ -564,6 +564,7 @@ class FasterWhisperAdapter:
                     device, compute_type = "cpu", "default"
                 else:
                     self._check_compute_type()
+                _thread_only_tqdm_lock()
                 load = functools.partial(
                     WhisperModel, self._model_size, download_root=self._download_root
                 )
@@ -1009,6 +1010,18 @@ class FasterWhisperAdapter:
 
         await run_deferred_batch(audio, emit, decode, on_commit)
         return finals
+
+
+def _thread_only_tqdm_lock() -> None:
+    """Give tqdm a thread lock before faster-whisper builds its bars.
+
+    Every decode builds one, disabled, and tqdm still creates a
+    multiprocessing RLock for it: a POSIX semaphore in /dev/shm, which
+    strict confinement denies. Nothing here shares a bar across processes.
+    """
+    from tqdm import tqdm
+
+    tqdm.set_lock(threading.RLock())
 
 
 def _first_decode(model: Any) -> None:
