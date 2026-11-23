@@ -335,8 +335,39 @@ pub fn daemon_report() -> Option<DaemonReport> {
         )
         .ok()?;
     let mut report = parse_daemon_report(&reply.child_value(0));
-    report.steps = steps_line(&myna_core::Settings::load());
+    let settings = myna_core::Settings::load();
+    report.steps = steps_line(&settings);
+    report.chain = report
+        .chain
+        .map(|state| state.as_asked(&translations(&settings)));
     Some(report)
+}
+
+/// The active chain's translations that run, as (from, to), judged the way
+/// the editor's badges are.
+fn translations(settings: &myna_core::Settings) -> Vec<(String, String)> {
+    use myna_core::chains::{fits, Fit};
+    let Some(chain) = settings.processing.active() else {
+        return Vec::new();
+    };
+    let language = match crate::processing_steps::Source::of_setting(
+        settings.language.as_deref().unwrap_or_default(),
+    ) {
+        crate::processing_steps::Source::One(code) => Some(code),
+        crate::processing_steps::Source::Unknown => None,
+    };
+    chain
+        .steps
+        .iter()
+        .zip(fits(&chain.steps, language.as_deref()))
+        .filter_map(|(step, fit)| match fit {
+            Fit::Runs {
+                input: Some(from),
+                output: Some(to),
+            } if step.step == "translate" => Some((from, to)),
+            _ => None,
+        })
+        .collect()
 }
 
 /// Read a `GetAll` reply's `a{sv}`. A property this daemon does not publish is
@@ -469,6 +500,34 @@ mod tests {
             Some("tidy, translate=fr, script=simplified".to_owned())
         );
         assert_eq!(steps_line(&myna_core::Settings::default()), None);
+    }
+
+    #[test]
+    fn the_translations_are_the_active_chains_pairs_from_the_dictation_language() {
+        let settings = |language: Option<&str>, ids: &[&str]| {
+            let mut settings = myna_core::Settings {
+                language: language.map(str::to_owned),
+                ..Default::default()
+            };
+            settings.processing.set_stage_steps(
+                &ids.iter().map(|s| s.to_string()).collect::<Vec<_>>(),
+                &[("translate.to".to_owned(), "fr".to_owned())].into(),
+            );
+            settings
+        };
+        let pair = vec![("fa".to_owned(), "fr".to_owned())];
+        assert_eq!(
+            translations(&settings(Some("fa_IR"), &["tidy", "translate"])),
+            pair
+        );
+        assert_eq!(
+            translations(&settings(None, &["translate"])),
+            vec![("en".to_owned(), "fr".to_owned())]
+        );
+        assert!(translations(&settings(Some("auto"), &["translate"])).is_empty());
+        assert!(translations(&settings(Some("fr"), &["translate"])).is_empty());
+        assert!(translations(&settings(Some("fa"), &["tidy"])).is_empty());
+        assert!(translations(&myna_core::Settings::default()).is_empty());
     }
 
     #[test]

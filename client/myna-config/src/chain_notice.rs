@@ -36,6 +36,32 @@ impl ChainState {
         }
     }
 
+    /// The missing tasks as the user asked for them. The daemon names the
+    /// missing leg of a translation it pivots through English (`fa>en` for
+    /// `fa>fr`), but the user chose `fa>fr`: each leg becomes the pair in
+    /// `asked` (the active chain's translations, from and to) it serves.
+    pub fn as_asked(self, asked: &[(String, String)]) -> Self {
+        let Self::Degraded(tasks) = self else {
+            return self;
+        };
+        let mut named: Vec<String> = Vec::new();
+        for task in tasks {
+            let task = pair_of(&task)
+                .and_then(|(from, to)| {
+                    asked.iter().find(|(a, b)| match (from, to) {
+                        (_, "en") => a == from && b != "en",
+                        ("en", _) => b == to && a != "en",
+                        _ => false,
+                    })
+                })
+                .map_or(task, |(a, b)| format!("text.translate:{a}>{b}"));
+            if !named.contains(&task) {
+                named.push(task);
+            }
+        }
+        Self::Degraded(named)
+    }
+
     /// The banner's sentence, or `None` when there is nothing to advise.
     pub fn notice(&self) -> Option<String> {
         match self {
@@ -91,12 +117,14 @@ fn named_requests(json: &str) -> Vec<String> {
         .collect()
 }
 
+/// The languages of a `text.translate:en>fr` task.
+fn pair_of(task: &str) -> Option<(&str, &str)> {
+    task.strip_prefix("text.translate:")?.split_once('>')
+}
+
 /// A task as the user would call it.
 pub fn word(task: &str) -> String {
-    if let Some((from, to)) = task
-        .strip_prefix("text.translate:")
-        .and_then(|pair| pair.split_once('>'))
-    {
+    if let Some((from, to)) = pair_of(task) {
         // TRANSLATORS: {from} and {to} are language names, such as "English" and "Deutsch".
         let frame = gettextrs::gettext("translation from {from} to {to}");
         return frame
@@ -194,6 +222,56 @@ mod tests {
         );
         let broken = ChainState::parse("degraded", "text.cleanup", "not json").unwrap();
         assert_eq!(broken.summary(), "missing a model for text cleanup");
+    }
+
+    fn asked(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
+        pairs
+            .iter()
+            .map(|(a, b)| ((*a).into(), (*b).into()))
+            .collect()
+    }
+
+    #[test]
+    fn a_missing_pivot_leg_names_the_pair_the_user_asked_for() {
+        let chain = asked(&[("fa", "fr")]);
+        for leg in [
+            r#"[{"task":"text.translate","params":{"language":"fa","to":"en"}}]"#,
+            r#"[{"task":"text.translate","params":{"language":"en","to":"fr"}}]"#,
+            r#"[{"task":"text.translate","params":{"language":"fa","to":"en"}},{"task":"text.translate","params":{"language":"en","to":"fr"}}]"#,
+        ] {
+            let state = ChainState::parse("degraded", "text.translate", leg)
+                .unwrap()
+                .as_asked(&chain);
+            assert_eq!(
+                state,
+                ChainState::Degraded(vec!["text.translate:fa>fr".into()]),
+                "{leg}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_pair_the_user_asked_for_is_left_as_it_is() {
+        let json = r#"[{"task":"text.translate","params":{"language":"en","to":"fr"}},{"task":"text.translate","params":{"language":"fr","to":"en"}},{"task":"text.cleanup","params":{}}]"#;
+        let state = ChainState::parse("degraded", "text.translate", json)
+            .unwrap()
+            .as_asked(&asked(&[("en", "fr"), ("fr", "en")]));
+        assert_eq!(
+            state,
+            ChainState::Degraded(vec![
+                "text.translate:en>fr".into(),
+                "text.translate:fr>en".into(),
+                "text.cleanup".into()
+            ])
+        );
+        let other = ChainState::parse("degraded", "text.translate", json)
+            .unwrap()
+            .as_asked(&asked(&[("de", "fa")]));
+        assert_eq!(other, ChainState::parse("degraded", "", json).unwrap());
+        assert_eq!(
+            ChainState::Restart.as_asked(&asked(&[("fa", "fr")])),
+            ChainState::Restart
+        );
     }
 
     #[test]
