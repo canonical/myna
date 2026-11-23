@@ -153,6 +153,9 @@ pub enum Standing {
     NotApplicable(String),
     /// Enabled, but a model is missing: the step is off until it is there.
     Missing(Need),
+    /// No model, installed or offered, does what it asks: it cannot run
+    /// and nothing can be installed for it. The reason shows.
+    Unavailable(String),
     /// Its model is being installed, with snapd's percentage when known.
     Installing(Option<u8>),
     /// Installed; the daemon has not bound it yet.
@@ -165,6 +168,10 @@ pub struct Target {
     pub name: String,
     pub installed: bool,
     pub bytes: u64,
+    /// Some installed model, or one the catalogs offer, translates into it
+    /// from the text's language, directly or through English. A chosen
+    /// target with no such model is still listed, so the picker shows it.
+    pub routed: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -212,6 +219,7 @@ impl Row {
                     .replace("{what}", &need.what)
                     .replace("{size}", &size(need.bytes))
             }
+            Standing::Unavailable(reason) => reason.clone(),
             Standing::Installing(_) => self.description_or("Getting the model ready"),
             Standing::Preparing => gettextrs::gettext("Getting the model ready"),
             Standing::Ready => self.description.clone(),
@@ -460,6 +468,7 @@ fn translate_row(inputs: &Inputs) -> TranslateRow {
                         code,
                         installed: done,
                         bytes,
+                        routed: true,
                     })
                 }
                 None => direct_installed.then(|| Target {
@@ -467,6 +476,7 @@ fn translate_row(inputs: &Inputs) -> TranslateRow {
                     code,
                     installed: true,
                     bytes: 0,
+                    routed: true,
                 }),
             }
         })
@@ -479,6 +489,17 @@ fn translate_row(inputs: &Inputs) -> TranslateRow {
             .unwrap_or(order.len())
     };
     targets.sort_by(|a, b| (rank(&a.code), &a.name).cmp(&(rank(&b.code), &b.name)));
+    if let Some(to) = target_of(inputs.params).filter(|to| *to != from) {
+        if !targets.iter().any(|t| t.code == to) {
+            targets.push(Target {
+                name: language_name(to),
+                code: to.to_owned(),
+                installed: false,
+                bytes: 0,
+                routed: false,
+            });
+        }
+    }
     let selected =
         target_of(inputs.params).and_then(|to| targets.iter().position(|t| t.code == to));
     TranslateRow {
@@ -537,6 +558,20 @@ fn standing(
     }
     if let Some(percent) = inputs.installing.get(id) {
         return Standing::Installing(*percent);
+    }
+    if let (Some(target), Source::One(from)) = (
+        translate.and_then(|t| t.targets.get(t.selected?)),
+        inputs.source,
+    ) {
+        if !target.routed {
+            // TRANSLATORS: {from} and {to} are language names, such as "فارسی" and "Français".
+            let frame = gettextrs::gettext("No model translates {from} to {to} yet");
+            return Standing::Unavailable(
+                frame
+                    .replace("{from}", &language_name(from))
+                    .replace("{to}", &target.name),
+            );
+        }
     }
     let Some(need) = need(id, translate, &own, inputs) else {
         return Standing::Ready;

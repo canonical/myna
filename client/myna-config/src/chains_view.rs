@@ -211,12 +211,12 @@ pub fn cards(chains: &[Chain], active: Option<&str>, ctx: &Context) -> Vec<Card>
                 .iter()
                 .filter(|line| line.on && !line.skipped)
                 .find_map(|line| match &line.standing {
-                    Standing::Missing(need) => Some(need.what.clone()),
-                    _ => None,
-                })
-                .map(|what| {
                     // TRANSLATORS: {what} names a model to install, such as "the French model".
-                    gettextrs::gettext("Needs {what}").replace("{what}", &what)
+                    Standing::Missing(need) => {
+                        Some(gettextrs::gettext("Needs {what}").replace("{what}", &need.what))
+                    }
+                    Standing::Unavailable(reason) => Some(reason.clone()),
+                    _ => None,
                 });
             Card {
                 id: chain.id.clone(),
@@ -373,6 +373,42 @@ mod tests {
         assert!(cards[0].steps.contains('\u{2192}'));
         assert_eq!(cards[1].needs, None);
         assert_eq!(cards[2].steps, "No steps");
+    }
+
+    /// Farsi to French: no model does it directly, and none takes Farsi to
+    /// English to pivot through. The step says so; the card too.
+    #[test]
+    fn a_translation_no_model_can_do_says_so_and_keeps_its_target() {
+        let mut case = case();
+        case.catalog.push(entry("en-fa", "translate", "en", "fa"));
+        case.offered.models.push("m-en-fa".into());
+        case.offered.translations.push(("en".into(), "fa".into()));
+        let chain = chain(vec![
+            ChainStep::new("translate").with("to", "fa"),
+            ChainStep::new("translate").with("to", "fr"),
+        ]);
+        let lines = lines(&chain, &ctx(&case));
+        assert_eq!(lines[1].badge, "FA \u{2192} FR");
+        assert!(
+            matches!(lines[1].standing, Standing::Unavailable(_)),
+            "{:?}",
+            lines[1].standing
+        );
+        assert!(
+            lines[1].subtitle.contains("No model translates"),
+            "{}",
+            lines[1].subtitle
+        );
+        let translate = lines[1].row.translate.as_ref().unwrap();
+        let chosen = &translate.targets[translate.selected.unwrap()];
+        assert_eq!(chosen.code, "fr");
+        assert!(!chosen.routed);
+        let cards = cards(&[chain], None, &ctx(&case));
+        assert!(cards[0]
+            .needs
+            .as_deref()
+            .unwrap()
+            .contains("No model translates"));
     }
 
     #[test]

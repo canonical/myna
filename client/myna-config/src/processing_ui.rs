@@ -1038,7 +1038,7 @@ impl StepsPage {
                     step.params.insert("to".into(), target.code.clone());
                 }
             });
-            if !target.installed {
+            if !target.installed && target.routed {
                 self.install_line(id, index);
             }
         } else if let Some(script) = &line.row.script {
@@ -1623,6 +1623,9 @@ fn show_line(widgets: &LineWidgets, line: &Line, total: usize, blocked: bool, it
             .map(|target| {
                 if target.installed {
                     target.name.clone()
+                } else if !target.routed {
+                    // TRANSLATORS: {language} is a language name; no model translates into it from the text's language.
+                    gettextrs::gettext("{language} (no model)").replace("{language}", &target.name)
                 } else {
                     // TRANSLATORS: {language} is a language name; its model is not installed yet.
                     gettextrs::gettext("{language} (not installed)")
