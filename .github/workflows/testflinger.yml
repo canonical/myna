@@ -1,5 +1,5 @@
 # Nightly lab run (tests/testflinger/): the latest/edge/main snaps on real
-# hardware, started by snaps.yml once it has released main there.
+# hardware, which snaps.yml releases on every push to main.
 # `accuracy`: the adapter smoke, then each backend's latency and accuracy on
 # the languages Myna recommends it for (noble), on one pinned machine per
 # platform: latency only compares on the same machine night to night, and
@@ -12,6 +12,8 @@
 name: Testflinger
 
 on:
+  schedule:
+    - cron: "23 2 * * *"
   workflow_dispatch:
 
 jobs:
