@@ -629,7 +629,7 @@ fn headless_widget_smoke_covers_every_real_schema_key() {
 
     let plans: Vec<_> = adapter.list().unwrap().iter().map(widget_plan).collect();
 
-    assert_eq!(plans.len(), 8);
+    assert_eq!(plans.len(), 9);
     assert!(plans.iter().any(|plan| plan.kind == WidgetKind::Choice));
     let vocabulary = plans
         .iter()
@@ -637,6 +637,11 @@ fn headless_widget_smoke_covers_every_real_schema_key() {
         .expect("vocabulary is listed");
     assert_eq!(vocabulary.kind, WidgetKind::List);
     assert!(vocabulary.limits.is_some());
+    let snippets = plans
+        .iter()
+        .find(|plan| plan.key == "snippets")
+        .expect("snippets are listed");
+    assert_eq!(snippets.kind, WidgetKind::List);
     let sound_set = plans
         .iter()
         .find(|plan| plan.key == "sound-set")

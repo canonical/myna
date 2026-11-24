@@ -167,7 +167,7 @@ pub fn widget_plan(metadata: &ClientSettingMetadata) -> WidgetPlan {
 }
 
 /// The Dictation group's order; any other key follows, in the adapter's order.
-const DICTATION_ORDER: [&str; 7] = [
+const DICTATION_ORDER: [&str; 8] = [
     KEY_STREAMING_MODE,
     myna_core::settings::KEY_HUD_STYLE,
     myna_core::settings::KEY_SOUNDS,
@@ -175,6 +175,7 @@ const DICTATION_ORDER: [&str; 7] = [
     myna_core::settings::KEY_SILENCE_TIMEOUT,
     // Last: a row that opens a page of its own.
     myna_core::settings::KEY_VOCABULARY,
+    myna_core::settings::KEY_SNIPPETS,
     // The Processing tab.
     myna_core::settings::KEY_PROCESSING_HISTORY,
 ];

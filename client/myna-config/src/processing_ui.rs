@@ -3193,11 +3193,12 @@ mod tests {
                     "Spoken commands",
                     "Tidy up speech",
                     "Spoken emoji",
+                    "Snippets",
                     "Keep the original",
                     "Chinese script"
                 ]
             );
-            let original = &catalog_rows(&rig)[3];
+            let original = &catalog_rows(&rig)[4];
             assert_eq!(original.subtitle(), "Applies after a translation");
             assert!(rig.page.translate_row.parent().is_some());
             assert_eq!(rig.page.translate_row.title(), "Translate");
