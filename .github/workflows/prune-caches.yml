@@ -1,11 +1,20 @@
-# Daily: drop Actions caches a newer copy of the same cache supersedes, so the
-# 10 GB quota never evicts the ones in use (dev/prune-caches.sh).
+# After every workflow that saves caches, and daily: drop Actions caches a
+# newer copy of the same cache supersedes, and those of gone branches and
+# closed pull requests, so the 10 GB quota never evicts the ones in use
+# (dev/prune-caches.sh). A busy day once filled it between daily runs.
 name: Prune caches
 
 on:
+  workflow_run:
+    workflows: [CI, Audit, E2E, snaps, Spread]
+    types: [completed]
   schedule:
     - cron: "23 5 * * *"
   workflow_dispatch:
+
+# One prune at a time; a queued one sees everything the running one missed.
+concurrency:
+  group: ${{ github.workflow }}
 
 permissions:
   actions: write
