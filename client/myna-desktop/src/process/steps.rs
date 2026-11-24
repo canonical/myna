@@ -10,7 +10,7 @@ use myna_core::{ChineseScript, ProcessingChain};
 use serde_json::Value;
 
 use super::disfluency::Lang;
-use super::graph::{Builder, Graph, Needs, Src};
+use super::graph::{Builder, Form, Graph, Needs, Src};
 use super::pipeline::{Check, Request};
 use super::rules::Rule;
 use super::wire::Params;
@@ -87,12 +87,14 @@ enum Kind {
     Tidy,
     /// Translate to `to`.
     Translate,
+    /// Type what was said beside its translation.
+    Original,
     /// Write Chinese in `script`.
     Script,
 }
 
 impl Kind {
-    const ALL: [Kind; 3] = [Kind::Tidy, Kind::Translate, Kind::Script];
+    const ALL: [Kind; 4] = [Kind::Tidy, Kind::Translate, Kind::Original, Kind::Script];
 
     fn of(id: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|k| k.id() == id)
@@ -102,6 +104,7 @@ impl Kind {
         match self {
             Kind::Tidy => "tidy",
             Kind::Translate => "translate",
+            Kind::Original => "original",
             Kind::Script => "script",
         }
     }
@@ -110,7 +113,7 @@ impl Kind {
         match self {
             Kind::Translate => Some("to"),
             Kind::Script => Some("mode"),
-            Kind::Tidy => None,
+            Kind::Tidy | Kind::Original => None,
         }
     }
 }
@@ -247,20 +250,28 @@ fn primary(tag: &str) -> String {
 /// Why `kind` does not apply to text in `lang`, if it does not, in words
 /// for the log and the bus; the judgement is `myna_core::chains::misfit`,
 /// which Settings shares.
-fn misfit(kind: Kind, step: &StepSpec, lang: Option<&str>) -> Option<&'static str> {
+fn misfit(
+    kind: Kind,
+    step: &StepSpec,
+    lang: Option<&str>,
+    translated: bool,
+) -> Option<&'static str> {
     use myna_core::chains::Misfit;
     let params: myna_core::chains::StepParams = step
         .params
         .iter()
         .filter_map(|(k, v)| Some((k.clone(), v.as_str()?.to_owned())))
         .collect();
-    Some(match myna_core::chains::misfit(kind.id(), &params, lang)? {
-        Misfit::NotEnglish => "Applies when the text is English",
-        Misfit::NoTarget => "Needs a language to translate to",
-        Misfit::AlreadyInTarget => "The text is already in that language",
-        Misfit::NotChinese => "Applies when the text is Chinese",
-        Misfit::NoScript => "Needs a script to write",
-    })
+    Some(
+        match myna_core::chains::misfit(kind.id(), &params, lang, translated)? {
+            Misfit::NotEnglish => "Applies when the text is English",
+            Misfit::NoTarget => "Needs a language to translate to",
+            Misfit::AlreadyInTarget => "The text is already in that language",
+            Misfit::NotChinese => "Applies when the text is Chinese",
+            Misfit::NoScript => "Needs a script to write",
+            Misfit::NothingTranslated => "Applies after a translation",
+        },
+    )
 }
 
 /// Compile `steps` in their order for dictation in `ctx.language`.
@@ -271,6 +282,8 @@ pub fn compile(steps: &[StepSpec], ctx: &Context) -> Compiled {
     let mut chinese = ChineseScript::AsRecognised;
     // The last step that changed the language, and the language before it.
     let mut changed: Option<(usize, Option<String>)> = None;
+    // The text before the first translation, in the language spoken.
+    let mut spoken: Option<Src> = None;
     let mut report = Vec::with_capacity(steps.len());
     for (index, step) in steps.iter().enumerate() {
         let kind = Kind::of(&step.id);
@@ -280,12 +293,14 @@ pub fn compile(steps: &[StepSpec], ctx: &Context) -> Compiled {
                 myna_core::info_log!("process", "dropping unknown step {:?}", step.id);
                 StepState::Unknown
             }
-            Some(kind) => match misfit(kind, step, lang.as_deref()) {
+            Some(kind) => match misfit(kind, step, lang.as_deref(), spoken.is_some()) {
                 Some(reason) => StepState::NotApplicable {
                     reason: reason.into(),
                     move_above: changed
                         .as_ref()
-                        .filter(|(_, before)| misfit(kind, step, before.as_deref()).is_none())
+                        .filter(|(_, before)| {
+                            misfit(kind, step, before.as_deref(), false).is_none()
+                        })
                         .map(|(at, _)| *at),
                 },
                 None => match kind {
@@ -302,6 +317,7 @@ pub fn compile(steps: &[StepSpec], ctx: &Context) -> Compiled {
                         let to = step.text("to").map(primary).expect("misfit checked it");
                         let from = lang.clone().unwrap_or_else(|| "en".into());
                         let check = Check::Usable { translation: true };
+                        spoken.get_or_insert(at);
                         let state = match pivot_legs(&from, &to, ctx) {
                             Some((first, second)) => {
                                 let state = [&first, &second]
@@ -322,6 +338,11 @@ pub fn compile(steps: &[StepSpec], ctx: &Context) -> Compiled {
                         };
                         changed = Some((index, lang.replace(to)));
                         state
+                    }
+                    Kind::Original => {
+                        let before = spoken.expect("misfit checked it");
+                        at = g.join(vec![before, at], Form::Gloss);
+                        StepState::Applicable
                     }
                     Kind::Script => {
                         chinese = step
@@ -576,6 +597,56 @@ mod tests {
             first(&compiled(&["tidy"], Some("en"))),
             Rule::Disfluency(Lang::En)
         );
+    }
+
+    /// The node `src` names in `c`'s graph.
+    fn op(c: &Compiled, src: Src) -> &Op {
+        let Src::Node(id) = src else {
+            panic!("{src:?} is the input")
+        };
+        c.graph.node(id)
+    }
+
+    #[test]
+    fn keeping_the_original_glosses_what_came_before_the_translation() {
+        let c = compiled(&["tidy", "translate=fr", "original"], Some("en"));
+        assert_eq!(
+            states(&c),
+            [("tidy", "on"), ("translate", "on"), ("original", "on")]
+        );
+        let Op::Join { parts, form } = op(&c, c.graph.out()) else {
+            panic!("ends in {:?}", op(&c, c.graph.out()))
+        };
+        assert_eq!(*form, Form::Gloss);
+        let Op::Ask { from, request, .. } = op(&c, parts[1]) else {
+            panic!("the second part is not the translation")
+        };
+        assert_eq!(request, &Request::translate("en", "fr"));
+        assert_eq!(parts, &[*from, parts[1]], "the first is what it read");
+
+        let pivot = compiled(&["translate=fr", "translate=de", "original"], Some("en"));
+        let Op::Join { parts, .. } = op(&pivot, pivot.graph.out()) else {
+            panic!("no join after two translations")
+        };
+        assert_eq!(parts[0], Src::Input, "the original is what was said");
+    }
+
+    #[test]
+    fn keeping_the_original_with_nothing_translated_is_skipped() {
+        let c = compiled(&["tidy", "original"], Some("en"));
+        assert_eq!(states(&c), [("tidy", "on"), ("original", "n/a")]);
+        assert_eq!(c.graph, compiled(&["tidy"], Some("en")).graph);
+        let off = compile(
+            &[
+                StepSpec {
+                    on: false,
+                    ..StepSpec::parse("translate=fr")
+                },
+                StepSpec::parse("original"),
+            ],
+            &Context::default(),
+        );
+        assert_eq!(states(&off), [("translate", "off"), ("original", "n/a")]);
     }
 
     #[test]

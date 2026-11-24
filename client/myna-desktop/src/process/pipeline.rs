@@ -886,6 +886,27 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_chain_that_keeps_the_original_types_it_beside_the_translation() {
+        use crate::process::steps::{compile, Context, StepSpec};
+        let steps = ["translate=fr", "original"].map(StepSpec::parse);
+        let graph = || compile(&steps, &Context::default()).graph;
+        let mut glossed = Pipeline::new(graph(), Scripted::Says("Où est la gare ?"));
+        assert_eq!(
+            glossed
+                .process("Where is the station?".into(), &here())
+                .await,
+            "Where is the station? (Où est la gare ?)"
+        );
+        let mut failed = Pipeline::new(graph(), Scripted::Fails);
+        assert_eq!(
+            failed
+                .process("Where is the station?".into(), &here())
+                .await,
+            "Where is the station?"
+        );
+    }
+
+    #[tokio::test]
     async fn a_failed_branch_of_a_join_adds_nothing_to_what_it_was_given() {
         let mut pipeline = Pipeline::new(side_by_side(), Scripted::Fails);
         assert_eq!(pipeline.process("Hello.".into(), &here()).await, "Hello.");

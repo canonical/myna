@@ -315,6 +315,8 @@ pub enum Misfit {
     NotChinese,
     /// The Chinese script step with no script chosen.
     NoScript,
+    /// Keeping the original with no translation before it.
+    NothingTranslated,
 }
 
 /// What a step makes of the text where it stands in a chain.
@@ -341,7 +343,7 @@ pub enum Fit {
 }
 
 /// The ids of the steps this build knows, in their default insert order.
-pub const KNOWN_STEPS: [&str; 3] = ["tidy", "translate", "script"];
+pub const KNOWN_STEPS: [&str; 4] = ["tidy", "translate", "original", "script"];
 
 /// The language code before any region: `fr` for `fr-CA`.
 pub fn primary_language(tag: &str) -> String {
@@ -362,9 +364,15 @@ pub fn may_be_chinese(language: Option<&str>) -> bool {
     })
 }
 
-/// Why step `id` with `params` does not fit text in `lang`, if it does not.
-/// One judgement for the daemon's compiler and Settings' editor.
-pub fn misfit(id: &str, params: &StepParams, lang: Option<&str>) -> Option<Misfit> {
+/// Why step `id` with `params` does not fit text in `lang`, if it does not;
+/// `translated` is whether a translation runs before it. One judgement for
+/// the daemon's compiler and Settings' editor.
+pub fn misfit(
+    id: &str,
+    params: &StepParams,
+    lang: Option<&str>,
+    translated: bool,
+) -> Option<Misfit> {
     let param = |name: &str| params.get(name).filter(|v| !v.is_empty());
     match id {
         "tidy" if lang.is_some_and(|l| l != "en") => Some(Misfit::NotEnglish),
@@ -381,6 +389,7 @@ pub fn misfit(id: &str, params: &StepParams, lang: Option<&str>) -> Option<Misfi
         {
             Some(Misfit::NoScript)
         }
+        "original" if !translated => Some(Misfit::NothingTranslated),
         _ => None,
     }
 }
@@ -400,14 +409,15 @@ pub fn fits(steps: &[ChainStep], language: Option<&str>) -> Vec<Fit> {
             if !KNOWN_STEPS.contains(&step.step.as_str()) {
                 return Fit::Unknown;
             }
-            if let Some(why) = misfit(&step.step, &step.params, lang.as_deref()) {
+            let translated = changed.is_some();
+            if let Some(why) = misfit(&step.step, &step.params, lang.as_deref(), translated) {
                 return Fit::Skipped {
                     why,
                     input: lang.clone(),
                     move_above: changed
                         .as_ref()
                         .filter(|(_, before)| {
-                            misfit(&step.step, &step.params, before.as_deref()).is_none()
+                            misfit(&step.step, &step.params, before.as_deref(), false).is_none()
                         })
                         .map(|(at, _)| *at),
                 };
@@ -779,6 +789,43 @@ mod tests {
     }
 
     #[test]
+    fn keeping_the_original_needs_a_translation_before_it() {
+        let after = fits(&chain(&[("translate", "fr"), ("original", "")]), Some("en"));
+        assert_eq!(
+            after[1],
+            Fit::Runs {
+                input: Some("fr".into()),
+                output: Some("fr".into())
+            }
+        );
+        for alone in [
+            chain(&[("original", "")]),
+            chain(&[("original", ""), ("translate", "fr")]),
+            chain(&[("tidy", ""), ("original", "")]),
+        ] {
+            let at = alone.iter().position(|s| s.step == "original").unwrap();
+            assert_eq!(
+                fits(&alone, Some("en"))[at],
+                Fit::Skipped {
+                    why: Misfit::NothingTranslated,
+                    input: Some("en".into()),
+                    move_above: None
+                },
+                "{alone:?}"
+            );
+        }
+        let mut skipped = chain(&[("translate", "fr"), ("original", "")]);
+        skipped[0].on = false;
+        assert!(matches!(
+            fits(&skipped, Some("en"))[1],
+            Fit::Skipped {
+                why: Misfit::NothingTranslated,
+                ..
+            }
+        ));
+    }
+
+    #[test]
     fn a_new_step_goes_in_at_its_stage() {
         let steps = chain(&[("tidy", ""), ("translate", "fr")]);
         assert_eq!(insert_position(&steps, "script"), 2);
@@ -786,5 +833,7 @@ mod tests {
         assert_eq!(insert_position(&chain(&[("translate", "fr")]), "tidy"), 0);
         assert_eq!(insert_position(&[], "translate"), 0);
         assert_eq!(insert_position(&steps, "future"), 2);
+        let translated = chain(&[("translate", "fr"), ("script", "simplified")]);
+        assert_eq!(insert_position(&translated, "original"), 1);
     }
 }
