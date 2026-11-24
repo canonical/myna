@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-24 15:32+0000\n"
+"POT-Creation-Date: 2026-11-24 18:25+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -575,8 +575,9 @@ msgstr ""
 
 #: src/processing_steps.rs:147
 msgid ""
-"Say “insert” and a snippet's name to type it, or “insert today's date”. Add "
-"snippets under General. English only."
+"Say a snippet's name on its own, or “insert” and its name, to type it; "
+"“insert today's date” needs no snippet. Add snippets under General. English "
+"only."
 msgstr ""
 
 #: src/processing_steps.rs:163
@@ -586,7 +587,8 @@ msgstr ""
 #: src/processing_steps.rs:166
 msgid ""
 "Say “scratch that”, “new line”, “new paragraph”, “delete last word” or "
-"“format as a list” on its own. Nothing is typed until you stop. English only."
+"“format as a list” on its own, or “quote” … “end quote”. Nothing is typed "
+"until you stop. English only."
 msgstr ""
 
 #: src/processing_steps.rs:182
