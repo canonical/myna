@@ -171,6 +171,23 @@ fn connections_count_a_published_myna_model_without_a_task() {
     );
 }
 
+/// Nemotron is no family Settings offers to install, but it is a Myna speech
+/// model: the store's revisions predate `MYNA_ROLE=speech` in provider.env
+/// (48d42907), and connected it must not pass for an LLM companion.
+#[test]
+fn connections_count_published_nemotron_as_speech_without_a_role() {
+    let snapshot = snapshot_of(json!([slot("myna-nemotron", "provider", provider(), true)]));
+    assert_eq!(
+        snapshot.backends(),
+        &[BackendIdentity::new("myna-nemotron", "provider")]
+    );
+    assert_eq!(
+        snapshot.active_state(),
+        ActiveBackendState::Connected(BackendIdentity::new("myna-nemotron", "provider"))
+    );
+    assert!(snapshot.text_providers().is_empty());
+}
+
 #[test]
 fn connections_ignore_a_stale_connection_to_a_slot_with_another_content_id() {
     // snapd keeps a connection across the refresh that changed the plug's

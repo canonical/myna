@@ -393,6 +393,11 @@ pub const PROVIDER_CONTENT_ID: &str = "inference-provider";
 /// inference snaps, LLMs such as gemma4, share [`PROVIDER_CONTENT_ID`].
 pub const SPEECH_TO_TEXT_TASK: &str = "speech-to-text";
 
+/// Myna's published speech snaps that are no [`ModelFamily`] Settings offers
+/// to install. Their store revisions predate `MYNA_ROLE=speech`, so without
+/// this a connected one passes for an LLM companion.
+const OTHER_SPEECH_SNAPS: &[&str] = &["myna-nemotron"];
+
 /// One content slot as `GET /v2/connections?select=all&interface=content`
 /// lists it: its own attributes and the plugs connected to it.
 #[derive(Clone, Debug, Deserialize)]
@@ -468,6 +473,7 @@ impl ContentSlot {
             None => {
                 self.attr_str("task") == Some(SPEECH_TO_TEXT_TASK)
                     || ModelFamily::from_snap_name(&self.snap).is_some()
+                    || OTHER_SPEECH_SNAPS.contains(&self.snap.as_str())
             }
         }
     }
