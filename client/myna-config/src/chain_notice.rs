@@ -70,8 +70,8 @@ impl ChainState {
                 "A model was connected after Myna started. Restart dictation to use it.",
             )),
             Self::Degraded(tasks) => {
-                // TRANSLATORS: {models} names the kinds of model that are missing, such as "translation" or "text cleanup and translation".
                 let frame = gettextrs::gettext(
+                    // TRANSLATORS: {models} names the kinds of model that are missing, such as "translation" or "text cleanup and translation".
                     "This needs a model for {models}, which is not installed. Myna types what it heard instead.",
                 );
                 Some(frame.replace("{models}", &names(tasks)))

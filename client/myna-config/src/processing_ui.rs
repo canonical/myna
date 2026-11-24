@@ -1493,8 +1493,8 @@ impl StepsPage {
         let lp = &self.languages;
         let description = match from {
             Source::One(code) => {
-                // TRANSLATORS: {language} is the language the text is in where the step goes, such as "English".
                 let frame = gettextrs::gettext(
+                    // TRANSLATORS: {language} is the language the text is in where the step goes, such as "English".
                     "From {language}. Choosing a language adds the step; one that is not installed downloads first.",
                 );
                 frame.replace("{language}", &language_name(code))

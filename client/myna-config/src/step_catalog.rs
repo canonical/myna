@@ -394,8 +394,8 @@ fn translate_job(from: &Source, languages: &[Language]) -> TranslateJob {
         };
     }
     let count = u32::try_from(languages.len()).unwrap_or(u32::MAX);
-    // TRANSLATORS: {language} is the language the text is in, such as "English"; {count} how many languages it can be translated into.
     let frame = gettextrs::ngettext(
+        // TRANSLATORS: {language} is the language the text is in, such as "English"; {count} how many languages it can be translated into.
         "From {language} into {count} language",
         "From {language} into {count} languages",
         count,
