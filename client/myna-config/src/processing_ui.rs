@@ -2748,6 +2748,58 @@ mod tests {
         });
     }
 
+    /// Undo puts a deleted chain back where it was, and back in use when it
+    /// was the one in use; one that was off comes back off.
+    #[test]
+    fn undo_puts_a_deleted_chain_back_as_it_was() {
+        crate::ui::on_gtk_thread(|| {
+            let rig = rig(
+                "undo",
+                TIDY,
+                TIDY,
+                "chains=[('fr', 'French first', [('translate', true, {'to': 'fr'})]), ('t', 'Tidy', [('tidy', true, {})])]\nactive-chain='t'\n",
+            );
+            let window = gtk::Window::builder().child(&rig.page.deps.overlay).build();
+            window.present();
+            // The Undo of the toast that names `name`: an earlier toast can
+            // still be on screen while the next one waits behind it.
+            let undo = |rig: &Rig, name: &str| {
+                let overlay = rig.page.deps.overlay.upcast_ref::<gtk::Widget>().clone();
+                let title = format!("{name} deleted");
+                let find = || {
+                    all::<gtk::Widget>(&overlay)
+                        .into_iter()
+                        .filter(|w| w.type_().name() == "AdwToastWidget")
+                        .find(|toast| all::<gtk::Label>(toast).iter().any(|l| l.label() == title))
+                        .and_then(|toast| {
+                            all::<gtk::Button>(&toast)
+                                .into_iter()
+                                .find(|b| b.label().as_deref() == Some("Undo"))
+                        })
+                };
+                pump_until(&title, || find().is_some());
+                find().unwrap().emit_clicked();
+            };
+            chain_row(&rig, "Tidy").2.emit_clicked();
+            assert_eq!(rig.store.processing().active, None);
+            undo(&rig, "Tidy");
+            let p = rig.store.processing();
+            assert_eq!(p.active.as_deref(), Some("t"), "back in use");
+            assert_eq!(chain_titles(&rig), ["French first", "Tidy", "New chain…"]);
+
+            chain_row(&rig, "French first").2.emit_clicked();
+            undo(&rig, "French first");
+            let p = rig.store.processing();
+            assert!(p.chain("fr").is_some());
+            assert_eq!(
+                p.active.as_deref(),
+                Some("t"),
+                "an off chain comes back off"
+            );
+            window.destroy();
+        });
+    }
+
     #[test]
     fn with_no_chain_the_page_says_what_myna_does() {
         crate::ui::on_gtk_thread(|| {
@@ -3041,6 +3093,72 @@ mod tests {
         });
     }
 
+    /// snapd is done but the daemon has not offered the model yet: the step
+    /// says it is getting ready, not that it needs an install.
+    #[test]
+    fn an_installed_model_the_daemon_has_not_offered_is_getting_ready() {
+        crate::ui::on_gtk_thread(|| {
+            let rig = rig(
+                "preparing",
+                NOTHING,
+                NOTHING,
+                "chains=[('fr', 'French', [('translate', true, {'to': 'fr'})])]\n",
+            );
+            rig.page.open_editor("fr");
+            let row = editor(&rig).lines.borrow()[0].detail.clone();
+            pump_until("the Install button", || {
+                install_control(&row).is_visible() && install_control(&row).button().is_visible()
+            });
+            install_control(&row).button().emit_clicked();
+            let says = |rig: &Rig, text: &str| {
+                let editor = editor(rig);
+                let lines = editor.lines.borrow();
+                [
+                    lines[0].row.upcast_ref::<gtk::Widget>(),
+                    lines[0].detail.upcast_ref(),
+                ]
+                .iter()
+                .flat_map(|w| all::<gtk::Label>(w))
+                .any(|l| l.label().contains(text))
+            };
+            pump_until("getting ready", || says(&rig, "Getting the model ready"));
+            assert_eq!(rig.calls.borrow().as_slice(), ["myna-translation fr"]);
+        });
+    }
+
+    /// The example shows what the chain does now: a step switched off or
+    /// skipped where it stands changes nothing in it.
+    #[test]
+    fn the_example_leaves_out_steps_that_do_not_run() {
+        crate::ui::on_gtk_thread(|| {
+            let rig = rig(
+                "example",
+                BOTH,
+                BOTH,
+                "chains=[('fr', 'French', [('translate', false, {'to': 'fr'})])]\n",
+            );
+            rig.page.open_editor("fr");
+            let example = || {
+                editor(&rig)
+                    .example
+                    .subtitle()
+                    .unwrap_or_default()
+                    .to_string()
+            };
+            // "“heard”\n→ result": with nothing running, it types what it heard.
+            let unchanged = |text: &str| {
+                text.split_once("\n\u{2192} ")
+                    .is_some_and(|(heard, typed)| heard == typed)
+            };
+            pump_until("the example", || !example().is_empty());
+            assert!(unchanged(&example()), "{}", example());
+            let mut p = rig.store.processing();
+            p.chains[0].steps[0].on = true;
+            rig.store.set_processing(&p).unwrap();
+            pump_until("the translated example", || !unchanged(&example()));
+        });
+    }
+
     #[test]
     fn deleting_a_chain_goes_back_and_clears_it_if_in_use() {
         crate::ui::on_gtk_thread(|| {
@@ -3135,6 +3253,31 @@ mod tests {
             assert!(rig.calls.borrow().is_empty(), "French is installed");
             // The installed model is listed to remove.
             assert_eq!(rig.page.languages.installed_rows.borrow().len(), 1);
+        });
+    }
+
+    /// A language that needs a download waits while another install runs,
+    /// dictation or not.
+    #[test]
+    fn a_download_waits_for_another_install() {
+        crate::ui::on_gtk_thread(|| {
+            let rig = rig("languages-busy", TIDY, BOTH, "chains=[('c', 'Mine', [])]\n");
+            open_languages(&rig, "c");
+            pump_until("the download size", || {
+                rig.page.languages.rows.borrow()[0]
+                    .1
+                    .state
+                    .label()
+                    .starts_with("Downloads")
+            });
+            rig.page
+                .installing
+                .borrow_mut()
+                .insert("other".into(), None);
+            assert!(!rig.page.dictating.get());
+            rig.page.choose_language("fr");
+            assert!(steps_of(&rig, "c").is_empty(), "nothing added");
+            assert!(rig.calls.borrow().is_empty(), "nothing installed");
         });
     }
 

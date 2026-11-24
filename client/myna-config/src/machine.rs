@@ -458,6 +458,29 @@ mod tests {
     use super::*;
     use gio::glib::variant::ToVariant;
 
+    #[test]
+    fn only_translate_steps_are_translations() {
+        use myna_core::chains::ChainStep;
+        let mut settings = myna_core::Settings {
+            language: Some("en".into()),
+            ..Default::default()
+        };
+        let id = settings.processing.add(
+            "c",
+            vec![
+                ChainStep::new("tidy"),
+                ChainStep::new("translate").with("to", "fr"),
+            ],
+        );
+        assert!(translations(&settings).is_empty(), "no chain in use");
+        settings.processing.activate(Some(&id));
+        assert_eq!(
+            translations(&settings),
+            [("en".to_owned(), "fr".to_owned())],
+            "Tidy runs en to en but translates nothing"
+        );
+    }
+
     fn reply(properties: &[(&str, gio::glib::Variant)]) -> gio::glib::Variant {
         let dict = gio::glib::VariantDict::new(None);
         for (name, value) in properties {

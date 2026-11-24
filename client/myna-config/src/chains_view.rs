@@ -618,6 +618,61 @@ mod tests {
     }
 
     #[test]
+    fn a_step_switched_off_needs_nothing() {
+        let case = case();
+        let mut steps = vec![
+            ChainStep::new("tidy"),
+            ChainStep::new("translate").with("to", "de"),
+        ];
+        steps[1].on = false;
+        let cards = cards(&[chain(steps)], None, &ctx(&case));
+        assert_eq!(cards[0].needs, None, "German is not installed, but off");
+    }
+
+    #[test]
+    fn a_skipped_step_needs_nothing() {
+        let case = case();
+        // Tidy after a translation into German reads German: skipped, so
+        // its model would not be asked for even if it were missing.
+        let mut case = case;
+        case.offered.models.retain(|m| m != "m-tidy");
+        let cards = cards(
+            &[chain(vec![
+                ChainStep::new("translate").with("to", "fr"),
+                ChainStep::new("tidy"),
+            ])],
+            None,
+            &ctx(&case),
+        );
+        assert_eq!(cards[0].needs, None, "{:?}", cards[0]);
+    }
+
+    fn item(step: &str, target: Option<&str>) -> crate::step_catalog::Item {
+        crate::step_catalog::Item {
+            id: step.into(),
+            step: step.into(),
+            target: target.map(str::to_owned),
+            title: step.into(),
+            description: String::new(),
+            example: None,
+            details: Vec::new(),
+            offer: crate::step_catalog::Offer::Add,
+            removable: None,
+        }
+    }
+
+    #[test]
+    fn only_the_script_step_gets_a_mode() {
+        let locales = ["zh_TW.UTF-8".to_owned()];
+        let script = step_of(&item("script", None), &locales);
+        assert!(script.params.contains_key("mode"), "{script:?}");
+        let tidy = step_of(&item("tidy", None), &locales);
+        assert!(tidy.params.is_empty(), "{tidy:?}");
+        let translate = step_of(&item("translate", Some("de")), &locales);
+        assert_eq!(translate.params.get("to").map(String::as_str), Some("de"));
+    }
+
+    #[test]
     fn moving_and_naming() {
         let steps = vec![
             ChainStep::new("a"),
@@ -628,6 +683,11 @@ mod tests {
         assert_eq!(ids(&moved(&steps, 2, 0)), ["c", "a", "b"]);
         assert_eq!(ids(&moved(&steps, 0, 2)), ["b", "c", "a"]);
         assert_eq!(ids(&moved(&steps, 0, 9)), ["a", "b", "c"]);
+        assert_eq!(
+            ids(&moved(&steps, 0, 3)),
+            ["a", "b", "c"],
+            "one past the end"
+        );
         let named = |name: &str| Chain {
             id: name.into(),
             name: name.into(),
