@@ -8,7 +8,24 @@ RUSTUP_SHA256=dda7234360b7f578ca8b0ddcb80145646fa61a67c1720a5abc7051b35c9fcb71
 RUST=1.99.0
 
 export DEBIAN_FRONTEND=noninteractive
-apt-retry install --yes --no-install-recommends build-essential ca-certificates curl
+apt-retry install --yes --no-install-recommends build-essential ca-certificates curl mold
+
+# Link with mold: a coverage build links dozens of test binaries against GTK.
+# As cargo's linker, not a RUSTFLAGS flag, which cargo-llvm-cov replaces.
+cat > /usr/local/bin/cc-mold <<'CC'
+#!/bin/sh
+exec cc -fuse-ld=mold "$@"
+CC
+chmod 755 /usr/local/bin/cc-mold
+install -d -o workshop -g workshop /home/workshop/.cargo
+cat > /home/workshop/.cargo/config.toml <<'CARGO'
+[target.x86_64-unknown-linux-gnu]
+linker = "/usr/local/bin/cc-mold"
+
+[target.aarch64-unknown-linux-gnu]
+linker = "/usr/local/bin/cc-mold"
+CARGO
+chown workshop:workshop /home/workshop/.cargo/config.toml
 
 curl -fsSLo /tmp/rustup-init \
   "https://static.rust-lang.org/rustup/archive/$RUSTUP/x86_64-unknown-linux-gnu/rustup-init"
