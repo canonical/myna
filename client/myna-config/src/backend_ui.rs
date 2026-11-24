@@ -3939,6 +3939,30 @@ mod tests {
         });
     }
 
+    /// The report names the user's languages, read off the main thread,
+    /// beside what the host said.
+    #[test]
+    fn diagnostics_reports_the_users_languages() {
+        on_gtk_thread(|| {
+            let (ui, window) = long_diagnostics();
+            *ui.host.borrow_mut() = Some(HostFacts {
+                system: crate::machine::SystemFacts {
+                    os: "Ubuntu".into(),
+                    ..Default::default()
+                },
+                machine: Default::default(),
+                daemon: None,
+                daemon_report: None,
+                desktop: Default::default(),
+            });
+            *ui.preferred_languages.borrow_mut() = Some(vec!["fr".into(), "en".into()]);
+            let system = ui.diagnostic_input().system.expect("host facts read");
+            assert_eq!(system.languages, ["fr", "en"]);
+            assert_eq!(system.os, "Ubuntu", "the rest from the host");
+            window.destroy();
+        });
+    }
+
     #[test]
     fn diagnostics_lists_the_models_above_the_report() {
         on_gtk_thread(|| {
