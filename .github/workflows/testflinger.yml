@@ -24,7 +24,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - {suite: accuracy, platform: intel, queue: 202108-29382}
+          - {suite: accuracy, platform: intel, queue: 202102-28727}
           - {suite: accuracy, platform: amd, queue: 202104-28937}
           - {suite: accuracy, platform: nvidia, queue: 202202-29946}
           - {suite: accuracy, platform: arm64, queue: 202203-30097}
