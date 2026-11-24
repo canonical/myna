@@ -139,6 +139,27 @@ of past dictations (the first dictation after five daemon starts, then
 p95 100 ms and 1000 ms warm). It then breaks the text model (stopped,
 SIGSTOPped, and `tools/fault-text.py` passing for `myna-text` while answering
 with a chat reply, control characters, one word, nothing, or never) and asserts
+The `chains` suite drives the Processing tab like a user, on the `chains`
+snapshot (`dictation` plus the French, Farsi and Simplified Chinese language
+packs and the fake snap installed again). It makes a chain from New chain…,
+adds Translate from the searchable language page and Tidy from the catalog,
+installs their models from the store through Settings (one polkit grant each;
+`run-suite.sh` pushes the catalog snapshots the deb installs, since the VM has
+no deb), switches the chain on and off from its row, deletes and undoes,
+removes a model from Diagnostics' Models groups, and dictates French, Chinese
+and Farsi through the fake backend's scripted transcript (`snap set
+myna-fake-backend transcript=TEXT`, one segment; empty keeps the default
+script). Every case asserts the keyfile and the daemon (`ChainStatus`,
+`--status`, the typed text), and each state is a checkpoint. Settings is also
+run in fr_FR, zh_CN and fa_IR with the catalogs compiled on the host and
+pushed (`MYNA_CONFIG_LOCALEDIR`); the selectors are the translations
+(`tr_po`), falling back to the English msgid. A store install makes the
+running daemon lose its backend mounts (snapd LP#2175592) or miss a share
+connected after it started; the daemon restarts itself once idle
+(`myna_desktop::restart`), and the suite asserts that rather than restarting
+it. A shot run that starts an install stays open until snapd has the
+component (`slowpoll`): closing Settings first drops the request.
+
 every dictation still types the words that were heard and that the daemon's
 journal holds none of them. The fake's scripted transcript is nine words; a
 long dictation's wait is the last sentence's, which the bound already covers.
