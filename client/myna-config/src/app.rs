@@ -1452,7 +1452,8 @@ fn build_settings_window(application: &adw::Application) {
         .processing_nav()
         .replace(&[processing_page(&processing, &window.processing_nav())]);
     watch_chain_status(&processing.notice, daemon_chain_status, CHAIN_STATUS_POLL);
-    attach_steps(&processing, &overlay, &window.processing_nav());
+    let steps = attach_steps(&processing, &overlay, &window.processing_nav());
+    let models = models_section(&overlay, &view_stack, steps);
 
     general_nav.replace(&[status_page(
         &gettextrs::gettext("Loading Myna Settings"),
@@ -1490,6 +1491,8 @@ fn build_settings_window(application: &adw::Application) {
         window,
         #[strong]
         processing,
+        #[strong]
+        models,
         move || {
             let (myna_page, general_settings) = match GioClientSettings::open() {
                 Ok(settings) => {
@@ -1523,6 +1526,7 @@ fn build_settings_window(application: &adw::Application) {
                 general_settings,
                 diagnostics_page,
             );
+            ui.attach_models(models);
             ui.install_window_actions(&window);
             window.connect_close_request(move |_| {
                 ui.shutdown();
@@ -6079,12 +6083,16 @@ fn processing_group() -> ProcessingGroups {
 }
 
 /// Give the Steps group its rows, over the real store, daemon and snapd.
-fn attach_steps(groups: &ProcessingGroups, overlay: &adw::ToastOverlay, nav: &adw::NavigationView) {
+fn attach_steps(
+    groups: &ProcessingGroups,
+    overlay: &adw::ToastOverlay,
+    nav: &adw::NavigationView,
+) -> Option<Rc<crate::processing_ui::StepsPage>> {
     let store = match GioClientSettings::open() {
         Ok(store) => Rc::new(store),
         Err(error) => {
             glib::g_warning!(crate::LOG_DOMAIN, "steps unavailable: {error}");
-            return;
+            return None;
         }
     };
     let deps = crate::processing_ui::Deps {
@@ -6115,14 +6123,56 @@ fn attach_steps(groups: &ProcessingGroups, overlay: &adw::ToastOverlay, nav: &ad
         follow_interval: Duration::from_secs(1),
         refresh_every: crate::processing_ui::Deps::refresh_default(),
     };
-    crate::processing_ui::StepsPage::attach(
+    Some(crate::processing_ui::StepsPage::attach(
         deps,
         &crate::processing_ui::Slots {
             fit: groups.fit.clone(),
             chains: groups.chain.clone(),
             more: groups.more.clone(),
         },
-    );
+    ))
+}
+
+/// The Models groups of Diagnostics. Add text model opens Processing's
+/// catalog, the one place text models install from.
+fn models_section(
+    overlay: &adw::ToastOverlay,
+    view_stack: &adw::ViewStack,
+    steps: Option<Rc<crate::processing_ui::StepsPage>>,
+) -> Rc<crate::models_ui::ModelsSection> {
+    let section = crate::models_ui::ModelsSection::new(crate::models_ui::Deps {
+        configurator: Rc::new(
+            crate::adapters::system_configurator::PkexecSystemConfigurator::new(
+                std::sync::Arc::new(crate::command::GioCommandRunner),
+            ),
+        ),
+        daemon: Rc::new(crate::adapters::dictation_daemon::SessionBusDaemon::default()),
+        overlay: overlay.clone(),
+        follow_interval: Duration::from_secs(1),
+        catalog: Box::new(|| {
+            crate::plugin_catalog::load_listing(
+                std::path::Path::new(crate::plugin_catalog::SNAPSHOT_DIR),
+                std::path::Path::new("/snap"),
+                crate::plugin_catalog::Listing::from_env(
+                    std::env::var("MYNA_LIST_UNCURATED").ok().as_deref(),
+                ),
+            )
+            .entries
+        }),
+    });
+    match steps {
+        Some(steps) => section.connect_add_text({
+            let view_stack = view_stack.downgrade();
+            move || {
+                if let Some(view_stack) = view_stack.upgrade() {
+                    view_stack.set_visible_child_name("processing");
+                }
+                steps.open_catalog_to_add();
+            }
+        }),
+        None => section.add_text_unavailable(),
+    }
+    section
 }
 
 fn processing_page(groups: &ProcessingGroups, nav: &adw::NavigationView) -> adw::NavigationPage {

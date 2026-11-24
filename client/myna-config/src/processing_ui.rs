@@ -1233,6 +1233,12 @@ impl StepsPage {
         }
     }
 
+    /// The catalog for the active chain, opened from elsewhere in Settings
+    /// (Diagnostics' Add text model): Install there only installs.
+    pub fn open_catalog_to_add(self: &Rc<Self>) {
+        self.open_catalog(None);
+    }
+
     fn open_catalog(self: &Rc<Self>, chain: Option<&str>) {
         self.catalog_for.replace(chain.map(str::to_owned));
         self.render();

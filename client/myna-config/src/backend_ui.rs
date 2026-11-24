@@ -487,6 +487,9 @@ pub struct BackendUi {
     follow_interval: std::cell::Cell<std::time::Duration>,
     /// Sizes each family's download for the engine its install hook picks.
     nvidia_gpu: bool,
+    /// The Models groups on Diagnostics, once the composition root hands
+    /// them over.
+    models: RefCell<Option<Rc<crate::models_ui::ModelsSection>>>,
 }
 
 struct BackendFocus {
@@ -680,6 +683,7 @@ impl BackendUi {
             install_cancellation: CancellationToken::new(),
             follow_interval: std::cell::Cell::new(FOLLOW_INTERVAL),
             nvidia_gpu: crate::machine::has_nvidia_gpu(),
+            models: RefCell::new(None),
         });
 
         ui.connect_view_stack_selection();
@@ -2044,6 +2048,7 @@ impl BackendUi {
     /// differs from the one it shows: replacing it would throw away the
     /// reader's scroll position and selection on every focus change.
     fn rebuild_diagnostics_page(self: &Rc<Self>) {
+        self.show_models();
         let report = present_diagnostics(self.diagnostic_input());
         let loading = self.controller.discovery_loading();
         let shown = (report, loading);
@@ -2184,8 +2189,71 @@ impl BackendUi {
         }
     }
 
+    /// Take the Models groups: Add speech model opens Install more models,
+    /// and a removal rediscovers so the lists drop what went.
+    pub fn attach_models(self: &Rc<Self>, section: Rc<crate::models_ui::ModelsSection>) {
+        section.connect_add_speech({
+            let ui = Rc::downgrade(self);
+            move || {
+                if let Some(ui) = ui.upgrade() {
+                    ui.present_install_models();
+                }
+            }
+        });
+        section.connect_removed({
+            let ui = Rc::downgrade(self);
+            move || {
+                if let Some(ui) = ui.upgrade() {
+                    ui.trigger_discovery();
+                }
+            }
+        });
+        let shown = self
+            .diagnostics_page
+            .borrow()
+            .as_ref()
+            .and_then(|page| page.clone().downcast::<ui::DiagnosticsPage>().ok());
+        if let Some(page) = shown {
+            place_models(&page, &section);
+        }
+        self.models.replace(Some(section));
+        self.show_models();
+    }
+
+    /// List the installed models as discovery last found them.
+    fn show_models(&self) {
+        let Some(section) = self.models.borrow().clone() else {
+            return;
+        };
+        let snapshot = self.active_backend.snapshot();
+        let speech: Vec<String> = snapshot
+            .backends()
+            .iter()
+            .map(|backend| backend.snap_name().to_owned())
+            .collect();
+        let connected = match snapshot.active_state() {
+            ActiveBackendState::Connected(backend) => Some(backend.snap_name().to_owned()),
+            _ => None,
+        };
+        let busy = self.operation_coordinator.active().is_some()
+            || self
+                .model_installs
+                .borrow()
+                .values()
+                .any(|install| matches!(install, ModelInstall::Running(_)));
+        section.show(&crate::models_ui::Found {
+            snaps: &self.installed_snaps.borrow(),
+            speech: &speech,
+            connected: connected.as_deref(),
+            busy,
+        });
+    }
+
     fn build_diagnostics_page(self: &Rc<Self>) -> ui::DiagnosticsPage {
         let widget = ui::DiagnosticsPage::new();
+        if let Some(section) = self.models.borrow().as_ref() {
+            place_models(&widget, section);
+        }
 
         let refresh_button = widget.refresh_button();
         refresh_button.set_tooltip_text(Some(&gettextrs::gettext("Refresh diagnostics")));
@@ -2414,6 +2482,9 @@ impl BackendUi {
         self.active_backend.abandon();
         self.controller.cancel_all();
         self.install_cancellation.cancel();
+        if let Some(section) = self.models.borrow().as_ref() {
+            section.shutdown();
+        }
     }
 }
 
@@ -3170,6 +3241,17 @@ fn service_state_label(state: &ServiceState) -> String {
     }
 }
 
+/// The Models groups go above the report, which stays last.
+fn place_models(page: &ui::DiagnosticsPage, section: &crate::models_ui::ModelsSection) {
+    let preferences = page.preferences_page();
+    let report = page.report_group();
+    preferences.remove(&report);
+    for group in section.groups() {
+        preferences.add(group);
+    }
+    preferences.add(&report);
+}
+
 fn text_provider_from(
     offer: &crate::domain::TextOffer,
     snaps: &[InstalledSnap],
@@ -3697,6 +3779,7 @@ mod tests {
             install_cancellation: CancellationToken::new(),
             follow_interval: std::cell::Cell::new(std::time::Duration::from_millis(5)),
             nvidia_gpu: false,
+            models: RefCell::new(None),
         });
         ui.connect_view_stack_selection();
         ui.connect_install_button();
@@ -3815,6 +3898,7 @@ mod tests {
         *ui.installed_snaps.borrow_mut() = vec![InstalledSnap {
             name: "model-00".into(),
             version: "1.0".into(),
+            ..Default::default()
         }];
         ui.inventory_complete.set(true);
         view_stack.set_visible_child_name("diagnostics");
@@ -3829,6 +3913,44 @@ mod tests {
         let adjustment = report_scroller(&view).vadjustment();
         settle(|| view.is_mapped() && adjustment.upper() > adjustment.page_size() + 100.0);
         (ui, window)
+    }
+
+    #[test]
+    fn diagnostics_lists_the_models_above_the_report() {
+        on_gtk_thread(|| {
+            let (ui, window) = long_diagnostics();
+            let section = crate::models_ui::tests::idle_section();
+            ui.attach_models(section.clone());
+            let page = ui
+                .diagnostics_page
+                .borrow()
+                .as_ref()
+                .and_then(|page| page.clone().downcast::<ui::DiagnosticsPage>().ok())
+                .expect("the Diagnostics page");
+            let [speech, text] = section.groups();
+            let report = page.report_group();
+            let mut order = Vec::new();
+            let mut child = report.parent().and_then(|box_| box_.first_child());
+            while let Some(widget) = child {
+                order.push(widget.clone());
+                child = widget.next_sibling();
+            }
+            let at = |group: &adw::PreferencesGroup| {
+                order
+                    .iter()
+                    .position(|w| w == group.upcast_ref::<gtk::Widget>())
+                    .expect("on the page")
+            };
+            assert!(
+                at(speech) < at(text) && at(text) < at(&report),
+                "speech, text, report"
+            );
+            assert!(
+                speech.description().is_some_and(|d| d.contains("in all")),
+                "listed as soon as it is attached"
+            );
+            window.destroy();
+        });
     }
 
     impl BackendUi {
@@ -3882,6 +4004,7 @@ mod tests {
                         .then(|| InstalledSnap {
                             name: "myna".into(),
                             version: "1".into(),
+                            ..Default::default()
                         })
                         .into_iter()
                         .collect(),
@@ -3898,7 +4021,6 @@ mod tests {
                     }),
                     ..DiagnosticInput::default()
                 })
-            ..Default::default()
             };
 
             ui.fill_diagnostics_page(&page, &report(-13, false), true);
@@ -3938,6 +4060,7 @@ mod tests {
             *ui.installed_snaps.borrow_mut() = vec![InstalledSnap {
                 name: "myna-text".into(),
                 version: "0.3.3".into(),
+                ..Default::default()
             }];
             view_stack.set_visible_child_name("diagnostics");
             let window = gtk::Window::builder().child(&view_stack).build();
@@ -4004,7 +4127,6 @@ mod tests {
             let (scrolled, selected) = read_the_bottom(&view);
 
             // A line near the top reads differently.
-                            ..Default::default()
             ui.installed_snaps.borrow_mut()[0].version = "1.1-longer".into();
             ui.rebuild_diagnostics_page();
             while glib::MainContext::default().iteration(false) {}
@@ -4060,7 +4182,6 @@ mod tests {
             std::future::pending().await
         }
 
-                ..Default::default()
         async fn read_snapshot(
             &self,
             _backend: &BackendIdentity,

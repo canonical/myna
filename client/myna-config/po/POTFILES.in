@@ -30,6 +30,8 @@ src/diagnostics.rs
 src/myna_settings.rs
 src/adapters/client_settings.rs
 src/model_family.rs
+src/installed_models.rs
+src/models_ui.rs
 src/presentation.rs
 src/ui/install_control.rs
 src/ui/status_page.rs
