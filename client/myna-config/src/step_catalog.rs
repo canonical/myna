@@ -739,13 +739,14 @@ mod tests {
                 "Code casing",
                 "Spoken addresses",
                 "Numbers as digits",
+                "Hide swearing",
                 "Translate",
                 "Keep the original",
                 "Typography",
                 "Chinese script"
             ]
         );
-        let Job::Translate(translate) = &found[7] else {
+        let Job::Translate(translate) = &found[8] else {
             panic!("not the Translate job")
         };
         assert!(translate.open);
@@ -955,7 +956,7 @@ mod tests {
     fn built_ins_and_every_entry_are_listed_with_their_facts() {
         let all = listed(&case());
         let ids: Vec<_> = all.iter().map(|i| i.id.as_str()).collect();
-        assert_eq!(ids.len(), 12, "{ids:?}");
+        assert_eq!(ids.len(), 13, "{ids:?}");
         assert!(!ids.contains(&"fit"), "fitting is a switch, not a step");
         let fr = find(&all, "en-fr");
         assert_eq!(fr.title, "Translate English to Français");
@@ -1015,6 +1016,7 @@ mod tests {
                 "casing",
                 "addresses",
                 "numbers",
+                "profanity",
                 "en-fr",
                 "fr-en",
                 "original",
@@ -1255,6 +1257,7 @@ mod tests {
                 "casing",
                 "addresses",
                 "numbers",
+                "profanity",
                 "z-translate",
                 "a-late",
                 "original",
