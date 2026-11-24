@@ -1,18 +1,17 @@
-# Nightly lab run (tests/testflinger/): the store's latest/edge snaps on real
-# hardware. `accuracy`: the adapter smoke, then each backend's latency and
-# accuracy on the languages Myna recommends it for (noble), on one pinned
-# machine per platform: latency only compares on the same machine night to
-# night, and ceilings.yaml holds each one's ceilings by hostname.
-# `continuity`: dictations through the daemon that must not lose audio, idle
-# and under load (resolute). Needs repository secrets TESTFLINGER_CLIENT_ID
-# and TESTFLINGER_SECRET_KEY; the lab runs only where TESTFLINGER_QUEUE is
-# set, which also names continuity's machine unless
-# TESTFLINGER_CONTINUITY_QUEUE does.
+# Nightly lab run (tests/testflinger/): the latest/edge/main snaps on real
+# hardware, started by snaps.yml once it has released main there.
+# `accuracy`: the adapter smoke, then each backend's latency and accuracy on
+# the languages Myna recommends it for (noble), on one pinned machine per
+# platform: latency only compares on the same machine night to night, and
+# ceilings.yaml holds each one's ceilings by hostname. `continuity`:
+# dictations through the daemon that must not lose audio, idle and under load
+# (resolute). Needs repository secrets TESTFLINGER_CLIENT_ID and
+# TESTFLINGER_SECRET_KEY; the lab runs only where TESTFLINGER_QUEUE is set,
+# which also names continuity's machine unless TESTFLINGER_CONTINUITY_QUEUE
+# does.
 name: Testflinger
 
 on:
-  schedule:
-    - cron: "23 2 * * *"
   workflow_dispatch:
 
 jobs:
