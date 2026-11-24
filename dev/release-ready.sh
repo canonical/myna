@@ -28,7 +28,7 @@ for snap in $snaps; do
         "https://api.snapcraft.io/v2/snaps/info/$name?fields=version") || exit 2
     for arch in amd64 arm64; do
         served=$(echo "$info" | jq -r --arg arch "$arch" '[."channel-map"[]
-            | select(.channel.track == "latest" and .channel.risk == "edge" and .channel.architecture == $arch)
+            | select(.channel.track == "latest" and .channel.name == "edge" and .channel.architecture == $arch)
             | .version] | first // "nothing"')
         [ "$served" = "$version" ] || lag "$name on $arch serves $served"
     done
