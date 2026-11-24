@@ -90,7 +90,9 @@ if [ -n "$monitor" ]; then
 fi
 
 export MODE=$mode DISPLAY_MODE=$display
-[ -z "$lang" ] || export LANG=$lang
+# LANGUAGE and LC_* outrank LANG in gettext, and the login environment sets
+# LANGUAGE, which left the app in English whatever --lang said.
+[ -z "$lang" ] || { export LANG=$lang; unset LANGUAGE LC_ALL LC_MESSAGES; }
 if [ "$display" = real ]; then runner=(bash -s --); else runner=(xvfb-run -a -s "-screen 0 1100x800x24" bash -s --); fi
 "${runner[@]}" "$@" <<'INNER'
 export GDK_BACKEND=x11 GSETTINGS_SCHEMA_DIR=$PWD/schemas
