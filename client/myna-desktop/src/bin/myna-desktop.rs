@@ -1084,6 +1084,12 @@ fn spawn_restart_watch(
                     "backend share lost here since start ({unmounted:?}); restarting once idle"
                 );
                 lost.store(true, std::sync::atomic::Ordering::SeqCst);
+                if let Some(path) = myna_desktop::restart::note_path() {
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map_or(0, |d| d.as_secs());
+                    let _ = std::fs::write(path, myna_desktop::restart::note(now, &unmounted));
+                }
                 leave.notify_one();
                 return;
             }
@@ -1393,6 +1399,15 @@ fn print_status(args: &Args) -> ExitCode {
                     status.status_message
                 }
             );
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| d.as_secs());
+            if let Some(line) = myna_desktop::restart::note_path()
+                .and_then(|path| std::fs::read_to_string(path).ok())
+                .and_then(|note| myna_desktop::restart::describe(&note, now))
+            {
+                println!("  {:<15} {line}", "last restart");
+            }
             if !status.chain_status.is_empty() {
                 println!(
                     "  {:<15} {} {}",

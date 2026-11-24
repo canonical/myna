@@ -45,9 +45,70 @@ impl RestartWatch {
     }
 }
 
+/// Where a restart leaves its reason for the next process's `--status`: the
+/// runtime directory, so it lasts until logout and no longer.
+pub fn note_path() -> Option<PathBuf> {
+    std::env::var_os("XDG_RUNTIME_DIR").map(|dir| PathBuf::from(dir).join("myna-desktop.restart"))
+}
+
+/// The note for a restart at `unix_secs` over `shares`: the time, a tab, the
+/// shares' names.
+pub fn note(unix_secs: u64, shares: &[PathBuf]) -> String {
+    let names: Vec<String> = shares
+        .iter()
+        .map(|share| {
+            share.file_name().map_or_else(
+                || share.display().to_string(),
+                |n| n.to_string_lossy().into(),
+            )
+        })
+        .collect();
+    format!("{unix_secs}\t{}", names.join(", "))
+}
+
+/// The `--status` line for a note read at `now_secs`; `None` for no note or
+/// one it cannot read.
+pub fn describe(note: &str, now_secs: u64) -> Option<String> {
+    let (at, shares) = note.trim_end().split_once('\t')?;
+    let ago = now_secs.saturating_sub(at.parse().ok()?);
+    let ago = match ago {
+        0..=119 => format!("{ago} s"),
+        120..=7199 => format!("{} min", ago / 60),
+        _ => format!("{} h", ago / 3600),
+    };
+    Some(format!("{ago} ago: backend share lost here ({shares})"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_note_says_when_and_which_shares() {
+        let note = note(
+            1_000,
+            &shares(&["/var/snap/myna/x1/backend/provider-2", "provider-3"]),
+        );
+        assert_eq!(note, "1000\tprovider-2, provider-3");
+        assert_eq!(
+            describe(&note, 1_042).as_deref(),
+            Some("42 s ago: backend share lost here (provider-2, provider-3)")
+        );
+        assert_eq!(describe(&note, 1_000 + 600).unwrap()[..6], *"10 min");
+        assert_eq!(describe(&note, 1_000 + 3 * 3600).unwrap()[..3], *"3 h");
+        assert_eq!(
+            describe(&note, 500).unwrap()[..4],
+            *"0 s ",
+            "a clock gone back"
+        );
+    }
+
+    #[test]
+    fn an_unreadable_note_says_nothing() {
+        assert_eq!(describe("", 1), None);
+        assert_eq!(describe("soon\tprovider", 1), None);
+        assert_eq!(describe("12 provider", 1), None);
+    }
 
     fn shares(names: &[&str]) -> Vec<PathBuf> {
         names.iter().map(PathBuf::from).collect()
