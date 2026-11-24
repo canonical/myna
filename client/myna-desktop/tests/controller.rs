@@ -2601,3 +2601,66 @@ async fn held_text_discarded_on_a_cancelled_dictation_is_reported() {
     assert_eq!(landed[0].heard, "held words");
     assert_eq!(landed[0].typed, "");
 }
+
+// ── Leaving when idle (the bridge for snapd LP#2175592) ─────────────────────
+
+/// Yields its edges, then waits forever, like a real shortcut.
+struct EdgesThenWait(std::collections::VecDeque<TriggerEdge>);
+
+#[async_trait::async_trait]
+impl myna_orchestrator::Trigger for EdgesThenWait {
+    async fn next_edge(&mut self) -> Option<TriggerEdge> {
+        match self.0.pop_front() {
+            Some(edge) => Some(edge),
+            None => std::future::pending().await,
+        }
+    }
+}
+
+fn waiting_controller(
+    leave: Option<Arc<Notify>>,
+) -> (
+    DesktopController,
+    Arc<Mutex<myna_desktop::inject::mock::InjectorLog>>,
+) {
+    let injector = MockInjector::new();
+    let log = injector.log();
+    let builder = DesktopController::builder()
+        .trigger(EdgesThenWait(
+            [TriggerEdge::Press, TriggerEdge::Release].into(),
+        ))
+        .injector(injector)
+        .indicator(MockIndicator::new())
+        .session(backend_session(FakeBackend::commit_drain));
+    let builder = match leave {
+        Some(leave) => builder.leave_when_idle(leave),
+        None => builder,
+    };
+    (builder.build(), log)
+}
+
+/// Asked to leave before a press, the controller still runs the dictation
+/// it was pressed for, and leaves only once it is back to idle.
+#[tokio::test]
+async fn leaving_waits_for_the_dictation_in_progress() {
+    let leave = Arc::new(Notify::new());
+    let (mut controller, log) = waiting_controller(Some(leave.clone()));
+    leave.notify_one();
+    tokio::time::timeout(Duration::from_secs(5), controller.run())
+        .await
+        .expect("left once idle");
+    assert_eq!(
+        log.lock().unwrap().commits.len(),
+        1,
+        "the dictation finished"
+    );
+    assert_eq!(controller.state(), DictationState::Idle);
+}
+
+#[tokio::test]
+async fn without_being_asked_the_controller_keeps_waiting() {
+    let (mut controller, log) = waiting_controller(None);
+    let waited = tokio::time::timeout(Duration::from_millis(300), controller.run()).await;
+    assert!(waited.is_err(), "still waiting for a press");
+    assert_eq!(log.lock().unwrap().commits.len(), 1);
+}

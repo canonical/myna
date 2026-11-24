@@ -428,6 +428,26 @@ fn malformed_both(out: &mut PartitionedShares, share: &Path, why: &str) {
     out.text.unusable.malformed += 1;
 }
 
+/// The shares under `dir` that are empty and not mounted in this process:
+/// connected after it started, or unmounted under it (snapd LP#2175592).
+/// Only a fresh process can see them.
+pub fn unmounted_shares(dir: &Path) -> Vec<PathBuf> {
+    unmounted_shares_with(dir, is_mount_point)
+}
+
+fn unmounted_shares_with(dir: &Path, mounted: impl Fn(&Path) -> bool) -> Vec<PathBuf> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut shares: Vec<PathBuf> = entries
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.is_dir() && is_empty_dir(path) && !mounted(path))
+        .collect();
+    shares.sort();
+    shares
+}
+
 fn is_empty_dir(path: &Path) -> bool {
     std::fs::read_dir(path).is_ok_and(|mut entries| entries.next().is_none())
 }
@@ -1104,6 +1124,28 @@ mod tests {
         assert!(text.providers.is_empty());
         assert_eq!(text.unusable.unmounted, 1);
         assert!(text.needs_restart());
+    }
+
+    #[test]
+    fn only_empty_shares_outside_this_namespace_are_unmounted() {
+        let dir = tmpdir();
+        let _speech = serving(&dir, "provider", "myna-parakeet");
+        std::fs::create_dir_all(dir.join("provider-3")).expect("empty mount point");
+        std::fs::create_dir_all(dir.join("provider-2")).expect("empty mount point");
+        std::fs::write(dir.join("stray-file"), "").expect("a file, not a share");
+
+        assert_eq!(
+            unmounted_shares_with(&dir, |_| false),
+            [dir.join("provider-2"), dir.join("provider-3")],
+            "empty shares, in name order"
+        );
+        let mounted = dir.join("provider-2");
+        assert_eq!(
+            unmounted_shares_with(&dir, |path| path == mounted),
+            [dir.join("provider-3")],
+            "an empty mount is a backend yet to start"
+        );
+        assert!(unmounted_shares_with(&dir.join("absent"), |_| false).is_empty());
     }
 
     #[test]

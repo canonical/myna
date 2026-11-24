@@ -59,6 +59,7 @@ use myna_desktop::process::history::{Context, Recorded};
 use myna_desktop::process::pipeline::Pipeline;
 use myna_desktop::process::resolve::Resolver;
 use myna_desktop::process::steps::{compile, StepSpec};
+use myna_desktop::restart::{RestartWatch, CHECK_EVERY};
 use myna_desktop::shortcut::control::{default_socket_path, listen, send_toggle, ControlTrigger};
 use myna_desktop::sound::{
     player::{Player, Previewer},
@@ -939,6 +940,9 @@ async fn run_controller(
     // exists to serve this controller, and dropping the handle stops it.
     let _settings_watch = live.follow(&args, pump_bus.clone());
     let restart = Arc::new(tokio::sync::Notify::new());
+    // The bridge for snapd LP#2175592 (`myna_desktop::restart`).
+    let leave = Arc::new(tokio::sync::Notify::new());
+    let shares_lost = Arc::new(std::sync::atomic::AtomicBool::new(false));
 
     let injector = LazyInjector::new(IbusConnect);
     // Every poke reaches the text input backend at once, a held key's repeats
@@ -969,6 +973,9 @@ async fn run_controller(
                     resolver.status(),
                     resolver.catalog(),
                 ));
+            }
+            if let Some(dir) = backend {
+                spawn_restart_watch(dir.to_path_buf(), leave.clone(), shares_lost.clone());
             }
             spawn_binder(
                 resolver.clone(),
@@ -1003,6 +1010,7 @@ async fn run_controller(
         Some(bus) => builder.draft(BusDraftView::new(bus.clone())),
         None => builder,
     };
+    let builder = builder.leave_when_idle(leave);
 
     let mut controller = match resolved.activation {
         // Debug only, and the one trigger whose end is a real user intent:
@@ -1027,6 +1035,12 @@ async fn run_controller(
     let bus_lost = bus_lost.unwrap_or_else(|| futures_util::future::pending().boxed());
     tokio::select! {
         () = controller.run() => {
+            if shares_lost.load(std::sync::atomic::Ordering::SeqCst) {
+                eprintln!(
+                    "a backend share is no longer mounted in this process (snapd LP#2175592); exiting so the service restarts and sees it again"
+                );
+                return ExitCode::FAILURE;
+            }
             println!("bye");
             ExitCode::SUCCESS
         }
@@ -1049,6 +1063,33 @@ async fn run_controller(
             ExitCode::FAILURE
         }
     }
+}
+
+/// Watch the shares under `dir` for one this process lost since it started
+/// ([`RestartWatch`]), then mark the exit a failure and ask the controller to
+/// leave at its next idle moment, so `Restart=on-failure` starts a daemon
+/// that sees the share again.
+fn spawn_restart_watch(
+    dir: PathBuf,
+    leave: Arc<tokio::sync::Notify>,
+    lost: Arc<std::sync::atomic::AtomicBool>,
+) {
+    tokio::spawn(async move {
+        let mut watch = RestartWatch::default();
+        loop {
+            let unmounted = myna_orchestrator::backend::share::unmounted_shares(&dir);
+            if watch.observe(&unmounted) {
+                myna_core::info_log!(
+                    "ctrl",
+                    "backend share lost here since start ({unmounted:?}); restarting once idle"
+                );
+                lost.store(true, std::sync::atomic::Ordering::SeqCst);
+                leave.notify_one();
+                return;
+            }
+            tokio::time::sleep(CHECK_EVERY).await;
+        }
+    });
 }
 
 /// How long the notice of a press that needs a restart shows before it.

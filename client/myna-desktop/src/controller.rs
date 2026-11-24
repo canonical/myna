@@ -15,6 +15,7 @@
 //! capabilities a backend reports.
 
 use std::collections::BTreeSet;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use futures_util::stream::{BoxStream, StreamExt};
@@ -419,6 +420,7 @@ pub struct DesktopController {
     /// The backend warnings already shown, by code: each condition outlasts
     /// the utterance that reported it, so one notice per run says it.
     warned: BTreeSet<String>,
+    leave: Option<Arc<tokio::sync::Notify>>,
 }
 
 /// This session's accept-gate drop count, published as it changes.
@@ -444,6 +446,7 @@ pub struct DesktopControllerBuilder {
     commit: Live<CommitPolicy>,
     processor: Option<Box<dyn Processor>>,
     draft: Option<Box<dyn DraftView>>,
+    leave: Option<Arc<tokio::sync::Notify>>,
 }
 
 impl DesktopControllerBuilder {
@@ -499,6 +502,13 @@ impl DesktopControllerBuilder {
         self
     }
 
+    /// Asked through `leave`, [`DesktopController::run`] returns the next
+    /// time it is idle, never during a dictation (`crate::restart`).
+    pub fn leave_when_idle(mut self, leave: Arc<tokio::sync::Notify>) -> Self {
+        self.leave = Some(leave);
+        self
+    }
+
     /// Where held text is shown. Nowhere by default.
     pub fn draft(mut self, view: impl DraftView + 'static) -> Self {
         self.draft = Some(Box::new(view));
@@ -523,6 +533,7 @@ impl DesktopControllerBuilder {
             processor: self.processor.unwrap_or_else(|| Box::new(Unprocessed)),
             draft: self.draft.unwrap_or_else(|| Box::new(NoDraftView)),
             warned: BTreeSet::new(),
+            leave: self.leave,
         }
     }
 }
@@ -544,7 +555,19 @@ impl DesktopController {
         loop {
             // Idle: wait for a Press. Stray Releases are ignored; `None` quits.
             let pressed = loop {
-                match self.trigger.next_edge().await {
+                let edge = match self.leave.clone() {
+                    // A press already queued wins: the user asked first.
+                    Some(leave) => tokio::select! {
+                        biased;
+                        edge = self.trigger.next_edge() => edge,
+                        () = leave.notified() => {
+                            myna_core::info_log!("ctrl", "idle: leaving as asked");
+                            return;
+                        }
+                    },
+                    None => self.trigger.next_edge().await,
+                };
+                match edge {
                     Some(TriggerEdge::Press) => break true,
                     Some(TriggerEdge::Release) => continue,
                     None => break false,

@@ -32,6 +32,7 @@ pub mod inject;
 pub mod live;
 pub mod platform;
 pub mod process;
+pub mod restart;
 pub mod shortcut;
 pub mod sound;
 
