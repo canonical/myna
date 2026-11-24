@@ -1,0 +1,100 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR THE PACKAGE'S COPYRIGHT HOLDER
+# This file is distributed under the same license as the PACKAGE package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: PACKAGE VERSION\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-11-22 15:02+0000\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: Automatically generated\n"
+"Language-Team: none\n"
+"Language: ar\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=6; plural=n==0 ? 0 : n==1 ? 1 : n==2 ? 2 : n%100>=3 "
+"&& n%100<=10 ? 3 : n%100>=11 ? 4 : 5;\n"
+
+#: src/indicator/mod.rs:80
+msgid "Loading model…"
+msgstr ""
+
+#: src/indicator/mod.rs:81
+msgid "Listening"
+msgstr ""
+
+#: src/indicator/mod.rs:82
+msgid "Transcribing"
+msgstr ""
+
+#: src/indicator/mod.rs:83
+msgid "Finishing"
+msgstr ""
+
+#: src/indicator/mod.rs:87
+#, c-format
+msgid "Error: %s"
+msgstr ""
+
+#: src/indicator/notify.rs:127
+msgid "🎤 Dictation: listening"
+msgstr ""
+
+#: src/indicator/notify.rs:128
+msgid "Speak now. Press your shortcut again to stop."
+msgstr ""
+
+#: src/indicator/notify.rs:131
+msgid "💬 Dictation: transcribing"
+msgstr ""
+
+#: src/indicator/notify.rs:132
+msgid "Converting speech to text…"
+msgstr ""
+
+#: src/indicator/notify.rs:135
+msgid "⏳ Dictation: finishing"
+msgstr ""
+
+#: src/indicator/notify.rs:136
+msgid "Inserting the final text…"
+msgstr ""
+
+#: src/indicator/notify.rs:139
+msgid "⚠️ Dictation error"
+msgstr ""
+
+#: src/controller.rs:189 src/controller.rs:933
+msgid "Focus lost"
+msgstr ""
+
+#: src/controller.rs:191
+msgid "No speech detected"
+msgstr ""
+
+#: src/controller.rs:195
+msgid "Background noise is high"
+msgstr ""
+
+#: src/controller.rs:812
+msgid "Text field closed"
+msgstr ""
+
+#: src/controller.rs:931
+msgid "Password field skipped"
+msgstr ""
+
+#: src/controller.rs:932
+msgid "No text field focused"
+msgstr ""
+
+#: src/controller.rs:934
+msgid "Typing unavailable"
+msgstr ""
+
+#: src/controller.rs:935
+msgid "Typing failed"
+msgstr ""
