@@ -155,7 +155,8 @@ fn address(words: &[Word], start: usize) -> Option<(usize, String)> {
         [] => {}
         // An email: one "at" before the domain, after a word that
         // introduces it or at a sentence's start.
-        [n] if *n < tld => {
+        // The path stops before an "at", so one left is before the domain.
+        [_] => {
             let cued = start == 0
                 || !words[start - 1].tail.is_empty()
                 || EMAIL_CUES.contains(&words[start - 1].bare.as_str());
@@ -165,7 +166,8 @@ fn address(words: &[Word], start: usize) -> Option<(usize, String)> {
         }
         _ => return None,
     }
-    let end = joiners.last().map_or(start + 1, |(i, _)| i + 2);
+    let (last_joiner, _) = joiners.last()?;
+    let end = last_joiner + 2;
     let mut typed = String::from(words[start].lead);
     typed.push_str(&words[start].bare);
     for (i, joiner) in joiners {
@@ -204,6 +206,27 @@ mod tests {
             apply("I looked at example dot com."),
             "I looked at example.com."
         );
+    }
+
+    #[test]
+    fn edges_of_an_address() {
+        for (said, typed) in [
+            (
+                "example dot com slash docs at home",
+                "example.com/docs at home",
+            ),
+            ("Thanks. ann at mail dot com", "Thanks. ann@mail.com"),
+            ("go example, dot com", "go example, dot com"),
+            ("a dot b, dot com", "a dot b, dot com"),
+            ("example dot, com", "example dot, com"),
+            ("example (dot com", "example (dot com"),
+            ("caf\u{e9} dot com", "caf\u{e9} dot com"),
+            ("dot dot com", "dot dot com"),
+            ("(example dot com)", "(example.com)"),
+            ("email a at b at c dot com", "email a at b@c.com"),
+        ] {
+            assert_eq!(apply(said), typed, "{said}");
+        }
     }
 
     #[test]

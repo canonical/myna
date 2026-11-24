@@ -79,7 +79,8 @@ pub fn apply(text: &str) -> String {
             out.push_str(emoji);
             out.push_str(&word[tail_at..]);
             copied = end;
-            free = at + 1;
+            // "emoji" itself never starts a name.
+            free = at;
         }
     }
     out.push_str(&text[copied..]);

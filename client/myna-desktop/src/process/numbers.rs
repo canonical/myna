@@ -199,9 +199,10 @@ pub fn apply(text: &str) -> String {
         } else {
             format!("{value}.{decimals}")
         };
+        // Under ten stays a word ("one of them", "two kids") unless a unit
+        // or decimals make it a quantity.
         let worth = value >= 10 || !decimals.is_empty() || unit_word.is_some();
-        // "one" alone is a word as often as a number: "one of them".
-        if !worth || (value == 1 && end - at == 1 && unit_word.is_none()) {
+        if !worth {
             out.extend(raw[at..end].iter().map(|w| (*w).to_owned()));
             at = end;
             continue;
@@ -276,6 +277,36 @@ mod tests {
             ("It costs twenty five euros.", "It costs \u{20ac}25."),
             ("two pounds, please", "\u{a3}2, please"),
             ("five kilometres", "5 kilometres"),
+        ] {
+            assert_eq!(apply(said), typed, "{said}");
+        }
+    }
+
+    #[test]
+    fn edges_of_a_number() {
+        for (said, typed) in [
+            ("twenty-nine", "29"),
+            ("thirty-four", "34"),
+            ("two billion", "2000000000"),
+            ("twenty (five", "20 (five"),
+            ("(twenty five)", "(25)"),
+            ("twenty, five", "20, five"),
+            ("twenty eleven", "20 11"),
+            ("twenty ten", "20 10"),
+            ("thousand people", "thousand people"),
+            ("the hundred years", "the 100 years"),
+            ("five and six", "five and six"),
+            ("twenty and five", "20 and five"),
+            ("a hundred and", "100 and"),
+            ("one hundred and ten", "110"),
+            ("two thousand and five", "2005"),
+            ("a dollar", "a dollar"),
+            ("a dog", "a dog"),
+            ("three point ten", "three point 10"),
+            ("three point", "three point"),
+            ("five per year", "five per year"),
+            ("five per cent.", "5%."),
+            ("ten dollars.", "$10."),
         ] {
             assert_eq!(apply(said), typed, "{said}");
         }
