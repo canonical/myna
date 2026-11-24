@@ -117,6 +117,9 @@ attempt() {
     lxc file pull -r "$RUN/home/ubuntu/myna-shot/out" "$ARTIFACTS/" || true
     if [ -d "$ARTIFACTS/out/shots/$SUITE" ]; then
         mkdir -p "$RUN_DIR/artifacts/screenshots"
+        # Another desktop's run of the suite on this host may have put its
+        # own there since this one started; mv would nest into it and fail.
+        rm -rf "$RUN_DIR/artifacts/screenshots/$SUITE"
         mv "$ARTIFACTS/out/shots/$SUITE" "$RUN_DIR/artifacts/screenshots/$SUITE"
     fi
     lxc exec "$RUN" -- journalctl -b --no-pager -o short-precise > "$ARTIFACTS/journal.log" || true
