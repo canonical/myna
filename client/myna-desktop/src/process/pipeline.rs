@@ -336,13 +336,13 @@ impl Processor for Pipeline {
                     .select(field)
                     .map(|src| read(&made, src))
                     .unwrap_or_default(),
-                Op::Join { parts, sep } => {
+                Op::Join { parts, form } => {
                     let mut whole = None;
                     for part in parts {
                         let arrived = read(&made, *part);
                         whole = self.joins.arrive(seq, id, parts, *part, arrived);
                     }
-                    whole.map(|all| all.join(sep)).unwrap_or_default()
+                    whole.map(|all| form.apply(all)).unwrap_or_default()
                 }
             };
             made.insert(id, out);
@@ -355,7 +355,7 @@ impl Processor for Pipeline {
 
 #[cfg(test)]
 mod tests {
-    use super::super::graph::{Builder, Needs};
+    use super::super::graph::{Builder, Form, Needs};
     use super::*;
     use crate::process::rules::Rule;
     use myna_core::ProcessingChain;
@@ -869,7 +869,7 @@ mod tests {
             Check::Present,
             Needs::Sentence,
         );
-        let out = g.join(vec![Src::Input, french], " / ");
+        let out = g.join(vec![Src::Input, french], Form::Sep(" / "));
         g.finish(out)
     }
 
@@ -886,12 +886,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_failed_branch_of_a_join_hands_on_what_it_was_given() {
+    async fn a_failed_branch_of_a_join_adds_nothing_to_what_it_was_given() {
         let mut pipeline = Pipeline::new(side_by_side(), Scripted::Fails);
-        assert_eq!(
-            pipeline.process("Hello.".into(), &here()).await,
-            "Hello. / Hello."
-        );
+        assert_eq!(pipeline.process("Hello.".into(), &here()).await, "Hello.");
         assert_eq!(traced(&pipeline)[0].skipped, Some(Skip::NoModel));
     }
 }
