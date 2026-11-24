@@ -3915,6 +3915,30 @@ mod tests {
         (ui, window)
     }
 
+    /// A model installing from Install more models holds Remove back, and
+    /// closing the window stops following a removal.
+    #[test]
+    fn a_running_install_blocks_remove_and_shutdown_stops_the_models() {
+        on_gtk_thread(|| {
+            let (ui, window) = long_diagnostics();
+            let section = crate::models_ui::tests::idle_section();
+            ui.attach_models(section.clone());
+            assert!(!section.blocked());
+            ui.model_installs.borrow_mut().insert(
+                myna_core::language::ModelFamily::Whisper,
+                ModelInstall::Running(None),
+            );
+            ui.show_models();
+            assert!(section.blocked(), "an install alone is enough");
+            ui.model_installs.borrow_mut().clear();
+            ui.show_models();
+            assert!(!section.blocked());
+            ui.shutdown();
+            assert!(section.stopped());
+            window.destroy();
+        });
+    }
+
     #[test]
     fn diagnostics_lists_the_models_above_the_report() {
         on_gtk_thread(|| {

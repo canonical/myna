@@ -150,6 +150,11 @@ impl ModelsSection {
         self.cancellation.cancel();
     }
 
+    #[cfg(test)]
+    pub(crate) fn stopped(&self) -> bool {
+        self.cancellation.is_cancelled()
+    }
+
     /// List what discovery found. Rows are rebuilt only when the models
     /// changed, so a focus rediscovery that found nothing new leaves them.
     pub fn show(self: &Rc<Self>, found: &Found) {
@@ -279,7 +284,7 @@ impl ModelsSection {
         }
     }
 
-    fn blocked(&self) -> bool {
+    pub(crate) fn blocked(&self) -> bool {
         self.busy.get() || self.removing.borrow().is_some()
     }
 
@@ -770,6 +775,84 @@ pub(crate) mod tests {
         )
     }
 
+    fn catalog_entry() -> Entry {
+        serde_json::from_value(serde_json::json!({
+            "id": "en-it", "snap": "myna-translation", "component": "model-translate-en-it",
+            "model": "m-en-it", "task": "text.translate", "in_lang": "en", "out_lang": "it",
+            "step": {"id": "translate", "stage": "translate", "label_key": "step.translate.name",
+                     "description_key": "", "example_key": ""},
+        }))
+        .unwrap()
+    }
+
+    /// The catalog is read once, and again only when an installed text
+    /// model is missing from it, as after a snap refresh brought new ones.
+    #[test]
+    fn the_catalog_is_read_again_only_for_a_model_it_lacks() {
+        crate::ui::on_gtk_thread(|| {
+            let reads = Rc::new(Cell::new(0));
+            let section = ModelsSection::new(Deps {
+                configurator: Rc::new(Snapd {
+                    calls: Rc::default(),
+                    answer: Ok(None),
+                }),
+                daemon: Rc::new(Daemon("idle")),
+                overlay: adw::ToastOverlay::new(),
+                follow_interval: Duration::from_millis(1),
+                catalog: Box::new({
+                    let reads = reads.clone();
+                    move || {
+                        reads.set(reads.get() + 1);
+                        vec![catalog_entry()]
+                    }
+                }),
+            });
+            section.show(&found(false));
+            section.show(&found(false));
+            assert_eq!(reads.get(), 1, "everything installed is in it");
+            let title = |section: &ModelsSection| {
+                section
+                    .rows
+                    .borrow()
+                    .last()
+                    .unwrap()
+                    .row
+                    .title()
+                    .to_string()
+            };
+            assert_eq!(title(&section), "English to Italiano");
+
+            let mut snaps = snaps();
+            snaps[1].components.push(SnapComponent {
+                name: "model-translate-en-de".into(),
+                summary: "English to German".into(),
+                installed_size: 1,
+                install_date: Some("2026-11-24T00:00:00Z".into()),
+            });
+            let speech = ["myna-parakeet".to_owned(), "myna-whisper".to_owned()];
+            let lacking = Found {
+                snaps: &snaps,
+                speech: &speech,
+                connected: Some("myna-parakeet"),
+                busy: false,
+            };
+            section.show(&lacking);
+            assert_eq!(reads.get(), 2, "a model it lacks reads it again");
+            section.show(&lacking);
+            assert_eq!(reads.get(), 3, "and again while it still lacks it");
+        });
+    }
+
+    #[test]
+    fn shutting_down_stops_following_a_removal() {
+        crate::ui::on_gtk_thread(|| {
+            let section = idle_section();
+            assert!(!section.stopped());
+            section.shutdown();
+            assert!(section.stopped());
+        });
+    }
+
     #[test]
     fn the_add_rows_hand_over_to_their_callers() {
         crate::ui::on_gtk_thread(|| {
@@ -784,6 +867,9 @@ pub(crate) mod tests {
                 let text = text.clone();
                 move || text.set(true)
             });
+            assert_eq!(rig.section.add_speech.title(), "Add speech model…");
+            assert_eq!(rig.section.add_text.title(), "Add text model…");
+            assert!(rig.section.add_speech.is_activatable());
             rig.section.add_speech.emit_by_name::<()>("activated", &[]);
             assert!(speech.get() && !text.get());
             rig.section.add_text.emit_by_name::<()>("activated", &[]);
