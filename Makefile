@@ -41,9 +41,11 @@ BRANCH := $(shell git branch --show-current)
 # Everything below `test`, `coverage` and `check` runs inside the canonical
 # Workshop environment (.workshop/myna.yaml, .workshop/myna-shell.yaml): the
 # same actions CI runs, so green here is green there.
-WS := workshop run myna
-WS_SHELL := workshop run myna-shell
-WS_NOBLE := workshop run myna-noble
+# Each gate reports its wall time (dev/timed.sh), in CI on the job's page.
+TIMED := $(CURDIR)/dev/timed.sh
+WS := $(TIMED) workshop run myna
+WS_SHELL := $(TIMED) workshop run myna-shell
+WS_NOBLE := $(TIMED) workshop run myna-noble
 
 .PHONY: help
 help: ## List targets, grouped as in this file
@@ -82,7 +84,7 @@ coverage-gate: ## The patch gate alone over the measured suites (CI `coverage` j
 
 .PHONY: spread
 spread: spread-build ## Confined e2e suite in a local KVM VM (CI `spread` job; needs prebuilt snaps)
-	.cache/spread/spread $(SPREAD_FLAGS) qemu:ubuntu-24.04-64:tests/spread/
+	$(TIMED) .cache/spread/spread $(SPREAD_FLAGS) qemu:ubuntu-24.04-64:tests/spread/
 
 # Every snap in one go. Kept serial even under `make -j`: the per-snap builds
 # each want the whole machine (snapcraft's build VM/container, multi-GB model
@@ -253,7 +255,7 @@ build-deb-source: ## Stage the myna-config Debian source (orig tarball + tree) i
 
 .PHONY: build-deb
 build-deb: ## Build the myna-config deb into target/deb/<series> in a clean chroot (sbuild; extra flags via SBUILD_ARGS)
-	stage=$$(./myna-config-deb/build-source.sh) && cd "$$stage" && sbuild --build-dir="$$(dirname "$$stage")" $(SBUILD_ARGS)
+	stage=$$(./myna-config-deb/build-source.sh) && cd "$$stage" && $(TIMED) sbuild --build-dir="$$(dirname "$$stage")" $(SBUILD_ARGS)
 
 # The host venv, for editors and the in-tree bench scripts. The workshop has
 # its own (shadowing this one with a mount), so nothing under `test` or
@@ -478,7 +480,7 @@ SUITES ?=
 
 .PHONY: e2e
 e2e: ## Settings and dictation suites in an LXD desktop VM (E2E_RELEASE=noble, E2E_DESKTOP=gnome|xubuntu, SUITES=all, E2E_VM_MEMORY=6GiB)
-	e2e-tests/vm/provision.sh --release $(E2E_RELEASE) --desktop $(E2E_DESKTOP)
+	$(TIMED) e2e-tests/vm/provision.sh --release $(E2E_RELEASE) --desktop $(E2E_DESKTOP)
 	e2e-tests/run-suite.sh --release $(E2E_RELEASE) --desktop $(E2E_DESKTOP) $(SUITES)
 
 # A copy of the e2e VM running this tree's snap and deb, to try by hand; the
@@ -519,7 +521,7 @@ spread-build: spread-image ## Build spread at the pinned commit (input to every 
 # for an account outside /etc/passwd), user-daemon-session (real snaps, the
 # user daemon's session).
 spread-%: spread-build ## Run one suite: spread-<dir under tests/spread>, e.g. spread-confined-e2e
-	.cache/spread/spread $(SPREAD_FLAGS) qemu:ubuntu-24.04-64:tests/spread/$*
+	$(TIMED) .cache/spread/spread $(SPREAD_FLAGS) qemu:ubuntu-24.04-64:tests/spread/$*
 
 ##@ Remote CI (GitHub Actions, current branch)
 
