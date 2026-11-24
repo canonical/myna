@@ -162,6 +162,8 @@ jobs:
       # setup-lxd's pool is `dir`, where each suite's snapshot copy is a full
       # 20 GB disk copy; btrfs makes it copy-on-write.
       - run: lxc storage create e2e btrfs size=60GiB
+      # The chains suite compiles Settings' French and Chinese catalogs.
+      - run: sudo DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends gettext
       - run: |
           E2E_MYNA_SNAP=$(ls "$PWD"/myna-snap/myna_*_amd64.snap) \
             make e2e E2E_RELEASE=${{ matrix.release }} E2E_DESKTOP=${{ matrix.desktop }} \
