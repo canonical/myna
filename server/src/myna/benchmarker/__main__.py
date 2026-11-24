@@ -318,7 +318,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--gate",
         metavar="FILE",
         help="YAML {snap: {language: ceiling %%}}: exit 1 on a breach, a language "
-        "nothing scored, or a row that did not finish (zh/ja/ko by CER, others by WER)",
+        "nothing scored, or a row that did not finish (zh/ja/ko by CER, others by WER); "
+        "plus latency: {machine: {label: {median|p95: seconds}}} for finalize latency",
     )
     p_sum.add_argument(
         "--ci",

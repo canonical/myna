@@ -606,16 +606,24 @@ def _print_by_category(
 CHARACTER_SCORED = frozenset({"zh", "ja", "ko", "yue"})
 
 
+# Latency statistics a gate may bound, by the summary field that holds them.
+LATENCY_STATISTICS = {"median": ("median_final", 0.5), "p95": ("p95_final", 0.95)}
+
+
 def gate(
     records: list[Record],
     statuses: dict[RowKey, tuple[str, str]],
-    ceilings: dict[str, dict[str, float]],
+    ceilings: dict[str, Any],
 ) -> list[str]:
-    """Every breach of ``ceilings`` ({snap: {language: percent}}); [] passes.
+    """Every breach of ``ceilings``; [] passes.
 
-    Each row of a listed snap must score every language listed for it: a
-    backend that errors on every clip of a language leaves no rows, and that
-    is a failure, never a vacuous pass. So is a row the runner did not finish.
+    Error rates are ``{snap: {language: percent}}``. Each row of a listed snap
+    must score every language listed for it: a backend that errors on every
+    clip of a language leaves no rows, and that is a failure, never a vacuous
+    pass. So is a row the runner did not finish.
+
+    Latency is ``latency: {machine: {label: {median|p95: seconds}}}``, see
+    ``latency_breaches``.
     """
     failures = [
         f"{label}: {status} ({reason})"
@@ -623,6 +631,10 @@ def gate(
         if status != "ok"
     ]
     warm = [r for r in records if not r.get("cold", False)]
+    ceilings = dict(ceilings)
+    latency = ceilings.pop("latency", None)
+    if latency is not None:
+        failures += latency_breaches(warm, latency)
     for snap, limits in ceilings.items():
         keys = sorted(
             {row_key(r) for r in warm if r["label"].split("/")[0].partition("+")[0] == snap}
@@ -642,6 +654,53 @@ def gate(
                 if rate > ceiling:
                     metric = "CER" if by_char else "WER"
                     failures.append(f"{key[1]} {language}: {metric} {rate:.1f}% > {ceiling:g}%")
+    return failures
+
+
+def latency_breaches(
+    records: list[Record], ceilings: dict[str, dict[str, dict[str, float]]]
+) -> list[str]:
+    """Finalize-latency breaches, in seconds, of the machines in ``records``.
+
+    Latency only compares on one machine, so ceilings are per machine; one
+    file serves the fleet and each machine is judged by its own entry. A
+    machine with none has no baseline yet and fails rather than pass unseen.
+    A tail read from too few clips is no measurement, and fails too.
+    Streaming latency is gated only at ``@realtime`` pace: fed faster than
+    speech, it is no user's latency.
+    """
+    summary = _summarize(records)
+    failures = []
+    for machine in sorted({key[0] for key in summary}):
+        rows = ceilings.get(machine)
+        if rows is None:
+            failures.append(f"{machine}: no latency ceilings for this machine")
+            continue
+        for label, limits in rows.items():
+            where = f"{label} @ {machine}"
+            mode = label.partition("@")[0].rsplit("/", 1)[-1]
+            if mode.startswith("streaming") and not label.endswith("@realtime"):
+                failures.append(f"{where}: streaming latency is only gated at @realtime pace")
+                continue
+            row = summary.get((machine, label))
+            if row is None or not row["timed_clips"]:
+                failures.append(f"{where}: no timed clips")
+                continue
+            for statistic, ceiling in limits.items():
+                if statistic not in LATENCY_STATISTICS:
+                    known = ", ".join(LATENCY_STATISTICS)
+                    failures.append(f"{where}: unknown latency statistic {statistic!r} ({known})")
+                    continue
+                field, q = LATENCY_STATISTICS[statistic]
+                value = row[field]  # type: ignore[literal-required]
+                if value is None:
+                    floor = sample_floor(q)
+                    failures.append(
+                        f"{where}: {statistic} final needs {floor} timed clips,"
+                        f" has {row['timed_clips']}"
+                    )
+                elif value > ceiling:
+                    failures.append(f"{where}: {statistic} final {value:.3f} s > {ceiling:g} s")
     return failures
 
 

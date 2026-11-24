@@ -1200,6 +1200,113 @@ def test_cmd_summarize_exits_1_on_a_gate_breach(tmp_path, capsys):
     assert "WER 30.0% > 25%" in capsys.readouterr().out
 
 
+# ─── latency gate ────────────────────────────────────────────────────────────
+
+STREAM_RT = "myna-parakeet/cpu/int8/streaming@realtime"
+
+
+def _timed(label, latencies, machine="box"):
+    return [
+        record(label=label, clip=f"c{i}", finalize_latency=v, provenance={"machine": machine})
+        for i, v in enumerate(latencies)
+    ]
+
+
+def _latency(ceilings, machine="box"):
+    return {"latency": {machine: ceilings}}
+
+
+def test_latency_gate_passes_rows_under_their_ceilings():
+    records = _timed(PARAKEET, [0.4] * 60)
+    assert gate(records, {}, _latency({PARAKEET: {"median": 0.5, "p95": 1.0}})) == []
+
+
+def test_latency_gate_fails_a_slow_median():
+    records = _timed(PARAKEET, [0.8] * 60)
+    assert gate(records, {}, _latency({PARAKEET: {"median": 0.5}})) == [
+        f"{PARAKEET} @ box: median final 0.800 s > 0.5 s"
+    ]
+
+
+def test_latency_gate_fails_a_slow_tail():
+    records = _timed(PARAKEET, [0.4] * 55 + [3.0] * 5)
+    assert gate(records, {}, _latency({PARAKEET: {"p95": 1.0}})) == [
+        f"{PARAKEET} @ box: p95 final 3.000 s > 1 s"
+    ]
+
+
+def test_latency_gate_fails_a_tail_too_few_clips_were_timed_for():
+    """Ten clips cannot read a p95: that is no measurement, never a pass."""
+    records = _timed(PARAKEET, [0.4] * 10)
+    assert gate(records, {}, _latency({PARAKEET: {"p95": 1.0}})) == [
+        f"{PARAKEET} @ box: p95 final needs 60 timed clips, has 10"
+    ]
+
+
+def test_latency_gate_leaves_starved_realtime_clips_out():
+    records = _timed(STREAM_RT, [0.4] * 60) + [
+        record(
+            label=STREAM_RT,
+            clip="starved",
+            finalize_latency=9.0,
+            pace_starved=True,
+            provenance={"machine": "box"},
+        )
+    ]
+    assert gate(records, {}, _latency({STREAM_RT: {"median": 0.5, "p95": 1.0}})) == []
+
+
+def test_latency_gate_refuses_streaming_latency_fed_at_max_pace():
+    """Fed faster than speech, streaming latency is no user's latency."""
+    label = "myna-parakeet/cpu/int8/streaming"
+    records = _timed(label, [0.4] * 60)
+    assert gate(records, {}, _latency({label: {"median": 0.5}})) == [
+        f"{label} @ box: streaming latency is only gated at @realtime pace"
+    ]
+
+
+def test_latency_gate_fails_a_listed_row_that_never_ran():
+    records = _timed(PARAKEET, [0.4] * 60)
+    assert gate(records, {}, _latency({PARAKEET: {"median": 0.5}, STREAM_RT: {"median": 1}})) == [
+        f"{STREAM_RT} @ box: no timed clips"
+    ]
+
+
+def test_latency_gate_fails_a_machine_with_no_ceilings():
+    """A new machine has no baseline: it must not pass by being unlisted."""
+    records = _timed(PARAKEET, [0.4] * 60, machine="newbox")
+    assert gate(records, {}, _latency({PARAKEET: {"median": 0.5}})) == [
+        "newbox: no latency ceilings for this machine"
+    ]
+
+
+def test_latency_gate_only_judges_the_machines_that_ran():
+    """One file of ceilings serves the whole fleet; each run is one machine."""
+    records = _timed(PARAKEET, [0.4] * 60)
+    ceilings = {"latency": {"box": {PARAKEET: {"median": 0.5}}, "other": {PARAKEET: {}}}}
+    assert gate(records, {}, ceilings) == []
+
+
+def test_latency_gate_rejects_an_unknown_statistic():
+    records = _timed(PARAKEET, [0.4] * 60)
+    assert gate(records, {}, _latency({PARAKEET: {"p90": 0.5}})) == [
+        f"{PARAKEET} @ box: unknown latency statistic 'p90' (median, p95)"
+    ]
+
+
+def test_cmd_summarize_exits_1_on_a_latency_breach(tmp_path, capsys):
+    path = tmp_path / "results.jsonl"
+    write_jsonl(path, _timed(PARAKEET, [0.8] * 60))
+    ceilings = tmp_path / "gate.yaml"
+    ceilings.write_text(f"latency:\n  box:\n    {PARAKEET}: {{median: 0.5}}\n")
+    args = Args(path, ci=False)
+    args.gate = str(ceilings)
+    with pytest.raises(SystemExit) as exc:
+        cmd_summarize(args)
+    assert exc.value.code == 1
+    assert "median final 0.800 s > 0.5 s" in capsys.readouterr().out
+
+
 def _kw(**counts):
     """A row's keyword fields, as run_clips writes all five on every row."""
     fields = ("in_reference", "recalled", "recalled_cased", "absent", "false_hits")
