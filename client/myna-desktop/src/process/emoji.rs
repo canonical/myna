@@ -26,15 +26,25 @@ fn names() -> &'static HashMap<String, &'static str> {
     })
 }
 
-/// The words of a name or of what was said, lowercased.
+/// The words of a name or of what was said, lowercased and without
+/// articles: "rolling on floor laughing" is "rolling on the floor laughing".
 fn words(text: &str) -> Vec<String> {
     text.split(|c: char| c.is_whitespace() || c == '_' || c == '-')
         .map(|w| {
             w.trim_matches(|c: char| !c.is_alphanumeric())
                 .to_lowercase()
         })
-        .filter(|w| !w.is_empty())
+        .filter(|w| !w.is_empty() && !["the", "a", "an"].contains(&w.as_str()))
         .collect()
+}
+
+/// The emoji `said` names; "laughing face" is "laughing" when no emoji is
+/// called "laughing face".
+fn named(said: &str) -> Option<&'static str> {
+    names()
+        .get(said)
+        .or_else(|| names().get(said.strip_suffix(" face")?))
+        .copied()
 }
 
 /// `text` with each spoken emoji typed as the emoji.
@@ -64,8 +74,12 @@ pub fn apply(text: &str) -> String {
         }
         let first = at.saturating_sub(MAX_WORDS).max(free);
         let found = (first..at).find_map(|from| {
+            // A name never takes the article before it: "a 😆".
+            if words(&text[spans[from].0..spans[from].1]).is_empty() {
+                return None;
+            }
             let said = words(&text[spans[from].0..spans[at - 1].1]).join(" ");
-            names().get(&said).map(|emoji| (from, *emoji))
+            named(&said).map(|emoji| (from, emoji))
         });
         if let Some((from, emoji)) = found {
             out.push_str(&text[copied..spans[from].0]);
@@ -107,6 +121,16 @@ mod tests {
     #[test]
     fn a_shortcode_said_with_spaces_for_underscores_is_found() {
         assert_eq!(apply("heart eyes emoji"), "\u{1f60d}");
+    }
+
+    #[test]
+    fn articles_and_a_spoken_face_do_not_matter() {
+        assert_eq!(apply("Rolling on floor laughing emoji."), "\u{1f923}.");
+        assert_eq!(
+            apply("I wonder if we can have a laughing face emoji."),
+            "I wonder if we can have a \u{1f606}."
+        );
+        assert_eq!(apply("a smiling face emoji"), "a \u{263a}\u{fe0f}");
     }
 
     #[test]
