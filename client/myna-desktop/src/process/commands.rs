@@ -103,6 +103,34 @@ fn command(sentence: &str) -> Option<Command> {
     })
 }
 
+/// A command that leads `sentence` before a comma, and the words after:
+/// "Scratch that, Tuesday." Without the comma ("Delete that file.") the
+/// sentence is text.
+fn leading(sentence: &str) -> Option<(Command, &str)> {
+    let (head, rest) = sentence.split_once(',')?;
+    let rest = rest.trim();
+    let cmd = command(head)?;
+    (!words(rest).is_empty()).then_some((cmd, rest))
+}
+
+/// Type the words that followed a command in its sentence. After taken
+/// back words they carry on the sentence they were taken from ("My name
+/// is Peter. Delete the last word, Charles." is "My name is Charles.");
+/// otherwise they start a sentence.
+fn carry_on(blocks: &mut Vec<Block>, cmd: Command, rest: &str) {
+    if let (Command::DeleteWords(_), Some(Block::Text(last))) = (cmd, blocks.last_mut()) {
+        let open = last.trim_end_matches(|c: char| !c.is_alphanumeric());
+        *last = format!("{open} {rest}");
+        return;
+    }
+    let mut chars = rest.chars();
+    let capital: String = chars
+        .next()
+        .map(|c| c.to_uppercase().chain(chars).collect())
+        .unwrap_or_default();
+    blocks.push(Block::Text(capital));
+}
+
 /// `text` without its last `n` words, keeping how it ended (". ", "?").
 fn drop_words(text: &str, n: usize) -> String {
     let end = text.trim_end();
@@ -138,7 +166,16 @@ pub fn apply(text: &str) -> String {
                 continue;
             }
         }
-        match command(sentence) {
+        // A command, or one that leads its sentence before a comma, the
+        // words after it carrying on: "Delete the last word, Charles."
+        let (found, rest) = match command(sentence) {
+            Some(cmd) => (Some(cmd), None),
+            None => match leading(sentence) {
+                Some((cmd, rest)) => (Some(cmd), Some(rest)),
+                None => (None, None),
+            },
+        };
+        match found {
             None => blocks.push(Block::Text(sentence.to_owned())),
             Some(cmd) => {
                 acted = true;
@@ -192,6 +229,9 @@ pub fn apply(text: &str) -> String {
                             }
                         }
                     }
+                }
+                if let Some(rest) = rest {
+                    carry_on(&mut blocks, cmd, rest);
                 }
             }
         }
@@ -375,6 +415,35 @@ mod tests {
         assert_eq!(apply("One. Two. Delete that! Three."), "One. Three.");
         assert_eq!(apply("Scratch that."), "");
         assert_eq!(apply("Hello. Undo that"), "");
+    }
+
+    #[test]
+    fn a_command_may_lead_its_sentence_before_a_comma() {
+        for (said, typed) in [
+            (
+                "My name is Peter. Delete the last word, Charles.",
+                "My name is Charles.",
+            ),
+            (
+                "My name is Peter. Delete last word, Charles.",
+                "My name is Charles.",
+            ),
+            ("Meet Monday. Scratch that, meet Tuesday.", "Meet Tuesday."),
+            (
+                "Dear Ann. New paragraph, thanks for calling.",
+                "Dear Ann.\n\nThanks for calling.",
+            ),
+            (
+                "Send it to the whole team. Delete last two words, group.",
+                "Send it to the group.",
+            ),
+            ("Delete the last word, Charles.", "Charles."),
+        ] {
+            assert_eq!(apply(said), typed, "{said}");
+        }
+        for said in ["Delete that file, please.", "Scratch that idea, it is bad."] {
+            assert_eq!(apply(said), said);
+        }
     }
 
     #[test]
