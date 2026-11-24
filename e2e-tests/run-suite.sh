@@ -138,6 +138,7 @@ for SUITE in "${SUITES[@]}"; do
     ARTIFACTS=$RUN_DIR/artifacts/$TAG-$SUITE
     rm -rf "$ARTIFACTS" "$RUN_DIR/artifacts/screenshots/$SUITE"; mkdir -p "$ARTIFACTS"
 
+    started=$EPOCHSECONDS
     attempt
     # A virtual runner's host stops the vCPUs for tens of milliseconds now
     # and then, longer than a graph cycle, and capture loses audio and ends
@@ -150,6 +151,7 @@ for SUITE in "${SUITES[@]}"; do
         mv "$ARTIFACTS" "$ARTIFACTS-lost-audio"; mkdir -p "$ARTIFACTS"
         attempt
     fi
+    "$REPO/dev/timed.sh" --record "e2e suite $SUITE" "$((EPOCHSECONDS - started))" "$src"
     [ "$src" = 0 ] || rc=1
 done
 echo "== artifacts in $RUN_DIR/artifacts"
