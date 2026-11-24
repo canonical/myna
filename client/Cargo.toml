@@ -37,3 +37,12 @@ pipewire = { version = "0.10", features = ["v0_3_44"] }
 # (gtk4 0.10, libadwaita 0.8), not 0.22: 0.22 needs Rust 1.92 and the
 # myna-config deb builds on noble, whose newest toolchain is rustc-1.91.
 gio = "0.21"
+
+# Line tables keep file:line in backtraces and panics; full debug info is
+# only for a debugger, and cost CI's coverage build a fifth of its time.
+# Dependencies carry none.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
