@@ -3898,6 +3898,7 @@ mod tests {
                     }),
                     ..DiagnosticInput::default()
                 })
+            ..Default::default()
             };
 
             ui.fill_diagnostics_page(&page, &report(-13, false), true);
@@ -4003,6 +4004,7 @@ mod tests {
             let (scrolled, selected) = read_the_bottom(&view);
 
             // A line near the top reads differently.
+                            ..Default::default()
             ui.installed_snaps.borrow_mut()[0].version = "1.1-longer".into();
             ui.rebuild_diagnostics_page();
             while glib::MainContext::default().iteration(false) {}
@@ -4058,6 +4060,7 @@ mod tests {
             std::future::pending().await
         }
 
+                ..Default::default()
         async fn read_snapshot(
             &self,
             _backend: &BackendIdentity,

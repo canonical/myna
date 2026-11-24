@@ -866,6 +866,7 @@ fn onboarding_probe() -> glib::ExitCode {
     let installed = [crate::diagnostics::InstalledSnap {
         name: crate::onboarding::MYNA_SNAP.to_owned(),
         version: "1".to_owned(),
+        ..Default::default()
     }];
     let window = {
         let ui = OnboardingUi::present_with_ports(
@@ -906,6 +907,7 @@ fn onboarding_probe() -> glib::ExitCode {
     let installed = [crate::diagnostics::InstalledSnap {
         name: crate::onboarding::MYNA_SNAP.to_owned(),
         version: "1".to_owned(),
+        ..Default::default()
     }];
     let machine = ProbeMachine::new();
     machine.disconnect_backends();
@@ -988,6 +990,7 @@ fn onboarding_probe() -> glib::ExitCode {
     let installed = [crate::diagnostics::InstalledSnap {
         name: crate::onboarding::MYNA_SNAP.to_owned(),
         version: "1".to_owned(),
+        ..Default::default()
     }];
     let machine = ProbeMachine::new();
     let (window, shortcut_button) = {
@@ -2277,6 +2280,7 @@ fn onboarding_control_probe() -> glib::ExitCode {
     let installed = [crate::diagnostics::InstalledSnap {
         name: crate::onboarding::MYNA_SNAP.to_owned(),
         version: "1".to_owned(),
+        ..Default::default()
     }];
     let step = |window: &ui::OnboardingWindow| {
         window
@@ -3050,6 +3054,7 @@ impl ProbeMachine {
             .map(|(name, version)| crate::diagnostics::InstalledSnap {
                 name: (*name).to_owned(),
                 version: (*version).to_owned(),
+                ..Default::default()
             })
             .collect()
     }

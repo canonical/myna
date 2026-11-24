@@ -43,10 +43,36 @@ const SENSITIVE_KEY_SUBSTRINGS: &[&str] = &[
 ];
 
 /// One installed snap as `GET /v2/snaps` lists it.
-#[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Deserialize)]
 pub struct InstalledSnap {
     pub name: String,
     pub version: String,
+    /// Bytes on disk of the snap itself, components apart.
+    #[serde(rename = "installed-size", default)]
+    pub installed_size: u64,
+    /// Every component the snap declares, installed or not.
+    #[serde(default)]
+    pub components: Vec<SnapComponent>,
+}
+
+/// One component of a snap as `GET /v2/snaps` lists it.
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Deserialize)]
+pub struct SnapComponent {
+    pub name: String,
+    #[serde(default)]
+    pub summary: String,
+    /// Bytes on disk; snapd names it only for an installed component.
+    #[serde(rename = "installed-size", default)]
+    pub installed_size: u64,
+    /// When it was installed; snapd names it only for an installed one.
+    #[serde(rename = "install-date", default)]
+    pub install_date: Option<String>,
+}
+
+impl SnapComponent {
+    pub fn installed(&self) -> bool {
+        self.install_date.is_some()
+    }
 }
 
 /// Per-backend diagnostic summary.
@@ -1336,6 +1362,7 @@ mod tests {
             installed_snaps: vec![InstalledSnap {
                 name: "myna".into(),
                 version: "0.1.0".into(),
+                ..Default::default()
             }],
             backends: vec![BackendDiagnostic {
                 snap_name: "myna-parakeet".into(),
@@ -1466,6 +1493,7 @@ mod tests {
             installed_snaps: vec![InstalledSnap {
                 name: "myna".into(),
                 version: "0.1.0".into(),
+                ..Default::default()
             }],
             backends: vec![
                 BackendDiagnostic {
@@ -1533,6 +1561,7 @@ mod tests {
             installed_snaps: vec![InstalledSnap {
                 name: "myna".into(),
                 version: "0.1.0".into(),
+                ..Default::default()
             }],
             backends: vec![BackendDiagnostic {
                 snap_name: "myna-parakeet".into(),
@@ -1606,6 +1635,7 @@ mod tests {
             installed_snaps: vec![InstalledSnap {
                 name: "myna".into(),
                 version: "0.1.0".into(),
+                ..Default::default()
             }],
             machine: Some(MachineFacts {
                 cpu: "amd64 AuthenticAMD, avx2".into(),
@@ -1693,6 +1723,7 @@ mod tests {
             installed_snaps: vec![InstalledSnap {
                 name: "myna".into(),
                 version: "0.1.0".into(),
+                ..Default::default()
             }],
             daemon: Some(ProcessMemory {
                 pid: 42,

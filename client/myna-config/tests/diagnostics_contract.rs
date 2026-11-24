@@ -9,6 +9,7 @@ fn installed(snaps: &[(&str, &str)]) -> Vec<InstalledSnap> {
         .map(|(name, version)| InstalledSnap {
             name: (*name).to_owned(),
             version: (*version).to_owned(),
+            ..Default::default()
         })
         .collect()
 }
@@ -184,6 +185,7 @@ mod performance_warnings {
             installed_snaps: vec![InstalledSnap {
                 name: "myna".into(),
                 version: "0.1.0".into(),
+                ..Default::default()
             }],
             performance,
             ..DiagnosticInput::default()

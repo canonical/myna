@@ -888,6 +888,33 @@ fn the_installed_snaps_are_read_as_json() {
 }
 
 #[test]
+fn an_installed_snap_reads_its_size_and_installed_components() {
+    let fake = answering(
+        "GET /v2/snaps ",
+        sync_result(
+            r#"[{"name":"myna-translation","version":"0.3.3","installed-size":27983872,
+                "components":[
+                  {"name":"model-translate-en-it","type":"standard","summary":"English to Italian",
+                   "installed-size":33607680,"install-date":"2026-11-23T22:52:13Z"},
+                  {"name":"model-translate-af-en","type":"standard","summary":"Afrikaans to English",
+                   "download-size":31000000}]},
+               {"name":"snapd","version":"2.78"}]"#,
+        ),
+    );
+
+    let snaps = block_on(fake.client().installed_snaps(CancellationToken::new())).unwrap();
+
+    assert_eq!(snaps[0].installed_size, 27_983_872);
+    let components = &snaps[0].components;
+    assert_eq!(components.len(), 2);
+    assert!(components[0].installed());
+    assert_eq!(components[0].installed_size, 33_607_680);
+    assert!(!components[1].installed(), "declared, not installed");
+    assert_eq!(snaps[1].installed_size, 0);
+    assert!(snaps[1].components.is_empty());
+}
+
+#[test]
 fn every_content_slot_is_read_with_its_connections() {
     let fake = answering(
         "GET /v2/connections?select=all&interface=content ",
