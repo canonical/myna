@@ -15,6 +15,9 @@ enum Block {
     Break(&'static str),
     /// Items, numbered or bulleted, each on a line of its own.
     List(Vec<String>, bool),
+    /// "Format the following as a list.": the sentences after it, up to
+    /// the next break, are its items.
+    ListStart(bool),
 }
 
 /// What a sentence says, if it is a command.
@@ -30,7 +33,7 @@ enum Command {
 }
 
 /// The sentences of `text`, each with what ends it.
-fn sentences(text: &str) -> Vec<&str> {
+pub(super) fn sentences(text: &str) -> Vec<&str> {
     let mut out = Vec::new();
     let mut start = 0;
     let mut chars = text.char_indices().peekable();
@@ -119,9 +122,22 @@ fn drop_words(text: &str, n: usize) -> String {
 
 /// `text` with every command it holds carried out.
 pub fn apply(text: &str) -> String {
+    let quoted = quotes(text);
+    let mut acted = quoted != text;
+    let text = quoted.as_str();
     let mut blocks: Vec<Block> = Vec::new();
-    let mut acted = false;
     for sentence in sentences(text) {
+        if command(sentence).is_none() {
+            if let Some((numbered, rest)) = list_prefix(sentence) {
+                acted = true;
+                if rest.is_empty() {
+                    blocks.push(Block::ListStart(numbered));
+                } else {
+                    blocks.push(Block::List(split_items(rest), numbered));
+                }
+                continue;
+            }
+        }
         match command(sentence) {
             None => blocks.push(Block::Text(sentence.to_owned())),
             Some(cmd) => {
@@ -139,7 +155,7 @@ pub fn apply(text: &str) -> String {
                             .iter()
                             .rposition(|b| !matches!(b, Block::Text(_)))
                             .map_or(0, |at| at + 1);
-                        let items: Vec<String> = blocks
+                        let mut items: Vec<String> = blocks
                             .drain(from..)
                             .filter_map(|b| match b {
                                 Block::Text(t) => Some(item(&t)),
@@ -147,6 +163,10 @@ pub fn apply(text: &str) -> String {
                             })
                             .filter(|t| !t.is_empty())
                             .collect();
+                        // One sentence of several things: "Milk, eggs and bread."
+                        if let [one] = items.as_slice() {
+                            items = split_items(one);
+                        }
                         if !items.is_empty() {
                             blocks.push(Block::List(items, numbered));
                         }
@@ -179,6 +199,7 @@ pub fn apply(text: &str) -> String {
     if !acted {
         return text.to_owned();
     }
+    let blocks = open_lists(blocks);
     let mut out = String::new();
     // What the next text needs before it: nothing, a space, or a line.
     let mut gap = "";
@@ -193,6 +214,7 @@ pub fn apply(text: &str) -> String {
                 out.push_str(&t);
                 gap = " ";
             }
+            Block::ListStart(_) => {}
             Block::List(items, numbered) => {
                 if !out.is_empty() && !out.ends_with('\n') {
                     out.push('\n');
@@ -211,6 +233,124 @@ pub fn apply(text: &str) -> String {
         }
     }
     out
+}
+
+/// `text` with each spoken quotation ("quote, ... end quote") between
+/// quotation marks, the marks speech put around the words it said taken
+/// away: `lane, "for your exit".` A "quote" with no end is typed as said.
+fn quotes(text: &str) -> String {
+    let words: Vec<&str> = text.split_whitespace().collect();
+    let bare = |w: &str| {
+        w.trim_matches(|c: char| !c.is_alphanumeric())
+            .to_lowercase()
+    };
+    let opens = |i: usize| {
+        bare(words[i]) == "quote"
+            && (i == 0 || !matches!(bare(words[i - 1]).as_str(), "end" | "close" | "unquote"))
+    };
+    // The index of the closing word and how many words it takes.
+    let closes = |i: usize| -> Option<usize> {
+        match bare(words[i]).as_str() {
+            "unquote" => Some(1),
+            "end" | "close" if words.get(i + 1).is_some_and(|w| bare(w) == "quote") => Some(2),
+            _ => None,
+        }
+    };
+    let mut out: Vec<String> = Vec::with_capacity(words.len());
+    let mut at = 0;
+    while at < words.len() {
+        let close = opens(at)
+            .then(|| (at + 1..words.len()).find_map(|j| closes(j).map(|n| (j, n))))
+            .flatten();
+        let Some((end, len)) = close.filter(|(end, _)| *end > at + 1) else {
+            out.push(words[at].to_owned());
+            at += 1;
+            continue;
+        };
+        let inner = words[at + 1..end].join(" ");
+        let inner = inner.trim_matches(|c: char| c == ',' || c.is_whitespace());
+        let last = words[end + len - 1];
+        let after = &last[last.rfind(char::is_alphanumeric).map_or(0, |i| i + 1)..];
+        out.push(format!("\"{inner}\"{after}"));
+        at = end + len;
+    }
+    if out.len() == words.len() {
+        return text.to_owned();
+    }
+    out.join(" ")
+}
+
+/// The blocks with each "format the following as a list" made a list of
+/// the sentences after it, up to the next break.
+fn open_lists(blocks: Vec<Block>) -> Vec<Block> {
+    let mut out = Vec::with_capacity(blocks.len());
+    let mut open: Option<(bool, Vec<String>)> = None;
+    for block in blocks {
+        match (block, &mut open) {
+            (Block::Text(t), Some((_, items))) => items.push(item(&t)),
+            (Block::ListStart(numbered), _) => {
+                if let Some((n, items)) = open.take() {
+                    out.push(Block::List(items, n));
+                }
+                open = Some((numbered, Vec::new()));
+            }
+            (other, _) => {
+                if let Some((n, items)) = open.take() {
+                    out.push(Block::List(items, n));
+                }
+                out.push(other);
+            }
+        }
+    }
+    if let Some((n, items)) = open {
+        out.push(Block::List(items, n));
+    }
+    out.retain(|b| !matches!(b, Block::List(items, _) if items.is_empty()));
+    out
+}
+
+/// "format [the following | this | these] as a [numbered | bulleted] list"
+/// at the start of a sentence: whether numbered, and what follows it.
+fn list_prefix(sentence: &str) -> Option<(bool, &str)> {
+    let mut rest = sentence.trim_start();
+    let mut take = |options: &[&str]| -> Option<String> {
+        let end = rest.find(char::is_whitespace).unwrap_or(rest.len());
+        let word = rest[..end]
+            .trim_matches(|c: char| !c.is_alphanumeric())
+            .to_lowercase();
+        options.contains(&word.as_str()).then(|| {
+            rest = rest[end..].trim_start();
+            word
+        })
+    };
+    take(&["format"])?;
+    if take(&["the"]).is_some() {
+        take(&["following"])?;
+    } else {
+        take(&["this", "these"]);
+    }
+    take(&["as"])?;
+    take(&["a"])?;
+    let numbered = take(&["numbered", "bulleted"]).is_some_and(|w| w == "numbered");
+    take(&["list"])?;
+    Some((numbered, rest.trim_start_matches([':', ',', ' '])))
+}
+
+/// The things a sentence lists, by its commas: "an apple, a pear, and a
+/// box" is three; with no comma it is one.
+fn split_items(text: &str) -> Vec<String> {
+    item(text)
+        .split(',')
+        .map(|part| {
+            let part = part.trim();
+            part.strip_prefix("and ")
+                .or_else(|| part.strip_prefix("or "))
+                .unwrap_or(part)
+                .trim()
+                .to_owned()
+        })
+        .filter(|part| !part.is_empty())
+        .collect()
 }
 
 /// A sentence as a list item: without the full stop that ended it.
@@ -297,6 +437,50 @@ mod tests {
             apply("Make that a list of names."),
             "Make that a list of names."
         );
+    }
+
+    #[test]
+    fn a_list_can_be_asked_for_first_or_be_one_sentence_of_things() {
+        assert_eq!(
+            apply("Format the following as a list: an apple, a pear, and a box of cranberries."),
+            "- an apple\n- a pear\n- a box of cranberries"
+        );
+        assert_eq!(
+            apply("Format this as a numbered list. Milk. Eggs. New line. Done."),
+            "1. Milk\n2. Eggs\nDone."
+        );
+        assert_eq!(
+            apply("One cucumber, three pears, six lemons. Make that a list."),
+            "- One cucumber\n- three pears\n- six lemons"
+        );
+        assert_eq!(
+            apply("Salt and pepper. Format as a list."),
+            "- Salt and pepper"
+        );
+        assert_eq!(
+            apply("Format the following as a list."),
+            "",
+            "nothing to list"
+        );
+        assert_eq!(
+            apply("Format the text please."),
+            "Format the text please.",
+            "not a list"
+        );
+    }
+
+    #[test]
+    fn a_spoken_quotation_is_put_in_quotation_marks() {
+        assert_eq!(
+            apply("Choose the correct lane, quote, for your exit as soon as you can, end quote."),
+            "Choose the correct lane, \"for your exit as soon as you can\"."
+        );
+        assert_eq!(
+            apply("He said quote no way unquote and left."),
+            "He said \"no way\" and left."
+        );
+        assert_eq!(apply("Get a quote from them."), "Get a quote from them.");
+        assert_eq!(apply("quote end quote"), "quote end quote");
     }
 
     #[test]
