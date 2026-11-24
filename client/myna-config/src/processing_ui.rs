@@ -2269,6 +2269,11 @@ fn show_line(
     widgets
         .picker
         .set_selected(selected.map_or(gtk::INVALID_LIST_POSITION, |i| i as u32));
+    // GtkDropDown labels itself by its selected item once one is set, which
+    // outranks the label: Orca heard "Simplified (简体)", not what it picks.
+    widgets
+        .picker
+        .reset_relation(gtk::AccessibleRelation::LabelledBy);
     widgets.picker.update_property(
         &[gtk::accessible::Property::Label(&if line.id == TRANSLATE {
             gettextrs::gettext("Translate to")
