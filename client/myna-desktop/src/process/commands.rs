@@ -1,7 +1,8 @@
 //! Spoken editing commands, applied to the whole dictation before any of it
 //! is typed: "scratch that" takes back the sentence before it, "new line"
 //! and "new paragraph" break the text, "delete last word" and "delete last
-//! three words" take words back.
+//! three words" take words back, and "format as a list" (or "numbered
+//! list") makes the sentences since the last break a list, one a line.
 //!
 //! A command counts only as a sentence of its own ("Monday. Scratch that.
 //! Tuesday."), which is how a speech model writes a phrase said between
@@ -12,6 +13,8 @@
 enum Block {
     Text(String),
     Break(&'static str),
+    /// Items, numbered or bulleted, each on a line of its own.
+    List(Vec<String>, bool),
 }
 
 /// What a sentence says, if it is a command.
@@ -22,6 +25,8 @@ enum Command {
     /// Take back this many words.
     DeleteWords(usize),
     Break(&'static str),
+    /// Make the sentences since the last break a list, numbered or not.
+    List(bool),
 }
 
 /// The sentences of `text`, each with what ends it.
@@ -81,6 +86,12 @@ fn command(sentence: &str) -> Option<Command> {
         ["scratch" | "strike" | "delete" | "undo", "that"] => Command::Scratch,
         ["new", "line"] => Command::Break("\n"),
         ["new", "paragraph"] => Command::Break("\n\n"),
+        ["format", "as", "a", "list"] | ["make", "that", "a", "list"] | ["bullet", "list"] => {
+            Command::List(false)
+        }
+        ["format", "as", "a", "numbered", "list"]
+        | ["make", "that", "a", "numbered", "list"]
+        | ["numbered", "list"] => Command::List(true),
         ["delete", "last", "word"] | ["delete", "the", "last", "word"] => Command::DeleteWords(1),
         ["delete", "last", n, "words"] | ["delete", "the", "last", n, "words"] => {
             Command::DeleteWords(number(n)?)
@@ -118,8 +129,26 @@ pub fn apply(text: &str) -> String {
                 match cmd {
                     Command::Break(brk) => blocks.push(Block::Break(brk)),
                     Command::Scratch => {
-                        if let Some(at) = blocks.iter().rposition(|b| matches!(b, Block::Text(_))) {
+                        if let Some(at) = blocks.iter().rposition(|b| !matches!(b, Block::Break(_)))
+                        {
                             blocks.truncate(at);
+                        }
+                    }
+                    Command::List(numbered) => {
+                        let from = blocks
+                            .iter()
+                            .rposition(|b| !matches!(b, Block::Text(_)))
+                            .map_or(0, |at| at + 1);
+                        let items: Vec<String> = blocks
+                            .drain(from..)
+                            .filter_map(|b| match b {
+                                Block::Text(t) => Some(item(&t)),
+                                _ => None,
+                            })
+                            .filter(|t| !t.is_empty())
+                            .collect();
+                        if !items.is_empty() {
+                            blocks.push(Block::List(items, numbered));
                         }
                     }
                     Command::DeleteWords(mut n) => {
@@ -151,23 +180,46 @@ pub fn apply(text: &str) -> String {
         return text.to_owned();
     }
     let mut out = String::new();
-    let mut after_break = true;
+    // What the next text needs before it: nothing, a space, or a line.
+    let mut gap = "";
     for block in blocks {
         match block {
             Block::Break(brk) => {
                 out.push_str(brk);
-                after_break = true;
+                gap = "";
             }
             Block::Text(t) => {
-                if !after_break {
-                    out.push(' ');
-                }
+                out.push_str(gap);
                 out.push_str(&t);
-                after_break = false;
+                gap = " ";
+            }
+            Block::List(items, numbered) => {
+                if !out.is_empty() && !out.ends_with('\n') {
+                    out.push('\n');
+                }
+                let lines: Vec<String> = items
+                    .iter()
+                    .enumerate()
+                    .map(|(i, t)| match numbered {
+                        true => format!("{}. {t}", i + 1),
+                        false => format!("- {t}"),
+                    })
+                    .collect();
+                out.push_str(&lines.join("\n"));
+                gap = "\n";
             }
         }
     }
     out
+}
+
+/// A sentence as a list item: without the full stop that ended it.
+fn item(sentence: &str) -> String {
+    let sentence = sentence.trim();
+    match sentence.strip_suffix('.') {
+        Some(bare) if !bare.ends_with('.') => bare.trim_end().to_owned(),
+        _ => sentence.to_owned(),
+    }
 }
 
 #[cfg(test)]
@@ -217,6 +269,28 @@ mod tests {
         assert_eq!(
             apply("Hi there, Delete last word."),
             "Hi there, Delete last word."
+        );
+    }
+
+    #[test]
+    fn format_as_a_list_lists_the_sentences_since_the_last_break() {
+        assert_eq!(
+            apply("Milk. Eggs. Bread. Format as a list."),
+            "- Milk\n- Eggs\n- Bread"
+        );
+        assert_eq!(
+            apply("We need three things. New line. Milk. Eggs? Bread. Numbered list. Thanks."),
+            "We need three things.\n1. Milk\n2. Eggs?\n3. Bread\nThanks."
+        );
+        assert_eq!(apply("Format as a list."), "");
+        assert_eq!(
+            apply("A. B. Format as a list. Scratch that. C."),
+            "C.",
+            "scratch takes back the whole list"
+        );
+        assert_eq!(
+            apply("Make that a list of names."),
+            "Make that a list of names."
         );
     }
 

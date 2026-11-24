@@ -44,7 +44,7 @@ pub const BUILT_INS: [BuiltIn; 4] = [
         title: || gettextrs::gettext("Spoken commands"),
         description: || {
             gettextrs::gettext(
-                "Say “scratch that”, “new line”, “new paragraph” or “delete last word” on its own. Nothing is typed until you stop. English only.",
+                "Say “scratch that”, “new line”, “new paragraph”, “delete last word” or “format as a list” on its own. Nothing is typed until you stop. English only.",
             )
         },
         example: || {
