@@ -1,4 +1,4 @@
-# Myna's nightly lab run: the store's latest/edge snaps on one lab machine,
+# Myna's nightly lab run: the latest/edge/main snaps on one lab machine,
 # through tests/testflinger/<suite>.sh at the submitting commit. submit.sh
 # fills __QUEUE__, __DISTRO__, __SUITE__ and __COMMIT__; the machine fetches
 # everything else itself.

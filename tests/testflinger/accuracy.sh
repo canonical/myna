@@ -1,8 +1,9 @@
 #!/bin/bash
 # The accuracy half of the Testflinger nightly, run as root from a checkout on
-# the lab machine, everything from latest/edge: the adapter smoke through
-# the Myna client, then the FLEURS smoke tier through each backend, gated
-# per language. Results land in out/.
+# the lab machine, everything from latest/edge/main, which snaps.yml publishes
+# from main each night: the adapter smoke through the Myna client, then the
+# FLEURS smoke tier through each backend, gated per language. Results land in
+# out/.
 set -eux
 HERE=$(cd "$(dirname "$0")" && pwd)
 mkdir -p "$HERE/out"
@@ -34,8 +35,8 @@ echo "$TIER_SHA256  fleurs-smoke.tar.gz" | sha256sum -c
 tar -xzf fleurs-smoke.tar.gz
 
 snap set system experimental.user-daemons=true
-snap install --edge myna
-snap install --edge myna-whisper+model-tiny
+snap install --channel=latest/edge/main myna
+snap install --channel=latest/edge/main myna-whisper+model-tiny
 SNAP_UNDER_TEST=myna-whisper MODELCTL=myna-whisper.whisper MODEL=tiny \
     "$HERE/../spread/adapter-smoke/smoke.sh"
 
