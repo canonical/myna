@@ -33,6 +33,8 @@ pub enum Rule {
     Emoji,
     /// Type the user's snippets and the date or time for "insert <name>".
     Snippets,
+    /// Case and join the words after a spoken casing ("camel case").
+    Casing,
     /// Carry out spoken editing commands ("scratch that"), which reach
     /// back over the dictation.
     Commands,
@@ -68,6 +70,7 @@ impl Rule {
             }
             Rule::Disfluency(lang) => disfluency::clean(text, lang),
             Rule::Emoji => super::emoji::apply(text),
+            Rule::Casing => super::casing::apply(text),
             Rule::Commands => super::commands::apply(text),
             Rule::Continue => decapitalise(text, |word| {
                 FUNCTION_WORDS.contains(&word.to_lowercase().as_str())

@@ -91,6 +91,8 @@ enum Kind {
     Emoji,
     /// Type the user's snippets for "insert <name>".
     Snippets,
+    /// Case and join words after a spoken casing.
+    Casing,
     /// Translate to `to`.
     Translate,
     /// Type what was said beside its translation.
@@ -100,11 +102,12 @@ enum Kind {
 }
 
 impl Kind {
-    const ALL: [Kind; 7] = [
+    const ALL: [Kind; 8] = [
         Kind::Commands,
         Kind::Tidy,
         Kind::Emoji,
         Kind::Snippets,
+        Kind::Casing,
         Kind::Translate,
         Kind::Original,
         Kind::Script,
@@ -120,6 +123,7 @@ impl Kind {
             Kind::Emoji => "emoji",
             Kind::Commands => "commands",
             Kind::Snippets => "snippets",
+            Kind::Casing => "casing",
             Kind::Translate => "translate",
             Kind::Original => "original",
             Kind::Script => "script",
@@ -130,7 +134,12 @@ impl Kind {
         match self {
             Kind::Translate => Some("to"),
             Kind::Script => Some("mode"),
-            Kind::Tidy | Kind::Commands | Kind::Emoji | Kind::Snippets | Kind::Original => None,
+            Kind::Tidy
+            | Kind::Commands
+            | Kind::Emoji
+            | Kind::Snippets
+            | Kind::Casing
+            | Kind::Original => None,
         }
     }
 }
@@ -358,6 +367,10 @@ pub fn compile(steps: &[StepSpec], ctx: &Context) -> Compiled {
                     }
                     Kind::Commands => {
                         at = g.rule(at, Rule::Commands);
+                        StepState::Applicable
+                    }
+                    Kind::Casing => {
+                        at = g.rule(at, Rule::Casing);
                         StepState::Applicable
                     }
                     Kind::Snippets => {
@@ -685,6 +698,13 @@ mod tests {
             Some(0),
             "fits above the translation"
         );
+        for english in ["snippets", "casing"] {
+            assert_eq!(states(&compiled(&[english], Some("en"))), [(english, "on")]);
+            assert_eq!(
+                states(&compiled(&[english], Some("de"))),
+                [(english, "n/a")]
+            );
+        }
         let spoken_french = compiled(&["emoji"], Some("fr"));
         assert_eq!(states(&spoken_french), [("emoji", "n/a")]);
         assert_eq!(
