@@ -101,8 +101,11 @@ attempt() {
     lxc file push --uid 1000 --gid 1000 "$REPO"/client/data/glib-2.0/schemas/*.gschema.xml "$RUN/home/ubuntu/myna-shot/schemas/"
     # The catalog snapshots the deb installs (myna-config-deb/debian/rules),
     # which Settings lists text steps from before a text snap is installed.
-    lxc file push -p "$REPO"/text-snap/catalog.json "$RUN/usr/share/myna-config/catalog/myna-text.json"
-    lxc file push -p "$REPO"/translation-snap/catalog.json "$RUN/usr/share/myna-config/catalog/myna-translation.json"
+    # Root-owned as the deb leaves them: `push -p` makes its directories 0750
+    # and owned by the caller's uid, which only chance makes the VM's user.
+    lxc exec "$RUN" -- install -d -m 0755 /usr/share/myna-config/catalog
+    lxc file push --uid 0 --gid 0 --mode 0644 "$REPO"/text-snap/catalog.json "$RUN/usr/share/myna-config/catalog/myna-text.json"
+    lxc file push --uid 0 --gid 0 --mode 0644 "$REPO"/translation-snap/catalog.json "$RUN/usr/share/myna-config/catalog/myna-translation.json"
 
     # The guest's CPU time against the host's, to lay lost capture against.
     on_vm "$RUN" 'mkdir -p myna-shot/out'
