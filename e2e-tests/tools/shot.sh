@@ -106,6 +106,12 @@ if [ "$DISPLAY_MODE" = xvfb ]; then
     # Without a compositor GTK paints popover and dialog shadows opaque black.
     xcompmgr -n 2>/dev/null & comp=$!
 fi
+if [ "$DISPLAY_MODE" = real ]; then
+    # The pointer stays where the last run's last click left it; over the new
+    # window it raises a tooltip, which the driver can take for the window.
+    read -r w h < <(xdotool getdisplaygeometry)
+    xdotool mousemove $((w - 1)) $((h - 1))
+fi
 ./myna-config >> out/app.log 2>&1 &
 pid=$!
 [ "$MODE" = cancel ] && { python3 cancel-agent.py $pid >> out/agent.log 2>&1 & agent=$!; }

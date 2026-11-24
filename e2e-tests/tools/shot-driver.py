@@ -163,19 +163,28 @@ def window_content():
     draws its shadow inside the X window and says how wide it is in
     _GTK_FRAME_EXTENTS (left, right, top, bottom); with none the property is
     absent and the content fills the window."""
-    wid = subprocess.run(
+    wids = subprocess.run(
         ["xdotool", "search", "--sync", "--onlyvisible", "--pid", str(PID)],
         capture_output=True,
         text=True,
         check=True,
-    ).stdout.split()[0]
-    geo = subprocess.run(
-        ["xdotool", "getwindowgeometry", "--shell", wid],
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout
-    vals = dict(line.split("=", 1) for line in geo.split())
+    ).stdout.split()
+
+    def geometry(wid):
+        geo = subprocess.run(
+            ["xdotool", "getwindowgeometry", "--shell", wid],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+        return dict(line.split("=", 1) for line in geo.split())
+
+    # The app's own window is its largest: a tooltip or a popover the
+    # pointer raised is a visible window of the same pid too.
+    wid, vals = max(
+        ((w, geometry(w)) for w in wids),
+        key=lambda found: int(found[1]["WIDTH"]) * int(found[1]["HEIGHT"]),
+    )
     shadow = subprocess.run(
         ["xprop", "-id", wid, "_GTK_FRAME_EXTENTS"], capture_output=True, text=True
     ).stdout
