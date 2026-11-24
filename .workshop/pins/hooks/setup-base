@@ -42,6 +42,17 @@ Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
 SOURCES
 printf 'Package: *\nPin: origin snapshot.ubuntu.com\nPin-Priority: 1001\n' > /etc/apt/preferences.d/pins
 
+# A throwaway container: dpkg need not fsync each file it unpacks, and no one
+# reads the docs or man pages it would install. Every SDK above installs
+# through this, which is most of a launch.
+echo force-unsafe-io > /etc/dpkg/dpkg.cfg.d/01unsafe-io
+cat > /etc/dpkg/dpkg.cfg.d/01nodoc <<'NODOC'
+path-exclude=/usr/share/doc/*
+path-include=/usr/share/doc/*/copyright
+path-exclude=/usr/share/man/*
+path-exclude=/usr/share/info/*
+NODOC
+
 export DEBIAN_FRONTEND=noninteractive
 apt-retry update
 apt-retry full-upgrade --yes --allow-downgrades
