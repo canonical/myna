@@ -114,24 +114,24 @@ CI runs it alone in a dispatched E2E run that `snaps.yml` starts after
 releasing a candidate to a branch. A sideloaded snap cannot test this: it
 keeps no store components and skips the old revision's refresh-mode.
 
-The `plugins` suite runs only with `E2E_PLUGIN_BLOBS` set (`# requires:`),
-a directory holding the sideloadable `myna-text` and `myna-translation` snaps
-and the `disfluency-en` and `translate-en-fr` components (what `snapcraft
-pack` leaves in `text-snap/` and `translation-snap/`); CI does not build them,
-so it is not in the matrix. From the `dictation` snapshot it drives Settings'
-Add step page over a fake speech backend: Install, add Translate and Tidy in
-stage order, dictate French, ignore a text share outside the allow-list,
-Remove (one polkit grant, no daemon restart), the degraded step, reinstall.
-Snapd refuses REST component installs for a sideloaded snap until the store
-enables components (`plugin-store-enablement`), so in `sideload` mode (the
-only one that can run today) the suite presses the real Install, asserts the
-refusal, and installs with `snap install --dangerous` plus a daemon restart
-(a component change empties the running daemon's backend mounts). The mode is
-`E2E_PLUGIN_INSTALL=auto|sideload|store`; `auto` picks `store` once the store
-knows `myna-translation`, where Settings' Install and no restart carry the
-whole flow. Delete the stand-in branches when both snapd problems are fixed.
+The `plugins` suite follows a text plugin's life from the store, on the
+`chains` snapshot over a fake speech backend: both text snaps installed from
+edge and connected, then through Settings Get more steps → Translate →
+Français (a chain made and used, the model installed with one polkit grant),
+Tidy installed and added in stage order, a dictation typing French while a
+provider outside the allow-list is ignored, Remove on the language page (the
+step stays, says what it needs, and the dictation types what was heard), and
+Install from the chain's editor healing it. About half of component changes
+empty the running daemon's backend mounts (snapd LP#2175592) and the daemon
+then restarts itself once idle (`myna_desktop::restart`); the suite never
+restarts it and asserts only the outcome. Each shot that changes a component
+stays open until the daemon's `InstalledSteps` shows the change: Settings
+asks the daemon to rescan after snapd is done, and closing it first skips
+that.
 
-The `deadair` suite takes the same `E2E_PLUGIN_BLOBS` and installs both
+The `deadair` suite takes `E2E_PLUGIN_BLOBS` (the sideloadable text snaps and
+their components, what `snapcraft pack` leaves in `text-snap/` and
+`translation-snap/`) and installs both
 text snaps with their models over the fake speech backend, so what it
 measures is Myna's own wait: `dead_air_ms` minus `asr_tail_ms` from the record
 of past dictations (the first dictation after five daemon starts, then
@@ -139,6 +139,10 @@ of past dictations (the first dictation after five daemon starts, then
 p95 100 ms and 1000 ms warm). It then breaks the text model (stopped,
 SIGSTOPped, and `tools/fault-text.py` passing for `myna-text` while answering
 with a chat reply, control characters, one word, nothing, or never) and asserts
+every dictation still types the words that were heard and that the daemon's
+journal holds none of them. The fake's scripted transcript is nine words; a
+long dictation's wait is the last sentence's, which the bound already covers.
+
 The `chains` suite drives the Processing tab like a user, on the `chains`
 snapshot (`dictation` plus the French, Farsi and Simplified Chinese language
 packs and the fake snap installed again). It makes a chain from New chain…,
@@ -159,10 +163,6 @@ connected after it started; the daemon restarts itself once idle
 (`myna_desktop::restart`), and the suite asserts that rather than restarting
 it. A shot run that starts an install stays open until snapd has the
 component (`slowpoll`): closing Settings first drops the request.
-
-every dictation still types the words that were heard and that the daemon's
-journal holds none of them. The fake's scripted transcript is nine words; a
-long dictation's wait is the last sentence's, which the bound already covers.
 
 `dev/try-desktop.sh` (`make try-desktop`) reuses the provisioning above for a
 manual-test VM; it only ever copies the `installed` snapshot of an e2e VM.
