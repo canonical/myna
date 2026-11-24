@@ -6561,6 +6561,27 @@ mod tests {
         });
     }
 
+    /// After a change that does not take, the focused entry shows what the
+    /// model kept, not what the user had typed.
+    #[test]
+    fn a_dismissed_entry_change_shows_the_model_value_again() {
+        on_gtk_thread(|| {
+            let (ui, machine, window) = applying_ui();
+            *machine.refusal.borrow_mut() = Some(crate::ports::SystemConfiguratorError::Cancelled);
+            let entry = setting::<adw::EntryRow>(&ui, "sleep-idle-seconds").expect("idle row");
+            entry.grab_focus();
+            entry.set_text("60");
+            entry.emit_by_name::<()>("apply", &[]);
+            settle(|| !machine.plans().is_empty() && applied(&ui));
+            for _ in 0..20 {
+                glib::MainContext::default().iteration(false);
+            }
+            let entry = setting::<adw::EntryRow>(&ui, "sleep-idle-seconds").expect("idle row");
+            assert_eq!(entry.text().as_str(), "300");
+            window.destroy();
+        });
+    }
+
     #[test]
     fn an_invalid_entry_is_refused_before_any_prompt() {
         on_gtk_thread(|| {
