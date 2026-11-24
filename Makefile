@@ -77,9 +77,15 @@ coverage: cov-client cov-server cov-extension exercise deadcode cov-patch ## Cov
 # What CI runs: the measured suites and the gate, none of the reports read
 # only by a person, who runs `coverage` locally for those.
 .PHONY: coverage-gate
+#
+# The Python suite runs beside the Rust one: it barely competes with the
+# compile, and serially it added its whole run to CI's longest job. Its lines
+# carry a [py-cov] prefix, as the two logs interleave.
 coverage-gate: ## The patch gate alone over the measured suites (CI `coverage` job)
-	$(WS) cov --no-reports
-	$(WS) py-cov
+	@set -o pipefail; { $(WS) py-cov 2>&1 | sed -u 's/^/[py-cov] /'; } & py=$$!; \
+	$(WS) cov --no-reports; rust=$$?; \
+	wait $$py; python=$$?; \
+	[ $$rust = 0 ] && [ $$python = 0 ]
 	$(MAKE) exercise cov-patch
 
 .PHONY: spread
