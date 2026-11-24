@@ -14,7 +14,8 @@ test_data:
     D=ubuntu@$DEVICE_IP
     for _ in $(seq 60); do ssh -n -o ConnectTimeout=10 $D true && break; sleep 10; done
     mkdir -p artifacts
-    ssh -n $D 'git clone -q https://github.com/canonical/myna && git -C myna checkout -q __COMMIT__'
+    # rm first: a noprovision machine keeps the last job's checkout.
+    ssh -n $D 'rm -rf myna && git clone -q https://github.com/canonical/myna && git -C myna checkout -q __COMMIT__'
     # The sweep can be quiet for longer than output_timeout.
     (while sleep 300; do echo "heartbeat $(date -Is)"; done) &
     HB=$!

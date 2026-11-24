@@ -8,6 +8,23 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 mkdir -p "$HERE/out"
 cd "$HERE/out"
 
+# What this machine is, so a latency change can be told from a hardware one.
+{
+    echo "arch: $(dpkg --print-architecture)"
+    grep -m1 PRETTY_NAME /etc/os-release
+    echo "kernel: $(uname -r)"
+    lscpu | grep -m1 'Model name' || true
+    echo "cpus: $(nproc)"
+    lspci 2>/dev/null | grep -Ei 'vga|3d|display' || true
+    nvidia-smi --query-gpu=name,driver_version --format=csv,noheader 2>&1 || true
+} > machine.out
+cat machine.out
+
+# A noprovision machine keeps the last run's snaps and their state.
+for s in $(snap list 2>/dev/null | awk '$1 ~ /^myna/ {print $1}'); do
+    snap remove --purge "$s"
+done
+
 # `myna-bench download-corpus --preset fleurs-smoke`, published once: 27 MB
 # instead of the 4.3 GB of per-language archives it is cut from.
 TIER=https://github.com/canonical/myna/releases/download/v0.3.3/fleurs-smoke.tar.gz

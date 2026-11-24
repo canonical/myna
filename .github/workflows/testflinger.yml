@@ -1,11 +1,13 @@
 # Nightly lab run (tests/testflinger/): the store's latest/edge snaps on real
-# hardware. `accuracy`: the adapter smoke and a per-language FLEURS accuracy
-# gate (noble). `continuity`: dictations through the daemon that must not lose
-# audio, idle and under load (resolute). Needs repository secrets
-# TESTFLINGER_CLIENT_ID and TESTFLINGER_SECRET_KEY and per-suite queue
-# variables TESTFLINGER_ACCURACY_QUEUE / TESTFLINGER_CONTINUITY_QUEUE (each
-# falling back to TESTFLINGER_QUEUE); suites with no queue resolved are
-# skipped.
+# hardware. `accuracy`: the adapter smoke, then each backend's latency and
+# accuracy on the languages Myna recommends it for (noble), on one pinned
+# machine per platform: latency only compares on the same machine night to
+# night, and ceilings.yaml holds each one's ceilings by hostname.
+# `continuity`: dictations through the daemon that must not lose audio, idle
+# and under load (resolute). Needs repository secrets TESTFLINGER_CLIENT_ID
+# and TESTFLINGER_SECRET_KEY; the lab runs only where TESTFLINGER_QUEUE is
+# set, which also names continuity's machine unless
+# TESTFLINGER_CONTINUITY_QUEUE does.
 name: Testflinger
 
 on:
@@ -15,19 +17,19 @@ on:
 
 jobs:
   lab:
-    if: >-
-      vars.TESTFLINGER_QUEUE != ''
-      || vars.TESTFLINGER_ACCURACY_QUEUE != ''
-      || vars.TESTFLINGER_CONTINUITY_QUEUE != ''
+    if: vars.TESTFLINGER_QUEUE != ''
+    name: lab (${{ matrix.suite }}, ${{ matrix.platform }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        suite: [accuracy, continuity]
-        exclude:
-          - suite: ${{ (vars.TESTFLINGER_ACCURACY_QUEUE || vars.TESTFLINGER_QUEUE) == '' && 'accuracy' || 'none' }}
-          - suite: ${{ (vars.TESTFLINGER_CONTINUITY_QUEUE || vars.TESTFLINGER_QUEUE) == '' && 'continuity' || 'none' }}
-    # Both suites may queue for the same machine, so one waits out the other.
+        include:
+          - {suite: accuracy, platform: intel, queue: 202108-29382}
+          - {suite: accuracy, platform: amd, queue: 202104-28937}
+          - {suite: accuracy, platform: nvidia, queue: 202202-29946}
+          - {suite: accuracy, platform: arm64, queue: 202203-30097}
+          - {suite: continuity, platform: resolute, queue: ""}
+    # Suites may queue for the same machine, so one waits out the other.
     timeout-minutes: 240
     env:
       TESTFLINGER_CLIENT_ID: ${{ secrets.TESTFLINGER_CLIENT_ID }}
@@ -36,14 +38,8 @@ jobs:
       - uses: actions/checkout@v6
       - run: sudo snap install testflinger-cli
       - env:
-          ACCURACY_QUEUE: ${{ vars.TESTFLINGER_ACCURACY_QUEUE || vars.TESTFLINGER_QUEUE }}
-          CONTINUITY_QUEUE: ${{ vars.TESTFLINGER_CONTINUITY_QUEUE || vars.TESTFLINGER_QUEUE }}
-        run: |
-          case ${{ matrix.suite }} in
-            accuracy) queue=$ACCURACY_QUEUE ;;
-            continuity) queue=$CONTINUITY_QUEUE ;;
-          esac
-          make testflinger TESTFLINGER_QUEUE="$queue" TESTFLINGER_SUITE=${{ matrix.suite }}
+          QUEUE: ${{ matrix.queue || vars.TESTFLINGER_CONTINUITY_QUEUE || vars.TESTFLINGER_QUEUE }}
+        run: make testflinger TESTFLINGER_QUEUE="$QUEUE" TESTFLINGER_SUITE=${{ matrix.suite }}
       - name: Gate verdict
         if: always()
         run: >-
@@ -51,6 +47,6 @@ jobs:
       - if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: testflinger-${{ matrix.suite }}
+          name: testflinger-${{ matrix.suite }}-${{ matrix.platform }}
           retention-days: 14
           path: tests/testflinger/out/${{ matrix.suite }}/artifacts/
