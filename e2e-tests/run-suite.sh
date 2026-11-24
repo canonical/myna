@@ -99,6 +99,10 @@ attempt() {
     [ -e "$HUD_HOST" ] || HUD_HOST=''
     lxc file push --uid 1000 --gid 1000 --mode 0755 "$BINARY" ${HUD_HOST:+"$HUD_HOST"} "$HERE"/tools/* "$RUN/home/ubuntu/myna-shot/"
     lxc file push --uid 1000 --gid 1000 "$REPO"/client/data/glib-2.0/schemas/*.gschema.xml "$RUN/home/ubuntu/myna-shot/schemas/"
+    # The catalog snapshots the deb installs (myna-config-deb/debian/rules),
+    # which Settings lists text steps from before a text snap is installed.
+    lxc file push -p "$REPO"/text-snap/catalog.json "$RUN/usr/share/myna-config/catalog/myna-text.json"
+    lxc file push -p "$REPO"/translation-snap/catalog.json "$RUN/usr/share/myna-config/catalog/myna-translation.json"
 
     # The guest's CPU time against the host's, to lay lost capture against.
     on_vm "$RUN" 'mkdir -p myna-shot/out'
