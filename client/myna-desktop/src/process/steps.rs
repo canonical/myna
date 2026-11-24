@@ -106,6 +106,8 @@ enum Kind {
     Addresses,
     /// Type spoken numbers as digits.
     Numbers,
+    /// Mask strong swear words.
+    Profanity,
     /// Translate to `to`.
     Translate,
     /// Type what was said beside its translation.
@@ -118,7 +120,7 @@ enum Kind {
 }
 
 impl Kind {
-    const ALL: [Kind; 11] = [
+    const ALL: [Kind; 12] = [
         Kind::Commands,
         Kind::Tidy,
         Kind::Emoji,
@@ -126,6 +128,7 @@ impl Kind {
         Kind::Casing,
         Kind::Addresses,
         Kind::Numbers,
+        Kind::Profanity,
         Kind::Translate,
         Kind::Original,
         Kind::Typography,
@@ -145,6 +148,7 @@ impl Kind {
             Kind::Casing => "casing",
             Kind::Addresses => "addresses",
             Kind::Numbers => "numbers",
+            Kind::Profanity => "profanity",
             Kind::Translate => "translate",
             Kind::Original => "original",
             Kind::Typography => "typography",
@@ -163,6 +167,7 @@ impl Kind {
             | Kind::Casing
             | Kind::Addresses
             | Kind::Numbers
+            | Kind::Profanity
             | Kind::Original
             | Kind::Typography => None,
         }
@@ -392,6 +397,10 @@ pub fn compile(steps: &[StepSpec], ctx: &Context) -> Compiled {
                     }
                     Kind::Commands => {
                         at = g.rule(at, Rule::Commands);
+                        StepState::Applicable
+                    }
+                    Kind::Profanity => {
+                        at = g.rule(at, Rule::Profanity);
                         StepState::Applicable
                     }
                     Kind::Numbers => {
@@ -738,7 +747,7 @@ mod tests {
             Some(0),
             "fits above the translation"
         );
-        for english in ["snippets", "casing", "addresses", "numbers"] {
+        for english in ["snippets", "casing", "addresses", "numbers", "profanity"] {
             assert_eq!(states(&compiled(&[english], Some("en"))), [(english, "on")]);
             assert_eq!(
                 states(&compiled(&[english], Some("de"))),

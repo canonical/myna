@@ -25,7 +25,7 @@ const KEY_PROCESSING_PARAMS: &str = "processing-params";
 pub type Params = BTreeMap<String, String>;
 
 /// The steps this build knows, in stage order.
-pub const STEP_ORDER: [&str; 12] = [
+pub const STEP_ORDER: [&str; 13] = [
     "fit",
     "commands",
     "tidy",
@@ -34,6 +34,7 @@ pub const STEP_ORDER: [&str; 12] = [
     "casing",
     "addresses",
     "numbers",
+    "profanity",
     "translate",
     "original",
     "typography",
