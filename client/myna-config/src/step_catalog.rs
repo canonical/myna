@@ -9,11 +9,9 @@ use crate::plugin_catalog::{self, Entry};
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::processing_steps::{
-    exonym, language_name, size, Offered, Row, Source, Standing, SCRIPT, TRANSLATE, TRANSLATE_TO,
+    exonym, language_name, size, BuiltIn, Offered, Row, Source, Standing, BUILT_INS, SCRIPT,
+    TRANSLATE, TRANSLATE_TO,
 };
-
-/// The languages the Chinese script step is useful for.
-const CHINESE: [&str; 3] = ["zh", "yue", "cmn"];
 
 /// What the page offers to do with one item.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -83,11 +81,17 @@ pub struct Inputs<'a> {
 /// locales first, then stage order.
 pub fn items(inputs: &Inputs) -> Vec<Item> {
     // Fitting to the field is a switch on the Processing page, not a step.
-    let mut found: Vec<(usize, usize, Item)> = vec![(
-        plugin_catalog::relevance(&CHINESE.map(str::to_owned), "", inputs.locales),
-        stage_of(SCRIPT),
-        built_in(SCRIPT, inputs),
-    )];
+    let mut found: Vec<(usize, usize, Item)> = BUILT_INS
+        .iter()
+        .map(|b| {
+            let languages: Vec<String> = b.languages.iter().map(|l| (*l).to_owned()).collect();
+            (
+                plugin_catalog::relevance(&languages, "", inputs.locales),
+                stage_of(b.stage),
+                built_in(b, inputs),
+            )
+        })
+        .collect();
     for entry in inputs.catalog {
         let rank = plugin_catalog::relevance(&entry.locales, &entry.in_lang, inputs.locales);
         found.push((rank, stage_of(&entry.step.stage), from_entry(entry, inputs)));
@@ -116,14 +120,10 @@ fn standing<'a>(inputs: &'a Inputs, step: &str) -> Option<&'a Standing> {
         .map(|row| &row.standing)
 }
 
-fn built_in(id: &str, inputs: &Inputs) -> Item {
-    let (title, description, example, license) = (
-        gettextrs::gettext("Chinese script"),
-        gettextrs::gettext("Types Chinese in the characters you choose. Other text is left alone."),
-        Some(("\u{8f6f}\u{4ef6}".to_owned(), "\u{8edf}\u{9ad4}".to_owned())),
-        // TRANSLATORS: credits the libraries and word lists behind Chinese script conversion.
-        gettextrs::gettext("opencc-jieba-rs (MIT); OpenCC conversion lists (Apache-2.0)"),
-    );
+fn built_in(b: &BuiltIn, inputs: &Inputs) -> Item {
+    let id = b.id;
+    let (title, description, (heard, typed), license) =
+        ((b.title)(), (b.description)(), (b.example)(), (b.credit)());
     let mut details = vec![Detail {
         label: gettextrs::gettext("Size"),
         text: gettextrs::gettext("Built in, nothing to install"),
@@ -134,8 +134,12 @@ fn built_in(id: &str, inputs: &Inputs) -> Item {
             text: license,
         });
     }
+    let nothing_translated =
+        id == crate::processing_steps::ORIGINAL && inputs.translate_from == inputs.source;
     let offer = if is_on(inputs, id) {
         Offer::Added
+    } else if nothing_translated {
+        Offer::NotApplicable(gettextrs::gettext("Applies after a translation"))
     } else {
         match standing(inputs, id) {
             Some(Standing::NotApplicable(reason)) => Offer::NotApplicable(reason.clone()),
@@ -148,7 +152,7 @@ fn built_in(id: &str, inputs: &Inputs) -> Item {
         target: None,
         title,
         description,
-        example: example.map(|(heard, typed)| arrow(&heard, &typed)),
+        example: Some(arrow(&heard, &typed)),
         details,
         offer,
         removable: None,
@@ -726,7 +730,12 @@ mod tests {
         let found = jobs(&items, &en, &language_list(&case(), "en", &[]));
         assert_eq!(
             titles(&found),
-            ["Tidy up speech", "Translate", "Chinese script"]
+            [
+                "Tidy up speech",
+                "Translate",
+                "Keep the original",
+                "Chinese script"
+            ]
         );
         let Job::Translate(translate) = &found[1] else {
             panic!("not the Translate job")
@@ -908,10 +917,37 @@ mod tests {
     }
 
     #[test]
+    fn keeping_the_original_is_offered_only_after_a_translation() {
+        let en = Source::One("en".into());
+        let fr = Source::One("fr".into());
+        let offer = |translate_from: &Source| {
+            let all = items(&Inputs {
+                catalog: &[],
+                enabled: &[],
+                params: &Params::new(),
+                source: &en,
+                translate_from,
+                daemon: None,
+                installing: &BTreeMap::new(),
+                preparing: &BTreeSet::new(),
+                removing: &BTreeSet::new(),
+                locales: &[],
+                rows: &[],
+            });
+            find(&all, "original").offer.clone()
+        };
+        assert_eq!(offer(&fr), Offer::Add);
+        assert_eq!(
+            offer(&en),
+            Offer::NotApplicable("Applies after a translation".into())
+        );
+    }
+
+    #[test]
     fn built_ins_and_every_entry_are_listed_with_their_facts() {
         let all = listed(&case());
         let ids: Vec<_> = all.iter().map(|i| i.id.as_str()).collect();
-        assert_eq!(ids.len(), 4, "{ids:?}");
+        assert_eq!(ids.len(), 5, "{ids:?}");
         assert!(!ids.contains(&"fit"), "fitting is a switch, not a step");
         let fr = find(&all, "en-fr");
         assert_eq!(fr.title, "Translate English to Français");
@@ -948,7 +984,7 @@ mod tests {
             locales: &[],
             rows: &[],
         });
-        assert_eq!(all.len(), 1);
+        assert_eq!(all.len(), BUILT_INS.len());
     }
 
     #[test]
@@ -961,7 +997,11 @@ mod tests {
         assert_eq!(listed(&chinese)[0].id, "script");
         let english = listed(&case());
         let ids: Vec<_> = english.iter().map(|i| i.id.as_str()).collect();
-        assert_eq!(ids, ["tidy", "en-fr", "fr-en", "script"], "{ids:?}");
+        assert_eq!(
+            ids,
+            ["tidy", "en-fr", "fr-en", "original", "script"],
+            "{ids:?}"
+        );
     }
 
     #[test]
@@ -1186,7 +1226,7 @@ mod tests {
         let ids: Vec<_> = all.iter().map(|i| i.id.as_str()).collect();
         assert_eq!(
             ids,
-            ["m-clean", "z-translate", "a-late", "script"],
+            ["m-clean", "z-translate", "a-late", "original", "script"],
             "{ids:?}"
         );
     }

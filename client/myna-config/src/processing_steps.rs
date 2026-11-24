@@ -17,6 +17,64 @@ pub const TRANSLATE_TO: &str = "to";
 const FIT: &str = "fit";
 pub const SCRIPT: &str = "script";
 pub const SCRIPT_MODE: &str = "mode";
+pub const ORIGINAL: &str = "original";
+
+/// A step the client carries itself, as Add step and the editor show it.
+pub struct BuiltIn {
+    pub id: &'static str,
+    pub stage: &'static str,
+    /// The languages it is most useful for, to list it first for them.
+    pub languages: &'static [&'static str],
+    pub title: fn() -> String,
+    pub description: fn() -> String,
+    /// What is said and what is typed.
+    pub example: fn() -> (String, String),
+    /// The libraries and data behind it, or nothing.
+    pub credit: fn() -> String,
+}
+
+/// The built-in steps Add step offers; fitting to the field is a switch.
+pub const BUILT_INS: [BuiltIn; 2] = [
+    BuiltIn {
+        id: ORIGINAL,
+        stage: "target-language",
+        languages: &[],
+        title: || gettextrs::gettext("Keep the original"),
+        description: || {
+            gettextrs::gettext("Types what you said, with its translation after it in brackets.")
+        },
+        example: || {
+            (
+                // TRANSLATORS: what is said in the example of "Keep the original".
+                gettextrs::gettext("Where is the station?"),
+                // TRANSLATORS: what is typed in the example of "Keep the original": the same sentence, then a translation of it into another language in brackets.
+                gettextrs::gettext("Where is the station? (Où est la gare ?)"),
+            )
+        },
+        credit: String::new,
+    },
+    BuiltIn {
+        id: SCRIPT,
+        stage: "target-language",
+        languages: &["zh", "yue", "cmn"],
+        title: || gettextrs::gettext("Chinese script"),
+        description: || {
+            gettextrs::gettext(
+                "Types Chinese in the characters you choose. Other text is left alone.",
+            )
+        },
+        example: || ("\u{8f6f}\u{4ef6}".to_owned(), "\u{8edf}\u{9ad4}".to_owned()),
+        credit: || {
+            // TRANSLATORS: credits the libraries and word lists behind Chinese script conversion.
+            gettextrs::gettext("opencc-jieba-rs (MIT); OpenCC conversion lists (Apache-2.0)")
+        },
+    },
+];
+
+/// The built-in step `id`, if it is one.
+pub fn built_in(id: &str) -> Option<&'static BuiltIn> {
+    BUILT_INS.iter().find(|b| b.id == id)
+}
 
 /// The stages in the order the steps run (`.kb/text-plugin-contract.md`).
 const STAGES: [&str; 4] = ["field-fit", "clean-up", "translate", "target-language"];
@@ -337,7 +395,9 @@ fn stage_rank(stage: &str) -> usize {
 fn step_ids(catalog: &[Entry]) -> Vec<(String, usize)> {
     let mut found: BTreeMap<String, usize> = BTreeMap::new();
     found.insert(FIT.to_owned(), 0);
-    found.insert(SCRIPT.to_owned(), stage_rank("target-language"));
+    for built_in in &BUILT_INS {
+        found.insert(built_in.id.to_owned(), stage_rank(built_in.stage));
+    }
     for entry in catalog {
         found
             .entry(entry.step.id.clone())
@@ -360,7 +420,7 @@ fn row(id: &str, inputs: &Inputs) -> Row {
     let title = own
         .and_then(|e| plugin_catalog::label(&e.step.label_key))
         .or_else(|| (id == FIT).then(|| gettextrs::gettext("Fitted to the field")))
-        .or_else(|| (id == SCRIPT).then(|| gettextrs::gettext("Chinese script")))
+        .or_else(|| built_in(id).map(|b| (b.title)()))
         .unwrap_or_else(|| id.to_owned());
     let description = own
         .and_then(|e| plugin_catalog::label(&e.step.description_key))
@@ -371,11 +431,7 @@ fn row(id: &str, inputs: &Inputs) -> Row {
                 )
             })
         })
-        .or_else(|| {
-            (id == SCRIPT).then(|| {
-                gettextrs::gettext("Types Chinese in the characters you choose. Other text is left alone.")
-            })
-        })
+        .or_else(|| built_in(id).map(|b| (b.description)()))
         .unwrap_or_default();
     let enabled = inputs.enabled.iter().any(|on| on == id);
     let translate = (id == TRANSLATE).then(|| translate_row(inputs));
@@ -595,6 +651,10 @@ fn standing(
         Source::Unknown => None,
     };
     let own: Vec<&Entry> = inputs.catalog.iter().filter(|e| e.step.id == id).collect();
+    if id == ORIGINAL {
+        // Whether a translation comes before it is the chain's to say.
+        return Standing::Ready;
+    }
     if id == SCRIPT {
         if !text_is_chinese(inputs) {
             return Standing::NotApplicable(gettextrs::gettext("Applies when the text is Chinese"));
@@ -899,7 +959,7 @@ mod tests {
         let mut rig = Rig::new();
         rig.catalog.reverse();
         let ids: Vec<String> = rig.rows().into_iter().map(|r| r.id).collect();
-        assert_eq!(ids, ["fit", "tidy", "translate", "script"]);
+        assert_eq!(ids, ["fit", "tidy", "translate", "original", "script"]);
     }
 
     #[test]
@@ -908,7 +968,7 @@ mod tests {
         rig.catalog.clear();
         rig.daemon = None;
         let rows = rig.rows();
-        assert_eq!(rows.len(), 2, "Fitted to the field and Chinese script");
+        assert_eq!(rows.len(), 3, "Fitted to the field and the built-in steps");
         assert_eq!(rows[0].standing, Standing::Ready);
         assert!(rows[0].enabled);
     }
@@ -1192,7 +1252,7 @@ mod tests {
         ];
         let rows = rig.rows();
         let ids: Vec<&str> = rows.iter().map(|r| r.id.as_str()).collect();
-        assert_eq!(ids, ["fit", "zzz", "aaa", "script", "mmm"]);
+        assert_eq!(ids, ["fit", "zzz", "aaa", "original", "script", "mmm"]);
         assert_eq!(rows[0].title, "Fitted to the field");
         assert_eq!(rows[1].title, "zzz");
         assert!(rows[1].description.is_empty());
@@ -1339,7 +1399,7 @@ mod tests {
         assert_eq!(row.title, "Chinese script");
         assert!(!row.enabled);
         let ids: Vec<String> = rig.rows().into_iter().map(|r| r.id).collect();
-        assert_eq!(ids, ["fit", "script"]);
+        assert_eq!(ids, ["fit", "original", "script"]);
     }
 
     #[test]

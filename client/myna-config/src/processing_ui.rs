@@ -3187,7 +3187,12 @@ mod tests {
                 .iter()
                 .map(|row| row.title().to_string())
                 .collect();
-            assert_eq!(titles, ["Tidy up speech", "Chinese script"]);
+            assert_eq!(
+                titles,
+                ["Tidy up speech", "Keep the original", "Chinese script"]
+            );
+            let original = &catalog_rows(&rig)[1];
+            assert_eq!(original.subtitle(), "Applies after a translation");
             assert!(rig.page.translate_row.parent().is_some());
             assert_eq!(rig.page.translate_row.title(), "Translate");
             assert!(rig.page.translate_row.is_sensitive());
