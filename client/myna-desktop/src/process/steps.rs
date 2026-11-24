@@ -102,6 +102,8 @@ enum Kind {
     Snippets,
     /// Case and join words after a spoken casing.
     Casing,
+    /// Type spoken web and email addresses as addresses.
+    Addresses,
     /// Translate to `to`.
     Translate,
     /// Type what was said beside its translation.
@@ -114,12 +116,13 @@ enum Kind {
 }
 
 impl Kind {
-    const ALL: [Kind; 9] = [
+    const ALL: [Kind; 10] = [
         Kind::Commands,
         Kind::Tidy,
         Kind::Emoji,
         Kind::Snippets,
         Kind::Casing,
+        Kind::Addresses,
         Kind::Translate,
         Kind::Original,
         Kind::Typography,
@@ -137,6 +140,7 @@ impl Kind {
             Kind::Commands => "commands",
             Kind::Snippets => "snippets",
             Kind::Casing => "casing",
+            Kind::Addresses => "addresses",
             Kind::Translate => "translate",
             Kind::Original => "original",
             Kind::Typography => "typography",
@@ -153,6 +157,7 @@ impl Kind {
             | Kind::Emoji
             | Kind::Snippets
             | Kind::Casing
+            | Kind::Addresses
             | Kind::Original
             | Kind::Typography => None,
         }
@@ -382,6 +387,10 @@ pub fn compile(steps: &[StepSpec], ctx: &Context) -> Compiled {
                     }
                     Kind::Commands => {
                         at = g.rule(at, Rule::Commands);
+                        StepState::Applicable
+                    }
+                    Kind::Addresses => {
+                        at = g.rule(at, Rule::Addresses);
                         StepState::Applicable
                     }
                     Kind::Casing => {
@@ -720,7 +729,7 @@ mod tests {
             Some(0),
             "fits above the translation"
         );
-        for english in ["snippets", "casing"] {
+        for english in ["snippets", "casing", "addresses"] {
             assert_eq!(states(&compiled(&[english], Some("en"))), [(english, "on")]);
             assert_eq!(
                 states(&compiled(&[english], Some("de"))),
