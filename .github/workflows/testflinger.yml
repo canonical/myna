@@ -27,7 +27,7 @@ jobs:
           - {suite: accuracy, platform: intel, queue: 202102-28727}
           - {suite: accuracy, platform: amd, queue: 202104-28937}
           - {suite: accuracy, platform: nvidia, queue: 202202-29946}
-          - {suite: accuracy, platform: arm64, queue: 202203-30097}
+          - {suite: accuracy, platform: arm64, queue: 202204-30167}
           - {suite: continuity, platform: resolute, queue: ""}
     # Suites may queue for the same machine, so one waits out the other.
     timeout-minutes: 240
