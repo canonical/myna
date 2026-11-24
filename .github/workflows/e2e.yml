@@ -52,7 +52,7 @@ jobs:
           run=true
           if [ -n "$PR" ]; then
             gh api "repos/$GITHUB_REPOSITORY/pulls/$PR/files" --paginate --jq '.[].filename' > files
-            grep -qE '^(client|myna-snap|myna-config-deb|fake-snap|e2e-tests|tests/lib)/|^\.github/workflows/e2e\.yml$' files || run=false
+            grep -qE '^(client|myna-snap|myna-config-deb|fake-snap|e2e-tests|tests/lib|server/src/myna/(testbed|server))/|^(text-snap|translation-snap)/catalog\.json$|^\.github/workflows/e2e\.yml$' files || run=false
           fi
           echo "run=$run" >> "$GITHUB_OUTPUT"
 
