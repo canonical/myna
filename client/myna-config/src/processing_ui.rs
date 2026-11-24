@@ -3195,12 +3195,13 @@ mod tests {
                     "Spoken emoji",
                     "Snippets",
                     "Code casing",
+                    "Spoken addresses",
                     "Keep the original",
                     "Typography",
                     "Chinese script"
                 ]
             );
-            let original = &catalog_rows(&rig)[5];
+            let original = &catalog_rows(&rig)[6];
             assert_eq!(original.subtitle(), "Applies after a translation");
             assert!(rig.page.translate_row.parent().is_some());
             assert_eq!(rig.page.translate_row.title(), "Translate");
