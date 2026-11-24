@@ -22,6 +22,7 @@ pub const EMOJI: &str = "emoji";
 pub const COMMANDS: &str = "commands";
 pub const SNIPPETS: &str = "snippets";
 pub const CASING: &str = "casing";
+pub const TYPOGRAPHY: &str = "typography";
 
 /// A step the client carries itself, as Add step and the editor show it.
 pub struct BuiltIn {
@@ -38,7 +39,25 @@ pub struct BuiltIn {
 }
 
 /// The built-in steps Add step offers; fitting to the field is a switch.
-pub const BUILT_INS: [BuiltIn; 6] = [
+pub const BUILT_INS: [BuiltIn; 7] = [
+    BuiltIn {
+        id: TYPOGRAPHY,
+        stage: "target-language",
+        languages: &[],
+        title: || gettextrs::gettext("Typography"),
+        description: || {
+            gettextrs::gettext(
+                "Curly quotes and apostrophes, dashes and ellipses as the text's language writes them, and French spacing. Not in terminals, web or email addresses.",
+            )
+        },
+        example: || {
+            (
+                "It's \"done\" - finally...".to_owned(),
+                "It\u{2019}s \u{201c}done\u{201d} \u{2013} finally\u{2026}".to_owned(),
+            )
+        },
+        credit: String::new,
+    },
     BuiltIn {
         id: CASING,
         stage: "clean-up",
@@ -741,7 +760,7 @@ fn standing(
         Source::Unknown => None,
     };
     let own: Vec<&Entry> = inputs.catalog.iter().filter(|e| e.step.id == id).collect();
-    if id == ORIGINAL {
+    if id == ORIGINAL || id == TYPOGRAPHY {
         // Whether a translation comes before it is the chain's to say.
         return Standing::Ready;
     }
@@ -1083,6 +1102,7 @@ mod tests {
                 "casing",
                 "translate",
                 "original",
+                "typography",
                 "script"
             ]
         );
@@ -1385,8 +1405,17 @@ mod tests {
         assert_eq!(
             ids,
             [
-                "fit", "commands", "emoji", "snippets", "casing", "zzz", "aaa", "original",
-                "script", "mmm"
+                "fit",
+                "commands",
+                "emoji",
+                "snippets",
+                "casing",
+                "zzz",
+                "aaa",
+                "original",
+                "typography",
+                "script",
+                "mmm"
             ]
         );
         assert_eq!(rows[0].title, "Fitted to the field");
@@ -1537,7 +1566,16 @@ mod tests {
         let ids: Vec<String> = rig.rows().into_iter().map(|r| r.id).collect();
         assert_eq!(
             ids,
-            ["fit", "commands", "emoji", "snippets", "casing", "original", "script"]
+            [
+                "fit",
+                "commands",
+                "emoji",
+                "snippets",
+                "casing",
+                "original",
+                "typography",
+                "script"
+            ]
         );
     }
 

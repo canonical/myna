@@ -3196,6 +3196,7 @@ mod tests {
                     "Snippets",
                     "Code casing",
                     "Keep the original",
+                    "Typography",
                     "Chinese script"
                 ]
             );
