@@ -1,7 +1,8 @@
 //! Snippets: "insert my address" types the text the user saved under "my
 //! address" (`my address => 1 Main Street`), and "insert today's date" or
 //! "insert the time" type the date or time now. Saying "insert" first is
-//! what keeps "what's today's date" typed as said.
+//! what keeps "what's today's date" typed as said; a saved name said as a
+//! sentence of its own ("My address.") is typed as its snippet too.
 
 /// The values Myna knows itself, by the names that ask for them.
 const DATE: [&str; 4] = ["today's date", "todays date", "the date", "date"];
@@ -52,6 +53,28 @@ pub fn apply(text: &str, entries: &[String], now: impl Fn() -> Now) -> String {
         .map(|(name, typed)| (key(name), typed))
         .filter(|(name, _)| !name.is_empty())
         .collect();
+    // A saved name that is a whole sentence.
+    let mut whole = String::with_capacity(text.len());
+    let mut copied = 0;
+    for sentence in super::commands::sentences(text) {
+        let Some(typed) = saved
+            .iter()
+            .find(|(name, _)| *name == key(sentence))
+            .map(|(_, typed)| *typed)
+        else {
+            continue;
+        };
+        let at = sentence.as_ptr() as usize - text.as_ptr() as usize;
+        whole.push_str(&text[copied..at]);
+        whole.push_str(typed);
+        copied = at + sentence.len();
+    }
+    whole.push_str(&text[copied..]);
+    inserts(&whole, &saved, now)
+}
+
+/// `text` with every "insert <name>" replaced by what it names.
+fn inserts(text: &str, saved: &[(String, &str)], now: impl Fn() -> Now) -> String {
     // Word spans of `text`.
     let mut spans: Vec<(usize, usize)> = Vec::new();
     let mut start = None;
@@ -156,6 +179,20 @@ mod tests {
             apply("Thanks again. Insert sign off", &mine(), fixed),
             "Thanks again. Best, Charles"
         );
+    }
+
+    #[test]
+    fn a_saved_name_said_on_its_own_is_its_snippet() {
+        for said in ["My address.", "My address?", "my address"] {
+            assert_eq!(apply(said, &mine(), fixed), "1 Main Street, Springfield");
+        }
+        assert_eq!(
+            apply("Write to me. My address. Thanks.", &mine(), fixed),
+            "Write to me. 1 Main Street, Springfield Thanks."
+        );
+        for said in ["So you can find me at my address.", "This is my address."] {
+            assert_eq!(apply(said, &mine(), fixed), said);
+        }
     }
 
     #[test]
