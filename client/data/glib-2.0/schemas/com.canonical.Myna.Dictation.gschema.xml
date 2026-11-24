@@ -146,5 +146,16 @@
         side, then what to write: "my sequel => MySQL". Up to 100 words or short phrases.
       </description>
     </key>
+
+    <key name="snippets" type="as">
+      <default>[]</default>
+      <summary>Snippets</summary>
+      <description>
+        Text Myna types when you say "insert" and its name, in a chain with
+        the Snippets step: type the name, an arrow with a space on each
+        side, then the text: "my address => 1 Main Street, Springfield".
+        "Insert today's date" and "insert the time" need no snippet.
+      </description>
+    </key>
   </schema>
 </schemalist>

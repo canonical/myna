@@ -1336,6 +1336,7 @@ dependencies = [
  "emojis",
  "futures-util",
  "gettext-rs",
+ "gio",
  "myna-audio",
  "myna-core",
  "myna-orchestrator",

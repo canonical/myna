@@ -13,6 +13,7 @@ use myna_core::ChineseScript;
 
 pub use super::check::Check;
 use super::graph::{Graph, Id, Joins, Op, Src};
+use super::rules::Lists;
 use super::script;
 use super::vocabulary::Vocabulary;
 use super::wire::Params;
@@ -145,6 +146,8 @@ pub struct Pipeline {
     started: Option<Graph>,
     models: Box<dyn Models>,
     written: Live<Vec<String>>,
+    /// The user's snippets, `name => text`.
+    snippets: Live<Vec<String>>,
     /// How Chinese is written once the graph is done; none to change.
     script: Live<ChineseScript>,
     /// Whether each piece is fitted to its field before it is typed.
@@ -162,6 +165,7 @@ impl Pipeline {
             started: None,
             models: Box::new(models),
             written: Live::new(Vec::new()),
+            snippets: Live::new(Vec::new()),
             script: Live::new(ChineseScript::AsRecognised),
             fitted: Live::new(false),
             vocabulary: (Vec::new(), Vocabulary::default()),
@@ -175,6 +179,13 @@ impl Pipeline {
     #[must_use]
     pub fn written(mut self, words: Live<Vec<String>>) -> Self {
         self.written = words;
+        self
+    }
+
+    /// The user's snippets, read at every piece.
+    #[must_use]
+    pub fn snippets(mut self, entries: Live<Vec<String>>) -> Self {
+        self.snippets = entries;
         self
     }
 
@@ -295,6 +306,7 @@ impl Processor for Pipeline {
     async fn process(&mut self, text: String, field: &Field) -> String {
         let graph = self.started.clone().unwrap_or_else(|| self.graph.get());
         self.vocabulary();
+        let snippets = self.snippets.get();
         let seq = self.joins.begin();
         let mut trace = Vec::new();
         let mut made: HashMap<Id, String> = HashMap::new();
@@ -305,7 +317,13 @@ impl Processor for Pipeline {
         for id in graph.plan(field) {
             let op = graph.node(id);
             let out = match op {
-                Op::Rule { from, rule } => rule.apply_with(&read(&made, *from), &self.vocabulary.1),
+                Op::Rule { from, rule } => rule.apply_with(
+                    &read(&made, *from),
+                    &Lists {
+                        vocabulary: &self.vocabulary.1,
+                        snippets: &snippets,
+                    },
+                ),
                 Op::Ask {
                     from,
                     request,
@@ -883,6 +901,25 @@ mod tests {
             );
         }
         assert_eq!(traced(&pipeline).len(), 1);
+    }
+
+    #[tokio::test]
+    async fn the_snippets_step_reads_the_users_snippets_as_they_are_now() {
+        use crate::process::steps::{compile, Context, StepSpec};
+        let graph = compile(&[StepSpec::parse("snippets")], &Context::default()).graph;
+        let saved = Live::new(vec!["sign off => Best, Ann".to_owned()]);
+        let mut pipeline = Pipeline::new(graph, Scripted::Fails).snippets(saved.clone());
+        assert_eq!(
+            pipeline
+                .process("Thanks. Insert sign off".into(), &here())
+                .await,
+            "Thanks. Best, Ann"
+        );
+        saved.set(vec!["sign off => Cheers".to_owned()]);
+        assert_eq!(
+            pipeline.process("Insert sign off".into(), &here()).await,
+            "Cheers"
+        );
     }
 
     #[tokio::test]

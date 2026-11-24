@@ -10,6 +10,13 @@ const FUNCTION_WORDS: &[&str] = &[
     "this", "that", "we", "you", "they", "he", "she", "is", "are", "was",
 ];
 
+/// The user's lists the rules read.
+pub struct Lists<'a> {
+    pub vocabulary: &'a Vocabulary,
+    /// `name => text` entries.
+    pub snippets: &'a [String],
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Rule {
     /// Fit an address field: no capital the speech model put at the start
@@ -24,6 +31,8 @@ pub enum Rule {
     Vocabulary,
     /// Type spoken emoji ("thumbs up emoji") as the emoji.
     Emoji,
+    /// Type the user's snippets and the date or time for "insert <name>".
+    Snippets,
     /// Carry out spoken editing commands ("scratch that"), which reach
     /// back over the dictation.
     Commands,
@@ -39,13 +48,20 @@ impl Rule {
     }
 
     pub fn apply(self, text: &str) -> String {
-        self.apply_with(text, &Vocabulary::default())
+        self.apply_with(
+            text,
+            &Lists {
+                vocabulary: &Vocabulary::default(),
+                snippets: &[],
+            },
+        )
     }
 
-    /// `apply`, with the user's vocabulary for the rule that spells it.
-    pub fn apply_with(self, text: &str, vocabulary: &Vocabulary) -> String {
+    /// `apply`, with the user's lists for the rules that read them.
+    pub fn apply_with(self, text: &str, lists: &Lists) -> String {
         match self {
-            Rule::Vocabulary => vocabulary.apply(text),
+            Rule::Vocabulary => lists.vocabulary.apply(text),
+            Rule::Snippets => super::snippets::apply(text, lists.snippets, super::snippets::now),
             Rule::Address => {
                 let bare = text.trim().trim_end_matches(['.', '!', '?', '\u{2026}']);
                 decapitalise(bare, |_| true)
