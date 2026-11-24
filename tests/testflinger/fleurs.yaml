@@ -1,4 +1,4 @@
-# The nightly lab gate: each backend as latest/edge ships it, on the
+# The nightly lab gate: each backend as latest/edge/main ships main, on the
 # languages Myna recommends it for (client/myna-core/src/language.rs), batch
 # at full speed and streaming on the capture clock, the only pace at which
 # its latency is a user's. Gated by ceilings.yaml; run by accuracy.sh.
@@ -13,16 +13,16 @@ pace: [realtime]
 targets:
   # Sixty clips: the fewest a p95 is read from.
   - snap: myna-parakeet
-    channel: latest/edge
+    channel: latest/edge/main
     components: [model-parakeet-int8]
     models: [parakeet-tdt-0.6b-v3]
     languages: [en, de, fr, es, it, ru]
   - snap: myna-funasr
-    channel: latest/edge
+    channel: latest/edge/main
     components: [model-sensevoice]
     languages: [zh, ja, ko]
   - snap: myna-indicconformer
-    channel: latest/edge
+    channel: latest/edge/main
     components: [model-indicconformer-hi]
     models: [indicconformer-hi]
     languages: [hi]

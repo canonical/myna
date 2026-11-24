@@ -1,9 +1,10 @@
 #!/bin/bash
 # The capture-continuity half of the Testflinger nightly, run as root from a
-# checkout on a resolute lab machine: dictations through the store's
-# latest/edge daemon from the machine's own microphone, idle and with every
-# core oversubscribed, none of which may lose audio. Virtual runners cannot
-# answer this: their hosts stop the vCPUs for longer than a PipeWire cycle.
+# checkout on a resolute lab machine: dictations through the latest/edge/main
+# daemon, which snaps.yml publishes from main each night, from the machine's
+# own microphone, idle and with every core oversubscribed, none of which may
+# lose audio. Virtual runners cannot answer this: their hosts stop the vCPUs
+# for longer than a PipeWire cycle.
 # Resolute, not noble: noble's realtime portal cannot map a snap's pids, so
 # capture there never runs realtime. Results land in out/.
 #
@@ -44,8 +45,8 @@ loginctl enable-linger "$U"
 systemctl restart "user@$UID_.service"
 
 snap set system experimental.user-daemons=true
-snap install --edge myna
-snap install --edge myna-whisper+model-tiny
+snap install --channel=latest/edge/main myna
+snap install --channel=latest/edge/main myna-whisper+model-tiny
 myna-whisper.whisper use-engine --auto --assume-yes --no-restart
 myna-whisper.whisper use-model tiny --assume-yes
 snap connect myna:backend myna-whisper:provider
