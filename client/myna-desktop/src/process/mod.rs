@@ -10,6 +10,7 @@ pub use landing::Landing;
 
 mod check;
 pub mod disfluency;
+pub mod emoji;
 pub mod fit;
 pub mod graph;
 pub mod history;

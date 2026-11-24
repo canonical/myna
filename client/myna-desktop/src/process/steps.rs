@@ -85,6 +85,8 @@ impl StepSpec {
 enum Kind {
     /// Drop hesitations, false starts and repeats.
     Tidy,
+    /// Type spoken emoji as the emoji.
+    Emoji,
     /// Translate to `to`.
     Translate,
     /// Type what was said beside its translation.
@@ -94,7 +96,13 @@ enum Kind {
 }
 
 impl Kind {
-    const ALL: [Kind; 4] = [Kind::Tidy, Kind::Translate, Kind::Original, Kind::Script];
+    const ALL: [Kind; 5] = [
+        Kind::Tidy,
+        Kind::Emoji,
+        Kind::Translate,
+        Kind::Original,
+        Kind::Script,
+    ];
 
     fn of(id: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|k| k.id() == id)
@@ -103,6 +111,7 @@ impl Kind {
     fn id(self) -> &'static str {
         match self {
             Kind::Tidy => "tidy",
+            Kind::Emoji => "emoji",
             Kind::Translate => "translate",
             Kind::Original => "original",
             Kind::Script => "script",
@@ -113,7 +122,7 @@ impl Kind {
         match self {
             Kind::Translate => Some("to"),
             Kind::Script => Some("mode"),
-            Kind::Tidy | Kind::Original => None,
+            Kind::Tidy | Kind::Emoji | Kind::Original => None,
         }
     }
 }
@@ -338,6 +347,10 @@ pub fn compile(steps: &[StepSpec], ctx: &Context) -> Compiled {
                         };
                         changed = Some((index, lang.replace(to)));
                         state
+                    }
+                    Kind::Emoji => {
+                        at = g.rule(at, Rule::Emoji);
+                        StepState::Applicable
                     }
                     Kind::Original => {
                         let before = spoken.expect("misfit checked it");
@@ -629,6 +642,25 @@ mod tests {
             panic!("no join after two translations")
         };
         assert_eq!(parts[0], Src::Input, "the original is what was said");
+    }
+
+    #[test]
+    fn emoji_are_typed_from_english_only() {
+        let c = compiled(&["emoji", "translate=fr"], Some("en"));
+        assert_eq!(states(&c), [("emoji", "on"), ("translate", "on")]);
+        let after = compiled(&["translate=fr", "emoji"], Some("en"));
+        assert_eq!(states(&after), [("translate", "on"), ("emoji", "n/a")]);
+        assert_eq!(
+            not_applicable(&after, 1),
+            Some(0),
+            "fits above the translation"
+        );
+        let spoken_french = compiled(&["emoji"], Some("fr"));
+        assert_eq!(states(&spoken_french), [("emoji", "n/a")]);
+        assert_eq!(
+            compiled(&["emoji"], None).report[0].state,
+            StepState::Applicable
+        );
     }
 
     #[test]

@@ -22,6 +22,8 @@ pub enum Rule {
     Disfluency(Lang),
     /// Spell the user's vocabulary as written; see [`Rule::apply_with`].
     Vocabulary,
+    /// Type spoken emoji ("thumbs up emoji") as the emoji.
+    Emoji,
 }
 
 impl Rule {
@@ -38,6 +40,7 @@ impl Rule {
                 decapitalise(bare, |_| true)
             }
             Rule::Disfluency(lang) => disfluency::clean(text, lang),
+            Rule::Emoji => super::emoji::apply(text),
             Rule::Continue => decapitalise(text, |word| {
                 FUNCTION_WORDS.contains(&word.to_lowercase().as_str())
             }),
