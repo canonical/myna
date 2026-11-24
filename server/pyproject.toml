@@ -104,6 +104,18 @@ dev = [
     "types-pyyaml>=6.0.12.20260906",
 ]
 
+# funasr-onnx caps numpy at 1.26.4, and one resolution would hold every
+# extra to it: funasr is resolved on its own, so the snaps that install
+# from this lock (dev/prepare.sh) keep numpy 2.
+[tool.uv]
+conflicts = [
+    [{ extra = "funasr" }, { extra = "whisper" }],
+    [{ extra = "funasr" }, { extra = "parakeet" }],
+    [{ extra = "funasr" }, { extra = "nemotron" }],
+    [{ extra = "funasr" }, { extra = "indicconformer" }],
+    [{ extra = "funasr" }, { extra = "text" }],
+]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
