@@ -58,6 +58,7 @@ const SNAPS: &str = "/v2/snaps";
 const CONTENT_CONNECTIONS: &str = "/v2/connections?select=all&interface=content";
 
 const INSTALL_ON_EDGE: &str = r#"{"action":"install","channel":"latest/edge"}"#;
+const REMOVE: &str = r#"{"action":"remove"}"#;
 
 /// A component's name as the generator writes it: `model-` and a slug.
 pub fn is_valid_component_name(name: &str) -> bool {
@@ -437,6 +438,14 @@ pub trait SnapdClient {
         cancellation: CancellationToken,
     ) -> Result<Option<String>, SnapdError>;
 
+    /// Start removing `snap`, components and all; snapd asks polkit for
+    /// `manage`. The change it started, none when it is not installed.
+    async fn remove_snap(
+        &self,
+        snap: &str,
+        cancellation: CancellationToken,
+    ) -> Result<Option<String>, SnapdError>;
+
     /// Install or remove `components` of `snap` (`remove` when `install` is
     /// false) in one request, so one prompt. The change it started, none when
     /// there is nothing to do.
@@ -578,6 +587,35 @@ impl SnapdClient for UnixSocketSnapdClient {
             Err(SnapdError::Snapd {
                 kind: Some(kind), ..
             }) if kind == "snap-already-installed" => Ok(None),
+            Err(error) => Err(error),
+        }
+    }
+
+    async fn remove_snap(
+        &self,
+        snap: &str,
+        cancellation: CancellationToken,
+    ) -> Result<Option<String>, SnapdError> {
+        if !is_valid_snap_name(snap) {
+            return Err(SnapdError::Transport {
+                message: format!("invalid snap name: {snap}"),
+            });
+        }
+        let socket_path = self.socket_path.clone();
+        let timeouts = self.timeouts;
+        let path = format!("/v2/snaps/{snap}");
+        let handle = gio::spawn_blocking(move || {
+            blocking_start(&socket_path, timeouts, "POST", &path, REMOVE, &cancellation)
+        });
+        match handle.await.map_err(worker_panicked)? {
+            Ok(Started::Change(change_id)) => Ok(Some(change_id)),
+            Ok(Started::Sync) => Err(SnapdError::Protocol {
+                message: "snapd answered a remove synchronously".to_owned(),
+                body: String::new(),
+            }),
+            Err(SnapdError::Snapd {
+                kind: Some(kind), ..
+            }) if kind == "snap-not-installed" => Ok(None),
             Err(error) => Err(error),
         }
     }

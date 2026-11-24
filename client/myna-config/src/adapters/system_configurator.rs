@@ -19,7 +19,9 @@ use crate::ports::{
     PluginSetUp, SetUpPlan, SystemConfigurator, SystemConfiguratorError, SystemConfiguratorFailure,
 };
 use crate::snap_changes::ChangeInProgress;
-use crate::snap_install::{components_request, install_request, STORE_ERROR_PREFIX};
+use crate::snap_install::{
+    components_request, install_request, remove_request, STORE_ERROR_PREFIX,
+};
 
 /// Fixed plug reference the direct snapd adapter is willing to send. Any
 /// switch step whose typed target does not match these exact allowlists is
@@ -203,6 +205,17 @@ impl SystemConfigurator for PkexecSystemConfigurator {
             .install_snap(snap, cancellation)
             .await
             .map_err(|error| snapd_error_to_system_error(install_request(snap), error))
+    }
+
+    async fn remove_snap(
+        &self,
+        snap: &str,
+        cancellation: CancellationToken,
+    ) -> Result<Option<String>, SystemConfiguratorError> {
+        self.snapd
+            .remove_snap(snap, cancellation)
+            .await
+            .map_err(|error| snapd_error_to_system_error(remove_request(snap), error))
     }
 
     async fn change_components(
@@ -1402,6 +1415,14 @@ mod tests {
             _cancellation: CancellationToken,
         ) -> Result<Option<String>, SnapdError> {
             unreachable!("no switch installs a snap")
+        }
+
+        async fn remove_snap(
+            &self,
+            _snap: &str,
+            _cancellation: CancellationToken,
+        ) -> Result<Option<String>, SnapdError> {
+            unreachable!("no switch removes a snap")
         }
 
         async fn change_components(

@@ -1128,6 +1128,87 @@ fn an_install_prompt_may_outlast_a_request() {
     );
 }
 
+#[test]
+fn removing_a_snap_hands_back_its_change() {
+    let fake = FakeSnapd::start(vec![step(
+        "POST /v2/snaps/myna-whisper ",
+        http_body(202, "Accepted", CHANGE_12_ACCEPTED),
+        None,
+    )]);
+
+    let started = block_on(
+        fake.client()
+            .remove_snap("myna-whisper", CancellationToken::new()),
+    );
+
+    assert_eq!(started, Ok(Some("12".to_owned())));
+    let calls = fake.calls.lock().unwrap().clone();
+    assert_eq!(calls.len(), 1, "{calls:?}");
+    assert!(calls[0].starts_with("POST /v2/snaps/myna-whisper HTTP/1.1\r\n"));
+    assert!(calls[0].contains("X-Allow-Interaction: true\r\n"));
+    assert!(calls[0].ends_with("\r\n\r\n{\"action\":\"remove\"}"));
+}
+
+/// Removed elsewhere between the last read and the click: nothing to do.
+#[test]
+fn removing_a_removed_snap_has_no_change_to_follow() {
+    let fake = FakeSnapd::start(vec![step(
+        "POST /v2/snaps/myna-whisper ",
+        http_body(
+            400,
+            "Bad Request",
+            r#"{"type":"error","status-code":400,"result":{"message":"snap \"myna-whisper\" is not installed","kind":"snap-not-installed","value":"myna-whisper"}}"#,
+        ),
+        None,
+    )]);
+
+    assert_eq!(
+        block_on(
+            fake.client()
+                .remove_snap("myna-whisper", CancellationToken::new())
+        ),
+        Ok(None)
+    );
+}
+
+#[test]
+fn a_snap_name_outside_the_grammar_is_never_removed() {
+    let fake = FakeSnapd::start(Vec::new());
+
+    let refused = block_on(
+        fake.client()
+            .remove_snap("../v2/logout", CancellationToken::new()),
+    );
+
+    assert!(
+        matches!(refused, Err(SnapdError::Transport { .. })),
+        "{refused:?}"
+    );
+    assert!(fake.calls.lock().unwrap().is_empty());
+}
+
+#[test]
+fn a_dismissed_prompt_cancels_a_remove() {
+    let fake = FakeSnapd::start(vec![step(
+        "POST /v2/snaps/myna-whisper ",
+        http_body(
+            403,
+            "Forbidden",
+            r#"{"type":"error","status-code":403,"result":{"message":"cancelled","kind":"auth-cancelled"}}"#,
+        ),
+        None,
+    )]);
+    let configurator = PkexecSystemConfigurator::with_snapd_client(
+        Arc::new(FakeCommandRunner::default()),
+        Arc::new(fake.client()),
+    );
+
+    assert_eq!(
+        block_on(configurator.remove_snap("myna-whisper", CancellationToken::new())),
+        Err(SystemConfiguratorError::Cancelled)
+    );
+}
+
 /// Installed elsewhere between the last read and the click: nothing to do.
 #[test]
 fn installing_an_installed_snap_has_no_change_to_follow() {

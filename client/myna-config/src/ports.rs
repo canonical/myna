@@ -106,6 +106,20 @@ pub trait SystemConfigurator {
         cancellation: CancellationToken,
     ) -> Result<Option<String>, SystemConfiguratorError>;
 
+    /// Start removing `snap` as the user: snapd raises polkit's prompt
+    /// itself. The change it started, none when it is not installed.
+    async fn remove_snap(
+        &self,
+        snap: &str,
+        _cancellation: CancellationToken,
+    ) -> Result<Option<String>, SystemConfiguratorError> {
+        Err(SystemConfiguratorError::snapd_execution(
+            crate::snap_install::remove_request(snap),
+            None,
+            "this configurator cannot remove a snap".to_owned(),
+        ))
+    }
+
     /// Install or remove named components of an installed snap in one snapd
     /// request as the user (one prompt). The change it started, none when
     /// there was nothing to do.
