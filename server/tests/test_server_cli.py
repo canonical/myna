@@ -70,6 +70,17 @@ def test_the_fake_says_a_transcript_it_is_given():
     finals = [s.event.text for s in fake._script if isinstance(s.event, TranscriptionFinal)]
     assert finals == ["Bonjour à tous."]
     assert fake._script == script_saying("Bonjour à tous.")
+
+
+def test_a_given_transcript_keeps_the_readiness_the_client_waits_for():
+    from myna.core import PHASE_PREPARING, PHASE_READY, TranscriptionFinal, TranscriptionProgress
+    from myna.testbed.fake import ScriptStep, script_saying
+
+    assert script_saying("Bonjour.") == (
+        ScriptStep(0.0, TranscriptionProgress(phase=PHASE_PREPARING)),
+        ScriptStep(0.05, TranscriptionProgress(phase=PHASE_READY)),
+        ScriptStep(0.05, TranscriptionFinal(text="Bonjour.")),
+    )
     default = build_adapter(parse("--adapter", "fake"))
     assert [s.event.text for s in default._script if isinstance(s.event, TranscriptionFinal)] == [
         "The quick brown fox",
