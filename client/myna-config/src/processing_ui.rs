@@ -3189,9 +3189,14 @@ mod tests {
                 .collect();
             assert_eq!(
                 titles,
-                ["Tidy up speech", "Keep the original", "Chinese script"]
+                [
+                    "Tidy up speech",
+                    "Spoken emoji",
+                    "Keep the original",
+                    "Chinese script"
+                ]
             );
-            let original = &catalog_rows(&rig)[1];
+            let original = &catalog_rows(&rig)[2];
             assert_eq!(original.subtitle(), "Applies after a translation");
             assert!(rig.page.translate_row.parent().is_some());
             assert_eq!(rig.page.translate_row.title(), "Translate");

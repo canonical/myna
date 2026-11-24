@@ -96,7 +96,8 @@ pub fn items(inputs: &Inputs) -> Vec<Item> {
         let rank = plugin_catalog::relevance(&entry.locales, &entry.in_lang, inputs.locales);
         found.push((rank, stage_of(&entry.step.stage), from_entry(entry, inputs)));
     }
-    found.sort_by(|a, b| (a.0, a.1, &a.2.id).cmp(&(b.0, b.1, &b.2.id)));
+    let rank = |item: &Item| crate::processing_steps::known_rank(&item.step);
+    found.sort_by(|a, b| (a.0, a.1, rank(&a.2), &a.2.id).cmp(&(b.0, b.1, rank(&b.2), &b.2.id)));
     found.into_iter().map(|(_, _, item)| item).collect()
 }
 
@@ -732,12 +733,13 @@ mod tests {
             titles(&found),
             [
                 "Tidy up speech",
+                "Spoken emoji",
                 "Translate",
                 "Keep the original",
                 "Chinese script"
             ]
         );
-        let Job::Translate(translate) = &found[1] else {
+        let Job::Translate(translate) = &found[2] else {
             panic!("not the Translate job")
         };
         assert!(translate.open);
@@ -947,7 +949,7 @@ mod tests {
     fn built_ins_and_every_entry_are_listed_with_their_facts() {
         let all = listed(&case());
         let ids: Vec<_> = all.iter().map(|i| i.id.as_str()).collect();
-        assert_eq!(ids.len(), 5, "{ids:?}");
+        assert_eq!(ids.len(), 6, "{ids:?}");
         assert!(!ids.contains(&"fit"), "fitting is a switch, not a step");
         let fr = find(&all, "en-fr");
         assert_eq!(fr.title, "Translate English to Français");
@@ -999,7 +1001,7 @@ mod tests {
         let ids: Vec<_> = english.iter().map(|i| i.id.as_str()).collect();
         assert_eq!(
             ids,
-            ["tidy", "en-fr", "fr-en", "original", "script"],
+            ["tidy", "emoji", "en-fr", "fr-en", "original", "script"],
             "{ids:?}"
         );
     }
@@ -1226,7 +1228,14 @@ mod tests {
         let ids: Vec<_> = all.iter().map(|i| i.id.as_str()).collect();
         assert_eq!(
             ids,
-            ["m-clean", "z-translate", "a-late", "original", "script"],
+            [
+                "m-clean",
+                "emoji",
+                "z-translate",
+                "a-late",
+                "original",
+                "script"
+            ],
             "{ids:?}"
         );
     }
