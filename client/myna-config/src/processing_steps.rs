@@ -144,7 +144,7 @@ pub const BUILT_INS: [BuiltIn; 10] = [
         title: || gettextrs::gettext("Snippets"),
         description: || {
             gettextrs::gettext(
-                "Say “insert” and a snippet's name to type it, or “insert today's date”. Add snippets under General. English only.",
+                "Say a snippet's name on its own, or “insert” and its name, to type it; “insert today's date” needs no snippet. Add snippets under General. English only.",
             )
         },
         example: || {
@@ -163,7 +163,7 @@ pub const BUILT_INS: [BuiltIn; 10] = [
         title: || gettextrs::gettext("Spoken commands"),
         description: || {
             gettextrs::gettext(
-                "Say “scratch that”, “new line”, “new paragraph”, “delete last word” or “format as a list” on its own. Nothing is typed until you stop. English only.",
+                "Say “scratch that”, “new line”, “new paragraph”, “delete last word” or “format as a list” on its own, or “quote” … “end quote”. Nothing is typed until you stop. English only.",
             )
         },
         example: || {
