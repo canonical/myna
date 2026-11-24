@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-23 23:32+0000\n"
+"POT-Creation-Date: 2026-11-24 00:19+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -18,7 +18,7 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=INTEGER; plural=EXPRESSION;\n"
 
-#: data/diagnostics-page.blp:5 data/diagnostics-page.blp:8 src/app.rs:1465
+#: data/diagnostics-page.blp:5 data/diagnostics-page.blp:8 src/app.rs:1469
 msgid "About and Diagnostics"
 msgstr ""
 
@@ -46,11 +46,11 @@ msgstr ""
 msgid "No audio, transcript, or filesystem path is ever included."
 msgstr ""
 
-#: data/diagnostics-page.blp:49 src/backend_ui.rs:3277 src/backend_ui.rs:3601
+#: data/diagnostics-page.blp:49 src/backend_ui.rs:3359 src/backend_ui.rs:3683
 msgid "Refresh"
 msgstr ""
 
-#: data/diagnostics-page.blp:53 src/backend_ui.rs:2191 src/backend_ui.rs:2193
+#: data/diagnostics-page.blp:53 src/backend_ui.rs:2259 src/backend_ui.rs:2261
 msgid "Refresh diagnostics"
 msgstr ""
 
@@ -62,7 +62,7 @@ msgstr ""
 msgid "Copy"
 msgstr ""
 
-#: data/diagnostics-page.blp:64 src/backend_ui.rs:2207
+#: data/diagnostics-page.blp:64 src/backend_ui.rs:2275
 msgid "Copy diagnostics"
 msgstr ""
 
@@ -72,7 +72,7 @@ msgid ""
 "audio, transcripts, or filesystem paths."
 msgstr ""
 
-#: data/diagnostics-page.blp:94 src/backend_ui.rs:2231
+#: data/diagnostics-page.blp:94 src/backend_ui.rs:2299
 msgid "Diagnostic report"
 msgstr ""
 
@@ -81,7 +81,7 @@ msgid "Read-only privacy-safe diagnostic text."
 msgstr ""
 
 #: data/install-control.blp:54 data/onboarding-components.blp:60
-#: src/app.rs:4487 src/processing_ui.rs:2065
+#: src/app.rs:4496 src/processing_ui.rs:2071
 msgid "Installed"
 msgstr ""
 
@@ -89,7 +89,7 @@ msgstr ""
 msgid "Install more models"
 msgstr ""
 
-#: data/main-window.blp:9 src/app.rs:137 src/diagnostics.rs:441
+#: data/main-window.blp:9 src/app.rs:137 src/diagnostics.rs:467
 #: data/com.canonical.Myna.Config.metainfo.xml:8
 #: data/com.canonical.Myna.Config.desktop:3
 msgid "Myna Settings"
@@ -99,17 +99,17 @@ msgstr ""
 msgid "Main Menu"
 msgstr ""
 
-#: data/main-window.blp:32 src/backend_ui.rs:2961
+#: data/main-window.blp:32 src/backend_ui.rs:3032
 msgid "General"
 msgstr ""
 
-#: data/main-window.blp:39 data/myna-page.blp:71 src/app.rs:1460
-#: src/app.rs:3672 src/app.rs:4110 src/processing_ui.rs:2308
-#: src/backend_apply.rs:384 src/diagnostics.rs:651 src/presentation.rs:157
+#: data/main-window.blp:39 data/myna-page.blp:71 src/app.rs:1464
+#: src/app.rs:3681 src/app.rs:4119 src/processing_ui.rs:2314
+#: src/backend_apply.rs:384 src/diagnostics.rs:677 src/presentation.rs:157
 msgid "Model"
 msgstr ""
 
-#: data/main-window.blp:46 src/app.rs:6135 src/diagnostics.rs:582
+#: data/main-window.blp:46 src/app.rs:6190 src/diagnostics.rs:608
 #: src/myna_settings.rs:268
 msgid "Processing"
 msgstr ""
@@ -147,32 +147,32 @@ msgstr ""
 msgid "Cancel"
 msgstr ""
 
-#: data/myna-page.blp:67 data/onboarding-window.blp:7 src/app.rs:2323
-#: src/app.rs:5721 src/onboarding_ui.rs:1426 src/shortcut_ui.rs:591
+#: data/myna-page.blp:67 data/onboarding-window.blp:7 src/app.rs:2331
+#: src/app.rs:5730 src/onboarding_ui.rs:1426 src/shortcut_ui.rs:591
 msgid "Dictation"
 msgstr ""
 
-#: data/onboarding-components.blp:18 src/app.rs:4433 src/onboarding_ui.rs:1427
+#: data/onboarding-components.blp:18 src/app.rs:4442 src/onboarding_ui.rs:1427
 msgid "Install components"
 msgstr ""
 
-#: data/onboarding-components.blp:27 src/app.rs:4437
+#: data/onboarding-components.blp:27 src/app.rs:4446
 msgid ""
 "Dictation requires some additional components, including the optimal speech-"
 "to-text model for your computer. Installation might take a few minutes."
 msgstr ""
 
-#: data/onboarding-components.blp:44 src/app.rs:513 src/app.rs:4515
-#: src/app.rs:4579 src/app.rs:4985
+#: data/onboarding-components.blp:44 src/app.rs:513 src/app.rs:4524
+#: src/app.rs:4588 src/app.rs:4994
 msgid "Install all components"
 msgstr ""
 
-#: data/onboarding-components.blp:52 src/app.rs:4504 src/processing_ui.rs:2081
+#: data/onboarding-components.blp:52 src/app.rs:4513 src/processing_ui.rs:2087
 #: src/ui/install_control.rs:134
 msgid "Installing…"
 msgstr ""
 
-#: data/onboarding-shortcut.blp:18 src/app.rs:5453 src/onboarding_ui.rs:1428
+#: data/onboarding-shortcut.blp:18 src/app.rs:5462 src/onboarding_ui.rs:1428
 msgid "How to dictate"
 msgstr ""
 
@@ -216,7 +216,7 @@ msgstr ""
 msgid "Close"
 msgstr ""
 
-#: data/operation-error-dialog.blp:34 src/app.rs:4655
+#: data/operation-error-dialog.blp:34 src/app.rs:4664
 msgid "Copy Details"
 msgstr ""
 
@@ -224,11 +224,11 @@ msgstr ""
 msgid "Copy the full failure details to the clipboard"
 msgstr ""
 
-#: data/status-page.blp:8 src/app.rs:1455 src/app.rs:6022
+#: data/status-page.blp:8 src/app.rs:1459 src/app.rs:6031
 msgid "Loading Myna Settings"
 msgstr ""
 
-#: data/status-page.blp:9 src/app.rs:1456 src/app.rs:6023
+#: data/status-page.blp:9 src/app.rs:1460 src/app.rs:6032
 msgid "Reading the installed settings schema…"
 msgstr ""
 
@@ -236,179 +236,180 @@ msgstr ""
 msgid "translator-credits"
 msgstr ""
 
-#: src/app.rs:1152 src/onboarding_ui.rs:853
+#: src/app.rs:1155 src/onboarding_ui.rs:853
 msgid "Done"
 msgstr ""
 
-#: src/app.rs:1461
+#: src/app.rs:1465
 msgid "Model details appear once Myna finds your models."
 msgstr ""
 
-#: src/app.rs:1466
+#: src/app.rs:1470
 msgid "Diagnostics appear once Myna finds your models."
 msgstr ""
 
-#: src/app.rs:1922 src/past_dictations_ui.rs:106
+#: src/app.rs:1929 src/past_dictations_ui.rs:106
 msgid "Clear"
 msgstr ""
 
-#: src/app.rs:2037 src/list_editor_ui.rs:123
+#: src/app.rs:2044 src/list_editor_ui.rs:123
 msgid "{count} word or phrase"
 msgid_plural "{count} words or phrases"
 msgstr[0] ""
 msgstr[1] ""
 
-#: src/app.rs:2152 src/list_editor_ui.rs:138
+#: src/app.rs:2159 src/list_editor_ui.rs:138
 msgid "Typed when you say “{spoken}”"
 msgstr ""
 
-#: src/app.rs:3710 src/backend_ui.rs:4192 src/model_family.rs:27
+#: src/app.rs:3719 src/backend_ui.rs:4316 src/model_family.rs:27
 msgid "Fastest and most accurate in its 25 languages"
 msgstr ""
 
-#: src/app.rs:3714 src/backend_ui.rs:4700 src/model_family.rs:31
+#: src/app.rs:3723 src/backend_ui.rs:4824 src/model_family.rs:31
 msgid "Most languages, with uneven accuracy"
 msgstr ""
 
-#: src/app.rs:3847 src/myna_settings.rs:198
+#: src/app.rs:3856 src/myna_settings.rs:198
 msgid "As you speak"
 msgstr ""
 
-#: src/app.rs:3848 src/myna_settings.rs:199
+#: src/app.rs:3857 src/myna_settings.rs:199
 msgid "When you stop"
 msgstr ""
 
-#: src/app.rs:3988 src/app.rs:6684
+#: src/app.rs:3997 src/app.rs:6739
 msgid "Preview"
 msgstr ""
 
-#: src/app.rs:4002 src/sound_preview.rs:69
+#: src/app.rs:4011 src/sound_preview.rs:69
 msgid "Could not preview sounds"
 msgstr ""
 
-#: src/app.rs:4057 src/backend_ui.rs:793
+#: src/app.rs:4066 src/backend_ui.rs:797
 msgid "Changing to {model} failed"
 msgstr ""
 
-#: src/app.rs:4058 src/app.rs:4611 src/app.rs:4620 src/app.rs:5005
-#: src/app.rs:5818 src/app.rs:5824 src/processing_ui.rs:1903
-#: src/backend_ui.rs:1391 src/onboarding_ui.rs:622 src/ui/status_page.rs:70
+#: src/app.rs:4067 src/app.rs:4620 src/app.rs:4629 src/app.rs:5014
+#: src/app.rs:5827 src/app.rs:5833 src/processing_ui.rs:1909
+#: src/backend_ui.rs:1395 src/onboarding_ui.rs:622 src/models_ui.rs:354
+#: src/ui/status_page.rs:70
 msgid "Details"
 msgstr ""
 
 #. TRANSLATORS: {setting} is a setting's name on the Model tab, such as "Unload when idle (seconds)".
-#: src/app.rs:4177 src/backend_ui.rs:1797
+#: src/app.rs:4186 src/backend_ui.rs:1801
 msgid "Changing “{setting}” failed"
 msgstr ""
 
-#: src/app.rs:4179 src/presentation.rs:178
+#: src/app.rs:4188 src/presentation.rs:178
 msgid "Unload when idle (seconds)"
 msgstr ""
 
 #. TRANSLATORS: {size} is a download size, such as "4.2 GB".
-#: src/app.rs:4477 src/onboarding_ui.rs:928
+#: src/app.rs:4486 src/onboarding_ui.rs:928
 msgid "Up to {size}"
 msgstr ""
 
-#: src/app.rs:4612 src/onboarding_ui.rs:1087
+#: src/app.rs:4621 src/onboarding_ui.rs:1087
 msgid "Could not let Myna run in the background"
 msgstr ""
 
-#: src/app.rs:4639 src/app.rs:4787 src/backend_ui.rs:2565
+#: src/app.rs:4648 src/app.rs:4796 src/backend_ui.rs:2636
 msgid "Executable:"
 msgstr ""
 
-#: src/app.rs:4640 src/app.rs:4788 src/backend_ui.rs:2569
+#: src/app.rs:4649 src/app.rs:4797 src/backend_ui.rs:2640
 msgid "Arguments:"
 msgstr ""
 
-#: src/app.rs:4641 src/app.rs:4789 src/backend_ui.rs:2578
-#: src/backend_ui.rs:2656 src/backend_ui.rs:3438
+#: src/app.rs:4650 src/app.rs:4798 src/backend_ui.rs:2649
+#: src/backend_ui.rs:2727 src/backend_ui.rs:3520
 msgid "Exit status:"
 msgstr ""
 
-#: src/app.rs:4642 src/app.rs:4790 src/app.rs:5017 src/backend_ui.rs:2623
+#: src/app.rs:4651 src/app.rs:4799 src/app.rs:5026 src/backend_ui.rs:2694
 msgid "Message:"
 msgstr ""
 
-#: src/app.rs:4707 src/onboarding_ui.rs:1066
+#: src/app.rs:4716 src/onboarding_ui.rs:1066
 msgid "Enabling user daemons support"
 msgstr ""
 
-#: src/app.rs:4729 src/onboarding_ui.rs:1067
+#: src/app.rs:4738 src/onboarding_ui.rs:1067
 msgid "Installing Dictation app"
 msgstr ""
 
 #. TRANSLATORS: {step} is what is installing, such as "Installing speech-to-text model", and {percent} how much of its download has arrived.
-#: src/app.rs:4739 src/app.rs:4802 src/app.rs:4907 src/onboarding_ui.rs:1075
+#: src/app.rs:4748 src/app.rs:4811 src/app.rs:4916 src/onboarding_ui.rs:1075
 msgid "{step} ({percent}%)"
 msgstr ""
 
-#: src/app.rs:4753 src/onboarding_ui.rs:1068
+#: src/app.rs:4762 src/onboarding_ui.rs:1068
 msgid "Installing speech-to-text model"
 msgstr ""
 
-#: src/app.rs:4767 src/onboarding_ui.rs:1089
+#: src/app.rs:4776 src/onboarding_ui.rs:1089
 msgid "Installing the speech-to-text model failed"
 msgstr ""
 
-#: src/app.rs:4830 src/onboarding_ui.rs:1070
+#: src/app.rs:4839 src/onboarding_ui.rs:1070
 msgid "Setting up the dictation indicator"
 msgstr ""
 
-#: src/app.rs:5003 src/onboarding_ui.rs:1092
+#: src/app.rs:5012 src/onboarding_ui.rs:1092
 msgid "Setting up the dictation indicator failed"
 msgstr ""
 
-#: src/app.rs:5016 src/backend_ui.rs:2609
+#: src/app.rs:5025 src/backend_ui.rs:2680
 msgid "D-Bus call:"
 msgstr ""
 
-#: src/app.rs:5468 src/shortcut_ui.rs:669
+#: src/app.rs:5477 src/shortcut_ui.rs:669
 msgid "You can trigger Dictation anytime by using the keyboard shortcut:"
 msgstr ""
 
-#: src/app.rs:5817 src/onboarding_ui.rs:743 src/onboarding_ui.rs:750
+#: src/app.rs:5826 src/onboarding_ui.rs:743 src/onboarding_ui.rs:750
 #: src/onboarding_ui.rs:1001
 msgid "Could not set up Dictation"
 msgstr ""
 
-#: src/app.rs:5850 src/onboarding_ui.rs:952
+#: src/app.rs:5859 src/onboarding_ui.rs:952
 msgid "Dictation is not set up yet. Select Next to try again."
 msgstr ""
 
-#: src/app.rs:6027
+#: src/app.rs:6036
 msgid "No Myna Settings"
 msgstr ""
 
-#: src/app.rs:6028
+#: src/app.rs:6037
 msgid "The installed schema does not declare any settings."
 msgstr ""
 
-#: src/app.rs:6066
+#: src/app.rs:6075
 msgid "Chains"
 msgstr ""
 
-#: src/app.rs:6068
+#: src/app.rs:6077
 msgid ""
 "What Myna does to what you say. Pick one; open it to change its steps. Text "
 "a chain changes is shown on screen while you speak and typed a sentence at a "
 "time. This is experimental."
 msgstr ""
 
-#: src/app.rs:6190
+#: src/app.rs:6245
 msgid "Myna Settings Unavailable"
 msgstr ""
 
-#: src/app.rs:6191
+#: src/app.rs:6246
 msgid "Myna Settings could not start."
 msgstr ""
 
-#: src/app.rs:6652
+#: src/app.rs:6707
 msgid "Could not save the setting"
 msgstr ""
 
-#: src/app.rs:6689
+#: src/app.rs:6744
 msgid "Preview sound style"
 msgstr ""
 
@@ -790,7 +791,7 @@ msgid "Applies when the text is Chinese"
 msgstr ""
 
 #: src/processing_steps.rs:607 src/step_catalog.rs:377
-#: src/processing_ui.rs:1496
+#: src/processing_ui.rs:1502
 msgid "Needs a single dictation language"
 msgstr ""
 
@@ -883,7 +884,7 @@ msgstr ""
 msgid "Built in, nothing to install"
 msgstr ""
 
-#: src/step_catalog.rs:133 src/step_catalog.rs:233 src/diagnostics.rs:705
+#: src/step_catalog.rs:133 src/step_catalog.rs:233 src/diagnostics.rs:731
 msgid "License"
 msgstr ""
 
@@ -983,7 +984,7 @@ msgstr ""
 msgid "Add step…"
 msgstr ""
 
-#: src/processing_ui.rs:574 src/processing_ui.rs:1749
+#: src/processing_ui.rs:574 src/processing_ui.rs:1755
 msgid "For example"
 msgstr ""
 
@@ -1045,178 +1046,179 @@ msgstr ""
 msgid "Remove model"
 msgstr ""
 
-#: src/processing_ui.rs:1275 src/processing_ui.rs:1874
+#: src/processing_ui.rs:1281 src/processing_ui.rs:1880 src/models_ui.rs:332
 msgid "Finish dictating, then try again."
 msgstr ""
 
-#: src/processing_ui.rs:1279
+#: src/processing_ui.rs:1285
 msgid "Installing the model failed"
 msgstr ""
 
-#: src/processing_ui.rs:1492
+#: src/processing_ui.rs:1498
 msgid ""
 "From {language}. Choosing a language adds the step; one that is not "
 "installed downloads first."
 msgstr ""
 
 #. TRANSLATORS: {from} and {to} are language names, such as "English" and "Français".
-#: src/processing_ui.rs:1535
+#: src/processing_ui.rs:1541 src/installed_models.rs:146
 msgid "{from} to {to}"
 msgstr ""
 
-#: src/processing_ui.rs:1544 src/processing_ui.rs:1768
-#: src/list_editor_ui.rs:143
+#: src/processing_ui.rs:1550 src/processing_ui.rs:1774
+#: src/list_editor_ui.rs:143 src/models_ui.rs:253
 msgid "Remove"
 msgstr ""
 
 #. TRANSLATORS: {model} names a translation model, such as "English to Français".
-#: src/processing_ui.rs:1551
+#. TRANSLATORS: {model} names a model, such as "Whisper" or "English to Italiano".
+#: src/processing_ui.rs:1557 src/models_ui.rs:260
 msgid "Remove {model}"
 msgstr ""
 
 #. TRANSLATORS: read by screen readers as the language search narrows; {count} is a number.
-#: src/processing_ui.rs:1589 src/model_family.rs:246
+#: src/processing_ui.rs:1595 src/model_family.rs:246
 msgid "{count} language"
 msgid_plural "{count} languages"
 msgstr[0] ""
 msgstr[1] ""
 
-#: src/processing_ui.rs:1728 src/list_editor_ui.rs:72
+#: src/processing_ui.rs:1734 src/list_editor_ui.rs:72
 msgid "Add"
 msgstr ""
 
 #. TRANSLATORS: {step} is a step's name, such as "Tidy up speech".
-#: src/processing_ui.rs:1735
+#: src/processing_ui.rs:1741
 msgid "Add {step}"
 msgstr ""
 
-#: src/processing_ui.rs:1738
+#: src/processing_ui.rs:1744
 msgid "Added"
 msgstr ""
 
 #. TRANSLATORS: {step} is a step's name, such as "Tidy up speech".
-#: src/processing_ui.rs:1775
+#: src/processing_ui.rs:1781
 msgid "Remove {step}"
 msgstr ""
 
-#: src/processing_ui.rs:1778
+#: src/processing_ui.rs:1784
 msgid "Remove this model"
 msgstr ""
 
-#: src/processing_ui.rs:1780
+#: src/processing_ui.rs:1786
 msgid ""
 "The step stays switched on and shows what it needs, so it can be installed "
 "again."
 msgstr ""
 
-#: src/processing_ui.rs:1878
+#: src/processing_ui.rs:1884
 msgid "Removing the model failed"
 msgstr ""
 
-#: src/processing_ui.rs:2011 src/processing_ui.rs:2015
+#: src/processing_ui.rs:2017 src/processing_ui.rs:2021
 msgid "Search languages"
 msgstr ""
 
-#: src/processing_ui.rs:2019
+#: src/processing_ui.rs:2025
 msgid "No language matches"
 msgstr ""
 
-#: src/processing_ui.rs:2021
+#: src/processing_ui.rs:2027
 msgid "Only languages a model can translate into from here are listed."
 msgstr ""
 
-#: src/processing_ui.rs:2028
+#: src/processing_ui.rs:2034
 msgid "Installed translation models"
 msgstr ""
 
-#: src/processing_ui.rs:2030
+#: src/processing_ui.rs:2036
 msgid ""
 "A step that uses a removed model stays and shows what it needs, so it can be "
 "installed again."
 msgstr ""
 
-#: src/processing_ui.rs:2047 src/processing_ui.rs:2268
-#: src/processing_ui.rs:2304
+#: src/processing_ui.rs:2053 src/processing_ui.rs:2274
+#: src/processing_ui.rs:2310
 msgid "Translate to"
 msgstr ""
 
 #. TRANSLATORS: {size} is a download size, such as "66 MB"; two models make the translation, through English.
-#: src/processing_ui.rs:2069
+#: src/processing_ui.rs:2075
 msgid "Downloads {size}, through English"
 msgstr ""
 
 #. TRANSLATORS: {size} is a download size, such as "33 MB".
-#: src/processing_ui.rs:2072
+#: src/processing_ui.rs:2078
 msgid "Downloads {size}"
 msgstr ""
 
 #. TRANSLATORS: {percent} is a number from 0 to 100.
-#: src/processing_ui.rs:2078
+#: src/processing_ui.rs:2084
 msgid "Installing, {percent}%"
 msgstr ""
 
-#: src/processing_ui.rs:2082 src/processing_ui.rs:2128
-#: src/processing_ui.rs:2158
+#: src/processing_ui.rs:2088 src/processing_ui.rs:2134
+#: src/processing_ui.rs:2164
 msgid "Preparing…"
 msgstr ""
 
-#: src/processing_ui.rs:2083 src/processing_ui.rs:2100 src/shortcut_ui.rs:691
+#: src/processing_ui.rs:2089 src/processing_ui.rs:2106 src/shortcut_ui.rs:691
 #: src/sound_preview.rs:66
 msgid "Myna is not running"
 msgstr ""
 
-#: src/processing_ui.rs:2116 src/processing_ui.rs:2148 src/backend_ui.rs:1176
+#: src/processing_ui.rs:2122 src/processing_ui.rs:2154 src/backend_ui.rs:1180
 msgid "Install"
 msgstr ""
 
 #. TRANSLATORS: {step} is a step's name, such as "Translate English to French".
-#: src/processing_ui.rs:2118
+#: src/processing_ui.rs:2124
 msgid "Install {step}"
 msgstr ""
 
-#: src/processing_ui.rs:2135
+#: src/processing_ui.rs:2141
 msgid "Removing…"
 msgstr ""
 
 #. TRANSLATORS: {what} names a model, such as "the French model".
-#: src/processing_ui.rs:2146
+#: src/processing_ui.rs:2152
 msgid "Install {what}"
 msgstr ""
 
 #. TRANSLATORS: a step's place in its chain, read by screen readers: "Step 2 of 3".
-#: src/processing_ui.rs:2187
+#: src/processing_ui.rs:2193
 msgid "Step {n} of {total}"
 msgstr ""
 
 #. TRANSLATORS: {step} is a step's name, such as "Tidy up speech".
-#: src/processing_ui.rs:2208
+#: src/processing_ui.rs:2214
 msgid "Use {step}"
 msgstr ""
 
-#: src/processing_ui.rs:2223
+#: src/processing_ui.rs:2229
 msgid "Move above {step}"
 msgstr ""
 
 #. TRANSLATORS: {language} is a language name; no model translates into it from the text's language.
-#: src/processing_ui.rs:2237
+#: src/processing_ui.rs:2243
 msgid "{language} (no model)"
 msgstr ""
 
 #. TRANSLATORS: {language} is a language name; its model is not installed yet.
-#: src/processing_ui.rs:2240
+#: src/processing_ui.rs:2246
 msgid "{language} (not installed)"
 msgstr ""
 
-#: src/processing_ui.rs:2270 src/processing_ui.rs:2306
+#: src/processing_ui.rs:2276 src/processing_ui.rs:2312
 msgid "Write Chinese as"
 msgstr ""
 
 #. TRANSLATORS: {step} is a step's name, such as "Tidy up speech".
-#: src/processing_ui.rs:2284
+#: src/processing_ui.rs:2290
 msgid "More actions for {step}"
 msgstr ""
 
-#: src/processing_ui.rs:2302
+#: src/processing_ui.rs:2308
 msgid "To make it run"
 msgstr ""
 
@@ -1252,7 +1254,7 @@ msgstr ""
 msgid "Recommended"
 msgstr ""
 
-#: src/backend_ui.rs:218 src/diagnostics.rs:472
+#: src/backend_ui.rs:218 src/diagnostics.rs:498
 msgid "Languages"
 msgstr ""
 
@@ -1270,443 +1272,443 @@ msgstr ""
 msgid "{description}\\u{a0}·\\u{a0}{size}"
 msgstr ""
 
-#: src/backend_ui.rs:734
+#: src/backend_ui.rs:738
 msgid "This model is no longer installed."
 msgstr ""
 
-#: src/backend_ui.rs:795
+#: src/backend_ui.rs:799
 msgid "Changing to {model} could not be confirmed"
 msgstr ""
 
-#: src/backend_ui.rs:858
+#: src/backend_ui.rs:862
 msgid ""
 "Final connections could not be verified. Switching is disabled until refresh "
 "succeeds."
 msgstr ""
 
-#: src/backend_ui.rs:863 src/diagnostics.rs:720
+#: src/backend_ui.rs:867 src/diagnostics.rs:746
 msgid "No model is connected. Choose one to use for dictation."
 msgstr ""
 
-#: src/backend_ui.rs:866
+#: src/backend_ui.rs:870
 msgid "Several models are connected. Choose one to use for dictation."
 msgstr ""
 
-#: src/backend_ui.rs:956
+#: src/backend_ui.rs:960
 msgid "Changing model"
 msgstr ""
 
 #. TRANSLATORS: the Install button's name to assistive technology; {model} is a model family, such as "Whisper".
-#: src/backend_ui.rs:1178
+#: src/backend_ui.rs:1182
 msgid "Install {model}"
 msgstr ""
 
-#: src/backend_ui.rs:1375
+#: src/backend_ui.rs:1379
 msgid "Installing {model} failed"
 msgstr ""
 
-#: src/backend_ui.rs:1488 src/backend_ui.rs:1636
+#: src/backend_ui.rs:1492 src/backend_ui.rs:1640
 msgid "Wait for the current change to finish."
 msgstr ""
 
-#: src/backend_ui.rs:1651
+#: src/backend_ui.rs:1655
 msgid "Applying and restarting the model…"
 msgstr ""
 
 #. TRANSLATORS: {setting} is a setting's name on the Model tab, such as "Unload when idle (seconds)".
-#: src/backend_ui.rs:1800
+#: src/backend_ui.rs:1804
 msgid "Changing “{setting}” could not be confirmed"
 msgstr ""
 
-#: src/backend_ui.rs:1836
+#: src/backend_ui.rs:1840
 msgid "Could not read the installed models."
 msgstr ""
 
-#: src/backend_ui.rs:1891
+#: src/backend_ui.rs:1895
 msgid "No active model"
 msgstr ""
 
-#: src/backend_ui.rs:1892
+#: src/backend_ui.rs:1896
 msgid "Choose a model on the General tab."
 msgstr ""
 
-#: src/backend_ui.rs:1895
+#: src/backend_ui.rs:1899
 msgid "Several models are connected"
 msgstr ""
 
-#: src/backend_ui.rs:1896
+#: src/backend_ui.rs:1900
 msgid "Choose one model on the General tab."
 msgstr ""
 
-#: src/backend_ui.rs:2115
+#: src/backend_ui.rs:2120
 msgid "Diagnostics copied. Paste them into the issue."
 msgstr ""
 
-#: src/backend_ui.rs:2126
+#: src/backend_ui.rs:2131
 msgid "Could not open the web browser"
 msgstr ""
 
-#: src/backend_ui.rs:2205
+#: src/backend_ui.rs:2273
 msgid "Copy privacy-safe diagnostics"
 msgstr ""
 
-#: src/backend_ui.rs:2223
+#: src/backend_ui.rs:2291
 msgid "Diagnostics copied to clipboard"
 msgstr ""
 
-#: src/backend_ui.rs:2271 src/diagnostics.rs:417
+#: src/backend_ui.rs:2339 src/diagnostics.rs:443
 msgid "Dictation is not installed"
 msgstr ""
 
-#: src/backend_ui.rs:2272 src/diagnostics.rs:418
+#: src/backend_ui.rs:2340 src/diagnostics.rs:444
 msgid "No model installed"
 msgstr ""
 
-#: src/backend_ui.rs:2273 src/diagnostics.rs:420
+#: src/backend_ui.rs:2341 src/diagnostics.rs:446
 msgid "No input method set up"
 msgstr ""
 
-#: src/backend_ui.rs:2460
+#: src/backend_ui.rs:2531
 msgid "The model kept a different value than the one you chose."
 msgstr ""
 
-#: src/backend_ui.rs:2467
+#: src/backend_ui.rs:2538
 msgid "The setting was saved, but the model did not start again."
 msgstr ""
 
-#: src/backend_ui.rs:2474
+#: src/backend_ui.rs:2545
 msgid "The setting was changed, but it could not be read back."
 msgstr ""
 
-#: src/backend_ui.rs:2481
+#: src/backend_ui.rs:2552
 msgid "The setting was changed, but reading it back was interrupted."
 msgstr ""
 
-#: src/backend_ui.rs:2499 src/backend_ui.rs:2526
+#: src/backend_ui.rs:2570 src/backend_ui.rs:2597
 msgid "The system did not allow the change."
 msgstr ""
 
-#: src/backend_ui.rs:2506 src/backend_ui.rs:2529
+#: src/backend_ui.rs:2577 src/backend_ui.rs:2600
 msgid "The model rejected the value."
 msgstr ""
 
-#: src/backend_ui.rs:2513 src/backend_ui.rs:2532 src/backend_ui.rs:3360
+#: src/backend_ui.rs:2584 src/backend_ui.rs:2603 src/backend_ui.rs:3442
 msgid "The change could not be made."
 msgstr ""
 
-#: src/backend_ui.rs:2523
+#: src/backend_ui.rs:2594
 msgid "The change was interrupted after it started."
 msgstr ""
 
-#: src/backend_ui.rs:2586 src/backend_ui.rs:2665 src/backend_ui.rs:3447
+#: src/backend_ui.rs:2657 src/backend_ui.rs:2736 src/backend_ui.rs:3529
 msgid "Standard error:"
 msgstr ""
 
-#: src/backend_ui.rs:2596
+#: src/backend_ui.rs:2667
 msgid "Request:"
 msgstr ""
 
-#: src/backend_ui.rs:2602
+#: src/backend_ui.rs:2673
 msgid "HTTP status:"
 msgstr ""
 
-#: src/backend_ui.rs:2615
+#: src/backend_ui.rs:2686
 msgid "Setting:"
 msgstr ""
 
-#: src/backend_ui.rs:2640
+#: src/backend_ui.rs:2711
 msgid "Some operations completed before the apply failed.\n"
 msgstr ""
 
-#: src/backend_ui.rs:2644
+#: src/backend_ui.rs:2715
 msgid "No privileged operations completed.\n"
 msgstr ""
 
-#: src/backend_ui.rs:2646
+#: src/backend_ui.rs:2717
 msgid "Completed operations:\n"
 msgstr ""
 
-#: src/backend_ui.rs:2672
+#: src/backend_ui.rs:2743
 msgid "Failure:\n"
 msgstr ""
 
-#: src/backend_ui.rs:2676
+#: src/backend_ui.rs:2747
 msgid "Reconciliation read-back:\n"
 msgstr ""
 
-#: src/backend_ui.rs:2688
+#: src/backend_ui.rs:2759
 msgid "Model:"
 msgstr ""
 
-#: src/backend_ui.rs:2694
+#: src/backend_ui.rs:2765
 msgid "Services: none"
 msgstr ""
 
-#: src/backend_ui.rs:2696
+#: src/backend_ui.rs:2767
 msgid "Services:"
 msgstr ""
 
-#: src/backend_ui.rs:2708
+#: src/backend_ui.rs:2779
 msgid "Status: unavailable"
 msgstr ""
 
-#: src/backend_ui.rs:2715
+#: src/backend_ui.rs:2786
 msgid "Post-failure surface errors:"
 msgstr ""
 
-#: src/backend_ui.rs:2746
+#: src/backend_ui.rs:2817
 msgid "Language"
 msgstr ""
 
-#: src/backend_ui.rs:2748
+#: src/backend_ui.rs:2819
 msgid "A code such as en, fr or zh. Leave it empty to detect the language."
 msgstr ""
 
-#: src/backend_ui.rs:2801
+#: src/backend_ui.rs:2872
 msgid "Overview"
 msgstr ""
 
-#: src/backend_ui.rs:2811
+#: src/backend_ui.rs:2882
 msgid "Connection"
 msgstr ""
 
-#: src/backend_ui.rs:2814
+#: src/backend_ui.rs:2885
 msgid "Active. Myna uses this model for dictation."
 msgstr ""
 
-#: src/backend_ui.rs:2817
+#: src/backend_ui.rs:2888
 msgid "Several models are connected. Only one should be active."
 msgstr ""
 
-#: src/backend_ui.rs:2819
+#: src/backend_ui.rs:2890
 msgid "Not connected to Myna."
 msgstr ""
 
-#: src/backend_ui.rs:2825
+#: src/backend_ui.rs:2896
 msgid "Active model"
 msgstr ""
 
-#: src/backend_ui.rs:2831
+#: src/backend_ui.rs:2902
 msgid "Active engine"
 msgstr ""
 
-#: src/backend_ui.rs:2834
+#: src/backend_ui.rs:2905
 msgid "None selected. Choose one below."
 msgstr ""
 
-#: src/backend_ui.rs:2851 src/diagnostics.rs:656
+#: src/backend_ui.rs:2922 src/diagnostics.rs:682
 msgid "Services"
 msgstr ""
 
-#: src/backend_ui.rs:2853
+#: src/backend_ui.rs:2924
 msgid "No service health reported"
 msgstr ""
 
-#: src/backend_ui.rs:2867
+#: src/backend_ui.rs:2938
 msgid "Loading"
 msgstr ""
 
-#: src/backend_ui.rs:2868
+#: src/backend_ui.rs:2939
 msgid "Reading this model's settings…"
 msgstr ""
 
-#: src/backend_ui.rs:2877
+#: src/backend_ui.rs:2948
 msgid "No configuration reported"
 msgstr ""
 
-#: src/backend_ui.rs:2879
+#: src/backend_ui.rs:2950
 msgid "The model answered but reported no settings to change."
 msgstr ""
 
-#: src/backend_ui.rs:2889
+#: src/backend_ui.rs:2960
 msgid "Some data is unavailable"
 msgstr ""
 
-#: src/backend_ui.rs:2891
+#: src/backend_ui.rs:2962
 msgid "Raw failure details are recorded on the Diagnostics page."
 msgstr ""
 
-#: src/backend_ui.rs:2934 src/backend_ui.rs:3275 src/backend_ui.rs:3597
+#: src/backend_ui.rs:3005 src/backend_ui.rs:3357 src/backend_ui.rs:3679
 msgid "Refreshing…"
 msgstr ""
 
-#: src/backend_ui.rs:2962
+#: src/backend_ui.rs:3033
 msgid "Runtime"
 msgstr ""
 
-#: src/backend_ui.rs:2963
+#: src/backend_ui.rs:3034
 msgid "Advanced"
 msgstr ""
 
-#: src/backend_ui.rs:2964
+#: src/backend_ui.rs:3035
 msgid "Sensitive"
 msgstr ""
 
-#: src/backend_ui.rs:2971
+#: src/backend_ui.rs:3042
 msgid "Common settings for this model."
 msgstr ""
 
-#: src/backend_ui.rs:2974
+#: src/backend_ui.rs:3045
 msgid "Runtime and performance related settings."
 msgstr ""
 
-#: src/backend_ui.rs:2977
+#: src/backend_ui.rs:3048
 msgid "Advanced settings."
 msgstr ""
 
-#: src/backend_ui.rs:2980
+#: src/backend_ui.rs:3051
 msgid "Internal and sensitive values are shown for diagnostics only."
 msgstr ""
 
-#: src/backend_ui.rs:3004
+#: src/backend_ui.rs:3075
 msgid "Sensitive value (redacted)"
 msgstr ""
 
 #. TRANSLATORS: {name} is the model part or snap being downloaded, such as "model-small"; {done} and {total} are sizes such as "210.0 MB".
-#: src/backend_ui.rs:3152
+#: src/backend_ui.rs:3223
 msgid "Downloading {name}: {done} of {total}"
 msgstr ""
 
-#: src/backend_ui.rs:3164
+#: src/backend_ui.rs:3235
 msgid "Active"
 msgstr ""
 
-#: src/backend_ui.rs:3165
+#: src/backend_ui.rs:3236
 msgid "Inactive"
 msgstr ""
 
-#: src/backend_ui.rs:3166
+#: src/backend_ui.rs:3237
 msgid "Failed"
 msgstr ""
 
-#: src/backend_ui.rs:3168
+#: src/backend_ui.rs:3239
 msgid "Unknown"
 msgstr ""
 
-#: src/backend_ui.rs:3250
+#: src/backend_ui.rs:3332
 msgid "Installed snaps"
 msgstr ""
 
-#: src/backend_ui.rs:3251
+#: src/backend_ui.rs:3333
 msgid "Model connections"
 msgstr ""
 
-#: src/backend_ui.rs:3252
+#: src/backend_ui.rs:3334
 msgid "Model control command"
 msgstr ""
 
-#: src/backend_ui.rs:3253
+#: src/backend_ui.rs:3335
 msgid "Model settings"
 msgstr ""
 
-#: src/backend_ui.rs:3254
+#: src/backend_ui.rs:3336
 msgid "Model status"
 msgstr ""
 
-#: src/backend_ui.rs:3255
+#: src/backend_ui.rs:3337
 msgid "Available models"
 msgstr ""
 
-#: src/backend_ui.rs:3256
+#: src/backend_ui.rs:3338
 msgid "Available engines"
 msgstr ""
 
-#: src/backend_ui.rs:3262
+#: src/backend_ui.rs:3344
 msgid "Persisted values could not be read."
 msgstr ""
 
-#: src/backend_ui.rs:3273 src/backend_ui.rs:3605
+#: src/backend_ui.rs:3355 src/backend_ui.rs:3687
 msgid "Applying changes…"
 msgstr ""
 
-#: src/backend_ui.rs:3296
+#: src/backend_ui.rs:3378
 msgid "missing"
 msgstr ""
 
 #. TRANSLATORS: {key} is a setting's key, such as "streaming"; {requested} and {actual} are its values.
-#: src/backend_ui.rs:3298
+#: src/backend_ui.rs:3380
 msgid "{key}: asked for {requested}, read back {actual}"
 msgstr ""
 
-#: src/backend_ui.rs:3349
+#: src/backend_ui.rs:3431
 msgid "Error:\n"
 msgstr ""
 
-#: src/backend_ui.rs:3353
+#: src/backend_ui.rs:3435
 msgid ""
 "\n"
 "Reconnecting the model in use before also failed:\n"
 msgstr ""
 
-#: src/backend_ui.rs:3357
+#: src/backend_ui.rs:3439
 msgid ""
 "The change could not be made, and no model is connected now. Choose one "
 "again."
 msgstr ""
 
-#: src/backend_ui.rs:3368
+#: src/backend_ui.rs:3450
 msgid "snapd is still working on:\n"
 msgstr ""
 
-#: src/backend_ui.rs:3371
+#: src/backend_ui.rs:3453
 msgid ""
 "The system is still installing or updating this model or Myna. Try again "
 "once it is done."
 msgstr ""
 
-#: src/backend_ui.rs:3380
+#: src/backend_ui.rs:3462
 msgid "The change ran, but the connections do not match it."
 msgstr ""
 
-#: src/backend_ui.rs:3384
+#: src/backend_ui.rs:3466
 msgid "The connections changed before the change could start. Try again."
 msgstr ""
 
-#: src/backend_ui.rs:3388
+#: src/backend_ui.rs:3470
 msgid "Discovery error:\n"
 msgstr ""
 
-#: src/backend_ui.rs:3390
+#: src/backend_ui.rs:3472
 msgid "The change ran, but the connections could not be read back."
 msgstr ""
 
-#: src/backend_ui.rs:3407
+#: src/backend_ui.rs:3489
 msgid "Final connections:"
 msgstr ""
 
-#: src/backend_ui.rs:3412
+#: src/backend_ui.rs:3494
 msgid "Final connections could not be verified:"
 msgstr ""
 
-#: src/backend_ui.rs:3416
+#: src/backend_ui.rs:3498
 msgid "Final connections could not be verified.\n"
 msgstr ""
 
-#: src/backend_ui.rs:3424
+#: src/backend_ui.rs:3506
 msgid "No snapd operations completed.\n"
 msgstr ""
 
-#: src/backend_ui.rs:3428
+#: src/backend_ui.rs:3510
 msgid "Completed snapd operations:\n"
 msgstr ""
 
-#: src/backend_ui.rs:3457
+#: src/backend_ui.rs:3539
 msgid "no model connected"
 msgstr ""
 
-#: src/backend_ui.rs:3461 src/diagnostics.rs:836
+#: src/backend_ui.rs:3543 src/diagnostics.rs:862
 msgid "connected"
 msgstr ""
 
-#: src/backend_ui.rs:3471
+#: src/backend_ui.rs:3553
 msgid "several models"
 msgstr ""
 
-#: src/backend_ui.rs:4704 src/model_family.rs:35
+#: src/backend_ui.rs:4828 src/model_family.rs:35
 msgid "Best for Chinese, Japanese and Korean"
 msgstr ""
 
-#: src/backend_ui.rs:4708 src/model_family.rs:38
+#: src/backend_ui.rs:4832 src/model_family.rs:38
 msgid "Best for Hindi"
 msgstr ""
 
@@ -1766,7 +1768,7 @@ msgstr ""
 msgid "Close Myna Settings."
 msgstr ""
 
-#: src/onboarding_ui.rs:945 src/diagnostics.rs:726
+#: src/onboarding_ui.rs:945 src/diagnostics.rs:752
 msgid ""
 "Another input method is in use, and Dictation types through IBus. Choose "
 "IBus in the system settings."
@@ -1895,426 +1897,426 @@ msgstr ""
 msgid "Finish dictating to preview sounds"
 msgstr ""
 
-#: src/diagnostics.rs:182
+#: src/diagnostics.rs:208
 msgid "Paste the diagnostics report from your clipboard here."
 msgstr ""
 
-#: src/diagnostics.rs:243
+#: src/diagnostics.rs:269
 msgid "The microphone has a large DC offset"
 msgstr ""
 
-#: src/diagnostics.rs:247
+#: src/diagnostics.rs:273
 msgid ""
 "It costs headroom and points to an audio driver fault. Try another input in "
 "the system sound settings."
 msgstr ""
 
-#: src/diagnostics.rs:255
+#: src/diagnostics.rs:281
 msgid "Background noise was high in the last dictation"
 msgstr ""
 
-#: src/diagnostics.rs:258
+#: src/diagnostics.rs:284
 msgid ""
 "Noise this close to the voice costs words. Move away from it or use a "
 "headset microphone."
 msgstr ""
 
-#: src/diagnostics.rs:276
+#: src/diagnostics.rs:302
 msgid "The CPU clock is capped by system policy"
 msgstr ""
 
-#: src/diagnostics.rs:278
+#: src/diagnostics.rs:304
 msgid "limited to"
 msgstr ""
 
-#: src/diagnostics.rs:280 src/diagnostics.rs:358 src/diagnostics.rs:853
+#: src/diagnostics.rs:306 src/diagnostics.rs:384 src/diagnostics.rs:879
 msgid "of"
 msgstr ""
 
-#: src/diagnostics.rs:284
+#: src/diagnostics.rs:310
 msgid "Dictation will be slow. A power tool has capped the CPU clock."
 msgstr ""
 
-#: src/diagnostics.rs:294
+#: src/diagnostics.rs:320
 msgid "The power profile is set to low-power"
 msgstr ""
 
-#: src/diagnostics.rs:298
+#: src/diagnostics.rs:324
 msgid ""
 "Dictation will be slow. Switch to Balanced or Performance in the system "
 "power settings."
 msgstr ""
 
-#: src/diagnostics.rs:308
+#: src/diagnostics.rs:334
 msgid "Firmware is holding the CPU at its lowest clock"
 msgstr ""
 
-#: src/diagnostics.rs:312
+#: src/diagnostics.rs:338
 msgid ""
 "Dictation will be slow. Unplug the charger, wait a few seconds, and plug it "
 "back in. If that does not help, power off fully and start again."
 msgstr ""
 
-#: src/diagnostics.rs:321
+#: src/diagnostics.rs:347
 msgid "The system is short of memory"
 msgstr ""
 
-#: src/diagnostics.rs:325
+#: src/diagnostics.rs:351
 msgid ""
 "Dictation will stutter. Close applications until the machine stops swapping."
 msgstr ""
 
-#: src/diagnostics.rs:331
+#: src/diagnostics.rs:357
 msgid "Disk activity is stalling the system"
 msgstr ""
 
-#: src/diagnostics.rs:335
+#: src/diagnostics.rs:361
 msgid "Dictation will stutter. Wait for the transfer or indexing to finish."
 msgstr ""
 
-#: src/diagnostics.rs:341
+#: src/diagnostics.rs:367
 msgid "Other programs are saturating the CPU"
 msgstr ""
 
-#: src/diagnostics.rs:345
+#: src/diagnostics.rs:371
 msgid "Dictation will be slow. Pause the build or workload before dictating."
 msgstr ""
 
-#: src/diagnostics.rs:356 src/diagnostics.rs:851
+#: src/diagnostics.rs:382 src/diagnostics.rs:877
 msgid "reached"
 msgstr ""
 
-#: src/diagnostics.rs:368
+#: src/diagnostics.rs:394
 msgid "of the last 10 s stalled"
 msgstr ""
 
-#: src/diagnostics.rs:419
+#: src/diagnostics.rs:445
 msgid "No model connected"
 msgstr ""
 
-#: src/diagnostics.rs:421
+#: src/diagnostics.rs:447
 msgid "Ready"
 msgstr ""
 
-#: src/diagnostics.rs:422
+#: src/diagnostics.rs:448
 msgid "Installation status unavailable"
 msgstr ""
 
-#: src/diagnostics.rs:429
+#: src/diagnostics.rs:455
 msgid "Connected"
 msgstr ""
 
-#: src/diagnostics.rs:430
+#: src/diagnostics.rs:456
 msgid "Multiple connections"
 msgstr ""
 
-#: src/diagnostics.rs:431
+#: src/diagnostics.rs:457
 msgid "Not connected"
 msgstr ""
 
-#: src/diagnostics.rs:445
+#: src/diagnostics.rs:471
 msgid "Onboarding"
 msgstr ""
 
-#: src/diagnostics.rs:452
+#: src/diagnostics.rs:478
 msgid "System"
 msgstr ""
 
-#: src/diagnostics.rs:456
+#: src/diagnostics.rs:482
 msgid "OS"
 msgstr ""
 
-#: src/diagnostics.rs:460
+#: src/diagnostics.rs:486
 msgid "kernel"
 msgstr ""
 
-#: src/diagnostics.rs:468
+#: src/diagnostics.rs:494
 msgid "Desktop"
 msgstr ""
 
-#: src/diagnostics.rs:479
+#: src/diagnostics.rs:505
 msgid "Machine"
 msgstr ""
 
-#: src/diagnostics.rs:483 src/diagnostics.rs:498
+#: src/diagnostics.rs:509 src/diagnostics.rs:524
 msgid "CPU"
 msgstr ""
 
-#: src/diagnostics.rs:484 src/diagnostics.rs:561 src/diagnostics.rs:663
+#: src/diagnostics.rs:510 src/diagnostics.rs:587 src/diagnostics.rs:689
 msgid "Memory"
 msgstr ""
 
-#: src/diagnostics.rs:488 src/diagnostics.rs:493
+#: src/diagnostics.rs:514 src/diagnostics.rs:519
 msgid "GPU"
 msgstr ""
 
-#: src/diagnostics.rs:489 src/diagnostics.rs:1018
+#: src/diagnostics.rs:515 src/diagnostics.rs:1044
 msgid "none"
 msgstr ""
 
-#: src/diagnostics.rs:499
+#: src/diagnostics.rs:525
 msgid "(no model answered show-machine)"
 msgstr ""
 
-#: src/diagnostics.rs:504
+#: src/diagnostics.rs:530
 msgid "Performance"
 msgstr ""
 
-#: src/diagnostics.rs:511 src/diagnostics.rs:518 src/diagnostics.rs:544
+#: src/diagnostics.rs:537 src/diagnostics.rs:544 src/diagnostics.rs:570
 msgid "Clock"
 msgstr ""
 
-#: src/diagnostics.rs:512
+#: src/diagnostics.rs:538
 msgid "(no cpufreq information)"
 msgstr ""
 
-#: src/diagnostics.rs:523
+#: src/diagnostics.rs:549
 msgid "Profile"
 msgstr ""
 
-#: src/diagnostics.rs:526
+#: src/diagnostics.rs:552
 msgid "Power"
 msgstr ""
 
-#: src/diagnostics.rs:531
+#: src/diagnostics.rs:557
 msgid "Pressure"
 msgstr ""
 
 #. TRANSLATORS: {cpu}, {memory} and {io} are shares such as "0.03%"; cpu, memory and io are kernel resource names, keep them.
-#: src/diagnostics.rs:534
+#: src/diagnostics.rs:560
 msgid "cpu {cpu}, memory {memory}, io {io} of the last 10 s stalled"
 msgstr ""
 
-#: src/diagnostics.rs:545
+#: src/diagnostics.rs:571
 msgid "(not measured yet)"
 msgstr ""
 
-#: src/diagnostics.rs:550
+#: src/diagnostics.rs:576
 msgid "Daemon"
 msgstr ""
 
-#: src/diagnostics.rs:558 src/diagnostics.rs:596 src/diagnostics.rs:605
+#: src/diagnostics.rs:584 src/diagnostics.rs:622 src/diagnostics.rs:631
 msgid "Version"
 msgstr ""
 
-#: src/diagnostics.rs:568
+#: src/diagnostics.rs:594
 msgid "Audio"
 msgstr ""
 
-#: src/diagnostics.rs:575
+#: src/diagnostics.rs:601
 msgid "Input"
 msgstr ""
 
-#: src/diagnostics.rs:587
+#: src/diagnostics.rs:613
 msgid "Processing steps"
 msgstr ""
 
-#: src/diagnostics.rs:591
+#: src/diagnostics.rs:617
 msgid "Last error"
 msgstr ""
 
-#: src/diagnostics.rs:599
+#: src/diagnostics.rs:625
 msgid "Process"
 msgstr ""
 
-#: src/diagnostics.rs:600 src/diagnostics.rs:969
+#: src/diagnostics.rs:626 src/diagnostics.rs:995
 msgid "not running"
 msgstr ""
 
-#: src/diagnostics.rs:606 src/diagnostics.rs:981 src/diagnostics.rs:990
+#: src/diagnostics.rs:632 src/diagnostics.rs:1007 src/diagnostics.rs:1016
 msgid "not installed"
 msgstr ""
 
-#: src/diagnostics.rs:612
+#: src/diagnostics.rs:638
 msgid "Shell extension"
 msgstr ""
 
-#: src/diagnostics.rs:625 src/diagnostics.rs:702
+#: src/diagnostics.rs:651 src/diagnostics.rs:728
 msgid "Models"
 msgstr ""
 
-#: src/diagnostics.rs:629
+#: src/diagnostics.rs:655
 msgid "(none discovered)"
 msgstr ""
 
-#: src/diagnostics.rs:644 src/presentation.rs:164
+#: src/diagnostics.rs:670 src/presentation.rs:164
 msgid "Engine"
 msgstr ""
 
-#: src/diagnostics.rs:648
+#: src/diagnostics.rs:674
 msgid "none selected"
 msgstr ""
 
-#: src/diagnostics.rs:669
+#: src/diagnostics.rs:695
 msgid "Note"
 msgstr ""
 
-#: src/diagnostics.rs:675
+#: src/diagnostics.rs:701 src/models_ui.rs:82
 msgid "Text models"
 msgstr ""
 
-#: src/diagnostics.rs:679 src/diagnostics.rs:752 src/diagnostics.rs:766
+#: src/diagnostics.rs:705 src/diagnostics.rs:778 src/diagnostics.rs:792
 msgid "(none)"
 msgstr ""
 
-#: src/diagnostics.rs:711
+#: src/diagnostics.rs:737
 msgid "Status"
 msgstr ""
 
-#: src/diagnostics.rs:717
+#: src/diagnostics.rs:743
 msgid "Problems"
 msgstr ""
 
-#: src/diagnostics.rs:723
+#: src/diagnostics.rs:749
 msgid ""
 "IBus is not installed, so Myna cannot type. Install the “ibus” package, then "
 "log out and back in."
 msgstr ""
 
-#: src/diagnostics.rs:728
+#: src/diagnostics.rs:754
 msgid ""
 "IBus is not set up, so Myna cannot type. Set up Dictation to turn it on."
 msgstr ""
 
-#: src/diagnostics.rs:762
+#: src/diagnostics.rs:788
 msgid "Warnings"
 msgstr ""
 
 #. TRANSLATORS: {task} is a kind of text model such as "translation", {from} and {to} are language names.
-#: src/diagnostics.rs:806
+#: src/diagnostics.rs:832
 msgid "{task} ({from} to {to})"
 msgstr ""
 
 #. TRANSLATORS: {task} is a kind of text model such as "text cleanup", {language} the language it works on.
-#: src/diagnostics.rs:814
+#: src/diagnostics.rs:840
 msgid "{task} ({language})"
 msgstr ""
 
-#: src/diagnostics.rs:829
+#: src/diagnostics.rs:855
 msgid "not connected"
 msgstr ""
 
-#: src/diagnostics.rs:832
+#: src/diagnostics.rs:858
 msgid "connected, but no model is installed"
 msgstr ""
 
-#: src/diagnostics.rs:847
+#: src/diagnostics.rs:873
 msgid "not probed"
 msgstr ""
 
-#: src/diagnostics.rs:860
+#: src/diagnostics.rs:886
 msgid "policy allows"
 msgstr ""
 
-#: src/diagnostics.rs:867
+#: src/diagnostics.rs:893
 msgid "cores in this class"
 msgstr ""
 
-#: src/diagnostics.rs:874
+#: src/diagnostics.rs:900
 msgid "mains"
 msgstr ""
 
-#: src/diagnostics.rs:875 src/diagnostics.rs:880
+#: src/diagnostics.rs:901 src/diagnostics.rs:906
 msgid "battery"
 msgstr ""
 
-#: src/diagnostics.rs:929
+#: src/diagnostics.rs:955
 msgid "chunks dropped this session"
 msgstr ""
 
-#: src/diagnostics.rs:937
+#: src/diagnostics.rs:963
 msgid "no dictation yet"
 msgstr ""
 
-#: src/diagnostics.rs:940
+#: src/diagnostics.rs:966
 msgid "speech"
 msgstr ""
 
-#: src/diagnostics.rs:941
+#: src/diagnostics.rs:967
 msgid "no speech heard"
 msgstr ""
 
-#: src/diagnostics.rs:949
+#: src/diagnostics.rs:975
 msgid "offset"
 msgstr ""
 
-#: src/diagnostics.rs:951
+#: src/diagnostics.rs:977
 msgid "floor"
 msgstr ""
 
-#: src/diagnostics.rs:958
+#: src/diagnostics.rs:984
 msgid "Input method"
 msgstr ""
 
-#: src/diagnostics.rs:959
+#: src/diagnostics.rs:985
 msgid "Indicator host"
 msgstr ""
 
-#: src/diagnostics.rs:965
+#: src/diagnostics.rs:991
 msgid "active"
 msgstr ""
 
-#: src/diagnostics.rs:967
+#: src/diagnostics.rs:993
 msgid "set up, starts at the next login"
 msgstr ""
 
-#: src/diagnostics.rs:970
+#: src/diagnostics.rs:996
 msgid "not set up"
 msgstr ""
 
-#: src/diagnostics.rs:971
+#: src/diagnostics.rs:997
 msgid "turned off"
 msgstr ""
 
-#: src/diagnostics.rs:973
+#: src/diagnostics.rs:999
 msgid "locked by the administrator"
 msgstr ""
 
-#: src/diagnostics.rs:975
+#: src/diagnostics.rs:1001
 msgid "hidden by another copy"
 msgstr ""
 
-#: src/diagnostics.rs:977
+#: src/diagnostics.rs:1003
 msgid "another input method is in use"
 msgstr ""
 
-#: src/diagnostics.rs:978
+#: src/diagnostics.rs:1004
 msgid "not supported on this desktop"
 msgstr ""
 
-#: src/diagnostics.rs:980
+#: src/diagnostics.rs:1006
 msgid "failed"
 msgstr ""
 
-#: src/diagnostics.rs:989
+#: src/diagnostics.rs:1015
 msgid "gnome-shell did not answer"
 msgstr ""
 
-#: src/diagnostics.rs:993
+#: src/diagnostics.rs:1019
 msgid "installed since login, starts at the next one"
 msgstr ""
 
-#: src/diagnostics.rs:996
+#: src/diagnostics.rs:1022
 msgid "installed since login, not enabled"
 msgstr ""
 
-#: src/diagnostics.rs:999
+#: src/diagnostics.rs:1025
 msgid "myna-config package"
 msgstr ""
 
-#: src/diagnostics.rs:1000
+#: src/diagnostics.rs:1026
 msgid "Ubuntu package"
 msgstr ""
 
-#: src/diagnostics.rs:1001
+#: src/diagnostics.rs:1027
 msgid "development override"
 msgstr ""
 
-#: src/diagnostics.rs:1002
+#: src/diagnostics.rs:1028
 msgid "user copy"
 msgstr ""
 
-#: src/diagnostics.rs:1003
+#: src/diagnostics.rs:1029
 msgid "other system copy"
 msgstr ""
 
@@ -2434,7 +2436,7 @@ msgstr ""
 msgid "Tidying"
 msgstr ""
 
-#: src/myna_settings.rs:276
+#: src/myna_settings.rs:276 src/installed_models.rs:150
 msgid "Translation"
 msgstr ""
 
@@ -2535,6 +2537,54 @@ msgstr ""
 #. TRANSLATORS: Shown under "Install more models" while a model installs. {model} is a model family, such as "Whisper".
 #: src/model_family.rs:312
 msgid "Installing {model}…"
+msgstr ""
+
+#: src/installed_models.rs:82
+msgid "Speech recognition, with its GPU engine"
+msgstr ""
+
+#: src/installed_models.rs:84
+msgid "Speech recognition"
+msgstr ""
+
+#: src/installed_models.rs:114
+msgid "Text model"
+msgstr ""
+
+#: src/models_ui.rs:79
+msgid "Speech models"
+msgstr ""
+
+#: src/models_ui.rs:84
+msgid ""
+"A chain step whose model is removed stays and offers to install it again."
+msgstr ""
+
+#: src/models_ui.rs:87
+msgid "Add speech model…"
+msgstr ""
+
+#: src/models_ui.rs:88
+msgid "Add text model…"
+msgstr ""
+
+#. TRANSLATORS: {size} is a size on disk, such as "5.2 GB".
+#: src/models_ui.rs:207
+msgid "Models use {size} of disk in all."
+msgstr ""
+
+#. TRANSLATORS: {kind} says what a model is, such as "Translation" or "Speech recognition", and {size} its size on disk, such as "729 MB". The spaces around the dot are no-break spaces.
+#: src/models_ui.rs:229
+msgid "{kind}\\u{a0}·\\u{a0}{size}"
+msgstr ""
+
+#: src/models_ui.rs:245
+msgid "In use"
+msgstr ""
+
+#. TRANSLATORS: {model} names a model, such as "Whisper" or "English to Italiano".
+#: src/models_ui.rs:348
+msgid "Removing {model} failed"
 msgstr ""
 
 #: src/presentation.rs:47
