@@ -2184,6 +2184,18 @@ mod tests {
     }
 
     #[test]
+    fn a_snippets_change_reaches_the_live_cell() {
+        let saved = myna_core::Settings {
+            snippets: vec!["sign off => Best".into()],
+            ..Default::default()
+        };
+        let live = LiveSettings::new(&resolved(&Args::default(), &saved), Live::default());
+        assert_eq!(live.snippets.get(), vec!["sign off => Best".to_string()]);
+        live.apply(&resolved(&Args::default(), &unset()), "test");
+        assert!(live.snippets.get().is_empty());
+    }
+
+    #[test]
     fn a_flag_beats_the_setting() {
         let a = Args {
             language: Some("de".into()),

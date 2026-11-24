@@ -820,10 +820,6 @@ fn standing(
         Source::Unknown => None,
     };
     let own: Vec<&Entry> = inputs.catalog.iter().filter(|e| e.step.id == id).collect();
-    if id == ORIGINAL || id == TYPOGRAPHY {
-        // Whether a translation comes before it is the chain's to say.
-        return Standing::Ready;
-    }
     if [
         EMOJI, COMMANDS, SNIPPETS, CASING, ADDRESSES, NUMBERS, PROFANITY,
     ]
@@ -1130,6 +1126,17 @@ mod tests {
             let daemon = self.daemon.get_or_insert_with(Offered::default);
             daemon.models = models.iter().map(|s| (*s).to_owned()).collect();
             self
+        }
+    }
+
+    #[test]
+    fn steps_for_any_language_are_ready_wherever_they_are() {
+        let mut rig = Rig::new();
+        rig.source = Source::One("fr".into());
+        rig.catalog.clear();
+        for id in [ORIGINAL, TYPOGRAPHY] {
+            let row = rig.rows().into_iter().find(|r| r.id == id).unwrap();
+            assert_eq!(row.standing, Standing::Ready, "{id}");
         }
     }
 

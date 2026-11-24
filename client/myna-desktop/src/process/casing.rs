@@ -84,7 +84,8 @@ pub fn apply(text: &str) -> String {
     'words: while at < words.len() {
         for (name, case) in NAMES {
             let end = at + name.len();
-            if end > words.len() || bare[at..end] != **name {
+            let said = bare.get(at..end).unwrap_or_default();
+            if !said.iter().map(String::as_str).eq(name.iter().copied()) {
                 continue;
             }
             // The name's last word ends a phrase ("camel case."): nothing to case.
@@ -115,7 +116,8 @@ pub fn apply(text: &str) -> String {
         out.push(words[at].to_owned());
         at += 1;
     }
-    if out.len() == words.len() && out.iter().zip(&words).all(|(o, w)| o == w) {
+    // Untouched text keeps its spacing exactly.
+    if out.len() == words.len() {
         return text.to_owned();
     }
     out.join(" ")
@@ -151,6 +153,12 @@ mod tests {
             "Call getUserName, then return."
         );
         assert_eq!(apply("Set snake case max size."), "Set max_size.");
+    }
+
+    #[test]
+    fn text_with_no_casing_keeps_its_spacing() {
+        assert_eq!(apply("  a   b "), "  a   b ");
+        assert_eq!(apply("x  snake case a b"), "x a_b");
     }
 
     #[test]

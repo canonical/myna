@@ -43,12 +43,13 @@ fn opens(before: Option<char>) -> bool {
     before.is_none_or(|c| c.is_whitespace() || "([{\u{2014}\u{2013}-".contains(c))
 }
 
-/// Whether a single quote further on closes one: "'really'" quotes,
-/// "'em" and "'90s" only leave letters out.
-fn closes_later(rest: &[char]) -> bool {
+/// Whether a single quote after the one `from` starts with closes it:
+/// "'really'" quotes, "'em" and "'90s" only leave letters out.
+fn closes_later(from: &[char]) -> bool {
+    let rest = from.get(1..).unwrap_or_default();
     rest.iter()
-        .enumerate()
-        .any(|(i, c)| *c == '\'' && rest.get(i + 1).is_none_or(|n| !n.is_alphanumeric()))
+        .zip(rest.iter().skip(1).map(Some).chain([None]))
+        .any(|(c, next)| *c == '\'' && next.is_none_or(|n| !n.is_alphanumeric()))
 }
 
 pub fn apply(text: &str, style: Style) -> String {
@@ -60,12 +61,13 @@ pub fn apply(text: &str, style: Style) -> String {
         let after = chars.get(i + 1).copied();
         match c {
             '\'' => {
-                let letter = |c: Option<char>| c.is_some_and(char::is_alphanumeric);
-                if letter(before) || !opens(before) {
+                // After a letter or a mark it is an apostrophe ("it's"); it
+                // opens a quote only where a later one closes it.
+                if !opens(before) {
                     out.push('\u{2019}');
                 } else if after.is_some_and(char::is_alphabetic)
                     && style == Style::English
-                    && closes_later(&chars[i + 1..])
+                    && closes_later(&chars[i..])
                 {
                     out.push('\u{2018}');
                 } else {
@@ -77,9 +79,6 @@ pub fn apply(text: &str, style: Style) -> String {
                     if opens(before) {
                         out.push_str(open);
                     } else {
-                        if style == Style::French && out.ends_with(' ') {
-                            out.pop();
-                        }
                         out.push_str(close);
                     }
                 }
@@ -158,6 +157,42 @@ mod tests {
             apply("Dice \"sì\" - l'ho...", Style::Other),
             "Dice \"sì\" \u{2013} l\u{2019}ho\u{2026}"
         );
+    }
+
+    #[test]
+    fn each_language_has_its_style() {
+        assert_eq!(Style::of(Some("en")), Style::English);
+        assert_eq!(Style::of(Some("fr")), Style::French);
+        assert_eq!(Style::of(Some("de")), Style::German);
+        assert_eq!(Style::of(Some("it")), Style::Other);
+        assert_eq!(Style::of(None), Style::Other);
+    }
+
+    #[test]
+    fn only_french_spaces_its_marks() {
+        for style in [Style::English, Style::German, Style::Other] {
+            assert_eq!(
+                apply("Wait! Ok: yes? No; fine", style),
+                "Wait! Ok: yes? No; fine"
+            );
+        }
+        assert_eq!(
+            apply("Il dit \" oui\".", Style::French),
+            "Il dit \u{ab}\u{a0}oui\u{a0}\u{bb}."
+        );
+    }
+
+    #[test]
+    fn an_apostrophe_later_in_a_word_does_not_close_a_quote() {
+        assert_eq!(
+            apply("give 'em what it's worth", Style::English),
+            "give \u{2019}em what it\u{2019}s worth"
+        );
+        assert_eq!(
+            apply("'Really' good", Style::English),
+            "\u{2018}Really\u{2019} good"
+        );
+        assert_eq!(apply("say 'hi'", Style::English), "say \u{2018}hi\u{2019}");
     }
 
     #[test]

@@ -284,6 +284,11 @@ mod tests {
         );
         assert_eq!(apply("Format as a list."), "");
         assert_eq!(
+            apply("A. New paragraph. B. C. Format as a list."),
+            "A.\n\n- B\n- C",
+            "the break before the items stays"
+        );
+        assert_eq!(
             apply("A. B. Format as a list. Scratch that. C."),
             "C.",
             "scratch takes back the whole list"

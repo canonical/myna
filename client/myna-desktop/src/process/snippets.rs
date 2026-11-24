@@ -71,7 +71,7 @@ pub fn apply(text: &str, entries: &[String], now: impl Fn() -> Now) -> String {
     let mut clock: Option<Now> = None;
     while at < spans.len() {
         let (s, e) = spans[at];
-        if key(&text[s..e]) != "insert" || s < copied {
+        if key(&text[s..e]) != "insert" {
             at += 1;
             continue;
         }
@@ -194,6 +194,18 @@ mod tests {
         );
         assert!(!now.date.starts_with(' '));
         assert_eq!(now.time.len(), 5, "{}", now.time);
+    }
+
+    #[test]
+    fn a_clock_that_could_not_be_read_types_what_was_said() {
+        let unread = || Now {
+            date: String::new(),
+            time: String::new(),
+        };
+        assert_eq!(
+            apply("Due insert the date.", &[], unread),
+            "Due insert the date."
+        );
     }
 
     #[test]

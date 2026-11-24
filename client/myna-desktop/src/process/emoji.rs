@@ -54,15 +54,15 @@ pub fn apply(text: &str) -> String {
         .collect();
     let mut out = String::with_capacity(text.len());
     let mut copied = 0;
+    // The first word a name may start at: none of what is already typed.
+    let mut free = 0;
     for (at, &(start, end)) in spans.iter().enumerate() {
         let word = &text[start..end];
         let bare = word.trim_matches(|c: char| !c.is_alphanumeric());
         if !bare.eq_ignore_ascii_case("emoji") {
             continue;
         }
-        let first = at
-            .saturating_sub(MAX_WORDS)
-            .max(spans_before(&spans, copied));
+        let first = at.saturating_sub(MAX_WORDS).max(free);
         let found = (first..at).find_map(|from| {
             let said = words(&text[spans[from].0..spans[at - 1].1]).join(" ");
             names().get(&said).map(|emoji| (from, *emoji))
@@ -79,18 +79,11 @@ pub fn apply(text: &str) -> String {
             out.push_str(emoji);
             out.push_str(&word[tail_at..]);
             copied = end;
+            free = at + 1;
         }
     }
     out.push_str(&text[copied..]);
     out
-}
-
-/// The index of the first word span at or after byte `copied`.
-fn spans_before(spans: &[(usize, usize)], copied: usize) -> usize {
-    spans
-        .iter()
-        .position(|&(start, _)| start >= copied)
-        .unwrap_or(spans.len())
 }
 
 #[cfg(test)]
@@ -108,6 +101,11 @@ mod tests {
     fn a_shortcode_is_a_name_too() {
         assert_eq!(apply("see you smile emoji"), "see you 😄");
         assert_eq!(apply("tada emoji we shipped"), "🎉 we shipped");
+    }
+
+    #[test]
+    fn a_shortcode_said_with_spaces_for_underscores_is_found() {
+        assert_eq!(apply("heart eyes emoji"), "\u{1f60d}");
     }
 
     #[test]
