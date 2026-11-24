@@ -3,7 +3,9 @@
 # LibriSpeech clips, and released. A release tag releases to edge; a manual run
 # can release to a branch such as edge/rc1 to try a candidate as a store
 # refresh before tagging it, and a tag whose commit was never a candidate is
-# refused before anything is built.
+# refused before anything is built. Each night main is released to
+# edge/main, unless it has not moved since the last nightly that did, and the
+# Testflinger lab run is started on it: the lab tests main, not the last tag.
 #
 # Publishing needs the store-edge environment's SNAPCRAFT_STORE_CREDENTIALS
 # (snapcraft export-login scoped to these snaps), so it only happens in a
@@ -28,6 +30,9 @@ on:
         default: edge
   push:
     tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+  # Four hours before the lab: a tag's build and publish take that long.
+  schedule:
+    - cron: "37 22 * * *"
 
 jobs:
   # A release tag releases only a commit already tried as a candidate: a
@@ -49,9 +54,29 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: dev/release-candidate.sh "$GITHUB_REPOSITORY" "$GITHUB_SHA"
 
+  # A nightly whose commit the last successful nightly already released
+  # builds nothing.
+  fresh:
+    if: ${{ github.event_name == 'schedule' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+    outputs:
+      stale: ${{ steps.last.outputs.stale }}
+    steps:
+      - id: last
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          last=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/snaps.yml/runs?event=schedule&status=success&per_page=1" \
+              --jq '.workflow_runs[0].head_sha // ""')
+          echo "last successful nightly: ${last:-none}"
+          if [ "$last" = "$GITHUB_SHA" ]; then echo stale=true; else echo stale=false; fi >> "$GITHUB_OUTPUT"
+
   build:
-    needs: candidate
-    if: ${{ !cancelled() && needs.candidate.result != 'failure' }}
+    needs: [candidate, fresh]
+    if: ${{ !cancelled() && needs.candidate.result != 'failure' && needs.fresh.outputs.stale != 'true' }}
     strategy:
       fail-fast: false
       matrix:
@@ -204,8 +229,8 @@ jobs:
           path: bundle/
 
   publish:
-    needs: [candidate, build]
-    if: ${{ !cancelled() && needs.candidate.result != 'failure' && vars.SNAP_PUBLISH == 'true' && (github.event_name == 'push' || inputs.publish) }}
+    needs: [candidate, fresh, build]
+    if: ${{ !cancelled() && needs.candidate.result != 'failure' && needs.fresh.outputs.stale != 'true' && vars.SNAP_PUBLISH == 'true' && (github.event_name != 'workflow_dispatch' || inputs.publish) }}
     strategy:
       fail-fast: false
       matrix:
@@ -224,7 +249,7 @@ jobs:
       - name: Upload and release
         env:
           SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
-          CHANNEL: ${{ inputs.channel || 'edge' }}
+          CHANNEL: ${{ inputs.channel || (github.event_name == 'schedule' && 'edge/main') || 'edge' }}
         run: |
           sudo apt-get update && sudo apt-get install -y squashfs-tools
           sudo snap install snapcraft --classic
@@ -232,9 +257,10 @@ jobs:
 
   # A candidate on a branch is tried as the upgrade users will get: the
   # store's edge snaps refreshed to it, in the e2e VMs (e2e-tests/suites/upgrade.sh).
+  # edge/main is the nightly's, never a candidate.
   upgrade-e2e:
     needs: publish
-    if: ${{ !cancelled() && needs.publish.result == 'success' && inputs.publish && !contains(fromJSON('["edge", "latest/edge"]'), inputs.channel) }}
+    if: ${{ !cancelled() && needs.publish.result == 'success' && inputs.publish && !contains(fromJSON('["edge", "latest/edge", "edge/main", "latest/edge/main"]'), inputs.channel) }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -244,3 +270,16 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           CHANNEL: ${{ inputs.channel }}
         run: gh workflow run e2e.yml -R "$GITHUB_REPOSITORY" --ref "$GITHUB_REF_NAME" -f upgrade_channel="latest/${CHANNEL#latest/}"
+
+  # The lab installs latest/edge/main, so it runs once every snap is there.
+  lab:
+    needs: publish
+    if: ${{ !cancelled() && needs.publish.result == 'success' && github.event_name == 'schedule' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run testflinger.yml -R "$GITHUB_REPOSITORY" --ref "$GITHUB_REF_NAME"
