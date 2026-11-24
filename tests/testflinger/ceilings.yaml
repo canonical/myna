@@ -7,19 +7,26 @@ myna-funasr: {zh: 20, ja: 20, ko: 20}
 myna-indicconformer: {hi: 25}
 
 # Finalize latency in seconds, per machine (hostname) and row: latency only
-# compares on one machine. First set at 1.5x the 2026-11-24 baseline
-# (run 45355217601); tighten from a week of nightlies. p95 only where a
-# row times the 60 clips it needs.
+# compares on one machine. Two runs on 2026-11-24 (45355217601, 45361197241)
+# agreed within 3% on the 60-clip rows, so those sit at 1.25x the slower
+# run; rows of 10-30 clips, and a machine with one run so far, at 1.5x.
+# p95 only where a row times the 60 clips it needs.
 latency:
   hp-elitedesk-805-g8-small-form-factor-pc-c28937:
-    myna-parakeet/cpu/parakeet-tdt-0.6b-v3/batch: {median: 0.5, p95: 1.2}
-    myna-parakeet/cpu/parakeet-tdt-0.6b-v3/streaming@realtime: {median: 0.45, p95: 0.9}
+    myna-parakeet/cpu/parakeet-tdt-0.6b-v3/batch: {median: 0.45, p95: 1.0}
+    myna-parakeet/cpu/parakeet-tdt-0.6b-v3/streaming@realtime: {median: 0.4, p95: 0.8}
     myna-funasr/cpu/sensevoice/batch: {median: 0.55}
     myna-indicconformer/cpu/indicconformer-hi/batch: {median: 0.5}
     myna-indicconformer/cpu/indicconformer-hi/streaming@realtime: {median: 0.5}
   hp-z2-mini-g9-workstation-desktop-pc-c29946:
-    myna-parakeet/cpu/parakeet-tdt-0.6b-v3/batch: {median: 0.35, p95: 0.7}
-    myna-parakeet/cpu/parakeet-tdt-0.6b-v3/streaming@realtime: {median: 0.3, p95: 0.5}
+    myna-parakeet/cpu/parakeet-tdt-0.6b-v3/batch: {median: 0.28, p95: 0.6}
+    myna-parakeet/cpu/parakeet-tdt-0.6b-v3/streaming@realtime: {median: 0.25, p95: 0.42}
     myna-funasr/cpu/sensevoice/batch: {median: 0.55}
-    myna-indicconformer/cpu/indicconformer-hi/batch: {median: 0.35}
+    myna-indicconformer/cpu/indicconformer-hi/batch: {median: 0.36}
     myna-indicconformer/cpu/indicconformer-hi/streaming@realtime: {median: 0.35}
+  hp-z2-sff-g8-workstation-c28727:
+    myna-parakeet/cpu/parakeet-tdt-0.6b-v3/batch: {median: 0.36, p95: 0.95}
+    myna-parakeet/cpu/parakeet-tdt-0.6b-v3/streaming@realtime: {median: 0.31, p95: 0.6}
+    myna-funasr/cpu/sensevoice/batch: {median: 0.45}
+    myna-indicconformer/cpu/indicconformer-hi/batch: {median: 0.41}
+    myna-indicconformer/cpu/indicconformer-hi/streaming@realtime: {median: 0.41}
