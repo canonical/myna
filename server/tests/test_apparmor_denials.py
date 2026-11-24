@@ -122,6 +122,12 @@ RTKIT = (
         kernel("snap.myna.hud", "/etc/vulkan/implicit_layer.d/", "myna-hud"),
         kernel("snap.myna-whisper.server", "/proc/1234723/environ"),
         PORTAL,
+        kernel("snap.myna-text.server", "/sys/bus/pci/devices/", "python3"),
+        kernel(
+            "snap.myna-text.server",
+            "/sys/devices/pci0000:00/0000:00:01.3/0000:04:00.0/vendor",
+            "python3",
+        ),
     ],
 )
 def test_known_harmless_denials_are_allowed(line):
@@ -140,6 +146,8 @@ def test_known_harmless_denials_are_allowed(line):
         # Another process's environment, not its own.
         kernel("snap.myna-whisper.server", "/proc/1/environ"),
         kernel("snap.myna-whisper.server", "/proc/1234723/cmdline"),
+        kernel("snap.myna-text.server", "/sys/bus/usb/devices/", "python3"),
+        kernel("snap.myna-translation.server", "/sys/bus/pci/devices/", "python3"),
         PORTAL.replace("snap.myna.hud", "snap.myna.myna"),
         PORTAL.replace('member="Register"', 'member="Unregister"'),
         # Capture falling back to RealtimeKit has lost realtime (myna#76).
