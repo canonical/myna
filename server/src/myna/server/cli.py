@@ -76,6 +76,11 @@ def build_parser() -> argparse.ArgumentParser:
         "fake: one unstable hypothesis ahead of the first segment)",
     )
     parser.add_argument(
+        "--transcript",
+        default="",
+        help="fake: hear this text as one segment instead of the default script",
+    )
+    parser.add_argument(
         "--stream-cadence-s",
         type=float,
         default=None,
@@ -194,9 +199,10 @@ def build_adapter(args: argparse.Namespace) -> Adapter:
         # wire so transport/contract clients (e.g. the Rust orchestrator) can
         # integration-test without a GPU or model. See myna.testbed.fake. It
         # takes keywords (and ignores them) so those clients cover that too.
-        from myna.testbed.fake import FakeAdapter
+        from myna.testbed.fake import FakeAdapter, script_saying
 
-        return FakeAdapter(streaming=args.streaming, keywords=True)
+        script = script_saying(args.transcript) if args.transcript else None
+        return FakeAdapter(script=script, streaming=args.streaming, keywords=True)
 
     if args.adapter == "whisper":
         from myna.testbed.whisper import (

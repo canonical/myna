@@ -1,7 +1,8 @@
 #!/bin/bash -eu
 # `snap set myna-fake-backend streaming=true|false`: serve the streaming script
 # (one unstable hypothesis, which a client in streaming mode shows as preedit)
-# or the batch one. The server reads the option at start, so restart it.
+# or the batch one; `transcript=TEXT` hears TEXT as one segment (empty: the
+# default script). The server reads the options at start, so restart it.
 case "$(snapctl get streaming)" in
   "" | true | false) ;;
   *) echo "streaming must be true or false" >&2; exit 1 ;;

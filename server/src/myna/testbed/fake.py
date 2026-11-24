@@ -54,6 +54,17 @@ def default_script() -> tuple[ScriptStep, ...]:
     )
 
 
+def script_saying(text: str) -> tuple[ScriptStep, ...]:
+    """A session that hears ``text`` as one segment: the E2E suites dictate
+    French, Chinese or Farsi through it without a model or audio of that
+    language."""
+    return (
+        ScriptStep(0.0, TranscriptionProgress(phase=PHASE_PREPARING)),
+        ScriptStep(0.05, TranscriptionProgress(phase=PHASE_READY)),
+        ScriptStep(0.05, TranscriptionFinal(text=text)),
+    )
+
+
 def streaming_script() -> tuple[ScriptStep, ...]:
     """The default script with one unstable hypothesis ahead of the first
     committed segment, as a streaming engine sends: what a client in streaming

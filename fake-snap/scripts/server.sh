@@ -7,8 +7,12 @@ export PYTHONPATH="$SNAP/usr/local/lib/python3.12/dist-packages"
 # streaming script, for the e2e preedit case.
 streaming=()
 [ "$(snapctl get streaming)" = true ] && streaming=(--streaming)
+# `snap set myna-fake-backend transcript='Bonjour à tous.'`: hear that text
+# as one segment, for the suites that dictate another language.
+transcript=$(snapctl get transcript)
 exec /usr/bin/python3 -m myna.server \
   --adapter fake \
   --socket "$SNAP_COMMON/share/provider/myna.sock" \
   --share-provider \
+  --transcript "$transcript" \
   "${streaming[@]}"

@@ -62,6 +62,28 @@ def test_fake_adapter_streams_only_with_streaming():
     assert streaming.capabilities().streaming is True
 
 
+def test_the_fake_says_a_transcript_it_is_given():
+    from myna.core.events import TranscriptionFinal
+    from myna.testbed.fake import script_saying
+
+    fake = build_adapter(parse("--adapter", "fake", "--transcript", "Bonjour à tous."))
+    finals = [s.event.text for s in fake._script if isinstance(s.event, TranscriptionFinal)]
+    assert finals == ["Bonjour à tous."]
+    assert fake._script == script_saying("Bonjour à tous.")
+    default = build_adapter(parse("--adapter", "fake"))
+    assert [s.event.text for s in default._script if isinstance(s.event, TranscriptionFinal)] == [
+        "The quick brown fox",
+        "jumps over the lazy dog.",
+    ]
+
+
+def test_an_empty_transcript_is_the_default_script():
+    from myna.testbed.fake import default_script
+
+    fake = build_adapter(parse("--adapter", "fake", "--transcript", ""))
+    assert fake._script == default_script()
+
+
 def test_the_served_fake_takes_keywords_so_wire_clients_can_cover_them():
     assert build_adapter(parse("--adapter", "fake")).capabilities().keywords is True
 
