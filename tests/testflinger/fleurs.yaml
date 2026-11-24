@@ -1,27 +1,26 @@
-# The nightly accuracy gate: the FLEURS smoke tier through each backend as
-# latest/edge ships it, scored only on the languages the backend claims.
-# Gated by ceilings.yaml; run by accuracy.sh.
+# The nightly lab gate: each backend as latest/edge ships it, on the
+# languages Myna recommends it for (client/myna-core/src/language.rs), batch
+# at full speed and streaming on the capture clock, the only pace at which
+# its latency is a user's. Gated by ceilings.yaml; run by accuracy.sh.
 manifest: out/fleurs-smoke/manifest.json
 out: out/fleurs.jsonl
 sweep_budget_seconds: 3600
 repeats: 1
-warmup_clips: 0
-pace: [max]
+# Kept out of every aggregate: the first decodes after a load are slow for
+# reasons no user waits on twice.
+warmup_clips: 2
+pace: [realtime]
 targets:
+  # Sixty clips: the fewest a p95 is read from.
   - snap: myna-parakeet
     channel: latest/edge
     components: [model-parakeet-int8]
     models: [parakeet-tdt-0.6b-v3]
     languages: [en, de, fr, es, it, ru]
-  - snap: myna-whisper
-    channel: latest/edge
-    components: [model-small]
-    models: [small]
-    languages: [en, de, fr, es, it, ru, zh, ja, ko]
   - snap: myna-funasr
     channel: latest/edge
     components: [model-sensevoice]
-    languages: [en, zh, ja, ko]
+    languages: [zh, ja, ko]
   - snap: myna-indicconformer
     channel: latest/edge
     components: [model-indicconformer-hi]
