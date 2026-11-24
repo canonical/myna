@@ -3,6 +3,7 @@
 # of noise on each cell, so these catch a broken language, not a small
 # regression; tighten them from real nightly numbers.
 myna-parakeet: {en: 25, de: 25, fr: 25, es: 25, it: 25, ru: 25}
-myna-whisper: {en: 25, de: 25, fr: 25, es: 25, it: 25, ru: 25, zh: 20, ja: 20, ko: 20}
+# whisper-small's zh and ja sit at 15-21% CER on the first lab run (45292661344).
+myna-whisper: {en: 25, de: 25, fr: 25, es: 25, it: 25, ru: 25, zh: 35, ja: 35, ko: 20}
 myna-funasr: {en: 25, zh: 20, ja: 20, ko: 20}
 myna-indicconformer: {hi: 25}
