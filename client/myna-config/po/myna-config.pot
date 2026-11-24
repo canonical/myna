@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-24 10:49+0000\n"
+"POT-Creation-Date: 2026-11-24 13:41+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -110,7 +110,7 @@ msgid "Model"
 msgstr ""
 
 #: data/main-window.blp:46 src/app.rs:6190 src/diagnostics.rs:608
-#: src/myna_settings.rs:268
+#: src/myna_settings.rs:269
 msgid "Processing"
 msgstr ""
 
@@ -270,11 +270,11 @@ msgstr ""
 msgid "Most languages, with uneven accuracy"
 msgstr ""
 
-#: src/app.rs:3856 src/myna_settings.rs:198
+#: src/app.rs:3856 src/myna_settings.rs:199
 msgid "As you speak"
 msgstr ""
 
-#: src/app.rs:3857 src/myna_settings.rs:199
+#: src/app.rs:3857 src/myna_settings.rs:200
 msgid "When you stop"
 msgstr ""
 
@@ -518,360 +518,381 @@ msgstr ""
 msgid "Show what Myna typed"
 msgstr ""
 
-#: src/processing_steps.rs:43
+#: src/processing_steps.rs:45
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:152
+msgid "Snippets"
+msgstr ""
+
+#: src/processing_steps.rs:48
+msgid ""
+"Say “insert” and a snippet's name to type it, or “insert today's date”. Add "
+"snippets under General. English only."
+msgstr ""
+
+#: src/processing_steps.rs:64
+msgid "Spoken commands"
+msgstr ""
+
+#: src/processing_steps.rs:67
+msgid ""
+"Say “scratch that”, “new line”, “new paragraph”, “delete last word” or "
+"“format as a list” on its own. Nothing is typed until you stop. English only."
+msgstr ""
+
+#: src/processing_steps.rs:83
 msgid "Spoken emoji"
 msgstr ""
 
-#: src/processing_steps.rs:45
+#: src/processing_steps.rs:85
 msgid "Say an emoji's name, then “emoji”, to type it. English names only."
 msgstr ""
 
 #. TRANSLATORS: credits the library and name lists behind spoken emoji.
-#: src/processing_steps.rs:57
+#: src/processing_steps.rs:97
 msgid ""
 "emojis (MIT); Unicode emoji names (Unicode-3.0); gemoji shortcodes (MIT)"
 msgstr ""
 
-#: src/processing_steps.rs:65
+#: src/processing_steps.rs:105
 msgid "Keep the original"
 msgstr ""
 
-#: src/processing_steps.rs:67
+#: src/processing_steps.rs:107
 msgid "Types what you said, with its translation after it in brackets."
 msgstr ""
 
 #. TRANSLATORS: what is said in the example of "Keep the original".
-#: src/processing_steps.rs:72
+#: src/processing_steps.rs:112
 msgid "Where is the station?"
 msgstr ""
 
 #. TRANSLATORS: what is typed in the example of "Keep the original": the same sentence, then a translation of it into another language in brackets.
-#: src/processing_steps.rs:74
+#: src/processing_steps.rs:114
 msgid "Where is the station? (Où est la gare ?)"
 msgstr ""
 
-#: src/processing_steps.rs:83
+#: src/processing_steps.rs:123
 msgid "Chinese script"
 msgstr ""
 
-#: src/processing_steps.rs:86
+#: src/processing_steps.rs:126
 msgid "Types Chinese in the characters you choose. Other text is left alone."
 msgstr ""
 
 #. TRANSLATORS: credits the libraries and word lists behind Chinese script conversion.
-#: src/processing_steps.rs:92
+#: src/processing_steps.rs:132
 msgid "opencc-jieba-rs (MIT); OpenCC conversion lists (Apache-2.0)"
 msgstr ""
 
-#: src/processing_steps.rs:212
+#: src/processing_steps.rs:252
 msgid "Chinese (Simplified)"
 msgstr ""
 
-#: src/processing_steps.rs:213
+#: src/processing_steps.rs:253
 msgid "Chinese (Traditional)"
 msgstr ""
 
-#: src/processing_steps.rs:225
+#: src/processing_steps.rs:265
 msgid "Afrikaans"
 msgstr ""
 
-#: src/processing_steps.rs:226
+#: src/processing_steps.rs:266
 msgid "Arabic"
 msgstr ""
 
-#: src/processing_steps.rs:227
+#: src/processing_steps.rs:267
 msgid "Azerbaijani"
 msgstr ""
 
-#: src/processing_steps.rs:228
+#: src/processing_steps.rs:268
 msgid "Belarusian"
 msgstr ""
 
-#: src/processing_steps.rs:229
+#: src/processing_steps.rs:269
 msgid "Bulgarian"
 msgstr ""
 
-#: src/processing_steps.rs:230
+#: src/processing_steps.rs:270
 msgid "Bengali"
 msgstr ""
 
-#: src/processing_steps.rs:231
+#: src/processing_steps.rs:271
 msgid "Bosnian"
 msgstr ""
 
-#: src/processing_steps.rs:232
+#: src/processing_steps.rs:272
 msgid "Catalan"
 msgstr ""
 
-#: src/processing_steps.rs:233
+#: src/processing_steps.rs:273
 msgid "Czech"
 msgstr ""
 
-#: src/processing_steps.rs:234
+#: src/processing_steps.rs:274
 msgid "Danish"
 msgstr ""
 
-#: src/processing_steps.rs:235
+#: src/processing_steps.rs:275
 msgid "German"
 msgstr ""
 
-#: src/processing_steps.rs:236
+#: src/processing_steps.rs:276
 msgid "Greek"
 msgstr ""
 
-#: src/processing_steps.rs:237
+#: src/processing_steps.rs:277
 msgid "English"
 msgstr ""
 
-#: src/processing_steps.rs:238
+#: src/processing_steps.rs:278
 msgid "Spanish"
 msgstr ""
 
-#: src/processing_steps.rs:239
+#: src/processing_steps.rs:279
 msgid "Estonian"
 msgstr ""
 
-#: src/processing_steps.rs:240
+#: src/processing_steps.rs:280
 msgid "Basque"
 msgstr ""
 
-#: src/processing_steps.rs:241
+#: src/processing_steps.rs:281
 msgid "Persian"
 msgstr ""
 
-#: src/processing_steps.rs:242
+#: src/processing_steps.rs:282
 msgid "Finnish"
 msgstr ""
 
-#: src/processing_steps.rs:243
+#: src/processing_steps.rs:283
 msgid "French"
 msgstr ""
 
-#: src/processing_steps.rs:244
+#: src/processing_steps.rs:284
 msgid "Galician"
 msgstr ""
 
-#: src/processing_steps.rs:245
+#: src/processing_steps.rs:285
 msgid "Gujarati"
 msgstr ""
 
-#: src/processing_steps.rs:246
+#: src/processing_steps.rs:286
 msgid "Hebrew"
 msgstr ""
 
-#: src/processing_steps.rs:247
+#: src/processing_steps.rs:287
 msgid "Hindi"
 msgstr ""
 
-#: src/processing_steps.rs:248
+#: src/processing_steps.rs:288
 msgid "Croatian"
 msgstr ""
 
-#: src/processing_steps.rs:249
+#: src/processing_steps.rs:289
 msgid "Hungarian"
 msgstr ""
 
-#: src/processing_steps.rs:250
+#: src/processing_steps.rs:290
 msgid "Indonesian"
 msgstr ""
 
-#: src/processing_steps.rs:251
+#: src/processing_steps.rs:291
 msgid "Icelandic"
 msgstr ""
 
-#: src/processing_steps.rs:252
+#: src/processing_steps.rs:292
 msgid "Italian"
 msgstr ""
 
-#: src/processing_steps.rs:253
+#: src/processing_steps.rs:293
 msgid "Japanese"
 msgstr ""
 
-#: src/processing_steps.rs:254
+#: src/processing_steps.rs:294
 msgid "Kannada"
 msgstr ""
 
-#: src/processing_steps.rs:255
+#: src/processing_steps.rs:295
 msgid "Korean"
 msgstr ""
 
-#: src/processing_steps.rs:256
+#: src/processing_steps.rs:296
 msgid "Lithuanian"
 msgstr ""
 
-#: src/processing_steps.rs:257
+#: src/processing_steps.rs:297
 msgid "Latvian"
 msgstr ""
 
-#: src/processing_steps.rs:258
+#: src/processing_steps.rs:298
 msgid "Malayalam"
 msgstr ""
 
-#: src/processing_steps.rs:259
+#: src/processing_steps.rs:299
 msgid "Marathi"
 msgstr ""
 
-#: src/processing_steps.rs:260
+#: src/processing_steps.rs:300
 msgid "Malay"
 msgstr ""
 
-#: src/processing_steps.rs:261
+#: src/processing_steps.rs:301
 msgid "Norwegian Bokmål"
 msgstr ""
 
-#: src/processing_steps.rs:262
+#: src/processing_steps.rs:302
 msgid "Dutch"
 msgstr ""
 
-#: src/processing_steps.rs:263
+#: src/processing_steps.rs:303
 msgid "Polish"
 msgstr ""
 
-#: src/processing_steps.rs:264
+#: src/processing_steps.rs:304
 msgid "Portuguese"
 msgstr ""
 
-#: src/processing_steps.rs:265
+#: src/processing_steps.rs:305
 msgid "Romanian"
 msgstr ""
 
-#: src/processing_steps.rs:266
+#: src/processing_steps.rs:306
 msgid "Russian"
 msgstr ""
 
-#: src/processing_steps.rs:267
+#: src/processing_steps.rs:307
 msgid "Slovak"
 msgstr ""
 
-#: src/processing_steps.rs:268
+#: src/processing_steps.rs:308
 msgid "Slovenian"
 msgstr ""
 
-#: src/processing_steps.rs:269
+#: src/processing_steps.rs:309
 msgid "Albanian"
 msgstr ""
 
-#: src/processing_steps.rs:270
+#: src/processing_steps.rs:310
 msgid "Serbian"
 msgstr ""
 
-#: src/processing_steps.rs:271
+#: src/processing_steps.rs:311
 msgid "Swedish"
 msgstr ""
 
-#: src/processing_steps.rs:272
+#: src/processing_steps.rs:312
 msgid "Tamil"
 msgstr ""
 
-#: src/processing_steps.rs:273
+#: src/processing_steps.rs:313
 msgid "Telugu"
 msgstr ""
 
-#: src/processing_steps.rs:274
+#: src/processing_steps.rs:314
 msgid "Thai"
 msgstr ""
 
-#: src/processing_steps.rs:275
+#: src/processing_steps.rs:315
 msgid "Tagalog"
 msgstr ""
 
-#: src/processing_steps.rs:276
+#: src/processing_steps.rs:316
 msgid "Turkish"
 msgstr ""
 
-#: src/processing_steps.rs:277
+#: src/processing_steps.rs:317
 msgid "Uyghur"
 msgstr ""
 
-#: src/processing_steps.rs:278
+#: src/processing_steps.rs:318
 msgid "Ukrainian"
 msgstr ""
 
-#: src/processing_steps.rs:279
+#: src/processing_steps.rs:319
 msgid "Urdu"
 msgstr ""
 
-#: src/processing_steps.rs:280
+#: src/processing_steps.rs:320
 msgid "Vietnamese"
 msgstr ""
 
-#: src/processing_steps.rs:281
+#: src/processing_steps.rs:321
 msgid "Chinese"
 msgstr ""
 
 #. TRANSLATORS: {what} names a model to install, such as "the French model"; {size} is its download size.
-#: src/processing_steps.rs:366
+#: src/processing_steps.rs:406
 msgid "Needs {what} ({size})"
 msgstr ""
 
-#: src/processing_steps.rs:373
+#: src/processing_steps.rs:413
 msgid "Getting the model ready"
 msgstr ""
 
 #. TRANSLATORS: {n} is a size in megabytes, such as "24".
-#: src/processing_steps.rs:390
+#: src/processing_steps.rs:430
 msgid "{n} MB"
 msgstr ""
 
-#: src/processing_steps.rs:452 src/processing_ui.rs:223
-#: src/myna_settings.rs:213
+#: src/processing_steps.rs:492 src/processing_ui.rs:223
+#: src/myna_settings.rs:214
 msgid "Fitted to the field"
 msgstr ""
 
-#: src/processing_steps.rs:460 src/processing_ui.rs:225
+#: src/processing_steps.rs:500 src/processing_ui.rs:225
 msgid ""
 "No capital or full stop in an address, and no capital where you carry on a "
 "sentence."
 msgstr ""
 
-#: src/processing_steps.rs:690 src/chains_view.rs:167
+#: src/processing_steps.rs:730 src/chains_view.rs:167
 msgid "Applies when the text is English"
 msgstr ""
 
-#: src/processing_steps.rs:696 src/chains_view.rs:170
+#: src/processing_steps.rs:736 src/chains_view.rs:170
 msgid "Applies when the text is Chinese"
 msgstr ""
 
-#: src/processing_steps.rs:703 src/step_catalog.rs:382
+#: src/processing_steps.rs:743 src/step_catalog.rs:382
 #: src/processing_ui.rs:1502
 msgid "Needs a single dictation language"
 msgstr ""
 
-#: src/processing_steps.rs:708 src/chains_view.rs:169
+#: src/processing_steps.rs:748 src/chains_view.rs:169
 msgid "The text is already in that language"
 msgstr ""
 
 #. TRANSLATORS: {language} is a language name, such as "English".
-#: src/processing_steps.rs:719 src/step_catalog.rs:313
+#: src/processing_steps.rs:759 src/step_catalog.rs:313
 msgid "Applies when the text is {language}"
 msgstr ""
 
 #. TRANSLATORS: {from} and {to} are language names, such as "فارسی" and "Français".
-#: src/processing_steps.rs:739
+#: src/processing_steps.rs:779
 msgid "No model translates {from} to {to} yet"
 msgstr ""
 
 #. TRANSLATORS: {language} is a language name; this completes "Needs the French model".
-#: src/processing_steps.rs:783
+#: src/processing_steps.rs:823
 msgid "the {language} model"
 msgstr ""
 
 #. TRANSLATORS: {step} is a step's name; this completes "Needs the Tidy up speech model".
-#: src/processing_steps.rs:802
+#: src/processing_steps.rs:842
 msgid "the {step} model"
 msgstr ""
 
-#: src/processing_steps.rs:881 src/step_catalog.rs:206
+#: src/processing_steps.rs:921 src/step_catalog.rs:206
 #: src/plugin_catalog.rs:293
 msgid "um so I, I think we should go"
 msgstr ""
 
-#: src/processing_steps.rs:884 src/step_catalog.rs:207
+#: src/processing_steps.rs:924 src/step_catalog.rs:207
 msgid "So I think we should go."
 msgstr ""
 
 #. TRANSLATORS: {language} is a language name, such as "فارسی"; stands for the example sentence translated.
-#: src/processing_steps.rs:898
+#: src/processing_steps.rs:938
 msgid "Translated into {language}"
 msgstr ""
 
@@ -1034,7 +1055,7 @@ msgstr ""
 msgid "Delete chain"
 msgstr ""
 
-#: src/processing_ui.rs:614 src/myna_settings.rs:266
+#: src/processing_ui.rs:614 src/myna_settings.rs:267
 msgid "Chain"
 msgstr ""
 
@@ -2375,171 +2396,171 @@ msgstr ""
 msgid "The list holds at most {limit} words. Remove one to add another."
 msgstr ""
 
-#: src/myna_settings.rs:200
+#: src/myna_settings.rs:201
 msgid "Ribbon"
 msgstr ""
 
-#: src/myna_settings.rs:201
+#: src/myna_settings.rs:202
 msgid "VU meter"
 msgstr ""
 
-#: src/myna_settings.rs:202
+#: src/myna_settings.rs:203
 msgid "Default"
 msgstr ""
 
-#: src/myna_settings.rs:203
+#: src/myna_settings.rs:204
 msgid "Bird"
 msgstr ""
 
-#: src/myna_settings.rs:204
+#: src/myna_settings.rs:205
 msgid "Chime"
 msgstr ""
 
-#: src/myna_settings.rs:205
+#: src/myna_settings.rs:206
 msgid "Voice"
 msgstr ""
 
-#: src/myna_settings.rs:206
+#: src/myna_settings.rs:207
 msgid "Marimba"
 msgstr ""
 
-#: src/myna_settings.rs:207
+#: src/myna_settings.rs:208
 msgid "Water"
 msgstr ""
 
-#: src/myna_settings.rs:208
+#: src/myna_settings.rs:209
 msgid "Radio"
 msgstr ""
 
-#: src/myna_settings.rs:209
+#: src/myna_settings.rs:210
 msgid "Strings"
 msgstr ""
 
-#: src/myna_settings.rs:210
+#: src/myna_settings.rs:211
 msgid "Exactly what I say"
 msgstr ""
 
-#: src/myna_settings.rs:211
+#: src/myna_settings.rs:212
 msgid "A tidied version"
 msgstr ""
 
-#: src/myna_settings.rs:212
+#: src/myna_settings.rs:213
 msgid "A French translation"
 msgstr ""
 
-#: src/myna_settings.rs:216
+#: src/myna_settings.rs:217
 msgid "Simplified (简体)"
 msgstr ""
 
-#: src/myna_settings.rs:217
+#: src/myna_settings.rs:218
 msgid "Traditional (繁體)"
 msgstr ""
 
-#: src/myna_settings.rs:218
+#: src/myna_settings.rs:219
 msgid "Traditional, Taiwan (繁體)"
 msgstr ""
 
-#: src/myna_settings.rs:219
+#: src/myna_settings.rs:220
 msgid "Traditional, Hong Kong (繁體)"
 msgstr ""
 
-#: src/myna_settings.rs:243
+#: src/myna_settings.rs:244
 msgid "Not typed: focus left the field"
 msgstr ""
 
-#: src/myna_settings.rs:244
+#: src/myna_settings.rs:245
 msgid "Not typed: the field refused it"
 msgstr ""
 
-#: src/myna_settings.rs:246
+#: src/myna_settings.rs:247
 msgid "Not typed: the dictation was cancelled"
 msgstr ""
 
-#: src/myna_settings.rs:248
+#: src/myna_settings.rs:249
 msgid "Nothing to type"
 msgstr ""
 
-#: src/myna_settings.rs:255
+#: src/myna_settings.rs:256
 msgid "Typed as heard"
 msgstr ""
 
-#: src/myna_settings.rs:257
+#: src/myna_settings.rs:258
 msgid "Heard: {heard}"
 msgstr ""
 
-#: src/myna_settings.rs:261
+#: src/myna_settings.rs:262
 msgid "Speech model"
 msgstr ""
 
-#: src/myna_settings.rs:275
+#: src/myna_settings.rs:276
 msgid "Tidying"
 msgstr ""
 
-#: src/myna_settings.rs:276 src/installed_models.rs:150
+#: src/myna_settings.rs:277 src/installed_models.rs:150
 msgid "Translation"
 msgstr ""
 
-#: src/myna_settings.rs:280
+#: src/myna_settings.rs:281
 msgid "{ms} ms"
 msgstr ""
 
-#: src/myna_settings.rs:287
+#: src/myna_settings.rs:288
 msgid "Not used ({ran}): {why}"
 msgstr ""
 
-#: src/myna_settings.rs:297
+#: src/myna_settings.rs:298
 msgid "{total} ms ({heard} ms to hear, {typed} ms to type)"
 msgstr ""
 
-#: src/myna_settings.rs:301
+#: src/myna_settings.rs:302
 msgid "Wait after you stopped"
 msgstr ""
 
-#: src/myna_settings.rs:304
+#: src/myna_settings.rs:305
 msgid "Myna version"
 msgstr ""
 
-#: src/myna_settings.rs:319
+#: src/myna_settings.rs:320
 msgid "no model was reachable"
 msgstr ""
 
-#: src/myna_settings.rs:320
+#: src/myna_settings.rs:321
 msgid "the model could not answer"
 msgstr ""
 
-#: src/myna_settings.rs:321
+#: src/myna_settings.rs:322
 msgid "the model was too slow"
 msgstr ""
 
-#: src/myna_settings.rs:322
+#: src/myna_settings.rs:323
 msgid "the answer was empty"
 msgstr ""
 
-#: src/myna_settings.rs:323
+#: src/myna_settings.rs:324
 msgid "the answer added or moved words"
 msgstr ""
 
-#: src/myna_settings.rs:324
+#: src/myna_settings.rs:325
 msgid "the answer left out too much"
 msgstr ""
 
-#: src/myna_settings.rs:325
+#: src/myna_settings.rs:326
 msgid "the answer left out too many words in a row"
 msgstr ""
 
-#: src/myna_settings.rs:326
+#: src/myna_settings.rs:327
 msgid "the answer left out a “not”"
 msgstr ""
 
-#: src/myna_settings.rs:327
+#: src/myna_settings.rs:328
 msgid "the answer was a chat reply"
 msgstr ""
 
-#: src/myna_settings.rs:328
+#: src/myna_settings.rs:329
 msgid "the answer was far shorter or longer"
 msgstr ""
 
-#: src/myna_settings.rs:329
+#: src/myna_settings.rs:330
 msgid "for a reason this version does not know"
 msgstr ""
 
@@ -2890,6 +2911,14 @@ msgid ""
 "\"Kubernetes\", \"ibuprofen\". To choose how something is written, type what "
 "you say, an arrow with a space on each side, then what to write: \"my sequel "
 "=> MySQL\". Up to 100 words or short phrases."
+msgstr ""
+
+#: ../data/glib-2.0/schemas/com.canonical.Myna.Dictation.gschema.xml:153
+msgid ""
+"Text Myna types when you say \"insert\" and its name, in a chain with the "
+"Snippets step: type the name, an arrow with a space on each side, then the "
+"text: \"my address => 1 Main Street, Springfield\". \"Insert today's date\" "
+"and \"insert the time\" need no snippet."
 msgstr ""
 
 #: data/com.canonical.Myna.Config.metainfo.xml:9
