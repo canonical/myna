@@ -85,6 +85,8 @@ impl StepSpec {
 enum Kind {
     /// Drop hesitations, false starts and repeats.
     Tidy,
+    /// Carry out spoken editing commands over the whole dictation.
+    Commands,
     /// Type spoken emoji as the emoji.
     Emoji,
     /// Translate to `to`.
@@ -96,7 +98,8 @@ enum Kind {
 }
 
 impl Kind {
-    const ALL: [Kind; 5] = [
+    const ALL: [Kind; 6] = [
+        Kind::Commands,
         Kind::Tidy,
         Kind::Emoji,
         Kind::Translate,
@@ -112,6 +115,7 @@ impl Kind {
         match self {
             Kind::Tidy => "tidy",
             Kind::Emoji => "emoji",
+            Kind::Commands => "commands",
             Kind::Translate => "translate",
             Kind::Original => "original",
             Kind::Script => "script",
@@ -122,7 +126,7 @@ impl Kind {
         match self {
             Kind::Translate => Some("to"),
             Kind::Script => Some("mode"),
-            Kind::Tidy | Kind::Emoji | Kind::Original => None,
+            Kind::Tidy | Kind::Commands | Kind::Emoji | Kind::Original => None,
         }
     }
 }
@@ -347,6 +351,10 @@ pub fn compile(steps: &[StepSpec], ctx: &Context) -> Compiled {
                         };
                         changed = Some((index, lang.replace(to)));
                         state
+                    }
+                    Kind::Commands => {
+                        at = g.rule(at, Rule::Commands);
+                        StepState::Applicable
                     }
                     Kind::Emoji => {
                         at = g.rule(at, Rule::Emoji);
@@ -642,6 +650,20 @@ mod tests {
             panic!("no join after two translations")
         };
         assert_eq!(parts[0], Src::Input, "the original is what was said");
+    }
+
+    #[test]
+    fn commands_hold_the_dictation_and_read_english() {
+        let c = compiled(&["commands", "translate=fr"], Some("en"));
+        assert_eq!(states(&c), [("commands", "on"), ("translate", "on")]);
+        assert_eq!(c.graph.needs(), Some(Needs::Dictation));
+        assert_eq!(
+            compiled(&["emoji"], Some("en")).graph.needs(),
+            Some(Needs::Sentence)
+        );
+        let french = compiled(&["commands"], Some("fr"));
+        assert_eq!(states(&french), [("commands", "n/a")]);
+        assert_eq!(french.graph.needs(), None, "nothing to hold for");
     }
 
     #[test]

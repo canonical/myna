@@ -146,9 +146,8 @@ impl Op {
     fn needs(&self) -> Needs {
         match self {
             Op::Ask { needs, .. } => *needs,
-            Op::Rule { .. } | Op::Route { .. } | Op::Join { .. } | Op::Pivot { .. } => {
-                Needs::Sentence
-            }
+            Op::Rule { rule, .. } => rule.needs(),
+            Op::Route { .. } | Op::Join { .. } | Op::Pivot { .. } => Needs::Sentence,
         }
     }
 
