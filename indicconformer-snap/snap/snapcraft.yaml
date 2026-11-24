@@ -99,8 +99,9 @@ parts:
       craftctl default
 
   server-app:
-    # myna-server + onnxruntime in a venv. The myna wheel is staged into
-    # wheels/ by dev/prepare.sh before packing.
+    # myna-server + onnxruntime in a venv. dev/prepare.sh stages the myna
+    # wheel and requirements.txt (exact versions and hashes, exported from
+    # server/uv.lock) into wheels/ before packing.
     plugin: python
     # Persistent pip cache: the build VM is thrown away each run, but the
     # project dir is bind-mounted, so this survives. Not find-links, which
@@ -112,8 +113,10 @@ parts:
       - PIP_TIMEOUT: "60"
       - PIP_RETRIES: "10"
     source: wheels
+    python-requirements:
+      - requirements.txt
     python-packages:
-      - ./myna-0.0.0-py3-none-any.whl[indicconformer]
+      - ./myna-0.0.0-py3-none-any.whl
     build-packages:
       - python3-venv
     override-build: |
