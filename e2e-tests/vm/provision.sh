@@ -19,6 +19,10 @@
 #                    fake backend snap (a scripted transcript) connected to
 #                    myna:backend. Needs the snap built: `make snap-fake`, or
 #                    E2E_FAKE_SNAP=PATH; without it the stage is skipped.
+#   chains           dictation plus the French, Farsi and Simplified Chinese
+#                    language packs (Settings runs in each) and the fake
+#                    snap installed again, so a dictation snapshot taken with
+#                    an older one still hears a given transcript.
 #
 # run-suite.sh copies one per suite and leaves the VM itself untouched;
 # reprovision on a new edge revision or a stale image with --force.
@@ -160,6 +164,18 @@ CONF
     rm myna-fake-backend.snap
     sudo snap disconnect myna:backend
     sudo snap connect myna:backend myna-fake-backend:provider
+    systemctl --user restart snap.myna.myna.service
+    systemctl --user is-active snap.myna.myna.service' push_fake_snap
+    stage chains '
+    sudo apt-get update -qq
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q \
+        language-pack-fr-base language-pack-fa-base language-pack-zh-hans-base
+    # The packs ship translations, not the locales: without these setlocale
+    # fails and a GTK app stays in English whatever LANG says.
+    sudo locale-gen fr_FR.UTF-8 fa_IR.UTF-8 zh_CN.UTF-8
+    sudo snap install --dangerous myna-fake-backend.snap
+    rm myna-fake-backend.snap
+    snap connections myna | grep -q "myna:backend.*myna-fake-backend:provider"
     systemctl --user restart snap.myna.myna.service
     systemctl --user is-active snap.myna.myna.service' push_fake_snap
 else
