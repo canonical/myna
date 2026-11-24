@@ -271,10 +271,11 @@ jobs:
           CHANNEL: ${{ inputs.channel }}
         run: gh workflow run e2e.yml -R "$GITHUB_REPOSITORY" --ref "$GITHUB_REF_NAME" -f upgrade_channel="latest/${CHANNEL#latest/}"
 
-  # The lab installs latest/edge/main, so it runs once every snap is there.
+  # The lab installs latest/edge/main, so it runs once every snap is there,
+  # whether the nightly or a manual run released them.
   lab:
     needs: publish
-    if: ${{ !cancelled() && needs.publish.result == 'success' && github.event_name == 'schedule' }}
+    if: ${{ !cancelled() && needs.publish.result == 'success' && (github.event_name == 'schedule' || contains(fromJSON('["edge/main", "latest/edge/main"]'), inputs.channel)) }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
