@@ -1149,6 +1149,13 @@ mod tests {
     }
 
     #[test]
+    fn a_plain_empty_directory_is_not_mounted_here() {
+        let dir = tmpdir();
+        std::fs::create_dir_all(dir.join("provider-2")).expect("empty share");
+        assert_eq!(unmounted_shares(&dir), [dir.join("provider-2")]);
+    }
+
+    #[test]
     fn legacy_speech_snap_without_myna_role_is_excluded_from_text_shares() {
         let dir = tmpdir();
         let _speech = serving(&dir, "provider", "myna-parakeet");
