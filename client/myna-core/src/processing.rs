@@ -25,15 +25,7 @@ const KEY_PROCESSING_PARAMS: &str = "processing-params";
 pub type Params = BTreeMap<String, String>;
 
 /// The steps this build knows, in stage order.
-pub const STEP_ORDER: [&str; 7] = [
-    "fit",
-    "commands",
-    "tidy",
-    "emoji",
-    "translate",
-    "original",
-    "script",
-];
+pub const STEP_ORDER: [&str; 4] = ["fit", "tidy", "translate", "script"];
 
 /// The parameter key of `step`'s `param`: `translate.to`.
 pub fn param_key(step: &str, param: &str) -> String {

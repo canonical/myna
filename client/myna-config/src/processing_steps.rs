@@ -17,107 +17,6 @@ pub const TRANSLATE_TO: &str = "to";
 const FIT: &str = "fit";
 pub const SCRIPT: &str = "script";
 pub const SCRIPT_MODE: &str = "mode";
-pub const ORIGINAL: &str = "original";
-pub const EMOJI: &str = "emoji";
-pub const COMMANDS: &str = "commands";
-
-/// A step the client carries itself, as Add step and the editor show it.
-pub struct BuiltIn {
-    pub id: &'static str,
-    pub stage: &'static str,
-    /// The languages it is most useful for, to list it first for them.
-    pub languages: &'static [&'static str],
-    pub title: fn() -> String,
-    pub description: fn() -> String,
-    /// What is said and what is typed.
-    pub example: fn() -> (String, String),
-    /// The libraries and data behind it, or nothing.
-    pub credit: fn() -> String,
-}
-
-/// The built-in steps Add step offers; fitting to the field is a switch.
-pub const BUILT_INS: [BuiltIn; 4] = [
-    BuiltIn {
-        id: COMMANDS,
-        stage: "clean-up",
-        languages: &["en"],
-        title: || gettextrs::gettext("Spoken commands"),
-        description: || {
-            gettextrs::gettext(
-                "Say “scratch that”, “new line”, “new paragraph”, “delete last word” or “format as a list” on its own, or “quote” … “end quote”. Nothing is typed until you stop. English only.",
-            )
-        },
-        example: || {
-            (
-                // The step hears English only, so the example stays English.
-                "Meet on Monday. Scratch that. Meet on Tuesday.".to_owned(),
-                "Meet on Tuesday.".to_owned(),
-            )
-        },
-        credit: String::new,
-    },
-    BuiltIn {
-        id: EMOJI,
-        stage: "clean-up",
-        languages: &["en"],
-        title: || gettextrs::gettext("Spoken emoji"),
-        description: || {
-            gettextrs::gettext("Say an emoji's name, then “emoji”, to type it. English names only.")
-        },
-        example: || {
-            (
-                // The step hears English only, so the example stays English.
-                "Ship it rocket emoji".to_owned(),
-                "Ship it \u{1f680}".to_owned(),
-            )
-        },
-        credit: || {
-            gettextrs::gettext(
-                // TRANSLATORS: credits the library and name lists behind spoken emoji.
-                "emojis (MIT); Unicode emoji names (Unicode-3.0); gemoji shortcodes (MIT)",
-            )
-        },
-    },
-    BuiltIn {
-        id: ORIGINAL,
-        stage: "target-language",
-        languages: &[],
-        title: || gettextrs::gettext("Keep the original"),
-        description: || {
-            gettextrs::gettext("Types what you said, with its translation after it in brackets.")
-        },
-        example: || {
-            (
-                // TRANSLATORS: what is said in the example of "Keep the original".
-                gettextrs::gettext("Where is the station?"),
-                // TRANSLATORS: what is typed in the example of "Keep the original": the same sentence, then a translation of it into another language in brackets.
-                gettextrs::gettext("Where is the station? (Où est la gare ?)"),
-            )
-        },
-        credit: String::new,
-    },
-    BuiltIn {
-        id: SCRIPT,
-        stage: "target-language",
-        languages: &["zh", "yue", "cmn"],
-        title: || gettextrs::gettext("Chinese script"),
-        description: || {
-            gettextrs::gettext(
-                "Types Chinese in the characters you choose. Other text is left alone.",
-            )
-        },
-        example: || ("\u{8f6f}\u{4ef6}".to_owned(), "\u{8edf}\u{9ad4}".to_owned()),
-        credit: || {
-            // TRANSLATORS: credits the libraries and word lists behind Chinese script conversion.
-            gettextrs::gettext("opencc-jieba-rs (MIT); OpenCC conversion lists (Apache-2.0)")
-        },
-    },
-];
-
-/// The built-in step `id`, if it is one.
-pub fn built_in(id: &str) -> Option<&'static BuiltIn> {
-    BUILT_INS.iter().find(|b| b.id == id)
-}
 
 /// The stages in the order the steps run (`.kb/text-plugin-contract.md`).
 const STAGES: [&str; 4] = ["field-fit", "clean-up", "translate", "target-language"];
@@ -434,27 +333,18 @@ fn stage_rank(stage: &str) -> usize {
         .unwrap_or(STAGES.len())
 }
 
-/// Where `id` comes among the steps this build knows, which orders steps of
-/// one stage (Tidy before Spoken emoji); later for the others.
-pub fn known_rank(id: &str) -> usize {
-    let known = myna_core::chains::KNOWN_STEPS;
-    known.iter().position(|k| *k == id).unwrap_or(known.len())
-}
-
 /// The steps in stage order: the client's own, and every catalog step.
 fn step_ids(catalog: &[Entry]) -> Vec<(String, usize)> {
     let mut found: BTreeMap<String, usize> = BTreeMap::new();
     found.insert(FIT.to_owned(), 0);
-    for built_in in &BUILT_INS {
-        found.insert(built_in.id.to_owned(), stage_rank(built_in.stage));
-    }
+    found.insert(SCRIPT.to_owned(), stage_rank("target-language"));
     for entry in catalog {
         found
             .entry(entry.step.id.clone())
             .or_insert_with(|| stage_rank(&entry.step.stage));
     }
     let mut ordered: Vec<(String, usize)> = found.into_iter().collect();
-    ordered.sort_by(|a, b| (a.1, known_rank(&a.0), &a.0).cmp(&(b.1, known_rank(&b.0), &b.0)));
+    ordered.sort_by(|a, b| (a.1, &a.0).cmp(&(b.1, &b.0)));
     ordered
 }
 
@@ -470,7 +360,7 @@ fn row(id: &str, inputs: &Inputs) -> Row {
     let title = own
         .and_then(|e| plugin_catalog::label(&e.step.label_key))
         .or_else(|| (id == FIT).then(|| gettextrs::gettext("Fitted to the field")))
-        .or_else(|| built_in(id).map(|b| (b.title)()))
+        .or_else(|| (id == SCRIPT).then(|| gettextrs::gettext("Chinese script")))
         .unwrap_or_else(|| id.to_owned());
     let description = own
         .and_then(|e| plugin_catalog::label(&e.step.description_key))
@@ -481,7 +371,11 @@ fn row(id: &str, inputs: &Inputs) -> Row {
                 )
             })
         })
-        .or_else(|| built_in(id).map(|b| (b.description)()))
+        .or_else(|| {
+            (id == SCRIPT).then(|| {
+                gettextrs::gettext("Types Chinese in the characters you choose. Other text is left alone.")
+            })
+        })
         .unwrap_or_default();
     let enabled = inputs.enabled.iter().any(|on| on == id);
     let translate = (id == TRANSLATE).then(|| translate_row(inputs));
@@ -701,12 +595,6 @@ fn standing(
         Source::Unknown => None,
     };
     let own: Vec<&Entry> = inputs.catalog.iter().filter(|e| e.step.id == id).collect();
-    if id == EMOJI || id == COMMANDS {
-        if source.is_some_and(|from| from != "en") {
-            return Standing::NotApplicable(gettextrs::gettext("Applies when the text is English"));
-        }
-        return Standing::Ready;
-    }
     if id == SCRIPT {
         if !text_is_chinese(inputs) {
             return Standing::NotApplicable(gettextrs::gettext("Applies when the text is Chinese"));
@@ -1007,39 +895,11 @@ mod tests {
     }
 
     #[test]
-    fn spoken_emoji_reads_english_or_an_unknown_language() {
-        let standing = |rig: &Rig| {
-            let rows = rig.rows();
-            rows.into_iter().find(|r| r.id == EMOJI).unwrap().standing
-        };
-        let mut rig = Rig::new();
-        assert_eq!(standing(&rig), Standing::Ready);
-        rig.source = Source::Unknown;
-        assert_eq!(standing(&rig), Standing::Ready);
-        rig.source = Source::One("fr".into());
-        assert_eq!(
-            standing(&rig),
-            Standing::NotApplicable("Applies when the text is English".into())
-        );
-    }
-
-    #[test]
     fn rows_follow_the_stages_whatever_the_catalog_order() {
         let mut rig = Rig::new();
         rig.catalog.reverse();
         let ids: Vec<String> = rig.rows().into_iter().map(|r| r.id).collect();
-        assert_eq!(
-            ids,
-            [
-                "fit",
-                "commands",
-                "tidy",
-                "emoji",
-                "translate",
-                "original",
-                "script"
-            ]
-        );
+        assert_eq!(ids, ["fit", "tidy", "translate", "script"]);
     }
 
     #[test]
@@ -1048,11 +908,7 @@ mod tests {
         rig.catalog.clear();
         rig.daemon = None;
         let rows = rig.rows();
-        assert_eq!(
-            rows.len(),
-            1 + BUILT_INS.len(),
-            "Fitted to the field and the built-in steps"
-        );
+        assert_eq!(rows.len(), 2, "Fitted to the field and Chinese script");
         assert_eq!(rows[0].standing, Standing::Ready);
         assert!(rows[0].enabled);
     }
@@ -1336,13 +1192,10 @@ mod tests {
         ];
         let rows = rig.rows();
         let ids: Vec<&str> = rows.iter().map(|r| r.id.as_str()).collect();
-        assert_eq!(
-            ids,
-            ["fit", "commands", "emoji", "zzz", "aaa", "original", "script", "mmm"]
-        );
+        assert_eq!(ids, ["fit", "zzz", "aaa", "script", "mmm"]);
         assert_eq!(rows[0].title, "Fitted to the field");
-        assert_eq!(rows[3].title, "zzz");
-        assert!(rows[3].description.is_empty());
+        assert_eq!(rows[1].title, "zzz");
+        assert!(rows[1].description.is_empty());
         assert!(rows.iter().filter(|r| r.id != SCRIPT).all(Row::switchable));
     }
 
@@ -1486,7 +1339,7 @@ mod tests {
         assert_eq!(row.title, "Chinese script");
         assert!(!row.enabled);
         let ids: Vec<String> = rig.rows().into_iter().map(|r| r.id).collect();
-        assert_eq!(ids, ["fit", "commands", "emoji", "original", "script"]);
+        assert_eq!(ids, ["fit", "script"]);
     }
 
     #[test]

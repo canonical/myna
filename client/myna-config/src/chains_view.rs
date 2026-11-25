@@ -169,7 +169,6 @@ pub fn misfit_text(why: Misfit) -> String {
         Misfit::AlreadyInTarget => gettextrs::gettext("The text is already in that language"),
         Misfit::NotChinese => gettextrs::gettext("Applies when the text is Chinese"),
         Misfit::NoScript => gettextrs::gettext("Needs a script to write"),
-        Misfit::NothingTranslated => gettextrs::gettext("Applies after a translation"),
     }
 }
 

@@ -208,8 +208,7 @@ impl Pipeline {
         self.trace.clone()
     }
 
-    /// One model step: its answer if usable, else `text` as it came. A
-    /// line with nothing to read asks nothing.
+    /// One model step: its answer if usable, else `text` as it came.
     async fn ask(
         &mut self,
         request: &Request,
@@ -217,9 +216,6 @@ impl Pipeline {
         text: String,
         trace: &mut Vec<myna_core::history::Step>,
     ) -> String {
-        if text.trim().is_empty() {
-            return text;
-        }
         self.try_ask(request, check, &text, trace)
             .await
             .unwrap_or(text)
@@ -317,12 +313,7 @@ impl Processor for Pipeline {
                     ..
                 } => {
                     let input = read(&made, *from);
-                    let mut out = String::with_capacity(input.len());
-                    for (line, brk) in lines(&input) {
-                        out.push_str(&self.ask(request, *check, line.to_owned(), &mut trace).await);
-                        out.push_str(brk);
-                    }
-                    out
+                    self.ask(request, *check, input, &mut trace).await
                 }
                 Op::Pivot {
                     from,
@@ -330,34 +321,28 @@ impl Processor for Pipeline {
                     second,
                 } => {
                     let input = read(&made, *from);
-                    let mut out = String::with_capacity(input.len());
-                    for (line, brk) in lines(&input) {
-                        let mid = self
-                            .try_ask(&first.request, first.check, line, &mut trace)
-                            .await;
-                        let typed = match mid {
-                            Some(mid) => self
-                                .try_ask(&second.request, second.check, &mid, &mut trace)
-                                .await
-                                .unwrap_or_else(|| line.to_owned()),
-                            None => line.to_owned(),
-                        };
-                        out.push_str(&typed);
-                        out.push_str(brk);
+                    match self
+                        .try_ask(&first.request, first.check, &input, &mut trace)
+                        .await
+                    {
+                        Some(mid) => self
+                            .try_ask(&second.request, second.check, &mid, &mut trace)
+                            .await
+                            .unwrap_or(input),
+                        None => input,
                     }
-                    out
                 }
                 Op::Route { .. } => op
                     .select(field)
                     .map(|src| read(&made, src))
                     .unwrap_or_default(),
-                Op::Join { parts, form } => {
+                Op::Join { parts, sep } => {
                     let mut whole = None;
                     for part in parts {
                         let arrived = read(&made, *part);
                         whole = self.joins.arrive(seq, id, parts, *part, arrived);
                     }
-                    whole.map(|all| form.apply(all)).unwrap_or_default()
+                    whole.map(|all| all.join(sep)).unwrap_or_default()
                 }
             };
             made.insert(id, out);
@@ -368,26 +353,9 @@ impl Processor for Pipeline {
     }
 }
 
-/// `text` as its lines, each with the line break after it: a model reads
-/// a line at a time, so the layout an editing command made (its answers
-/// are folded to one line) survives it.
-fn lines(text: &str) -> Vec<(&str, &str)> {
-    let mut out = Vec::new();
-    let mut rest = text;
-    while let Some(at) = rest.find('\n') {
-        let end = rest[at..]
-            .find(|c: char| c != '\n')
-            .map_or(rest.len(), |n| at + n);
-        out.push((&rest[..at], &rest[at..end]));
-        rest = &rest[end..];
-    }
-    out.push((rest, ""));
-    out
-}
-
 #[cfg(test)]
 mod tests {
-    use super::super::graph::{Builder, Form, Needs};
+    use super::super::graph::{Builder, Needs};
     use super::*;
     use crate::process::rules::Rule;
     use myna_core::ProcessingChain;
@@ -901,7 +869,7 @@ mod tests {
             Check::Present,
             Needs::Sentence,
         );
-        let out = g.join(vec![Src::Input, french], Form::Sep(" / "));
+        let out = g.join(vec![Src::Input, french], " / ");
         g.finish(out)
     }
 
@@ -917,65 +885,13 @@ mod tests {
         assert_eq!(traced(&pipeline).len(), 1);
     }
 
-    #[test]
-    fn lines_keep_their_breaks() {
-        assert_eq!(lines("a"), [("a", "")]);
-        assert_eq!(lines("a\n\nb\nc"), [("a", "\n\n"), ("b", "\n"), ("c", "")]);
-        assert_eq!(lines("\na\n"), [("", "\n"), ("a", "\n"), ("", "")]);
-    }
-
     #[tokio::test]
-    async fn a_model_step_after_an_editing_command_keeps_its_line_breaks() {
-        use crate::process::steps::{compile, Context, StepSpec};
-        let steps = ["commands", "translate=fr"].map(StepSpec::parse);
-        let graph = compile(&steps, &Context::default()).graph;
-        let mut pipeline = Pipeline::new(graph, Scripted::Says("Bonjour."));
-        assert_eq!(
-            pipeline
-                .process("Hi. New paragraph. Bye. New line. Ok.".into(), &here())
-                .await,
-            "Bonjour.\n\nBonjour.\nBonjour."
-        );
-        let leading = Pipeline::new(
-            compile(
-                &["commands", "tidy"].map(StepSpec::parse),
-                &Context::default(),
-            )
-            .graph,
-            Scripted::Fails,
-        );
-        let mut leading = leading;
-        assert_eq!(
-            leading.process("New line. Where?".into(), &here()).await,
-            "\nWhere?"
-        );
-    }
-
-    #[tokio::test]
-    async fn a_chain_that_keeps_the_original_types_it_beside_the_translation() {
-        use crate::process::steps::{compile, Context, StepSpec};
-        let steps = ["translate=fr", "original"].map(StepSpec::parse);
-        let graph = || compile(&steps, &Context::default()).graph;
-        let mut glossed = Pipeline::new(graph(), Scripted::Says("Où est la gare ?"));
-        assert_eq!(
-            glossed
-                .process("Where is the station?".into(), &here())
-                .await,
-            "Where is the station? (Où est la gare ?)"
-        );
-        let mut failed = Pipeline::new(graph(), Scripted::Fails);
-        assert_eq!(
-            failed
-                .process("Where is the station?".into(), &here())
-                .await,
-            "Where is the station?"
-        );
-    }
-
-    #[tokio::test]
-    async fn a_failed_branch_of_a_join_adds_nothing_to_what_it_was_given() {
+    async fn a_failed_branch_of_a_join_hands_on_what_it_was_given() {
         let mut pipeline = Pipeline::new(side_by_side(), Scripted::Fails);
-        assert_eq!(pipeline.process("Hello.".into(), &here()).await, "Hello.");
+        assert_eq!(
+            pipeline.process("Hello.".into(), &here()).await,
+            "Hello. / Hello."
+        );
         assert_eq!(traced(&pipeline)[0].skipped, Some(Skip::NoModel));
     }
 }

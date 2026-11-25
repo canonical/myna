@@ -64,39 +64,6 @@ impl When {
     }
 }
 
-/// How an [`Op::Join`] lays its parts out.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Form {
-    /// One after another, `sep` between them.
-    Sep(&'static str),
-    /// The first, then the others in brackets: "Hello. (Bonjour.)".
-    Gloss,
-}
-
-impl Form {
-    /// `parts` laid out. An empty part, or one the same as the part kept
-    /// before it, adds nothing: a branch that failed open hands on what it
-    /// was given, and "Hello. (Hello.)" says nothing twice.
-    pub fn apply(self, parts: Vec<String>) -> String {
-        let mut kept: Vec<String> = Vec::with_capacity(parts.len());
-        for part in parts {
-            let part = part.trim();
-            if !part.is_empty() && kept.last().is_none_or(|last| last != part) {
-                kept.push(part.to_owned());
-            }
-        }
-        match self {
-            Form::Sep(sep) => kept.join(sep),
-            Form::Gloss => match kept.split_first() {
-                Some((first, rest)) if !rest.is_empty() => {
-                    format!("{first} ({})", rest.join(" "))
-                }
-                _ => kept.concat(),
-            },
-        }
-    }
-}
-
 #[derive(Clone, Debug, PartialEq)]
 pub enum Op {
     /// A change that needs no model.
@@ -115,7 +82,7 @@ pub enum Op {
         otherwise: Src,
     },
     /// Every part, in order, once each has arrived for the piece.
-    Join { parts: Vec<Src>, form: Form },
+    Join { parts: Vec<Src>, sep: &'static str },
     /// Two model changes that only make sense together, such as translating
     /// through a third language: the second reads what the first made, and
     /// unless both pass the text leaves as it came.
@@ -146,8 +113,9 @@ impl Op {
     fn needs(&self) -> Needs {
         match self {
             Op::Ask { needs, .. } => *needs,
-            Op::Rule { rule, .. } => rule.needs(),
-            Op::Route { .. } | Op::Join { .. } | Op::Pivot { .. } => Needs::Sentence,
+            Op::Rule { .. } | Op::Route { .. } | Op::Join { .. } | Op::Pivot { .. } => {
+                Needs::Sentence
+            }
         }
     }
 
@@ -303,7 +271,7 @@ impl Builder {
     }
 
     /// `parts` are distinct: a part is told apart by its source.
-    pub fn join(&mut self, parts: Vec<Src>, form: Form) -> Src {
+    pub fn join(&mut self, parts: Vec<Src>, sep: &'static str) -> Src {
         assert!(
             parts
                 .iter()
@@ -311,7 +279,7 @@ impl Builder {
                 .all(|(i, part)| !parts[..i].contains(part)),
             "a join names each source once"
         );
-        self.push(Op::Join { parts, form })
+        self.push(Op::Join { parts, sep })
     }
 
     pub fn finish(self, out: Src) -> Graph {
@@ -383,7 +351,7 @@ mod tests {
     fn side_by_side(needs: Needs) -> Graph {
         let mut g = Builder::default();
         let french = translate(&mut g, Src::Input, needs);
-        let out = g.join(vec![Src::Input, french], Form::Sep(" / "));
+        let out = g.join(vec![Src::Input, french], " / ");
         g.finish(out)
     }
 
@@ -469,27 +437,6 @@ mod tests {
             tasks(&graph, &Field::default()),
             ["text.translate+text.translate"]
         );
-    }
-
-    #[test]
-    fn a_gloss_puts_the_rest_in_brackets_after_the_first() {
-        let parts = |p: &[&str]| p.iter().map(|s| s.to_string()).collect::<Vec<_>>();
-        assert_eq!(
-            Form::Gloss.apply(parts(&["Hello.", "Bonjour."])),
-            "Hello. (Bonjour.)"
-        );
-        assert_eq!(Form::Sep(" / ").apply(parts(&["a", "b", "c"])), "a / b / c");
-    }
-
-    #[test]
-    fn a_part_the_same_as_the_one_before_adds_nothing() {
-        let parts = |p: &[&str]| p.iter().map(|s| s.to_string()).collect::<Vec<_>>();
-        assert_eq!(Form::Gloss.apply(parts(&["Hello.", " Hello. "])), "Hello.");
-        assert_eq!(
-            Form::Sep(" / ").apply(parts(&["a", "a", "b", "a"])),
-            "a / b / a"
-        );
-        assert_eq!(Form::Gloss.apply(parts(&["", "Bonjour."])), "Bonjour.");
     }
 
     #[test]
@@ -580,7 +527,7 @@ mod tests {
     fn a_join_waits_for_every_part_of_its_own_piece() {
         let mut g = Builder::default();
         let french = translate(&mut g, Src::Input, Needs::Sentence);
-        let Src::Node(join) = g.join(vec![Src::Input, french], Form::Sep(" / ")) else {
+        let Src::Node(join) = g.join(vec![Src::Input, french], " / ") else {
             unreachable!()
         };
         let parts = [Src::Input, french];
@@ -616,6 +563,6 @@ mod tests {
     #[test]
     #[should_panic(expected = "each source once")]
     fn a_join_cannot_name_a_source_twice() {
-        Builder::default().join(vec![Src::Input, Src::Input], Form::Sep(" "));
+        Builder::default().join(vec![Src::Input, Src::Input], " ");
     }
 }

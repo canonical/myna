@@ -22,22 +22,9 @@ pub enum Rule {
     Disfluency(Lang),
     /// Spell the user's vocabulary as written; see [`Rule::apply_with`].
     Vocabulary,
-    /// Type spoken emoji ("thumbs up emoji") as the emoji.
-    Emoji,
-    /// Carry out spoken editing commands ("scratch that"), which reach
-    /// back over the dictation.
-    Commands,
 }
 
 impl Rule {
-    /// How much of the dictation the rule has to see at once.
-    pub fn needs(self) -> super::graph::Needs {
-        match self {
-            Rule::Commands => super::graph::Needs::Dictation,
-            _ => super::graph::Needs::Sentence,
-        }
-    }
-
     pub fn apply(self, text: &str) -> String {
         self.apply_with(text, &Vocabulary::default())
     }
@@ -51,8 +38,6 @@ impl Rule {
                 decapitalise(bare, |_| true)
             }
             Rule::Disfluency(lang) => disfluency::clean(text, lang),
-            Rule::Emoji => super::emoji::apply(text),
-            Rule::Commands => super::commands::apply(text),
             Rule::Continue => decapitalise(text, |word| {
                 FUNCTION_WORDS.contains(&word.to_lowercase().as_str())
             }),
