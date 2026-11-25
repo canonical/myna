@@ -50,75 +50,229 @@ pub enum ServeError {
     Bus(#[from] zbus::Error),
 }
 
-/// The served property values (the `com.canonical.Myna.Dictation` members — the
-/// interface defines no signals; every update is pushed via the standard
+/// The `com.canonical.Myna.Dictation` object and the properties it serves,
+/// declared once: the D-Bus name, the served field, its type, its default,
+/// and how a set reaches it and its `PropertiesChanged`. The interface
+/// defines no signals; every update is pushed via the standard
 /// `PropertiesChanged`, the one broadcast that crosses snap confinement to
-/// unconfined subscribers, contract §Confinement). `State` starts `idle`,
-/// levels at floor, no error — the dormant snapshot a name-appeared client
-/// reads (X8).
-#[derive(Debug, Default)]
-struct ServedState {
-    state: String,
-    audio_rms: f64,
-    audio_peak: f64,
-    status_message: String,
-    hud_style: String,
-    /// Always `control`, for Myna Settings releases that still ask.
-    activation: String,
-    audio_dropped_not_active: u64,
-    /// The last session's input levels; NaN until a session has ended.
-    input_offset: f64,
-    input_noise_floor: f64,
-    input_speech_level: f64,
-    input_snr: f64,
-    /// The latest failure's headline, empty until one happens. Sticky: see
-    /// [`crate::dbus::publish_last_error`].
-    last_error: String,
-    last_error_detail: String,
-    /// When it happened, in microseconds since the epoch; 0 for never.
-    last_error_time: i64,
-    /// Held text and the guess after it; empty unless text is being held.
-    draft_text: String,
-    draft_tail: String,
-    /// `ready`, `degraded` or `restart`; see [`crate::dbus::chain`].
-    chain_status: String,
-    /// Tasks of the chosen chain no installed model covers, comma separated.
-    chain_missing: String,
-    /// The same as JSON requests with their parameters.
-    chain_missing_requests: String,
-    /// JSON of every connected model and each step's state.
-    installed_steps: String,
-    /// JSON of every saved chain and whether it is ready.
-    chains: String,
-    /// The active chain's id; empty for none.
-    active_chain: String,
+/// unconfined subscribers (contract §Confinement).
+///
+/// Adding a property is one row in the table at the bottom and nothing
+/// else: the getter clients read, the snapshot field, the set and the change
+/// emission all come from it. The rest of the interface's members follow the
+/// table's marker, unchanged.
+macro_rules! dictation_object {
+    (
+        { $( $methods:item )* }
+        @properties {
+            $( $(#[$doc:meta])* $name:literal => $field:ident : $ty:ty, $variant:ident,
+               $changed:ident = $default:expr; )*
+        }
+    ) => {
+        #[derive(Debug)]
+        struct ServedState {
+            $( $(#[$doc])* $field: $ty, )*
+        }
+
+        impl ServedState {
+            fn new() -> Self {
+                Self { $( $field: $default, )* }
+            }
+
+            /// Apply one set to the snapshot; `false` for a name this
+            /// interface does not serve.
+            fn set(&mut self, name: &str, value: &PropertyValue) -> bool {
+                match (name, value) {
+                    $( ($name, PropertyValue::$variant(v)) => {
+                        self.$field = v.clone();
+                        true
+                    } )*
+                    _ => false,
+                }
+            }
+        }
+
+        #[zbus::interface(name = "com.canonical.Myna.Dictation")]
+        impl DictationObject {
+            $(
+                $(#[$doc])*
+                #[zbus(property)]
+                async fn $field(&self) -> $ty {
+                    self.served
+                        .lock()
+                        .expect("served state poisoned")
+                        .$field
+                        .clone()
+                }
+            )*
+
+            $( $methods )*
+        }
+
+        impl DictationObject {
+            /// Emit `PropertiesChanged` for `name`, or nothing for a name
+            /// this interface does not serve.
+            async fn announce(
+                &self,
+                emitter: &zbus::object_server::SignalEmitter<'_>,
+                name: &str,
+            ) -> zbus::Result<()> {
+                match name {
+                    $( $name => self.$changed(emitter).await, )*
+                    _ => Ok(()),
+                }
+            }
+        }
+    };
 }
 
-impl ServedState {
-    fn new() -> Self {
-        Self {
-            state: crate::indicator::dbus::wire_state::IDLE.to_string(),
-            // Read here, not left empty for the forwarder to fill: a HUD that
-            // connects between `serve()` and the first publish reads this
-            // snapshot, and a blank would make it render the wrong meter for
-            // that window. The daemon is the only settings reader (see
-            // `dbus::hud_style`), so this read is also the only one.
-            hud_style: myna_core::Settings::load()
-                .hud_style
-                .unwrap_or_else(|| myna_core::settings::DEFAULT_HUD_STYLE.to_string()),
-            chain_status: crate::dbus::chain::READY.into(),
-            chain_missing_requests: "[]".into(),
-            installed_steps: r#"{"models":[],"steps":[]}"#.into(),
-            chains: "[]".into(),
-            input_offset: f64::NAN,
-            input_noise_floor: f64::NAN,
-            input_speech_level: f64::NAN,
-            input_snr: f64::NAN,
-            ..Default::default()
+dictation_object! {
+    {
+
+    /// `Toggle`: start dictation if idle, else stop it.
+    async fn toggle(&self) {
+        if let Some(trigger) = &self.trigger {
+            trigger.poke();
         }
     }
-}
 
+    /// `PreviewSounds`: play the start, stop and error cues of the set named
+    /// by its `sound-set` nick, whatever the setting holds. Returns once the
+    /// preview is queued, not when it has played.
+    async fn preview_sounds(&self, set: &str) -> Result<(), PreviewError> {
+        let state = self
+            .served
+            .lock()
+            .expect("served state poisoned")
+            .state
+            .clone();
+        let result = preview_sounds(&state, set, self.preview.as_ref());
+        myna_core::info_log!("dbus", "PreviewSounds {set} -> {result:?}");
+        result
+    }
+
+    /// `RescanModels`: read every text share's capabilities again and bind
+    /// what is now covered, without waiting for the next poll.
+    async fn rescan_models(&self) {
+        myna_core::info_log!("dbus", "RescanModels");
+        self.rescan.notify_one();
+    }
+
+    /// `RegisterClient`: a HUD client announces itself. The sender's unique
+    /// bus name is the identity; the call is idempotent and the server
+    /// monitors `NameOwnerChanged` so a crashed client is pruned without an
+    /// explicit `UnregisterClient`. Returns the current client count.
+    async fn register_client(&self, #[zbus(header)] header: Header<'_>) -> u32 {
+        let sender = header.sender().map(|s| s.to_string()).unwrap_or_default();
+        if sender.is_empty() {
+            return self.clients.len() as u32;
+        }
+        let count = self.clients.insert(sender.clone());
+        myna_core::info_log!("dbus", "RegisterClient {sender} -> {count} client(s)");
+        count
+    }
+
+    /// `UnregisterClient`: the HUD is going away. Idempotent.
+    async fn unregister_client(&self, #[zbus(header)] header: Header<'_>) -> u32 {
+        let sender = header.sender().map(|s| s.to_string()).unwrap_or_default();
+        if sender.is_empty() {
+            return self.clients.len() as u32;
+        }
+        let count = self.clients.remove(&sender);
+        myna_core::info_log!("dbus", "UnregisterClient {sender} -> {count} client(s)");
+        count
+    }
+
+    #[zbus(property)]
+    /// Setting `ActiveChain` writes the settings store, which stays the
+    /// source of truth: the property follows once the daemon has read it
+    /// back. An id no saved chain has fails; a chain whose models are
+    /// missing is allowed and runs degraded.
+    #[zbus(property)]
+    async fn set_active_chain(&mut self, id: String) -> zbus::fdo::Result<()> {
+        // On zbus's executor, which is no tokio runtime: a keyfile write is
+        // short enough to make in place.
+        let wanted = (!id.is_empty()).then_some(id.as_str());
+        let result = myna_core::chains::activate_in_store(wanted);
+        myna_core::info_log!("dbus", "ActiveChain {id:?} -> {result:?}");
+        match result {
+            Ok(()) => Ok(()),
+            Err(myna_core::chains::ActivateError::Unknown(id)) => Err(
+                zbus::fdo::Error::InvalidArgs(format!("no saved chain {id:?}")),
+            ),
+            Err(myna_core::chains::ActivateError::Store(why)) => Err(zbus::fdo::Error::Failed(why)),
+        }
+    }
+    }
+    @properties {
+    /// `idle`, `listening`, ...; see [`crate::indicator::dbus::wire_state`].
+    "State" => state: String, Str, state_changed = wire_state::IDLE.to_string();
+    "StatusMessage" => status_message: String, Str, status_message_changed = String::new();
+    "AudioRms" => audio_rms: f64, F64, audio_rms_changed = 0.0;
+    "AudioPeak" => audio_peak: f64, F64, audio_peak_changed = 0.0;
+    /// Which audio-level presentation the HUD should draw, as the
+    /// `hud-style` settings nick. The renderer reads no settings of its
+    /// own - see `dbus::hud_style` for why that reader was removed.
+    "HudStyle" => hud_style: String, Str, hud_style_changed = myna_core::Settings::load()
+        .hud_style
+        .unwrap_or_else(|| myna_core::settings::DEFAULT_HUD_STYLE.to_string());
+    /// How the key reaches the daemon; always `control` now. Read here, not
+    /// left empty: a HUD that connects between `serve()` and the first
+    /// publish reads this snapshot.
+    "Activation" => activation: String, Str, activation_changed = String::new();
+    /// Chunks refused because the session was already over. Only ever a bug.
+    "AudioDroppedNotActive" => audio_dropped_not_active: u64, U64,
+        audio_dropped_not_active_changed = 0;
+    /// The last session's median chunk mean, signed linear full scale (its
+    /// DC offset); NaN until a session has ended.
+    "InputOffset" => input_offset: f64, F64, input_offset_changed = f64::NAN;
+    /// The quietest the last session's input got.
+    "InputNoiseFloor" => input_noise_floor: f64, F64, input_noise_floor_changed = f64::NAN;
+    /// The loudest sustained voice in the last session, 0 when none was heard.
+    "InputSpeechLevel" => input_speech_level: f64, F64,
+        input_speech_level_changed = f64::NAN;
+    /// The last session's speech-band signal-to-noise ratio in dB; NaN until
+    /// a session has ended, or when it had too little sound.
+    "InputSnr" => input_snr: f64, F64, input_snr_changed = f64::NAN;
+    /// The latest failure's headline, as `StatusMessage` showed it; empty
+    /// until one happens, and never cleared. Sticky: see
+    /// [`crate::dbus::publish_last_error`].
+    "LastError" => last_error: String, Str, last_error_changed = String::new();
+    /// The untranslated cause behind `LastError`. May name paths; consumers
+    /// redact before showing or exporting it.
+    "LastErrorDetail" => last_error_detail: String, Str,
+        last_error_detail_changed = String::new();
+    /// When it happened, in microseconds since the epoch; 0 for never.
+    "LastErrorTime" => last_error_time: i64, I64, last_error_time_changed = 0;
+    /// Text heard in this dictation and not yet written to the field. Empty
+    /// unless the user turned processing on; the one place transcript
+    /// content crosses this bus.
+    "DraftText" => draft_text: String, Str, draft_text_changed = String::new();
+    /// The recogniser's current guess at what follows `DraftText`.
+    "DraftTail" => draft_tail: String, Str, draft_tail_changed = String::new();
+    /// Whether every model step of the chosen processing chain has a model
+    /// (`ready`), some has none and is skipped (`degraded`), or one was
+    /// connected after the daemon started and only a restart sees it.
+    "ChainStatus" => chain_status: String, Str, chain_status_changed =
+        crate::dbus::chain::READY.to_string();
+    /// The tasks (`text.translate`) no connected model covers, comma
+    /// separated; empty while the chain is `ready`.
+    "ChainMissing" => chain_missing: String, Str, chain_missing_changed = String::new();
+    /// JSON list of `{task, params}` no connected model covers; `[]` while
+    /// the chain is `ready`.
+    "ChainMissingRequests" => chain_missing_requests: String, Str,
+        chain_missing_requests_changed = "[]".to_string();
+    /// JSON `{models, steps}`: every model of every connected text share and
+    /// what became of each step of the chain.
+    "InstalledSteps" => installed_steps: String, Str, installed_steps_changed =
+        r#"{"models":[],"steps":[]}"#.to_string();
+    /// JSON list of every saved chain in the user's order, each
+    /// `{id, name, steps, ready, missing, missing_requests}`.
+    "Chains" => chains: String, Str, chains_changed = "[]".to_string();
+    /// The id of the chain in use; empty for none.
+    "ActiveChain" => active_chain: String, Str, active_chain_changed = String::new();
+    }
+}
 /// Tracks which HUD clients are currently registered via
 /// `RegisterClient`/`UnregisterClient`. The sender's unique bus name
 /// (`:1.xxx`) is the key, so a client that dies without unregistering can be
@@ -216,306 +370,6 @@ fn preview_sounds(
     preview
         .preview(set)
         .map_err(|_| PreviewError::AlreadyPlaying("a preview is already playing".into()))
-}
-
-#[zbus::interface(name = "com.canonical.Myna.Dictation")]
-impl DictationObject {
-    /// `Toggle`: start dictation if idle, else stop it.
-    async fn toggle(&self) {
-        if let Some(trigger) = &self.trigger {
-            trigger.poke();
-        }
-    }
-
-    /// `PreviewSounds`: play the start, stop and error cues of the set named
-    /// by its `sound-set` nick, whatever the setting holds. Returns once the
-    /// preview is queued, not when it has played.
-    async fn preview_sounds(&self, set: &str) -> Result<(), PreviewError> {
-        let state = self
-            .served
-            .lock()
-            .expect("served state poisoned")
-            .state
-            .clone();
-        let result = preview_sounds(&state, set, self.preview.as_ref());
-        myna_core::info_log!("dbus", "PreviewSounds {set} -> {result:?}");
-        result
-    }
-
-    /// `RescanModels`: read every text share's capabilities again and bind
-    /// what is now covered, without waiting for the next poll.
-    async fn rescan_models(&self) {
-        myna_core::info_log!("dbus", "RescanModels");
-        self.rescan.notify_one();
-    }
-
-    /// `RegisterClient`: a HUD client announces itself. The sender's unique
-    /// bus name is the identity; the call is idempotent and the server
-    /// monitors `NameOwnerChanged` so a crashed client is pruned without an
-    /// explicit `UnregisterClient`. Returns the current client count.
-    async fn register_client(&self, #[zbus(header)] header: Header<'_>) -> u32 {
-        let sender = header.sender().map(|s| s.to_string()).unwrap_or_default();
-        if sender.is_empty() {
-            return self.clients.len() as u32;
-        }
-        let count = self.clients.insert(sender.clone());
-        myna_core::info_log!("dbus", "RegisterClient {sender} -> {count} client(s)");
-        count
-    }
-
-    /// `UnregisterClient`: the HUD is going away. Idempotent.
-    async fn unregister_client(&self, #[zbus(header)] header: Header<'_>) -> u32 {
-        let sender = header.sender().map(|s| s.to_string()).unwrap_or_default();
-        if sender.is_empty() {
-            return self.clients.len() as u32;
-        }
-        let count = self.clients.remove(&sender);
-        myna_core::info_log!("dbus", "UnregisterClient {sender} -> {count} client(s)");
-        count
-    }
-
-    #[zbus(property)]
-    async fn state(&self) -> String {
-        self.served
-            .lock()
-            .expect("served state poisoned")
-            .state
-            .clone()
-    }
-
-    #[zbus(property)]
-    async fn audio_rms(&self) -> f64 {
-        self.served.lock().expect("served state poisoned").audio_rms
-    }
-
-    #[zbus(property)]
-    async fn audio_peak(&self) -> f64 {
-        self.served
-            .lock()
-            .expect("served state poisoned")
-            .audio_peak
-    }
-
-    /// Chunks refused because the session was already over. Only ever a bug.
-    #[zbus(property)]
-    async fn audio_dropped_not_active(&self) -> u64 {
-        self.served
-            .lock()
-            .expect("served state poisoned")
-            .audio_dropped_not_active
-    }
-
-    /// `InputOffset`: the last session's median chunk mean, signed linear full
-    /// scale (its DC offset); NaN until a session has ended.
-    #[zbus(property)]
-    async fn input_offset(&self) -> f64 {
-        self.served
-            .lock()
-            .expect("served state poisoned")
-            .input_offset
-    }
-
-    /// `InputNoiseFloor`: the quietest the last session's input got.
-    #[zbus(property)]
-    async fn input_noise_floor(&self) -> f64 {
-        self.served
-            .lock()
-            .expect("served state poisoned")
-            .input_noise_floor
-    }
-
-    /// `InputSpeechLevel`: the loudest sustained voice in the last session,
-    /// 0 when none was heard.
-    #[zbus(property)]
-    async fn input_speech_level(&self) -> f64 {
-        self.served
-            .lock()
-            .expect("served state poisoned")
-            .input_speech_level
-    }
-
-    /// `InputSnr`: the last session's speech-band signal-to-noise ratio in
-    /// dB; NaN until a session has ended, or when it had too little sound.
-    #[zbus(property)]
-    async fn input_snr(&self) -> f64 {
-        self.served.lock().expect("served state poisoned").input_snr
-    }
-
-    /// `DraftText`: text heard in this dictation and not yet written to the
-    /// field. Empty unless the user turned processing on; the one place
-    /// transcript content crosses this bus.
-    #[zbus(property)]
-    async fn draft_text(&self) -> String {
-        self.served
-            .lock()
-            .expect("served state poisoned")
-            .draft_text
-            .clone()
-    }
-
-    /// `DraftTail`: the recogniser's current guess at what follows
-    /// `DraftText`.
-    #[zbus(property)]
-    async fn draft_tail(&self) -> String {
-        self.served
-            .lock()
-            .expect("served state poisoned")
-            .draft_tail
-            .clone()
-    }
-
-    #[zbus(property)]
-    async fn status_message(&self) -> String {
-        self.served
-            .lock()
-            .expect("served state poisoned")
-            .status_message
-            .clone()
-    }
-
-    /// `Activation`: how the key reaches the daemon, always `control` now.
-    #[zbus(property)]
-    async fn activation(&self) -> String {
-        self.served
-            .lock()
-            .expect("served state poisoned")
-            .activation
-            .clone()
-    }
-
-    /// `LastError`: the latest failure's headline, as `StatusMessage` showed
-    /// it; empty until one happens, and never cleared.
-    #[zbus(property)]
-    async fn last_error(&self) -> String {
-        self.served
-            .lock()
-            .expect("served state poisoned")
-            .last_error
-            .clone()
-    }
-
-    /// `LastErrorDetail`: the untranslated cause behind `LastError`. May name
-    /// paths; consumers redact before showing or exporting it.
-    #[zbus(property)]
-    async fn last_error_detail(&self) -> String {
-        self.served
-            .lock()
-            .expect("served state poisoned")
-            .last_error_detail
-            .clone()
-    }
-
-    /// `LastErrorTime`: when `LastError` was set, in microseconds since the
-    /// epoch; 0 for never.
-    #[zbus(property)]
-    async fn last_error_time(&self) -> i64 {
-        self.served
-            .lock()
-            .expect("served state poisoned")
-            .last_error_time
-    }
-
-    /// `HudStyle`: which audio-level presentation the HUD should draw, as the
-    /// `hud-style` settings nick. The renderer reads no settings of its own -
-    /// see `dbus::hud_style` for why that reader was removed rather than
-    /// repaired.
-    #[zbus(property)]
-    async fn hud_style(&self) -> String {
-        self.served
-            .lock()
-            .expect("served state poisoned")
-            .hud_style
-            .clone()
-    }
-
-    /// `ChainStatus`: whether every model step of the chosen processing
-    /// chain has a model (`ready`), some has none and is skipped
-    /// (`degraded`), or one was connected after the daemon started and only
-    /// a restart sees it (`restart`).
-    #[zbus(property)]
-    async fn chain_status(&self) -> String {
-        self.served
-            .lock()
-            .expect("served state poisoned")
-            .chain_status
-            .clone()
-    }
-
-    /// `ChainMissingRequests`: JSON list of `{task, params}` no connected
-    /// model covers; `[]` while the chain is `ready`.
-    #[zbus(property)]
-    async fn chain_missing_requests(&self) -> String {
-        self.served
-            .lock()
-            .expect("served state poisoned")
-            .chain_missing_requests
-            .clone()
-    }
-
-    /// `InstalledSteps`: JSON `{models, steps}`: every model of every
-    /// connected text share (share, task, class, parameters and their
-    /// values, quality, latency) and what became of each step of the chain.
-    #[zbus(property)]
-    async fn installed_steps(&self) -> String {
-        self.served
-            .lock()
-            .expect("served state poisoned")
-            .installed_steps
-            .clone()
-    }
-
-    /// `Chains`: JSON list of every saved chain in the user's order, each
-    /// `{id, name, steps, ready, missing, missing_requests}`
-    /// ([`crate::dbus::chain::chains_json`]).
-    #[zbus(property)]
-    async fn chains(&self) -> String {
-        self.served
-            .lock()
-            .expect("served state poisoned")
-            .chains
-            .clone()
-    }
-
-    /// `ActiveChain`: the id of the chain in use; empty for none.
-    #[zbus(property)]
-    async fn active_chain(&self) -> String {
-        self.served
-            .lock()
-            .expect("served state poisoned")
-            .active_chain
-            .clone()
-    }
-
-    /// Setting `ActiveChain` writes the settings store, which stays the
-    /// source of truth: the property follows once the daemon has read it
-    /// back. An id no saved chain has fails; a chain whose models are
-    /// missing is allowed and runs degraded.
-    #[zbus(property)]
-    async fn set_active_chain(&mut self, id: String) -> zbus::fdo::Result<()> {
-        // On zbus's executor, which is no tokio runtime: a keyfile write is
-        // short enough to make in place.
-        let wanted = (!id.is_empty()).then_some(id.as_str());
-        let result = myna_core::chains::activate_in_store(wanted);
-        myna_core::info_log!("dbus", "ActiveChain {id:?} -> {result:?}");
-        match result {
-            Ok(()) => Ok(()),
-            Err(myna_core::chains::ActivateError::Unknown(id)) => Err(
-                zbus::fdo::Error::InvalidArgs(format!("no saved chain {id:?}")),
-            ),
-            Err(myna_core::chains::ActivateError::Store(why)) => Err(zbus::fdo::Error::Failed(why)),
-        }
-    }
-
-    /// `ChainMissing`: the tasks (`text.translate`) no connected model
-    /// covers, comma separated; empty while the chain is `ready`.
-    #[zbus(property)]
-    async fn chain_missing(&self) -> String {
-        self.served
-            .lock()
-            .expect("served state poisoned")
-            .chain_missing
-            .clone()
-    }
 }
 
 /// The real session-bus [`Bus`]. Best-effort: a bus hiccup is logged, never
@@ -727,42 +581,13 @@ impl Bus for ZbusBus {
         let result = async {
             // Update the served snapshot, then emit PropertiesChanged with the
             // fresh value via the macro-generated helper.
-            {
+            let known = {
                 let mut served = self.served.lock().expect("served state poisoned");
-                match (name, &value) {
-                    ("State", PropertyValue::Str(s)) => served.state = s.clone(),
-                    ("StatusMessage", PropertyValue::Str(s)) => served.status_message = s.clone(),
-                    ("AudioRms", PropertyValue::F64(d)) => served.audio_rms = *d,
-                    ("AudioPeak", PropertyValue::F64(d)) => served.audio_peak = *d,
-                    ("HudStyle", PropertyValue::Str(s)) => served.hud_style = s.clone(),
-                    ("Activation", PropertyValue::Str(s)) => served.activation = s.clone(),
-                    ("AudioDroppedNotActive", PropertyValue::U64(v)) => {
-                        served.audio_dropped_not_active = *v
-                    }
-                    ("InputOffset", PropertyValue::F64(v)) => served.input_offset = *v,
-                    ("InputNoiseFloor", PropertyValue::F64(v)) => served.input_noise_floor = *v,
-                    ("InputSpeechLevel", PropertyValue::F64(v)) => served.input_speech_level = *v,
-                    ("InputSnr", PropertyValue::F64(v)) => served.input_snr = *v,
-                    ("LastError", PropertyValue::Str(s)) => served.last_error = s.clone(),
-                    ("LastErrorDetail", PropertyValue::Str(s)) => {
-                        served.last_error_detail = s.clone()
-                    }
-                    ("LastErrorTime", PropertyValue::I64(v)) => served.last_error_time = *v,
-                    ("DraftText", PropertyValue::Str(s)) => served.draft_text = s.clone(),
-                    ("DraftTail", PropertyValue::Str(s)) => served.draft_tail = s.clone(),
-                    ("ChainStatus", PropertyValue::Str(s)) => served.chain_status = s.clone(),
-                    ("ChainMissing", PropertyValue::Str(s)) => served.chain_missing = s.clone(),
-                    ("ChainMissingRequests", PropertyValue::Str(s)) => {
-                        served.chain_missing_requests = s.clone()
-                    }
-                    ("InstalledSteps", PropertyValue::Str(s)) => served.installed_steps = s.clone(),
-                    ("Chains", PropertyValue::Str(s)) => served.chains = s.clone(),
-                    ("ActiveChain", PropertyValue::Str(s)) => served.active_chain = s.clone(),
-                    _ => {
-                        myna_core::dbg_log!("dbus", "ignoring unknown property set: {name}");
-                        return Ok(());
-                    }
-                }
+                served.set(name, &value)
+            };
+            if !known {
+                myna_core::dbg_log!("dbus", "ignoring unknown property set: {name}");
+                return Ok(());
             }
             let iface_ref = self
                 .conn
@@ -770,32 +595,7 @@ impl Bus for ZbusBus {
                 .interface::<_, DictationObject>(OBJECT_PATH)
                 .await?;
             let iface = iface_ref.get().await;
-            let emitter = iface_ref.signal_emitter();
-            match name {
-                "State" => iface.state_changed(emitter).await,
-                "StatusMessage" => iface.status_message_changed(emitter).await,
-                "AudioRms" => iface.audio_rms_changed(emitter).await,
-                "AudioPeak" => iface.audio_peak_changed(emitter).await,
-                "HudStyle" => iface.hud_style_changed(emitter).await,
-                "Activation" => iface.activation_changed(emitter).await,
-                "AudioDroppedNotActive" => iface.audio_dropped_not_active_changed(emitter).await,
-                "InputOffset" => iface.input_offset_changed(emitter).await,
-                "InputNoiseFloor" => iface.input_noise_floor_changed(emitter).await,
-                "InputSpeechLevel" => iface.input_speech_level_changed(emitter).await,
-                "InputSnr" => iface.input_snr_changed(emitter).await,
-                "LastError" => iface.last_error_changed(emitter).await,
-                "LastErrorDetail" => iface.last_error_detail_changed(emitter).await,
-                "LastErrorTime" => iface.last_error_time_changed(emitter).await,
-                "DraftText" => iface.draft_text_changed(emitter).await,
-                "DraftTail" => iface.draft_tail_changed(emitter).await,
-                "ChainStatus" => iface.chain_status_changed(emitter).await,
-                "ChainMissing" => iface.chain_missing_changed(emitter).await,
-                "ChainMissingRequests" => iface.chain_missing_requests_changed(emitter).await,
-                "InstalledSteps" => iface.installed_steps_changed(emitter).await,
-                "Chains" => iface.chains_changed(emitter).await,
-                "ActiveChain" => iface.active_chain_changed(emitter).await,
-                _ => Ok(()),
-            }
+            iface.announce(iface_ref.signal_emitter(), name).await
         }
         .await;
         if let Err(e) = result {
