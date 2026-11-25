@@ -251,7 +251,7 @@ mod tests {
             Src::Input,
             Request::translate("fr", "en"),
             Request::translate("en", "de"),
-            Check::Usable { translation: true },
+            Check::Usable,
         );
         let graph = g.finish(out);
         assert_eq!(
@@ -267,11 +267,7 @@ mod tests {
     #[test]
     fn a_node_nothing_reads_does_not_run() {
         let mut g = Builder::default();
-        g.ask(
-            Src::Input,
-            Request::translate("en", "fr"),
-            Check::Usable { translation: true },
-        );
+        g.ask(Src::Input, Request::translate("en", "fr"), Check::Usable);
         let tidy = g.tidy(Src::Input);
         assert_eq!(tasks(&g.finish(tidy)), ["text.cleanup"]);
     }

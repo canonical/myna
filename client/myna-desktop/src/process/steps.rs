@@ -174,16 +174,6 @@ pub struct Compiled {
     pub report: Vec<StepReport>,
 }
 
-impl Compiled {
-    /// Whether a step is unknown or has no model: what the chain status
-    /// has to name. Not applicable is neither.
-    pub fn degraded(&self) -> bool {
-        self.report
-            .iter()
-            .any(|r| matches!(r.state, StepState::Unavailable { .. } | StepState::Unknown))
-    }
-}
-
 /// The steps a preset is.
 pub fn preset_steps(chain: ProcessingChain) -> Vec<StepSpec> {
     stored_steps(&chain.steps(), &chain.params())
@@ -301,7 +291,7 @@ pub fn compile(steps: &[StepSpec], ctx: &Context) -> Compiled {
                     Kind::Translate => {
                         let to = step.text("to").map(primary).expect("misfit checked it");
                         let from = lang.clone().unwrap_or_else(|| "en".into());
-                        let check = Check::Usable { translation: true };
+                        let check = Check::Usable;
                         let state = match pivot_legs(&from, &to, ctx) {
                             Some((first, second)) => {
                                 let state = [&first, &second]
@@ -476,7 +466,6 @@ mod tests {
             "move above it"
         );
         assert_ne!(translate_first.graph, tidy_first.graph);
-        assert!(!translate_first.degraded());
     }
 
     #[test]
@@ -523,7 +512,6 @@ mod tests {
         let c = compile(&[off, StepSpec::parse("translate=fr")], &Context::default());
         assert_eq!(states(&c), [("tidy", "off"), ("translate", "on")]);
         assert_eq!(c.graph, compiled(&["translate=fr"], None).graph);
-        assert!(!c.degraded(), "off is no fault");
     }
 
     #[test]
@@ -551,7 +539,6 @@ mod tests {
             let c = compiled(&["tidy"], language);
             assert_eq!(states(&c), [("tidy", state)], "{language:?}");
             assert_eq!(c.graph == Graph::passthrough(), state == "n/a");
-            assert!(!c.degraded(), "not applicable is no fault");
         }
         let StepState::NotApplicable { reason, .. } =
             &compiled(&["tidy"], Some("fr")).report[0].state
@@ -631,7 +618,6 @@ mod tests {
                 c.report.last().unwrap().state == StepState::Applicable,
                 state == "on"
             );
-            assert!(!c.degraded());
         }
         let c = compiled(&["script=traditional-taiwan"], Some("zh"));
         assert_eq!(c.script, ChineseScript::TraditionalTaiwan);
@@ -660,7 +646,6 @@ mod tests {
                 request: Request::translate("en", "fr")
             }
         );
-        assert!(c.degraded());
         assert_eq!(c.graph, Graph::preset(ProcessingChain::TIDY_FRENCH));
 
         let all = |_: &Request| true;
@@ -704,7 +689,6 @@ mod tests {
     fn two_installed_legs_make_a_pivot_whose_budgets_add_up() {
         let c = through("fr", "de", &[("fr", "en"), ("en", "de")]);
         assert_eq!(states(&c), [("translate", "on")]);
-        assert!(!c.degraded());
         assert_eq!(
             asks(&c),
             [("fr".into(), "en".into()), ("en".into(), "de".into())]
@@ -714,7 +698,7 @@ mod tests {
         };
         let direct = Request::translate("fr", "de").run_budget;
         assert_eq!(first.request.run_budget + second.request.run_budget, direct);
-        assert_eq!(first.check, Check::Usable { translation: true });
+        assert_eq!(first.check, Check::Usable);
     }
 
     #[test]
@@ -735,7 +719,6 @@ mod tests {
                 ),
                 missing
             );
-            assert!(c.degraded());
             assert!(matches!(c.graph.node(Id::first()), Op::Pivot { .. }));
         }
     }
@@ -781,7 +764,6 @@ mod tests {
                 ("whisper", "unknown")
             ]
         );
-        assert!(c.degraded());
         assert_eq!(c.graph, Graph::preset(ProcessingChain::TIDY));
     }
 
@@ -838,8 +820,6 @@ mod tests {
                 StepSpec::new("from-the-future"),
             ]
         );
-        let c = compile(&stored_steps(&ids, &params), &Context::default());
-        assert!(c.degraded(), "the unknown id is reported");
     }
 
     #[test]

@@ -20,23 +20,14 @@ use super::{Field, Processor};
 use crate::inject::fold_control_chars;
 use crate::live::Live;
 
-/// Whether a step would rather have the faster model or the better one.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum Prefer {
-    #[default]
-    Latency,
-    Accuracy,
-}
-
 /// What a step asks of a model: a purpose, never a model.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Request {
     /// What to do with the text: `text.cleanup`, `text.translate`.
     pub task: String,
-    /// What the task is about: `language`, `to`, a written `instruction`.
+    /// What the task is about: `language`, `to`.
     /// Ordered, so equal requests make equal keys.
     pub params: Params,
-    pub prefer: Prefer,
     /// How long one answer may take before the step is skipped.
     pub run_budget: Duration,
     /// How long finding and loading a model may take before the next
@@ -55,7 +46,6 @@ impl Request {
         Self {
             task: task.into(),
             params,
-            prefer: Prefer::default(),
             run_budget,
             bind_budget: BIND_BUDGET,
         }
@@ -83,7 +73,7 @@ impl Request {
     /// nothing that does not (the run budget).
     pub fn key(&self) -> String {
         let params = serde_json::to_string(&self.params).unwrap_or_default();
-        format!("{}|{:?}|{params}", self.task, self.prefer)
+        format!("{}|{params}", self.task)
     }
 }
 
@@ -362,11 +352,7 @@ mod tests {
     fn only(task: &str) -> Graph {
         let mut g = Builder::default();
         let out = match task {
-            "text.translate" => g.ask(
-                Src::Input,
-                Request::translate("en", "fr"),
-                Check::Usable { translation: true },
-            ),
+            "text.translate" => g.ask(Src::Input, Request::translate("en", "fr"), Check::Usable),
             _ => g.tidy(Src::Input),
         };
         g.finish(out)
@@ -403,7 +389,7 @@ mod tests {
             Src::Input,
             Request::translate("fr", "en"),
             Request::translate("en", "de"),
-            Check::Usable { translation: true },
+            Check::Usable,
         );
         g.finish(out)
     }
@@ -493,14 +479,6 @@ mod tests {
         let mut quick = Request::translate("en", "fr");
         quick.run_budget = Duration::from_secs(1);
         assert_eq!(key, quick.key());
-        quick.prefer = Prefer::Accuracy;
-        assert_ne!(key, quick.key());
-        let mut written = Request::cleanup(None);
-        let plain = written.key();
-        written
-            .params
-            .insert("instruction".into(), "be brief".into());
-        assert_ne!(plain, written.key());
     }
 
     #[test]
@@ -529,10 +507,7 @@ mod tests {
         );
         assert_eq!(translate, Request::translate("en", "fr"));
         assert_eq!(translate.key(), Request::translate("en", "fr").key());
-        let rewrite = Request::of("text.rewrite", params(&[("style", "formal")]));
-        assert_eq!(rewrite.run_budget, Duration::from_secs(10));
-        assert_eq!(rewrite.prefer, Prefer::Latency);
-        assert_eq!(rewrite.bind_budget, BIND_BUDGET);
+        assert_eq!(translate.bind_budget, BIND_BUDGET);
     }
 
     const HEARD: &str = "Let's meet Monday, no, Tuesday.";

@@ -14,7 +14,7 @@ use serde_json::{json, Value};
 use tokio::sync::watch;
 
 use crate::dbus::{PropertyValue, SharedBus};
-use crate::process::resolve::{Candidate, Catalog, ChainStatus, Missing, Via};
+use crate::process::resolve::{Candidate, Catalog, ChainStatus, Missing};
 use crate::process::step;
 use crate::process::steps::{StepReport, StepState};
 
@@ -77,7 +77,7 @@ fn model_json(c: &Candidate) -> Value {
         "task": cap.task,
         "class": class,
         "label_key": cap.task,
-        "via": match c.via { Via::Myna => "myna-text-v1", Via::Chat => "openai-chat" },
+        "via": "myna-text-v1",
         "params": params,
         "accepts": cap.accepts,
         "needs": cap.needs,
@@ -248,7 +248,6 @@ mod tests {
 
     fn candidate(share: &str, task: &str, class: Option<&str>) -> Candidate {
         Candidate {
-            via: Via::Myna,
             socket: "/x".into(),
             share: share.into(),
             capability: Capability {

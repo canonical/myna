@@ -106,8 +106,6 @@ pub enum Skip {
     LongDrop,
     /// The answer dropped a lone "not", "never" or "n't".
     DroppedNegation,
-    /// The answer opened with a chat reply such as "Sure!".
-    Chatty,
     /// The answer was far shorter or longer than what was said.
     OddLength,
     /// A reason this build does not know, from a newer or older record.

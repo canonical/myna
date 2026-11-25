@@ -5,9 +5,6 @@ use std::collections::HashSet;
 
 use myna_core::history::Skip;
 
-/// Openings of a chat reply rather than of the text asked for.
-const CHATTY: &[&str] = &["sure", "here is", "here's", "certainly", "of course"];
-
 /// The longest run of words a cleanup may drop at once.
 const LONGEST_DROP: usize = 6;
 
@@ -17,9 +14,8 @@ pub enum Check {
     /// order and only drops, recases and repunctuates, within bounds. The
     /// user's own words may stand in for what the speech model misheard.
     ConservativeEdit,
-    /// A rewrite or translation: not empty, of a plausible length, and not
-    /// a chat reply.
-    Usable { translation: bool },
+    /// A translation: not empty and of a plausible length.
+    Usable,
 }
 
 impl Check {
@@ -31,7 +27,7 @@ impl Check {
         }
         match self {
             Check::ConservativeEdit => conservative_edit(heard, answer, written),
-            Check::Usable { translation } => usable(heard, answer, translation),
+            Check::Usable => usable(heard, answer),
         }
     }
 }
@@ -190,29 +186,13 @@ fn sounds_alike(run: &[String], word: &str) -> bool {
         .is_some_and(|c| word.starts_with(c))
 }
 
-fn usable(heard: &str, answer: &str, translation: bool) -> Result<(), Skip> {
+fn usable(heard: &str, answer: &str) -> Result<(), Skip> {
     let heard = heard.trim();
     let answer = answer.trim();
     let (said, got) = (heard.chars().count(), answer.chars().count());
     // got / said within 0.25..=4.0, in integers.
     if said == 0 || got * 4 < said || got > said * 4 {
         return Err(Skip::OddLength);
-    }
-    if !translation {
-        let opens = |text: &str, with: &str| {
-            let lower = text.to_lowercase();
-            lower.starts_with(with)
-                && !lower[with.len()..]
-                    .chars()
-                    .next()
-                    .is_some_and(char::is_alphanumeric)
-        };
-        if CHATTY
-            .iter()
-            .any(|with| opens(answer, with) && !opens(heard, with))
-        {
-            return Err(Skip::Chatty);
-        }
     }
     Ok(())
 }
@@ -508,35 +488,17 @@ mod tests {
     }
 
     fn usable(heard: &str, answer: &str) -> Result<(), Skip> {
-        Check::Usable { translation: false }.verdict(heard, answer, &[])
+        Check::Usable.verdict(heard, answer, &[])
     }
 
     #[test]
-    fn a_rewrite_must_be_of_a_plausible_length() {
+    fn a_translation_must_be_of_a_plausible_length() {
         assert_eq!(usable("abcd", "a"), Ok(()));
         assert_eq!(usable("abcde", "a"), Err(Skip::OddLength));
         assert_eq!(usable("a", "abcd"), Ok(()));
         assert_eq!(usable("a", "abcde"), Err(Skip::OddLength));
         assert_eq!(usable("", "a"), Err(Skip::OddLength));
         assert_eq!(usable("hello", " "), Err(Skip::Empty));
-    }
-
-    #[test]
-    fn a_rewrite_that_opens_like_a_chat_reply_fails() {
-        let heard = "meet me on Tuesday at noon";
-        for answer in [
-            "Sure! Meet me Tuesday at noon.",
-            "Here is: meet me Tuesday.",
-            "Here's the text: meet Tuesday",
-            "Certainly. Meet me Tuesday.",
-            "Of course, meet me Tuesday.",
-        ] {
-            assert_eq!(usable(heard, answer), Err(Skip::Chatty), "{answer}");
-        }
-        assert_eq!(usable("surely we can", "Surely we can."), Ok(()));
-        assert_eq!(usable("surely we can meet", "Surely we can."), Ok(()));
-        assert_eq!(usable("sure, I'll come", "Sure, I'll come."), Ok(()));
-        let translate = Check::Usable { translation: true };
-        assert_eq!(translate.verdict("Bien sûr.", "Of course.", &[]), Ok(()));
+        assert_eq!(usable("Bien sur.", "Of course."), Ok(()));
     }
 }

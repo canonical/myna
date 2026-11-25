@@ -12,7 +12,6 @@ pub fn default_class(task: &str) -> Option<&'static str> {
     match task {
         "text.cleanup" => Some("edit"),
         "text.translate" => Some("translate"),
-        "text.rewrite" => Some("rewrite"),
         _ => None,
     }
 }
@@ -21,8 +20,7 @@ pub fn default_class(task: &str) -> Option<&'static str> {
 pub fn check_for(class: &str) -> Option<Check> {
     match class {
         "edit" => Some(Check::ConservativeEdit),
-        "translate" => Some(Check::Usable { translation: true }),
-        "rewrite" => Some(Check::Usable { translation: false }),
+        "translate" => Some(Check::Usable),
         _ => None,
     }
 }
@@ -53,14 +51,7 @@ mod tests {
     #[test]
     fn each_class_has_its_own_check() {
         assert_eq!(check_for("edit"), Some(Check::ConservativeEdit));
-        assert_eq!(
-            check_for("translate"),
-            Some(Check::Usable { translation: true })
-        );
-        assert_eq!(
-            check_for("rewrite"),
-            Some(Check::Usable { translation: false })
-        );
+        assert_eq!(check_for("translate"), Some(Check::Usable));
         assert_eq!(check_for("none"), None);
         assert_eq!(check_for("Edit"), None);
         assert_eq!(check_for(""), None);
@@ -72,27 +63,16 @@ mod tests {
             check_of(&cap("text.cleanup", None)),
             Some(Check::ConservativeEdit)
         );
-        assert_eq!(
-            check_of(&cap("text.translate", None)),
-            Some(Check::Usable { translation: true })
-        );
-        assert_eq!(
-            check_of(&cap("text.rewrite", None)),
-            Some(Check::Usable { translation: false })
-        );
+        assert_eq!(check_of(&cap("text.translate", None)), Some(Check::Usable));
         assert_eq!(check_of(&cap("text.other", None)), None);
     }
 
     #[test]
     fn a_declared_class_wins_over_the_tasks_and_an_unknown_one_is_no_check() {
-        assert_eq!(
-            check_of(&cap("text.cleanup", Some("rewrite"))),
-            Some(Check::Usable { translation: false })
-        );
         assert_eq!(check_of(&cap("text.cleanup", Some("passthrough"))), None);
         assert_eq!(
             check_of(&cap("text.other", Some("translate"))),
-            Some(Check::Usable { translation: true })
+            Some(Check::Usable)
         );
     }
 }

@@ -253,10 +253,10 @@ mod tests {
         assert!(!tagger.covers("text.translate", &none));
         assert!(!tagger.covers("text.cleanup", &params(json!({"language": 7}))));
         // A parameter it never mentions is one it cannot honour.
-        let asks = params(json!({"instruction": "be brief"}));
+        let asks = params(json!({"dialect": "be brief"}));
         assert!(!tagger.covers("text.cleanup", &asks));
         let llm = capability(json!({
-            "id": "gemma", "task": "text.cleanup", "accepts": ["instruction"]
+            "id": "m", "task": "text.cleanup", "accepts": ["dialect"]
         }));
         assert!(llm.covers("text.cleanup", &asks));
         assert!(!llm.covers("text.cleanup", &params(json!({"style": "x"}))));
@@ -309,7 +309,7 @@ mod tests {
             "download_bytes": 33353728, "source": "https://example.org/m",
             "params": [{"name": "to", "kind": "language", "role": "target",
                         "required": true},
-                       {"name": "instruction", "kind": "text", "role": "free"}],
+                       {"name": "dialect", "kind": "text", "role": "free"}],
             "future": 1
         }));
         assert_eq!(new.class.as_deref(), Some("translate"));

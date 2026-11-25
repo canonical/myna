@@ -323,7 +323,6 @@ fn skip_reason(why: myna_core::history::Skip) -> String {
         Skip::TooManyDropped => gettextrs::gettext("the answer left out too much"),
         Skip::LongDrop => gettextrs::gettext("the answer left out too many words in a row"),
         Skip::DroppedNegation => gettextrs::gettext("the answer left out a “not”"),
-        Skip::Chatty => gettextrs::gettext("the answer was a chat reply"),
         Skip::OddLength => gettextrs::gettext("the answer was far shorter or longer"),
         Skip::Other => gettextrs::gettext("for a reason this version does not know"),
     }

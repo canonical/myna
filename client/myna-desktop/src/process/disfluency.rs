@@ -11,9 +11,6 @@
 pub enum Lang {
     Any,
     En,
-    Fr,
-    De,
-    Es,
 }
 
 impl Lang {
@@ -25,9 +22,6 @@ impl Lang {
                 "um" | "uh" | "uhm" | "erm" | "euh" | "äh" | "ähm"
             ),
             Lang::En => matches!(word.as_str(), "um" | "uh" | "uhm" | "erm" | "hmm"),
-            Lang::Fr => word == "euh",
-            Lang::De => matches!(word.as_str(), "äh" | "ähm"),
-            Lang::Es => matches!(word.as_str(), "eh" | "em"),
         }
     }
 }
@@ -252,9 +246,6 @@ mod tests {
 
     #[test]
     fn a_pause_is_recognised_by_language_and_never_inside_a_word() {
-        assert_eq!(clean("Alors euh, oui.", Lang::Fr), "Alors oui.");
-        assert_eq!(clean("Das ist, ähm, gut.", Lang::De), "Das ist gut.");
-        assert_eq!(clean("Es, eh, bueno.", Lang::Es), "Es bueno.");
         assert_eq!(clean("Um, euh, ähm, ok.", Lang::Any), "Ok.");
         assert_eq!(en("Oh eh, ok."), "Oh eh, ok.");
         assert_eq!(clean("Das euh.", Lang::En), "Das euh.");

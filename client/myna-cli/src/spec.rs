@@ -100,11 +100,7 @@ fn chain(steps: &[&str]) -> Result<Graph, String> {
             ("cleanup", "") => g.tidy(at),
             ("translate", pair) if !pair.is_empty() => {
                 let (from, to) = pair.split_once(':').unwrap_or(("en", pair));
-                g.ask(
-                    at,
-                    Request::translate(from, to),
-                    Check::Usable { translation: true },
-                )
+                g.ask(at, Request::translate(from, to), Check::Usable)
             }
             _ if ProcessingChain::from_nick(step).is_some() => {
                 return Err(format!(

@@ -14,7 +14,6 @@ pub mod fit;
 pub mod graph;
 pub mod history;
 pub mod landing;
-pub mod openai;
 pub mod pipeline;
 pub mod resolve;
 pub mod rules;

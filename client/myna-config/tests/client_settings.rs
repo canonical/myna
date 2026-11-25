@@ -601,7 +601,6 @@ fn every_reason_a_step_was_not_used_reads_differently() {
         TooManyDropped,
         LongDrop,
         DroppedNegation,
-        Chatty,
         OddLength,
         Other,
     ];
