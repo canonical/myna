@@ -45,6 +45,30 @@ pub struct Candidate {
     pub capability: Capability,
 }
 
+/// Every saved chain as the bus lists it: whether installed models cover
+/// its model steps, for dictation in `language`.
+pub fn chain_summaries(
+    resolver: &Resolver,
+    chains: &[myna_core::chains::Chain],
+    language: Option<&str>,
+) -> Vec<ChainSummary> {
+    chains
+        .iter()
+        .map(|chain| {
+            let steps: Vec<StepSpec> = chain.steps.iter().map(StepSpec::of_chain).collect();
+            let (missing, unknown) = resolver.readiness(&steps, language);
+            ChainSummary {
+                id: chain.id.clone(),
+                name: chain.name.clone(),
+                steps: chain.steps.len(),
+                ready: missing.is_empty() && unknown == 0,
+                missing,
+                unknown,
+            }
+        })
+        .collect()
+}
+
 /// The candidates that cover `request` and fit its run budget, best first.
 /// Total and deterministic: ties end on the share's name, then the model id.
 pub fn rank(request: &Request, candidates: Vec<Candidate>) -> Vec<Candidate> {

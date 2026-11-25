@@ -174,6 +174,16 @@ pub struct Compiled {
     pub report: Vec<StepReport>,
 }
 
+impl Compiled {
+    /// Whether a dictation must be held back: the graph changes text, or the
+    /// script step converts it, and conversion reads a sentence at a time.
+    pub fn holds(&self, language: Option<&str>) -> bool {
+        self.graph.touches()
+            || (self.script != ChineseScript::AsRecognised
+                && myna_core::chains::may_be_chinese(language))
+    }
+}
+
 /// The steps a preset is.
 pub fn preset_steps(chain: ProcessingChain) -> Vec<StepSpec> {
     stored_steps(&chain.steps(), &chain.params())

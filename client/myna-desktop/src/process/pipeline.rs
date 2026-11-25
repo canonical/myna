@@ -462,10 +462,10 @@ mod tests {
 
     #[tokio::test]
     async fn the_graph_changed_while_running_applies_to_the_next_text() {
-        let graph = Live::new(Graph::passthrough());
-        let mut pipeline = Pipeline::new(graph.clone(), Scripted::Says("Bonjour."));
+        let shared = Live::new(Graph::passthrough());
+        let mut pipeline = Pipeline::new(shared.clone(), Scripted::Says("Bonjour."));
         assert_eq!(pipeline.process("Hello.".into(), &here()).await, "Hello.");
-        graph.set(only("text.translate"));
+        shared.set(only("text.translate"));
         assert_eq!(pipeline.process("Hello.".into(), &here()).await, "Bonjour.");
     }
 
@@ -652,10 +652,10 @@ mod tests {
     /// runs applies from the next one.
     #[tokio::test]
     async fn a_chain_switched_mid_dictation_applies_from_the_next() {
-        let graph = Live::new(Graph::passthrough());
-        let mut pipeline = Pipeline::new(graph.clone(), Scripted::Says("As heard."));
+        let shared = Live::new(Graph::passthrough());
+        let mut pipeline = Pipeline::new(shared.clone(), Scripted::Says("As heard."));
         pipeline.prepare();
-        graph.set(graph_of(ProcessingChain::TIDY));
+        shared.set(graph_of(ProcessingChain::TIDY));
         assert_eq!(
             pipeline.process("as heard".into(), &here()).await,
             "as heard"
