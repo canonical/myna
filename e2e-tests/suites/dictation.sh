@@ -50,7 +50,7 @@
 #      (no chain is in use), and Original shows what the backend heard where
 #      Result shows what was typed.
 #  15. Get more steps lists the catalog by job (Tidy up speech, Translate,
-#      Chinese script); Fitted to the field is a switch, on out of the box.
+#      Chinese script); Fitted to the field is no switch and no setting.
 set -uo pipefail
 # shellcheck source=e2e-tests/suites/lib.sh
 source "$(dirname "$0")/lib.sh"
@@ -345,16 +345,14 @@ shot waitfor:General tab:Processing "click:Past dictations" \
     "$(poll "grep -q \"processing-history=false\" $STORE")" \
     || { echo "record switch reset failed" >&2; FAILED=1; }
 
-echo "-- 15. Get more steps lists the catalog by job; Fitted to the field is on out of the box"
+echo "-- 15. Get more steps lists the catalog by job; Fitted to the field has no switch"
 shot waitfor:General tab:Processing "waitfor:Get more steps" "click:Get more steps" \
     "waitfor:Tidy up speech" "waitfor:Translate" "waitfor:Chinese script" \
     shot:shots/dictation/15-get-more-steps.png \
     || { echo "get more steps run failed" >&2; FAILED=1; }
-assert_on "fitted to the field is on by default" "! grep -q fit-to-field=false $STORE"
-shot waitfor:General tab:Processing "waitfor:Fitted to the field" \
-    "click:Fitted to the field" "$(poll "grep -q fit-to-field=false $STORE")" \
-    "click:Fitted to the field" "$(poll "grep -q fit-to-field=true $STORE")" \
-    || { echo "fit switch run failed" >&2; FAILED=1; }
+shot waitfor:General tab:Processing "waitfor:Get more steps" "gone:Fitted to the field" \
+    || { echo "the page still offers a fit switch" >&2; FAILED=1; }
+assert_on "no fit setting is stored" "! grep -q fit-to-field $STORE"
 
 dict 'mic_stop' >/dev/null 2>&1
 if [ -n "$HOSTED" ]; then
