@@ -86,6 +86,11 @@ ALLOWED: tuple[Allowed, ...] = (
         " boot. CUDA runs and transcribes regardless",
     ),
     Allowed(
+        {"operation": "open", "name": r"/proc/driver/nvidia/capabilities/mig/config"},
+        "nvidia-smi, which modelctl runs for the compute capability, reads the"
+        " MIG configuration; the capability is still reported",
+    ),
+    Allowed(
         {
             "subject": r"snap\.myna\.hud",
             "operation": "open",

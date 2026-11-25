@@ -128,6 +128,11 @@ RTKIT = (
         unlink("snap.myna-whisper.server", "/dev/char/195:255"),
         unlink("snap.myna-parakeet.server", "/dev/char/507:1"),
         unlink("snap.myna.hud", "/dev/char/195:0", "myna-hud"),
+        kernel(
+            "snap.myna-whisper.whisper",
+            "/proc/driver/nvidia/capabilities/mig/config",
+            "nvidia-smi",
+        ),
         PORTAL,
     ],
 )
@@ -148,6 +153,7 @@ def test_known_harmless_denials_are_allowed(line):
         kernel("snap.myna-whisper.server", "/dev/char/195:255"),
         unlink("snap.myna-whisper.server", "/dev/nvidia0"),
         kernel("snap.myna-whisper.server", "/dev/nvidia0"),
+        kernel("snap.myna-whisper.whisper", "/proc/driver/nvidia/params"),
         # Another process's environment, not its own.
         kernel("snap.myna-whisper.server", "/proc/1/environ"),
         kernel("snap.myna-whisper.server", "/proc/1234723/cmdline"),
