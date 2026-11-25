@@ -1,0 +1,70 @@
+# The provisioned desktop VMs of the E2E workflow (e2e-tests/vm/image.sh),
+# built once and published to GHCR, so an e2e job imports its VM in a couple
+# of minutes instead of provisioning it for 11-16. Rebuilt daily ahead of the
+# nightly E2E run, because the images hold the store's latest/edge snaps,
+# and whenever what provisioning does changes. E2E falls back to
+# provisioning when there is no image for its hash.
+name: E2E images
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  schedule:
+    - cron: "17 1 * * *"
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - e2e-tests/vm/**
+      - .github/workflows/e2e-images.yml
+
+jobs:
+  image:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { desktop: gnome, release: noble }
+          - { desktop: gnome, release: resolute }
+          - { desktop: gnome, release: stonking }
+          - { desktop: xubuntu, release: noble }
+          - { desktop: kde, release: resolute }
+          - { desktop: kde, release: stonking }
+    name: image (${{ matrix.desktop }}, ${{ matrix.release }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: canonical/setup-lxd@v1
+        with:
+          channel: 6/stable
+      # The export is the pool driver's own stream, so this is the pool the
+      # e2e jobs import into.
+      - run: lxc storage create e2e btrfs size=60GiB
+      - name: Provision
+        run: dev/timed.sh e2e-tests/vm/provision.sh --release ${{ matrix.release }} --desktop ${{ matrix.desktop }}
+        env:
+          E2E_POOL: e2e
+      - name: Publish
+        run: dev/timed.sh e2e-tests/vm/image.sh push --release ${{ matrix.release }} --desktop ${{ matrix.desktop }}
+        env:
+          E2E_POOL: e2e
+          GITHUB_TOKEN: ${{ github.token }}
+      # Each push leaves the previous manifest untagged; keep the newest few
+      # versions of the package.
+      - name: Prune old versions
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PKG: myna-e2e-${{ matrix.desktop }}-${{ matrix.release }}
+        run: |
+          gh api --paginate "/orgs/$GITHUB_REPOSITORY_OWNER/packages/container/$PKG/versions" --jq '.[] | [.id, .created_at] | @tsv' \
+            | sort -k2 -r | tail -n +6 | cut -f1 \
+            | while read -r id; do gh api -X DELETE "/orgs/$GITHUB_REPOSITORY_OWNER/packages/container/$PKG/versions/$id"; done
+      - if: failure()
+        run: lxc list; lxc storage info e2e; df -h

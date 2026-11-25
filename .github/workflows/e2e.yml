@@ -2,8 +2,10 @@
 # 4.14 floor in the myna-noble workshop, driven through AT-SPI on fresh GNOME,
 # Xubuntu (Xfce on X11) and Kubuntu (Plasma 6 on Wayland) desktop LXD VMs
 # (e2e-tests/), against the myna snap built from this tree and the store's
-# latest/edge backends. Provisioned from scratch every run, so a regression in
-# the edge snaps shows here too.
+# latest/edge backends. Each VM is the one the E2E images workflow
+# provisioned that day from the store's edge snaps (or, with no image for
+# this tree's provisioning, provisioned here), so a regression in the edge
+# snaps shows here too.
 # Blocking, on pull requests and nightly: GNOME on every supported release
 # (noble, resolute and the devel series stonking), Xubuntu on noble and
 # Kubuntu on resolute. Nobody daily-drives Xfce or Plasma here, so this is
@@ -132,6 +134,9 @@ jobs:
     name: ${{ matrix.desktop == 'gnome' && format('e2e ({0})', matrix.release) || format('e2e ({0}, {1})', matrix.desktop, matrix.release) }}
     runs-on: ubuntu-latest
     timeout-minutes: 75
+    permissions:
+      contents: read
+      packages: read
     steps:
       - uses: actions/checkout@v6
       - uses: actions/download-artifact@v8
@@ -162,6 +167,13 @@ jobs:
       # setup-lxd's pool is `dir`, where each suite's snapshot copy is a full
       # 20 GB disk copy; btrfs makes it copy-on-write.
       - run: lxc storage create e2e btrfs size=60GiB
+      # The VM up to the dictation rig, provisioned by the E2E images workflow;
+      # without one for this hash, `make e2e` provisions as before.
+      - name: Import the provisioned VM
+        run: dev/timed.sh e2e-tests/vm/image.sh pull --release ${{ matrix.release }} --desktop ${{ matrix.desktop }} || true
+        env:
+          E2E_POOL: e2e
+          GITHUB_TOKEN: ${{ github.token }}
       - run: |
           E2E_MYNA_SNAP=$(ls "$PWD"/myna-snap/myna_*_amd64.snap) \
             make e2e E2E_RELEASE=${{ matrix.release }} E2E_DESKTOP=${{ matrix.desktop }} \
