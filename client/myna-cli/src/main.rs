@@ -21,15 +21,14 @@
 //! a corpus manifest instead of a single clip. `--mic` captures live audio via
 //! `myna-audio` (native PipeWire backend): capture starts at press and buffers in
 //! the pre-ready ring while the model loads, so nothing said is lost.
+//!
+//! What the processing graphs do to the text is measured end to end by the
+//! `deadair` e2e suite, against the real daemon; this binary drives sessions.
 
 mod convert;
 mod discover;
-mod lab;
-mod report;
-mod run;
-mod spec;
 
-use std::io::{Read as _, Write as _};
+use std::io::Write as _;
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::Duration;
@@ -58,19 +57,6 @@ struct Args {
     show_unstable: bool,
     /// `--mode`; `None` defers to the user's choice, then the backend.
     mode: Option<myna_core::StreamingMode>,
-    /// Set when graphs are to be timed (`--graph`, `--sweep`, `--text`).
-    lab: Option<LabArgs>,
-}
-
-/// What the graph lab was asked for.
-struct LabArgs {
-    specs: Vec<spec::Spec>,
-    purpose: myna_desktop::inject::FieldPurpose,
-    mid_sentence: bool,
-    /// Text to run instead of speech, one utterance each.
-    text: Vec<String>,
-    json: Option<PathBuf>,
-    share_dirs: Vec<PathBuf>,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -88,19 +74,17 @@ struct Clip {
 }
 
 const USAGE: &str = "\
-myna-testbed - drive a backend session from WAV clips, a corpus or the microphone,
-               and time what the processing graphs do to the text
+myna-testbed - drive a backend session from WAV clips, a corpus or the microphone
 
 USAGE:
-    myna-testbed [--socket <path> | --backend-dir <d>] (--clip <wav> | --corpus <dir> | --mic | --text <t>) [options]
+    myna-testbed [--socket <path> | --backend-dir <d>] (--clip <wav> | --corpus <dir> | --mic) [options]
 
-    The speech backend defaults to the installed snap; text models are found
-    as the daemon finds them (any connected or installed myna-text share).
+    The speech backend defaults to the installed snap.
 
 EXAMPLES:
-    myna-testbed --mic --graph tidy --graph tidy-french
-    myna-testbed --text \"um I I think we ship, no, Tuesday\" --sweep disfluency,cleanup
-    myna-testbed --corpus <dir> --limit 20 --graph tidy --json out.json
+    myna-testbed --mic
+    myna-testbed --corpus <dir> --limit 20
+    myna-testbed --socket /tmp/myna.sock --clip corpus/english/audio/<id>.wav
 
 OPTIONS:
     --socket <path>    Unix socket of a running myna-server
@@ -127,24 +111,6 @@ OPTIONS:
     --mode <mode>      transcription mode: `streaming` or `batch`; overrides
                        the persisted setting, which overrides the backend's
                        own mode
-    --graph <spec>     run the speech through this graph and time it (repeatable).
-                       A preset id (exact, tidy, tidy-french) or a comma
-                       list of steps: disfluency, vocabulary, cleanup,
-                       translate=FR (or EN:FR), address, continue, script=NICK.
-                       `exact` is always run too, as the baseline.
-    --steps <list>     like --graph, but a comma list of steps in any order:
-                       tidy, translate=LANG, script=NICK. They run in
-                       the daemon's stage order for --language (repeatable).
-    --sweep <steps>    run every ordered subset of the comma list (3 steps are
-                       15 graphs; at most 5 steps)
-    --field <kind>     the field typed into: plain (default), url, email, terminal
-    --mid-sentence     the text continues a sentence already in the field
-    --text <text>      run this text instead of speech (repeatable); `-` reads
-                       one utterance per stdin line. Sentences are taken as
-                       spoken 3 s apart, the last at the stop.
-    --json <file>      also write every measure as JSON
-    --text-share <d>   a directory of text shares to search too (repeatable;
-                       MYNA_TEXT_SHARES works as for the daemon)
     --limit <n>        with --corpus: only the first n clips
     --only <substr>    with --corpus: only clips whose path contains substr
     --realtime         pace clips at real time, like a microphone (default: as
@@ -166,14 +132,6 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
     let mut ws_path: Option<String> = None;
     let mut show_unstable = false;
     let mut mode = None;
-    let mut graphs: Vec<String> = Vec::new();
-    let mut sweep: Option<String> = None;
-    let mut steps: Vec<String> = Vec::new();
-    let mut purpose = myna_desktop::inject::FieldPurpose::Plain;
-    let mut mid_sentence = false;
-    let mut text: Vec<String> = Vec::new();
-    let mut json = None;
-    let mut text_shares: Vec<PathBuf> = Vec::new();
     let mut limit: Option<usize> = None;
     let mut only: Option<String> = None;
     let mut it = args.into_iter();
@@ -194,45 +152,12 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
             "--target" => target = Some(next(&mut it, "--target")?),
             "--language" => language = Some(next(&mut it, "--language")?),
             "--vocabulary" => vocabulary.push(next(&mut it, "--vocabulary")?),
-            "--dialect" => {
-                dialect = match next(&mut it, "--dialect")?.as_str() {
-                    "internal" => Dialect::Internal,
-                    "ie115" => Dialect::Ie115,
-                    other => return Err(format!("unknown dialect: {other} (want internal|ie115)")),
-                }
-            }
+            "--dialect" => dialect = parse_dialect(&next(&mut it, "--dialect")?)?,
             "--base64-audio" => base64_audio = true,
             "--ws-path" => ws_path = Some(next(&mut it, "--ws-path")?),
             "--show-unstable" => show_unstable = true,
-            "--mode" => {
-                mode = Some(match next(&mut it, "--mode")?.as_str() {
-                    "streaming" => myna_core::StreamingMode::Streaming,
-                    "batch" => myna_core::StreamingMode::Batch,
-                    other => return Err(format!("unknown mode: {other} (want streaming|batch)")),
-                })
-            }
+            "--mode" => mode = Some(parse_mode(&next(&mut it, "--mode")?)?),
             "--realtime" => realtime = true,
-            "--graph" => graphs.push(next(&mut it, "--graph")?),
-            "--sweep" => sweep = Some(next(&mut it, "--sweep")?),
-            "--steps" => steps.push(next(&mut it, "--steps")?),
-            "--field" => {
-                use myna_desktop::inject::FieldPurpose as P;
-                purpose = match next(&mut it, "--field")?.as_str() {
-                    "plain" => P::Plain,
-                    "url" => P::Url,
-                    "email" => P::Email,
-                    "terminal" => P::Terminal,
-                    other => {
-                        return Err(format!(
-                            "unknown field: {other} (want plain|url|email|terminal)"
-                        ))
-                    }
-                }
-            }
-            "--mid-sentence" => mid_sentence = true,
-            "--text" => text.push(next(&mut it, "--text")?),
-            "--json" => json = Some(PathBuf::from(next(&mut it, "--json")?)),
-            "--text-share" => text_shares.push(PathBuf::from(next(&mut it, "--text-share")?)),
             "--limit" => {
                 limit = Some(
                     next(&mut it, "--limit")?
@@ -253,29 +178,12 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
     if (only.is_some() || limit.is_some()) && clips.is_empty() && !mic {
         return Err("--limit/--only left no clips (they apply to --corpus)".into());
     }
-    if text.iter().any(|t| t == "-") {
-        text.retain(|t| t != "-");
-        let mut piped = String::new();
-        std::io::stdin()
-            .read_to_string(&mut piped)
-            .map_err(|e| format!("stdin: {e}"))?;
-        text.extend(
-            piped
-                .lines()
-                .map(str::trim)
-                .filter(|l| !l.is_empty())
-                .map(str::to_owned),
-        );
-    }
-    if (mic || !clips.is_empty()) && !text.is_empty() {
-        return Err("--text is an alternative to --mic and --clip/--corpus".into());
-    }
     if mic && !clips.is_empty() {
         return Err("--mic and --clip/--corpus are mutually exclusive".into());
     }
-    if !mic && clips.is_empty() && text.is_empty() {
+    if !mic && clips.is_empty() {
         return Err(format!(
-            "one of --clip / --corpus / --mic / --text is required\n\n{USAGE}"
+            "one of --clip / --corpus / --mic is required\n\n{USAGE}"
         ));
     }
     if target.is_some() && !mic {
@@ -287,71 +195,12 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
     if ws_path.is_some() && dialect != Dialect::Ie115 {
         return Err("--ws-path only applies to --dialect ie115".into());
     }
-    let wants_lab = !graphs.is_empty() || !steps.is_empty() || sweep.is_some() || !text.is_empty();
-    if !wants_lab
-        && (json.is_some() || mid_sentence || purpose != myna_desktop::inject::FieldPurpose::Plain)
-    {
-        return Err("--json, --field and --mid-sentence need --graph, --sweep or --text".into());
-    }
-    // Speech is needed unless text stands in for it.
     let backend = match BackendSocket::from_flags(socket, backend_dir)? {
-        Some(backend) => Some(backend),
-        None if text.is_empty() => Some(discover::default_backend(discover::var_snap())?),
-        None => None,
+        Some(backend) => backend,
+        None => discover::default_backend(discover::var_snap())?,
     };
-    let socket = match &backend {
-        Some(backend) => resolve_socket(backend)?,
-        None => PathBuf::new(),
-    };
-    let lab = if wants_lab {
-        let mut labels = graphs;
-        if let Some(items) = &sweep {
-            labels.extend(spec::sweep(items)?);
-        }
-        if labels.is_empty() && steps.is_empty() {
-            labels.push("tidy".into());
-        }
-        if !labels.iter().any(|l| l.trim() == "exact") {
-            labels.insert(0, "exact".into());
-        }
-        let mut specs = labels
-            .iter()
-            .map(|l| spec::parse(l).map_err(|e| format!("--graph {l}: {e}")))
-            .collect::<Result<Vec<_>, _>>()?;
-        for list in &steps {
-            specs.push(
-                spec::parse_steps(list, language.as_deref())
-                    .map_err(|e| format!("--steps {list}: {e}"))?,
-            );
-        }
-        let search = match &backend {
-            Some(BackendSocket::Search(dir)) => Some(dir.as_path()),
-            _ => None,
-        };
-        let mut share_dirs = myna_desktop::process::resolve::share_dirs(
-            search,
-            std::env::var_os("MYNA_TEXT_SHARES"),
-        );
-        share_dirs.extend(text_shares);
-        if discover::myna_snap_data().is_none() {
-            share_dirs.extend(discover::snap_share_dirs(discover::var_snap()));
-        }
-        let mut seen = std::collections::HashSet::new();
-        share_dirs.retain(|d| seen.insert(d.clone()));
-        Some(LabArgs {
-            specs,
-            purpose,
-            mid_sentence,
-            text,
-            json,
-            share_dirs,
-        })
-    } else {
-        None
-    };
-
     Ok(Args {
-        socket,
+        socket: resolve_socket(&backend)?,
         clips,
         mic,
         target,
@@ -363,8 +212,23 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
         ws_path,
         show_unstable,
         mode,
-        lab,
     })
+}
+
+fn parse_dialect(name: &str) -> Result<Dialect, String> {
+    match name {
+        "internal" => Ok(Dialect::Internal),
+        "ie115" => Ok(Dialect::Ie115),
+        other => Err(format!("unknown dialect: {other} (want internal|ie115)")),
+    }
+}
+
+fn parse_mode(name: &str) -> Result<myna_core::StreamingMode, String> {
+    match name {
+        "streaming" => Ok(myna_core::StreamingMode::Streaming),
+        "batch" => Ok(myna_core::StreamingMode::Batch),
+        other => Err(format!("unknown mode: {other} (want streaming|batch)")),
+    }
 }
 
 /// The socket to use; on failure, the translated headline and, on the next
@@ -486,11 +350,6 @@ async fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-
-    // Typed text needs no speech backend at all.
-    if let Some(lab) = args.lab.as_ref().filter(|l| !l.text.is_empty()) {
-        return text_lab(lab, &args).await;
-    }
 
     // Same wire-agnostic run loop, either dialect: the FSM (and this driver)
     // don't change — only the BackendClient does (plan T43).
@@ -620,23 +479,6 @@ impl<T: TextSink> TextSink for BatchDisplay<T> {
     }
 }
 
-/// What shows the session as it runs: the meter and transcript, or nothing
-/// when the lab prints the result itself.
-enum Printer {
-    Meter(MicMeterSink),
-    Quiet(run::Quiet),
-}
-
-#[async_trait]
-impl TextSink for Printer {
-    async fn emit(&mut self, event: myna_orchestrator::fsm::OrchestratorEvent) {
-        match self {
-            Printer::Meter(sink) => sink.emit(event).await,
-            Printer::Quiet(sink) => sink.emit(event).await,
-        }
-    }
-}
-
 /// Wraps [`StdoutSink`] and clears the VU-meter line before each `println!` so
 /// the meter and session events don't overprint each other.
 struct MicMeterSink(StdoutSink);
@@ -655,120 +497,11 @@ impl TextSink for MicMeterSink {
 
 /// The push-to-talk loop, generic over the backend dialect.
 async fn dictate<B: BackendClient>(backend: B, args: &Args) -> ExitCode {
-    let mut lab = args.lab.as_ref().map(|l| make_lab(l, args));
-    if let Some(lab) = lab.as_mut() {
-        lab.warm().await;
-    }
-    let exit = if args.mic {
-        dictate_mic(backend, args, lab.as_mut()).await
-    } else if let Some(lab) = lab.as_mut() {
-        dictate_clips_lab(backend, args, lab).await
+    if args.mic {
+        dictate_mic(backend, args).await
     } else {
         dictate_clips(backend, args).await
-    };
-    match lab.as_ref().map(run::Lab::finish) {
-        Some(Err(e)) => {
-            eprintln!("✗ {e}");
-            ExitCode::FAILURE
-        }
-        _ => exit,
     }
-}
-
-fn make_lab(lab: &LabArgs, args: &Args) -> run::Lab {
-    let total = if lab.text.is_empty() {
-        args.clips.len()
-    } else {
-        lab.text.len()
-    };
-    run::Lab::new(
-        run::Config {
-            specs: lab.specs.clone(),
-            purpose: lab.purpose,
-            mid_sentence: lab.mid_sentence,
-            vocabulary: args.vocabulary.clone(),
-            language: args.language.clone(),
-            share_dirs: lab.share_dirs.clone(),
-            json: lab.json.clone(),
-        },
-        total,
-    )
-}
-
-/// `--text`: no speech, so only the graphs run.
-async fn text_lab(lab_args: &LabArgs, args: &Args) -> ExitCode {
-    let mut lab = make_lab(lab_args, args);
-    lab.warm().await;
-    for (i, text) in lab_args.text.iter().enumerate() {
-        lab.analyse(lab::Speech::typed(format!("text {}", i + 1), text))
-            .await;
-    }
-    match lab.finish() {
-        Ok(()) => ExitCode::SUCCESS,
-        Err(e) => {
-            eprintln!("✗ {e}");
-            ExitCode::FAILURE
-        }
-    }
-}
-
-/// Clips through the speech backend once each, then every graph over what
-/// was heard.
-async fn dictate_clips_lab<B: BackendClient>(
-    backend: B,
-    args: &Args,
-    lab: &mut run::Lab,
-) -> ExitCode {
-    let mut exit = ExitCode::SUCCESS;
-    let realtime = if args.realtime {
-        "realtime"
-    } else {
-        "flat out: pass --realtime to feel the wait"
-    };
-    println!("speech: {} ({realtime})", args.socket.display());
-    for clip in &args.clips {
-        let wav = match open_clip(&clip.path) {
-            Ok(s) => s.realtime(args.realtime),
-            Err(e) => {
-                eprintln!("✗ {e}");
-                exit = ExitCode::FAILURE;
-                continue;
-            }
-        };
-        let stop = run::Stop::default();
-        let source = run::Stamped::new(wav, stop.clone());
-        let config = SessionConfig {
-            language: args.language.clone(),
-            keywords: args.vocabulary.clone(),
-            ..Default::default()
-        };
-        let mut sink = run::Recording::new(run::Quiet);
-        match run_dictation(&backend, config, source, &mut sink).await {
-            Ok(SessionOutcome::Completed { .. }) => {
-                let id = clip.path.file_name().map_or_else(
-                    || clip.path.display().to_string(),
-                    |n| n.to_string_lossy().into_owned(),
-                );
-                lab.analyse(lab::Speech::recorded(
-                    id,
-                    clip.reference.clone(),
-                    &sink.events,
-                    stop.at(),
-                ))
-                .await;
-            }
-            Ok(SessionOutcome::Aborted) => println!("  (aborted)"),
-            Ok(SessionOutcome::Failed { code, failure }) => {
-                eprintln!("✗ {} [{code}]\n  {}", failure.headline, failure.detail);
-                exit = ExitCode::FAILURE;
-            }
-            Err(e) => {
-                eprintln!("✗ {}\n  could not open session: {e}", e.headline());
-                exit = ExitCode::FAILURE;
-            }
-        }
-    }
-    exit
 }
 
 /// The mode the clips run in and why: `--mode`, else the user's stored
@@ -864,12 +597,7 @@ async fn dictate_clips<B: BackendClient>(backend: B, args: &Args) -> ExitCode {
 }
 
 /// Interactive push-to-talk mic mode: press Enter to speak, Enter to stop, Ctrl-D to quit.
-async fn dictate_mic<B: BackendClient>(
-    backend: B,
-    args: &Args,
-    mut lab: Option<&mut run::Lab>,
-) -> ExitCode {
-    let mut utterance = 0;
+async fn dictate_mic<B: BackendClient>(backend: B, args: &Args) -> ExitCode {
     let mut trigger = StdinTrigger::new();
 
     println!(
@@ -898,8 +626,6 @@ async fn dictate_mic<B: BackendClient>(
         println!("── mic: capturing (Enter to stop)");
         let mic_stats = source.stats();
         let stop = source.stop_handle();
-        let stamp = run::Stop::default();
-        let source = run::Stamped::new(source, stamp.clone());
         let config = SessionConfig {
             language: args.language.clone(),
             keywords: args.vocabulary.clone(),
@@ -909,15 +635,10 @@ async fn dictate_mic<B: BackendClient>(
         // Start the VU meter: runs as a background task, writes \r bars,
         // and clears the line when the stats sender drops (session ends).
         let meter = tokio::spawn(render_meter(mic_stats.clone()));
-        let printer = if lab.is_some() {
-            Printer::Quiet(run::Quiet)
-        } else {
-            Printer::Meter(MicMeterSink(StdoutSink))
-        };
-        let mut sink = run::Recording::new(UnstableFilter {
-            inner: printer,
+        let mut sink = UnstableFilter {
+            inner: MicMeterSink(StdoutSink),
             show_unstable: args.show_unstable,
-        });
+        };
 
         // Run the utterance while watching for a Release edge (graceful early
         // stop → end-of-audio → finalize).
@@ -945,17 +666,7 @@ async fn dictate_mic<B: BackendClient>(
 
         match outcome {
             Ok(SessionOutcome::Completed { .. }) => {
-                // StdoutSink already printed it, unless the lab is timing it.
-                if let Some(lab) = lab.as_deref_mut() {
-                    utterance += 1;
-                    let speech = lab::Speech::recorded(
-                        format!("mic {utterance}"),
-                        None,
-                        &sink.events,
-                        stamp.at(),
-                    );
-                    lab.analyse(speech).await;
-                }
+                // MicMeterSink already printed it.
             }
             Ok(SessionOutcome::Aborted) => println!("  (aborted)"),
             Ok(SessionOutcome::Failed { code, failure }) if code == "capture_failed" => {
@@ -1055,71 +766,6 @@ mod tests {
         );
         let (_, reason) = clip_mode(None, || None, absent).await;
         assert_eq!(reason, myna_core::effective_mode(None, None).to_string());
-    }
-
-    #[test]
-    fn graphs_are_parsed_with_the_exact_baseline_first() {
-        let lab = parse(&["--graph", "tidy", "--field", "email", "--mid-sentence"])
-            .unwrap()
-            .lab
-            .unwrap();
-        let labels: Vec<_> = lab.specs.iter().map(|s| s.label.as_str()).collect();
-        assert_eq!(labels, ["exact", "tidy"]);
-        assert!(lab.mid_sentence);
-        assert_eq!(lab.purpose, myna_desktop::inject::FieldPurpose::Email);
-        let sweep = parse(&["--sweep", "disfluency,cleanup"])
-            .unwrap()
-            .lab
-            .unwrap();
-        assert_eq!(sweep.specs.len(), 1 + 4);
-        let only_exact = parse(&["--graph", "exact"]).unwrap().lab.unwrap();
-        assert_eq!(only_exact.specs.len(), 1);
-    }
-
-    #[test]
-    fn steps_are_a_graph_in_the_language_of_the_dictation() {
-        let lab = parse(&["--steps", "translate=de,tidy", "--language", "fr"])
-            .unwrap()
-            .lab
-            .unwrap();
-        let labels: Vec<_> = lab.specs.iter().map(|s| s.label.as_str()).collect();
-        assert_eq!(labels, ["exact", "steps: translate=de,tidy"]);
-        assert_eq!(
-            lab.specs[1].graph.requests().len(),
-            1,
-            "tidy is English only"
-        );
-        let both = parse(&["--graph", "tidy", "--steps", "tidy"])
-            .unwrap()
-            .lab
-            .unwrap();
-        assert_eq!(both.specs.len(), 3);
-        assert!(parse(&["--steps", "shout"])
-            .err()
-            .unwrap()
-            .contains("--steps"));
-    }
-
-    #[test]
-    fn without_graph_flags_nothing_changes() {
-        assert!(parse(&[]).unwrap().lab.is_none());
-        assert!(parse(&["--json", "x"]).err().unwrap().contains("--graph"));
-        assert!(parse(&["--graph", "shout"])
-            .err()
-            .unwrap()
-            .contains("shout"));
-        assert!(parse(&["--field", "fax", "--graph", "tidy"]).is_err());
-    }
-
-    #[test]
-    fn text_needs_no_speech_backend() {
-        let args = parse_args(["--text", "um hello", "--text", "bye"].map(String::from)).unwrap();
-        assert!(args.socket.as_os_str().is_empty());
-        assert_eq!(args.lab.unwrap().text, ["um hello", "bye"]);
-        assert!(parse(&["--text", "x"])
-            .err()
-            .unwrap()
-            .contains("alternative"));
     }
 
     #[test]

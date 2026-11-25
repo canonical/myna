@@ -25,7 +25,6 @@ flowchart TB
         cli -->|"depends on"| core
         cli -->|"depends on"| audio
         cli -->|"depends on"| orchestrator
-        cli -->|"depends on"| desktop
         desktop -->|"depends on"| core
         desktop -->|"depends on"| audio
         desktop -->|"depends on"| orchestrator
@@ -46,6 +45,6 @@ flowchart TB
     portal["Settings portal"] -.->|"appearance"| freedesktop
 ```
 
-`myna-cli` depends on `myna-desktop` so the testbed's graph lab runs the daemon's own `Pipeline`, `Resolver`, `CommitPolicy` and the compiled `Graph` rather than a copy. That costs nothing in GTK: `myna-desktop` is zbus, gettext and the processing libraries, and the dependency is one-way (the daemon never sees the lab). Graph spec parsing, the replay clock and the report stay in `myna-cli`.
+`myna-cli` drives sessions over `myna-orchestrator` and captures through `myna-audio`; it does not depend on `myna-desktop`. What a processing chain costs is measured by the `deadair` e2e suite against the real daemon, not replayed inside the testbed, so the processing graph has one owner.
 
 `myna-core` is the lowest internal layer and must not depend on higher-level crates. `myna-platform` sits beside it with no internal dependency at all: it holds the contracts every desktop backend implements and must stay free of GTK, D-Bus and gio (myna-core links gio, so the platform crate does not depend on it). Backends live in the crate of the process that runs them (`.kb/platform-layer.md`), except those the HUD and Myna Settings share, which live in `myna-freedesktop` (gio only, no toolkit, so its tests need no display). `myna-audio` and `myna-orchestrator` are peers over the core contract. Product binaries compose those boundaries; `myna-hud` remains a separate process and consumes status over D-Bus rather than linking to `myna-desktop`. On Xfce and Plasma `myna-hud-host`, a binary of `myna-config` shipped in the deb, takes the shell extension's place: it runs `myna-hud --host x11` (`layer-shell` on Wayland) while the daemon owns its bus name (`.kb/platform-layer.md`).

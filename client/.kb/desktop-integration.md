@@ -118,9 +118,16 @@ GNOME, Xfce and Plasma (where KWin runs it as its input method), and
 whether a portable IM/text-injection interface ever standardises; until then
 `Injector` is the portability boundary and IBus is the shipping backend.
 
-## Timing graphs with myna-testbed
+## Timing a graph
 
-`myna-testbed --graph SPEC` (repeatable), `--sweep a,b,c` (every ordered subset, at most five steps), `--field plain|url|email|terminal`, `--mid-sentence`, `--text` (or `--text -` for stdin lines) and `--json FILE` show where the wait after the user stops goes. Speech runs once per utterance and is recorded as events timed from the stop edge (a stamp on the audio source's stream end; for typed text, sentences are taken as spoken 3 s apart, the last at the stop). Each graph then replays those events through the daemon's own pieces: `CommitPolicy::for_needs` (shared with the daemon) decides what is settled at each event, a `Pipeline` over a `Resolver` processes it, the field follows the last typed character, and `Terminal` folds control characters. Processing is serial on a virtual clock, so a piece still running when the next event arrives delays it as it would live. Per graph: `asr` is the stop edge to the speech model finishing, `graph` is the rest of the wait (work queued or running after the stop), and the wait is their sum, which is `dead_air_ms` in the history record. `exact` is always run first as the baseline. A spec is a preset id or a comma list of `disfluency`, `vocabulary`, `cleanup`, `translate=FR` (or `EN:FR`), `address`, `continue` and `script=NICK` (a stage after the graph, as in the daemon); the parser is `myna-cli/src/spec.rs`, not GSettings. Text shares are found as the daemon finds them (`resolve::share_dirs`: the backend dir plus `MYNA_TEXT_SHARES`), plus `--text-share DIR` and, on the host, every `/var/snap/myna*/common/share`, whose mounts the host can read though the myna snap's `backend` mount is invisible to it. The speech backend defaults the same way: `$SNAP_DATA/backend` inside the myna snap, else the one running speech snap on the host, else the one `snap connections myna` names. Inside a snap that is not myna the exported `$SNAP_DATA` is ignored. Binding happens before the first utterance and is printed apart from the utterances. Clips run flat out unless `--realtime`, which is what makes `asr` mean what a microphone makes it mean.
+What the wait after the user stops goes into is measured end to end by the
+`deadair` e2e suite (`e2e-tests/suites/deadair.sh`): the real daemon, IBus and
+snapd on a virtual microphone, reading `dead_air_ms` and `asr_tail_ms` from the
+record of past dictations. The old `myna-testbed` graph lab, which replayed one
+utterance through the `Pipeline` on a virtual clock, is gone: it measured a
+copy of the schedule rather than the schedule, and its preset ids died with the
+processing-graph scope cut. `myna-testbed` drives sessions (`--clip`,
+`--corpus`, `--mic`, `--dialect`) and nothing else.
 
 # Important
 
