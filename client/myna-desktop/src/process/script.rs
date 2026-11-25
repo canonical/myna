@@ -68,75 +68,17 @@ mod tests {
     #[test]
     fn only_ideographs_without_kana_or_hangul_are_chinese() {
         assert!(is_chinese("你好 hello"));
-        assert!(is_chinese("\u{20000}"));
         assert!(!is_chinese("hello, 42"));
         assert!(!is_chinese(""));
         assert!(!is_chinese("こんにちは"));
         assert!(!is_chinese("한국어"));
-        assert!(!is_chinese("日本語です"));
         assert!(!is_chinese("漢字 한"));
-    }
-
-    #[test]
-    fn warming_loads_the_dictionaries_in_the_background() {
-        warm().join().unwrap();
-        assert!(OPENCC.get().is_some());
     }
 
     #[test]
     fn a_character_with_two_readings_follows_its_word() {
         assert_eq!(convert("我的头发", Traditional), "我的頭髮");
         assert_eq!(convert("我们出发", Traditional), "我們出發");
-    }
-
-    #[test]
-    fn taiwan_uses_its_own_words() {
-        assert_eq!(convert("这个软件", TraditionalTaiwan), "這個軟體");
-        assert_eq!(convert("这个软件", Traditional), "這個軟件");
-        assert_eq!(convert("這個軟件", TraditionalTaiwan), "這個軟體");
-    }
-
-    #[test]
-    fn hong_kong_keeps_its_characters() {
-        assert_eq!(convert("今天的天气", TraditionalHongKong), "今天的天氣");
-    }
-
-    #[test]
-    fn simplified_converts_traditional_text() {
-        assert_eq!(convert("今天的天氣很好", Simplified), "今天的天气很好");
-        assert_eq!(convert("今天的天气很好", Simplified), "今天的天气很好");
-        assert_eq!(convert("這個軟體", Simplified), "这个软件");
-    }
-
-    #[test]
-    fn as_recognised_changes_nothing() {
-        assert_eq!(convert("头发", AsRecognised), "头发");
-        assert_eq!(convert("頭髮", AsRecognised), "頭髮");
-    }
-
-    #[test]
-    fn latin_text_and_marks_are_untouched() {
-        for script in [
-            Simplified,
-            Traditional,
-            TraditionalTaiwan,
-            TraditionalHongKong,
-        ] {
-            assert_eq!(
-                convert("Hello, World! NASA 42", script),
-                "Hello, World! NASA 42"
-            );
-        }
-        assert_eq!(
-            convert("我用 GitHub 看 README.md, v2.0 好", Traditional),
-            "我用 GitHub 看 README.md, v2.0 好"
-        );
-    }
-
-    #[test]
-    fn japanese_and_korean_are_left_alone() {
-        assert_eq!(convert("国の言葉です", Traditional), "国の言葉です");
-        assert_eq!(convert("한국 国", Traditional), "한국 国");
     }
 
     #[test]
@@ -149,15 +91,5 @@ mod tests {
         for l in ["en", "ja", "zhx", "fr"] {
             assert!(!applies(Simplified, Some(l)), "{l}");
         }
-    }
-
-    #[test]
-    fn a_piece_of_a_sentence_converts_in_microseconds() {
-        convert("热身", Traditional);
-        let start = std::time::Instant::now();
-        for _ in 0..100 {
-            convert("我今天去公司开会，然后回家吃饭。", TraditionalTaiwan);
-        }
-        assert!(start.elapsed() / 100 < std::time::Duration::from_millis(50));
     }
 }

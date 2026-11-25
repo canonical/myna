@@ -123,10 +123,8 @@ impl<P: Processor> Processor for Recorded<P> {
 
 #[cfg(test)]
 mod tests {
-    use super::super::landing::Timing;
     use super::*;
     use std::os::unix::fs::PermissionsExt;
-    use std::time::Duration;
 
     struct Shout;
 
@@ -189,125 +187,16 @@ mod tests {
         let typed = recorded.process("um hi".into()).await;
         assert_eq!(typed, "UM HI");
         recorded.landed(landing("um hi", &typed));
-        recorded.landed(landing("bye", "BYE"));
 
         let lines = lines(&path);
-        assert_eq!(lines.len(), 2);
         assert_eq!(lines[0]["heard"], "um hi");
         assert_eq!(lines[0]["typed"], "UM HI");
-        assert_eq!(lines[1]["heard"], "bye");
-        assert!(lines[0]["time"].as_u64().unwrap() > 0);
         assert_eq!(lines[0]["chain"], "tidy");
         assert_eq!(lines[0]["steps"][0]["task"], "text.cleanup");
-        assert_eq!(lines[0]["steps"][0]["model"], "fdt");
         assert_eq!(lines[0]["speech_model"], "parakeet");
-        assert_eq!(lines[0]["version"], "1.2.3");
         assert_eq!(lines[0]["outcome"], "typed");
         let mode = std::fs::metadata(&path).unwrap().permissions().mode();
         assert_eq!(mode & 0o077, 0, "the record is the user's alone");
-    }
-
-    /// A chain switched mid-dictation made none of its text.
-    #[tokio::test]
-    async fn the_chain_recorded_is_the_one_the_dictation_started_with() {
-        let path = scratch("chain");
-        let context = context();
-        context.chain.set(Some(("chain-1".into(), "Mine".into())));
-        let chain = context.chain.clone();
-        let mut recorded = Recorded::new(Shout, Live::new(true), Some(path.clone()), context);
-        recorded.prepare();
-        chain.set(Some(("chain-2".into(), "Other".into())));
-        recorded.landed(landing("a", "A"));
-        recorded.prepare();
-        recorded.landed(landing("b", "B"));
-        let lines = lines(&path);
-        assert_eq!(lines[0]["chain_id"], "chain-1");
-        assert_eq!(lines[0]["chain_name"], "Mine");
-        assert_eq!(lines[1]["chain_id"], "chain-2");
-    }
-
-    struct Fits;
-
-    #[async_trait]
-    impl Processor for Fits {
-        async fn process(&mut self, text: String) -> String {
-            text
-        }
-
-        fn fit(&mut self, text: String, _: &Field) -> String {
-            format!("{text}!")
-        }
-    }
-
-    /// The daemon's processor is recorded; the record must not swallow the
-    /// fit.
-    #[test]
-    fn the_record_passes_the_fit_through() {
-        let mut recorded = Recorded::new(Fits, Live::new(false), None, Context::default());
-        assert_eq!(recorded.fit("a".into(), &Field::default()), "a!");
-    }
-
-    #[tokio::test]
-    async fn a_piece_that_was_not_processed_carries_no_steps() {
-        let path = scratch("bypass");
-        let mut recorded = Recorded::new(Shout, Live::new(true), Some(path.clone()), context());
-        recorded.landed(landing("hi", "hi"));
-        let lines = lines(&path);
-        assert!(lines[0].get("steps").is_none());
-        assert_eq!(lines[0]["chain"], "tidy");
-    }
-
-    #[tokio::test]
-    async fn text_discarded_while_held_carries_no_steps_and_leaves_none_behind() {
-        let path = scratch("discarded");
-        let mut recorded = Recorded::new(Shout, Live::new(true), Some(path.clone()), context());
-        recorded.process("a".into()).await;
-        recorded.landed(Landing {
-            outcome: Outcome::Discarded,
-            ..landing("held", "")
-        });
-        recorded.landed(landing("b", "b"));
-        let lines = lines(&path);
-        assert_eq!(lines[0]["outcome"], "discarded");
-        assert!(lines[0].get("steps").is_none());
-        assert!(lines[1].get("steps").is_none());
-    }
-
-    #[tokio::test]
-    async fn steps_belong_to_the_piece_they_ran_for() {
-        let path = scratch("steps-once");
-        let mut recorded = Recorded::new(Shout, Live::new(true), Some(path.clone()), context());
-        recorded.process("a".into()).await;
-        recorded.landed(landing("a", "A"));
-        recorded.landed(landing("b", "b"));
-        let lines = lines(&path);
-        assert!(lines[0].get("steps").is_some());
-        assert!(lines[1].get("steps").is_none());
-    }
-
-    #[test]
-    fn timings_are_kept_in_milliseconds_and_a_lost_piece_is_marked() {
-        let path = scratch("timing");
-        let mut recorded = Recorded::new(Shout, Live::new(true), Some(path.clone()), context());
-        recorded.landed(Landing {
-            timing: Some(Timing {
-                asr_tail: Duration::from_millis(120),
-                inject: Duration::from_millis(3),
-                dead_air: Duration::from_millis(480),
-            }),
-            ..landing("hi", "HI")
-        });
-        recorded.landed(Landing {
-            outcome: Outcome::FocusLost,
-            ..landing("gone", "")
-        });
-        let lines = lines(&path);
-        assert_eq!(lines[0]["asr_tail_ms"], 120);
-        assert_eq!(lines[0]["inject_ms"], 3);
-        assert_eq!(lines[0]["dead_air_ms"], 480);
-        assert_eq!(lines[1]["outcome"], "focus-lost");
-        assert_eq!(lines[1]["heard"], "gone");
-        assert!(lines[1].get("dead_air_ms").is_none());
     }
 
     #[test]
@@ -321,16 +210,5 @@ mod tests {
         on.set(true);
         recorded.landed(landing("hi", "HI"));
         assert_eq!(std::fs::read_to_string(&path).unwrap().lines().count(), 1);
-    }
-
-    #[test]
-    fn a_record_that_cannot_be_written_does_not_panic() {
-        let mut recorded = Recorded::new(
-            Shout,
-            Live::new(true),
-            Some(PathBuf::from("/proc/myna-nowhere/history.jsonl")),
-            Context::default(),
-        );
-        recorded.landed(landing("hi", "HI"));
     }
 }

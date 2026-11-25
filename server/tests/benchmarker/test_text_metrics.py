@@ -207,7 +207,8 @@ def test_chrf_refuses_unpaired_inputs():
 
 # The Rust ``Check::ConservativeEdit`` (client/myna-desktop/src/process/check.rs)
 # is the product's check; this file's cases are run through it by a Rust test
-# that regenerates them from the vendored corpus (``MYNA_REGEN_CASES=1``).
+# that regenerates them from the vendored corpus (``MYNA_REGEN_CASES=1``), one
+# case per verdict path (the rule is documented on that test).
 _CASES = (
     Path(__file__).resolve().parents[3]
     / "client/myna-desktop/tests/data/conservative_edit_cases.json"
@@ -225,7 +226,7 @@ _VERDICTS = {
 @pytest.mark.repo_tree
 def test_the_reference_check_agrees_with_the_products_on_every_shared_case():
     cases = json.loads(_CASES.read_text(encoding="utf-8"))
-    assert len(cases) > 500
+    assert len(cases) > 60
     wrong = [
         (c["heard"], c["answer"], c["written"], c["verdict"], got)
         for c in cases

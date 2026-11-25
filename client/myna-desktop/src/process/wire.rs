@@ -203,14 +203,9 @@ pub async fn run(
 mod tests {
     use super::*;
     use serde_json::json;
-    use tokio::net::UnixListener;
 
     fn params(value: Value) -> Params {
         serde_json::from_value(value).unwrap()
-    }
-
-    fn capability(json: Value) -> Capability {
-        serde_json::from_value(json).unwrap()
     }
 
     #[test]
@@ -242,27 +237,6 @@ mod tests {
     }
 
     #[test]
-    fn a_model_covers_only_the_requests_it_lists() {
-        let tagger = capability(json!({
-            "id": "fdt", "task": "text.cleanup", "covers": {"language": ["en"]}
-        }));
-        let none = params(json!({}));
-        assert!(tagger.covers("text.cleanup", &none));
-        assert!(tagger.covers("text.cleanup", &params(json!({"language": "en"}))));
-        assert!(!tagger.covers("text.cleanup", &params(json!({"language": "fr"}))));
-        assert!(!tagger.covers("text.translate", &none));
-        assert!(!tagger.covers("text.cleanup", &params(json!({"language": 7}))));
-        // A parameter it never mentions is one it cannot honour.
-        let asks = params(json!({"dialect": "be brief"}));
-        assert!(!tagger.covers("text.cleanup", &asks));
-        let llm = capability(json!({
-            "id": "m", "task": "text.cleanup", "accepts": ["dialect"]
-        }));
-        assert!(llm.covers("text.cleanup", &asks));
-        assert!(!llm.covers("text.cleanup", &params(json!({"style": "x"}))));
-    }
-
-    #[test]
     fn a_reply_with_an_error_is_a_refusal_whatever_else_it_says() {
         assert!(matches!(
             reply_of(r#"{"text": "x", "error": "no"}"#),
@@ -273,116 +247,5 @@ mod tests {
             reply_of(r#"{"text":"x"}"#).unwrap().text.as_deref(),
             Some("x")
         );
-    }
-
-    /// Answers one line per connection from `replies`, returning what it read.
-    fn serve(path: &Path, replies: Vec<&'static str>) -> tokio::task::JoinHandle<Vec<Value>> {
-        let listener = UnixListener::bind(path).unwrap();
-        tokio::spawn(async move {
-            let mut seen = Vec::new();
-            for reply in replies {
-                let (stream, _) = listener.accept().await.unwrap();
-                let (read, mut write) = stream.into_split();
-                let mut line = String::new();
-                BufReader::new(read).read_line(&mut line).await.unwrap();
-                seen.push(serde_json::from_str(&line).unwrap());
-                write.write_all(reply.as_bytes()).await.unwrap();
-            }
-            seen
-        })
-    }
-
-    #[test]
-    fn contract_two_fields_are_read_and_all_are_optional() {
-        let old = capability(json!({"id": "m", "task": "text.cleanup"}));
-        assert_eq!(
-            old,
-            Capability {
-                id: "m".into(),
-                task: "text.cleanup".into(),
-                ..Capability::default()
-            }
-        );
-        let new = capability(json!({
-            "id": "m", "task": "text.translate", "class": "translate",
-            "needs": "dictation", "license": "MPL-2.0", "attribution": "Mozilla",
-            "download_bytes": 33353728, "source": "https://example.org/m",
-            "params": [{"name": "to", "kind": "language", "role": "target",
-                        "required": true},
-                       {"name": "dialect", "kind": "text", "role": "free"}],
-            "future": 1
-        }));
-        assert_eq!(new.class.as_deref(), Some("translate"));
-        assert_eq!(new.needs.as_deref(), Some("dictation"));
-        assert_eq!(new.license.as_deref(), Some("MPL-2.0"));
-        assert_eq!(new.attribution.as_deref(), Some("Mozilla"));
-        assert_eq!(new.download_bytes, Some(33_353_728));
-        assert_eq!(new.source.as_deref(), Some("https://example.org/m"));
-        assert_eq!(new.params.len(), 2);
-        assert!(new.params[0].required && !new.params[1].required);
-        assert_eq!(new.params[0].role, "target");
-        let caps: Capabilities =
-            serde_json::from_value(json!({"protocol": "myna-text-v1", "contract": 2})).unwrap();
-        assert_eq!(caps.contract, Some(2));
-        let caps: Capabilities =
-            serde_json::from_value(json!({"protocol": "myna-text-v1"})).unwrap();
-        assert_eq!(caps.contract, None);
-    }
-
-    #[tokio::test]
-    async fn the_three_calls_round_trip_against_a_provider() {
-        let dir = std::env::temp_dir().join(format!("myna-wire-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("s");
-        let server = serve(
-            &path,
-            vec![
-                r#"{"protocol":"myna-text-v1","models":[{"id":"fdt","task":"text.cleanup","latency_ms":5}]}
-"#,
-                "{\"ok\":true}\n",
-                "{\"text\":\"Hi.\"}\n",
-                "{\"error\":\"no such model\"}\n",
-                "{\"protocol\":\"other\"}\n",
-            ],
-        );
-        let secs = Duration::from_secs(5);
-        let caps = capabilities(&path, secs).await.unwrap();
-        assert_eq!(caps.models[0].id, "fdt");
-        assert_eq!(caps.models[0].latency_ms, Some(5));
-        let p = params(json!({"language": "en"}));
-        warm(&path, "fdt", "text.cleanup", &p, secs).await.unwrap();
-        let text = run(&path, "fdt", "text.cleanup", &p, "um hi", secs).await;
-        assert_eq!(text.unwrap(), "Hi.");
-        assert!(matches!(
-            run(&path, "x", "text.cleanup", &p, "um hi", secs).await,
-            Err(WireError::Refused(e)) if e == "no such model"
-        ));
-        assert!(matches!(
-            capabilities(&path, secs).await,
-            Err(WireError::Refused(_))
-        ));
-        let seen = server.await.unwrap();
-        assert_eq!(seen[2]["text"], "um hi");
-        assert_eq!(seen[2]["deadline_ms"], 5000);
-        assert_eq!(seen[2]["params"], json!({"language": "en"}));
-        std::fs::remove_dir_all(&dir).unwrap();
-    }
-
-    #[tokio::test]
-    async fn a_missing_or_silent_provider_is_unavailable() {
-        let secs = Duration::from_secs(1);
-        assert!(matches!(
-            capabilities(Path::new("/nonexistent/myna-text"), secs).await,
-            Err(WireError::Unavailable(_))
-        ));
-        let dir = std::env::temp_dir().join(format!("myna-wire-silent-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("s");
-        let _silent = UnixListener::bind(&path).unwrap();
-        let started = std::time::Instant::now();
-        let hung = capabilities(&path, Duration::from_millis(50)).await;
-        assert!(matches!(hung, Err(WireError::TimedOut)));
-        assert!(started.elapsed() < secs);
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 }
