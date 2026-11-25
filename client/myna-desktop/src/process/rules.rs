@@ -35,10 +35,6 @@ pub enum Rule {
     Snippets,
     /// Case and join the words after a spoken casing ("camel case").
     Casing,
-    /// Type spoken web and email addresses as addresses.
-    Addresses,
-    /// Type spoken numbers as digits.
-    Numbers,
     /// Quotes, apostrophes, dashes and spacing as the language writes them.
     Typography(super::typography::Style),
     /// Carry out spoken editing commands ("scratch that"), which reach
@@ -77,8 +73,6 @@ impl Rule {
             Rule::Disfluency(lang) => disfluency::clean(text, lang),
             Rule::Emoji => super::emoji::apply(text),
             Rule::Casing => super::casing::apply(text),
-            Rule::Addresses => super::addresses::apply(text),
-            Rule::Numbers => super::numbers::apply(text),
             Rule::Typography(style) => super::typography::apply(text, style),
             Rule::Commands => super::commands::apply(text),
             Rule::Continue => decapitalise(text, |word| {

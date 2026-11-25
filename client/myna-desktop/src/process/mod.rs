@@ -8,7 +8,6 @@ use myna_platform::text_input::FieldPurpose;
 
 pub use landing::Landing;
 
-pub mod addresses;
 pub mod casing;
 mod check;
 pub mod commands;
@@ -18,7 +17,6 @@ pub mod fit;
 pub mod graph;
 pub mod history;
 pub mod landing;
-pub mod numbers;
 pub mod openai;
 pub mod pipeline;
 pub mod resolve;
