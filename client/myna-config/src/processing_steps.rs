@@ -741,61 +741,6 @@ pub fn with_target(params: &Params, to: Option<&str>) -> Params {
     next
 }
 
-/// The sentence under the steps, and what it comes out as.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Example {
-    pub heard: String,
-    /// What gets typed; `None` for a translation with no sample here, which
-    /// `note` then names rather than show the English as if it were typed.
-    pub typed: Option<String>,
-    /// What the text becomes beyond what is shown, such as its language.
-    pub note: Option<String>,
-}
-
-/// "So I think we should go." in the targets most chains will use. Static
-/// strings, no model call; a target missing here reads "Translated into".
-fn translated_sample(target: &str) -> Option<&'static str> {
-    Some(match target {
-        "fr" => "Je pense que nous devrions y aller.",
-        "de" => "Ich denke, wir sollten gehen.",
-        "es" => "Creo que deberíamos irnos.",
-        "it" => "Penso che dovremmo andare.",
-        "pt" => "Acho que deveríamos ir.",
-        "nl" => "Ik denk dat we moeten gaan.",
-        _ => return None,
-    })
-}
-
-pub fn example(rows: &[Row]) -> Example {
-    let runs = |id: &str| {
-        rows.iter()
-            .any(|row| row.id == id && row.enabled && row.standing == Standing::Ready)
-    };
-    let heard = gettextrs::gettext("um so I, I think we should go");
-    let mut typed = Some(heard.clone());
-    if runs("tidy") {
-        typed = Some(gettextrs::gettext("So I think we should go."));
-    }
-    let mut note = None;
-    if runs(TRANSLATE) {
-        let target = rows
-            .iter()
-            .find(|row| row.id == TRANSLATE)
-            .and_then(|row| row.translate.as_ref())
-            .and_then(|t| t.targets.get(t.selected?));
-        if let Some(target) = target {
-            // Not translated: it is what gets typed, in that language.
-            typed = translated_sample(&target.code).map(str::to_owned);
-            if typed.is_none() {
-                // TRANSLATORS: {language} is a language name, such as "فارسی"; stands for the example sentence translated.
-                let frame = gettextrs::gettext("Translated into {language}");
-                note = Some(frame.replace("{language}", &target.name));
-            }
-        }
-    }
-    Example { heard, typed, note }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1095,53 +1040,6 @@ mod tests {
             Some("simplified")
         );
         assert_eq!(with_target(&set, None), params);
-    }
-
-    #[test]
-    fn the_example_follows_the_switches() {
-        let off = example(&Rig::new().rows());
-        assert_eq!(off.typed.as_deref(), Some(off.heard.as_str()));
-        let tidy = example(&Rig::new().on(&["tidy"]).offering(&["m-tidy-en"]).rows());
-        assert_eq!(tidy.typed.as_deref(), Some("So I think we should go."));
-        let french = example(
-            &Rig::new()
-                .on(&["tidy", "translate"])
-                .to("fr")
-                .offering(&["m-tidy-en", "m-en-fr"])
-                .rows(),
-        );
-        assert_eq!(
-            french.typed.as_deref(),
-            Some("Je pense que nous devrions y aller.")
-        );
-        let german = example(
-            &Rig::new()
-                .on(&["translate"])
-                .to("de")
-                .offering(&["m-en-de"])
-                .rows(),
-        );
-        assert_eq!(
-            german.typed.as_deref(),
-            Some("Ich denke, wir sollten gehen.")
-        );
-        // Charles, 2026-11-23: a target with no sample repeated the English
-        // sentence as if that were typed.
-        let persian = example(
-            &Rig::new()
-                .on(&["translate"])
-                .to("fa")
-                .offering(&["m-en-fa"])
-                .rows(),
-        );
-        assert_eq!(persian.typed, None);
-        assert_eq!(persian.note.as_deref(), Some("Translated into فارسی"));
-    }
-
-    #[test]
-    fn a_step_whose_model_is_missing_leaves_the_example_alone() {
-        let example = example(&Rig::new().on(&["tidy"]).rows());
-        assert_eq!(example.typed.as_deref(), Some(example.heard.as_str()));
     }
 
     #[test]

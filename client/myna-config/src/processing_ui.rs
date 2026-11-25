@@ -25,7 +25,7 @@ use crate::ports::{
     BackendRepository, ClientSettingsSubscription, DictationDaemon, SystemConfigurator,
 };
 use crate::processing_steps::{
-    example, language_name, rows, size, Inputs, Offered, Row, Source, Standing, SCRIPT, TRANSLATE,
+    language_name, rows, size, Inputs, Offered, Source, Standing, SCRIPT, TRANSLATE,
 };
 use crate::step_catalog::{self, Item, Job, Language, LanguageState, Offer};
 use crate::ui::InstallControl;
@@ -117,7 +117,6 @@ struct Editor {
     name: adw::EntryRow,
     steps: adw::PreferencesGroup,
     add_row: adw::ActionRow,
-    example: adw::ActionRow,
     use_button: gtk::Button,
     lines: RefCell<Vec<LineWidgets>>,
     shown: RefCell<Vec<Line>>,
@@ -545,13 +544,6 @@ impl StepsPage {
             .activatable(true)
             .build();
         add_row.add_prefix(&gtk::Image::from_icon_name("list-add-symbolic"));
-        let example = adw::ActionRow::builder()
-            .title(gettextrs::gettext("For example"))
-            .subtitle_lines(0)
-            .css_classes(["property"])
-            .build();
-        let try_group = adw::PreferencesGroup::new();
-        try_group.add(&example);
         let use_button = gtk::Button::builder()
             .label(gettextrs::gettext("Use this chain"))
             .css_classes(["suggested-action", "pill"])
@@ -574,7 +566,6 @@ impl StepsPage {
         let preferences = adw::PreferencesPage::new();
         preferences.add(&name_group);
         preferences.add(&steps);
-        preferences.add(&try_group);
         preferences.add(&actions_group);
         let bin = adw::BreakpointBin::builder()
             .width_request(300)
@@ -593,7 +584,6 @@ impl StepsPage {
             name: name.clone(),
             steps,
             add_row: add_row.clone(),
-            example,
             use_button: use_button.clone(),
             lines: RefCell::new(Vec::new()),
             shown: RefCell::new(Vec::new()),
@@ -774,24 +764,6 @@ impl StepsPage {
             show_line(widgets, line, total, blocked, editor.narrow.get(), &items);
         }
         self.updating.set(false);
-        let rows: Vec<Row> = lines
-            .iter()
-            .map(|line| Row {
-                enabled: line.on && !line.skipped,
-                ..line.row.clone()
-            })
-            .collect();
-        let shown = example(&rows);
-        let result = match (&shown.typed, &shown.note) {
-            (Some(typed), _) => format!("\u{201c}{typed}\u{201d}"),
-            (None, Some(note)) => format!("({note})"),
-            (None, None) => String::new(),
-        };
-        let text = format!("\u{201c}{}\u{201d}\n\u{2192} {result}", shown.heard);
-        editor.example.set_subtitle(&escape_markup(&text));
-        editor
-            .example
-            .update_property(&[gtk::accessible::Property::Description(&text)]);
         editor.shown.replace(lines);
     }
 
@@ -3114,39 +3086,6 @@ mod tests {
             };
             pump_until("getting ready", || says(&rig, "Getting the model ready"));
             assert_eq!(rig.calls.borrow().as_slice(), ["myna-translation fr"]);
-        });
-    }
-
-    /// The example shows what the chain does now: a step switched off or
-    /// skipped where it stands changes nothing in it.
-    #[test]
-    fn the_example_leaves_out_steps_that_do_not_run() {
-        crate::ui::on_gtk_thread(|| {
-            let rig = rig(
-                "example",
-                BOTH,
-                BOTH,
-                "chains=[('fr', 'French', [('translate', false, {'to': 'fr'})])]\n",
-            );
-            rig.page.open_editor("fr");
-            let example = || {
-                editor(&rig)
-                    .example
-                    .subtitle()
-                    .unwrap_or_default()
-                    .to_string()
-            };
-            // "“heard”\n→ result": with nothing running, it types what it heard.
-            let unchanged = |text: &str| {
-                text.split_once("\n\u{2192} ")
-                    .is_some_and(|(heard, typed)| heard == typed)
-            };
-            pump_until("the example", || !example().is_empty());
-            assert!(unchanged(&example()), "{}", example());
-            let mut p = rig.store.processing();
-            p.chains[0].steps[0].on = true;
-            rig.store.set_processing(&p).unwrap();
-            pump_until("the translated example", || !unchanged(&example()));
         });
     }
 
