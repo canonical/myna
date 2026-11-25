@@ -96,7 +96,7 @@ assert_dict "the daemon logs at the debug tier" 'daemon_debug on'
 assert_dict "the field app is up" 'field_start'
 assert_dict "the field is focused and the window active" 'field_focus plain'
 
-echo "-- 1. a toggle dictates into a plain field"
+echo "-- 1. a toggle dictates into a plain field (no chain: text is still fitted to it)"
 assert_dict "the field starts empty" 'field_clear'
 dict dictation_toggle
 assert_dict "recording" 'wait_until 10 dictation_state_is recording'

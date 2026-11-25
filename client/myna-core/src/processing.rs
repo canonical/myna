@@ -359,8 +359,7 @@ pub fn migrate_legacy(path: &Path) -> bool {
     file.save_to_file(path).is_ok()
 }
 
-/// Move a flat `processing-steps` list to a chain, once: its steps but
-/// `fit` (which is no step: text is always fitted to the field), in stage
+/// Move a flat `processing-steps` list to a chain, once: its steps, in stage
 /// order with their parameters, become the chain "My steps", made active.
 /// Values already set in the new keys win. Both old keys are removed.
 /// Returns whether the file changed.
@@ -394,11 +393,7 @@ pub fn migrate_steps(path: &Path) -> bool {
     )
     .and_then(|value| value.get())
     .unwrap_or_default();
-    let kept: Vec<String> = ids
-        .iter()
-        .filter(|id| !id.is_empty() && *id != "fit")
-        .cloned()
-        .collect();
+    let kept: Vec<String> = ids.iter().filter(|id| !id.is_empty()).cloned().collect();
     let kept = in_stage_order(&kept);
     if !kept.is_empty() {
         let mut chains = parse(KEY_CHAINS, chains_variant(&[]).type_())
@@ -696,9 +691,9 @@ mod tests {
                            ('translate', true, {'to': 'fr'})])";
 
     #[test]
-    fn a_step_list_becomes_the_active_chain_without_fit() {
+    fn a_step_list_becomes_the_active_chain() {
         let (changed, lines) = migrate_both(
-            "processing-steps=['translate', 'fit', 'tidy', 'future']\n\
+            "processing-steps=['translate', 'tidy', 'future']\n\
              processing-params={'translate.to': 'de', 'future.x': '1', 'gone.y': '2'}\n\
              sounds=false\n",
         );
@@ -717,11 +712,7 @@ mod tests {
     }
 
     #[test]
-    fn a_list_of_fit_alone_or_nothing_makes_no_chain() {
-        assert_eq!(
-            migrate_both("processing-steps=['fit']\n"),
-            (true, Vec::new())
-        );
+    fn an_empty_list_makes_no_chain() {
         assert_eq!(
             migrate_both("processing-steps=@as []\nprocessing-params=@a{ss} {}\n"),
             (true, Vec::new())

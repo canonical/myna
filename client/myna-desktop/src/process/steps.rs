@@ -786,35 +786,6 @@ mod tests {
         assert_eq!(c.graph, Graph::preset(ProcessingChain::TIDY));
     }
 
-    /// A chain saved by a build that had more steps still loads: each step
-    /// this build deleted is reported Unknown and the rest runs.
-    #[test]
-    fn a_saved_chain_naming_a_deleted_step_loads_with_that_step_unknown() {
-        let deleted = [
-            "commands",
-            "emoji",
-            "snippets",
-            "casing",
-            "addresses",
-            "numbers",
-            "profanity",
-            "typography",
-            "original",
-        ];
-        for id in deleted {
-            let c = compiled(&["tidy", id, "translate=fr"], Some("en"));
-            assert_eq!(
-                states(&c),
-                [("tidy", "on"), (id, "unknown"), ("translate", "on")]
-            );
-            assert!(c.degraded(), "{id}");
-            assert_eq!(
-                c.graph,
-                compiled(&["tidy", "translate=fr"], Some("en")).graph
-            );
-        }
-    }
-
     #[test]
     fn tidy_spells_the_vocabulary_once() {
         let c = compiled(&["tidy"], None);

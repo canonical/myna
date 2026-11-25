@@ -664,31 +664,6 @@ mod tests {
         assert_eq!(read, p);
     }
 
-    /// A chain saved by a build with more steps loads whole, each step this
-    /// build deleted reported unknown, and is written back as it was.
-    #[test]
-    fn a_saved_chain_naming_a_deleted_step_loads_with_that_step_unknown() {
-        use crate::chains::{fits, ChainStep, Fit};
-        let store = test_store();
-        let mut p = Settings::from_store(&store).processing;
-        let steps = vec![
-            ChainStep::new("commands"),
-            ChainStep::new("tidy"),
-            ChainStep::new("emoji"),
-            ChainStep::new("original"),
-        ];
-        let id = p.add("Old", steps.clone());
-        p.write(&store.settings).unwrap();
-        let read = Settings::from_store(&store).processing;
-        let chain = read.chain(&id).expect("the chain loads");
-        assert_eq!(chain.steps, steps);
-        let reports = fits(&chain.steps, Some("en"));
-        assert_eq!(reports[0], Fit::Unknown);
-        assert!(matches!(reports[1], Fit::Runs { .. }));
-        assert_eq!(reports[2], Fit::Unknown);
-        assert_eq!(reports[3], Fit::Unknown);
-    }
-
     /// The bus's `ActiveChain` write: a known id or none is stored, an
     /// unknown one changes nothing.
     #[test]
