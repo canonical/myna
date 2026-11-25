@@ -144,7 +144,7 @@ pub struct Settings {
     pub silence_timeout: u32,
     /// Whether a session's start, stop and failure are heard as well as seen.
     pub sounds: bool,
-    /// The saved chains, the one in use and the fit-to-field switch.
+    /// The saved chains and the one in use.
     pub processing: Processing,
     /// Whether each processed dictation is recorded, as heard and as typed.
     pub processing_history: bool,
@@ -621,13 +621,12 @@ mod tests {
     }
 
     /// The schema's chain defaults and the no-schema fallback agree: the
-    /// example present and inactive, fitted to the field.
+    /// example present and inactive.
     #[test]
-    fn the_chain_keys_default_to_the_example_inactive_and_fit_on() {
+    fn the_chain_keys_default_to_the_example_inactive() {
         let read = Settings::from_store(&test_store()).processing;
         assert_eq!(read, Processing::default());
         assert_eq!(read.active, None);
-        assert!(read.fit_to_field);
         assert!(read.chain(crate::chains::EXAMPLE_ID).is_some());
     }
 
@@ -650,7 +649,6 @@ mod tests {
             ],
         );
         assert!(p.activate(Some(&id)));
-        p.fit_to_field = false;
         p.write(&store.settings).unwrap();
         assert_eq!(Settings::from_store(&store).processing, p);
 
@@ -664,6 +662,31 @@ mod tests {
         let read = Settings::from_store(&store).processing;
         assert_eq!(read.active, None);
         assert_eq!(read, p);
+    }
+
+    /// A chain saved by a build with more steps loads whole, each step this
+    /// build deleted reported unknown, and is written back as it was.
+    #[test]
+    fn a_saved_chain_naming_a_deleted_step_loads_with_that_step_unknown() {
+        use crate::chains::{fits, ChainStep, Fit};
+        let store = test_store();
+        let mut p = Settings::from_store(&store).processing;
+        let steps = vec![
+            ChainStep::new("commands"),
+            ChainStep::new("tidy"),
+            ChainStep::new("emoji"),
+            ChainStep::new("original"),
+        ];
+        let id = p.add("Old", steps.clone());
+        p.write(&store.settings).unwrap();
+        let read = Settings::from_store(&store).processing;
+        let chain = read.chain(&id).expect("the chain loads");
+        assert_eq!(chain.steps, steps);
+        let reports = fits(&chain.steps, Some("en"));
+        assert_eq!(reports[0], Fit::Unknown);
+        assert!(matches!(reports[1], Fit::Runs { .. }));
+        assert_eq!(reports[2], Fit::Unknown);
+        assert_eq!(reports[3], Fit::Unknown);
     }
 
     /// The bus's `ActiveChain` write: a known id or none is stored, an
@@ -724,7 +747,6 @@ mod tests {
         )
         .expect("the test schema is always installed");
         p.delete(&id);
-        p.fit_to_field = false;
         p.write(&writer.settings).unwrap();
         gio::Settings::sync();
         let seen = rx

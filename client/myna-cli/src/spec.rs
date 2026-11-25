@@ -15,24 +15,16 @@ pub struct Spec {
     pub label: String,
     pub graph: Graph,
     pub script: ChineseScript,
-    /// Whether each piece is fitted to the field after the graph
-    /// (`process::fit`): the `fit` step, or the `keyword` preset.
-    pub fit: bool,
 }
 
-/// `--steps`: a comma list of step ids (`fit, tidy, translate=fr,
+/// `--steps`: a comma list of step ids (`tidy, translate=fr,
 /// script=simplified`) compiled in the order given for dictation in
 /// `language`, by the same compiler the daemon runs.
 pub fn parse_steps(list: &str, language: Option<&str>) -> Result<Spec, String> {
-    let tokens: Vec<_> = list
+    let steps: Vec<_> = list
         .split(',')
         .map(str::trim)
         .filter(|t| !t.is_empty())
-        .collect();
-    let fit = tokens.contains(&"fit");
-    let steps: Vec<_> = tokens
-        .into_iter()
-        .filter(|t| *t != "fit")
         .map(StepSpec::parse)
         .collect();
     let compiled = compile(
@@ -48,7 +40,7 @@ pub fn parse_steps(list: &str, language: Option<&str>) -> Result<Spec, String> {
         .find(|r| r.state == StepState::Unknown)
     {
         return Err(format!(
-            "unknown step {:?} (want fit, tidy, translate=LANG, script=NICK)",
+            "unknown step {:?} (want tidy, translate=LANG, script=NICK)",
             bad.id
         ));
     }
@@ -56,7 +48,6 @@ pub fn parse_steps(list: &str, language: Option<&str>) -> Result<Spec, String> {
         label: format!("steps: {}", list.trim()),
         graph: compiled.graph,
         script: compiled.script,
-        fit,
     })
 }
 
@@ -82,7 +73,6 @@ pub fn parse(spec: &str) -> Result<Spec, String> {
             _ => steps.push(token),
         }
     }
-    let fit = steps == ["keyword"];
     let graph = match steps.as_slice() {
         [] => Graph::preset(ProcessingChain::EXACT),
         [one] if ProcessingChain::from_nick(one).is_some() => {
@@ -94,7 +84,6 @@ pub fn parse(spec: &str) -> Result<Spec, String> {
         label: if label.is_empty() { "exact" } else { label }.to_owned(),
         graph,
         script,
-        fit,
     })
 }
 

@@ -1,4 +1,4 @@
-//! The Processing tab: the fit-to-field switch, the saved chains as a radio
+//! The Processing tab: the saved chains as a radio
 //! list, a chain's editor (its steps in order, each movable, switchable and
 //! set up in place), and the catalog the editor adds from. The decisions are
 //! `chains_view`, `processing_steps` and `step_catalog`; this binds them to
@@ -68,8 +68,6 @@ impl Deps {
 
 /// The groups of the Processing tab the page fills.
 pub struct Slots {
-    /// The fit-to-field switch, on top.
-    pub fit: adw::PreferencesGroup,
     /// The chains: none, each saved chain, New chain.
     pub chains: adw::PreferencesGroup,
     /// Get more steps goes first in it.
@@ -158,7 +156,6 @@ struct CatalogWidgets {
 
 pub struct StepsPage {
     deps: Deps,
-    fit_row: adw::SwitchRow,
     chains_group: glib::WeakRef<adw::PreferencesGroup>,
     /// Never shown: the chain radios' group, active while no chain is, so
     /// even a lone chain's radio is a radio and not a checkbox.
@@ -219,14 +216,6 @@ impl StepsPage {
     /// Fill the slots and keep them current for as long as the chains group
     /// lives: the group owns the page, the page only watches the groups.
     pub fn attach(deps: Deps, slots: &Slots) -> Rc<Self> {
-        let fit_row = adw::SwitchRow::builder()
-            .title(gettextrs::gettext("Fitted to the field"))
-            .subtitle(gettextrs::gettext(
-                "No capital or full stop in an address, and no capital where you carry on a sentence.",
-            ))
-            .subtitle_lines(0)
-            .build();
-        slots.fit.add(&fit_row);
         let empty_row = adw::ActionRow::builder()
             .title(gettextrs::gettext("No chains yet"))
             .subtitle(gettextrs::gettext(
@@ -257,7 +246,6 @@ impl StepsPage {
         let catalog = (deps.catalog)();
         let page = Rc::new(Self {
             deps,
-            fit_row,
             chains_group: slots.chains.downgrade(),
             empty_row,
             new_row,
@@ -292,17 +280,6 @@ impl StepsPage {
                     page.render();
                 }
             })));
-        page.fit_row.connect_active_notify({
-            let page = Rc::downgrade(&page);
-            move |row| {
-                if let Some(page) = page.upgrade() {
-                    if !page.updating.get() {
-                        let on = row.is_active();
-                        page.edit(|p| p.fit_to_field = on);
-                    }
-                }
-            }
-        });
         page.new_row.connect_activated({
             let page = Rc::downgrade(&page);
             move |_| {
@@ -423,9 +400,6 @@ impl StepsPage {
 
     fn render(self: &Rc<Self>) {
         let processing = self.deps.store.processing();
-        self.updating.set(true);
-        self.fit_row.set_active(processing.fit_to_field);
-        self.updating.set(false);
         self.render_chains(&processing);
         self.render_editor(&processing);
         self.render_catalog(&processing);
@@ -1295,7 +1269,6 @@ impl StepsPage {
             Processing {
                 chains: vec![chain.clone()],
                 active: Some(chain.id.clone()),
-                fit_to_field: false,
             }
             .stage_steps()
         });
@@ -2525,7 +2498,6 @@ mod tests {
 
     struct Rig {
         page: Rc<StepsPage>,
-        fit: adw::PreferencesGroup,
         chains: adw::PreferencesGroup,
         more: adw::PreferencesGroup,
         store: Rc<GioClientSettings>,
@@ -2563,10 +2535,8 @@ mod tests {
         let daemon = Rc::new(RefCell::new(daemon.to_owned()));
         let calls = Rc::new(RefCell::new(Vec::new()));
         let group = adw::PreferencesGroup::new();
-        let fit = adw::PreferencesGroup::new();
         let more = adw::PreferencesGroup::new();
         let column = gtk::Box::new(gtk::Orientation::Vertical, 0);
-        column.append(&fit);
         column.append(&group);
         column.append(&more);
         let nav = adw::NavigationView::new();
@@ -2594,14 +2564,12 @@ mod tests {
                 nav: nav.clone(),
             },
             &Slots {
-                fit: fit.clone(),
                 chains: group.clone(),
                 more: more.clone(),
             },
         );
         Rig {
             page,
-            fit,
             chains: group,
             more,
             store,
@@ -2841,13 +2809,10 @@ mod tests {
     }
 
     #[test]
-    fn the_fit_switch_reads_and_writes_the_store() {
+    fn the_page_links_to_more_steps_and_has_no_fit_switch() {
         crate::ui::on_gtk_thread(|| {
             let rig = rig("fit", TIDY, TIDY, "");
-            assert!(rig.page.fit_row.is_active(), "on by default");
-            rig.page.fit_row.set_active(false);
-            assert!(!rig.store.processing().fit_to_field);
-            assert!(all::<adw::SwitchRow>(rig.fit.upcast_ref()).len() == 1);
+            assert!(all::<adw::SwitchRow>(rig.chains.upcast_ref()).is_empty());
             assert!(all::<adw::ActionRow>(rig.more.upcast_ref())
                 .iter()
                 .any(|r| r.title() == "Get more steps"));

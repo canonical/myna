@@ -210,7 +210,6 @@ pub fn choice_display_label(choice: &str) -> String {
         "exact" => gettextrs::gettext("Exactly what I say"),
         "tidy" => gettextrs::gettext("A tidied version"),
         "tidy-french" => gettextrs::gettext("A French translation"),
-        "keyword" => gettextrs::gettext("Fitted to the field"),
         // Translators: keep the Chinese in brackets; it names the script in
         // that script.
         "simplified" => gettextrs::gettext("Simplified (简体)"),

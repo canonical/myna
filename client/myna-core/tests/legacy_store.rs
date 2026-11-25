@@ -8,7 +8,7 @@ fn the_shared_store_is_migrated_where_the_environment_puts_it() {
     std::fs::create_dir_all(&settings).unwrap();
     std::fs::write(
         settings.join("keyfile"),
-        "[com/canonical/myna/dictation]\nprocessing-chain='keyword'\nsounds=false\n",
+        "[com/canonical/myna/dictation]\nprocessing-chain='tidy'\nsounds=false\n",
     )
     .unwrap();
     std::env::set_var("GSETTINGS_BACKEND", "keyfile");
@@ -16,7 +16,7 @@ fn the_shared_store_is_migrated_where_the_environment_puts_it() {
 
     assert!(myna_core::processing::migrate_legacy_store());
     let text = std::fs::read_to_string(settings.join("keyfile")).unwrap();
-    assert!(text.contains("fit-to-field=true"), "{text}");
+    assert!(text.contains("active-chain='my-steps'"), "{text}");
     assert!(!text.contains("processing-steps"), "{text}");
     assert!(text.contains("sounds=false"), "{text}");
     assert!(!text.contains("processing-chain"), "{text}");

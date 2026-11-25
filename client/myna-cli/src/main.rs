@@ -128,12 +128,12 @@ OPTIONS:
                        the persisted setting, which overrides the backend's
                        own mode
     --graph <spec>     run the speech through this graph and time it (repeatable).
-                       A preset id (exact, tidy, tidy-french, keyword) or a comma
+                       A preset id (exact, tidy, tidy-french) or a comma
                        list of steps: disfluency, vocabulary, cleanup,
                        translate=FR (or EN:FR), address, continue, script=NICK.
                        `exact` is always run too, as the baseline.
     --steps <list>     like --graph, but a comma list of steps in any order:
-                       fit, tidy, translate=LANG, script=NICK. They run in
+                       tidy, translate=LANG, script=NICK. They run in
                        the daemon's stage order for --language (repeatable).
     --sweep <steps>    run every ordered subset of the comma list (3 steps are
                        15 graphs; at most 5 steps)

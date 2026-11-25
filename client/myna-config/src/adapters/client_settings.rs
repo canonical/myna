@@ -15,7 +15,7 @@ use myna_core::processing::Params;
 use myna_core::settings::SCHEMA_ID;
 
 /// The chain keys, which have their own page and no row of their own.
-const STORED_KEYS: [&str; 3] = myna_core::chains::KEYS;
+const STORED_KEYS: [&str; 2] = myna_core::chains::KEYS;
 
 #[derive(Debug)]
 pub struct GioClientSettings {
@@ -61,7 +61,7 @@ impl GioClientSettings {
         Ok(Self { schema, settings })
     }
 
-    /// The saved chains, the active one and the fit switch.
+    /// The saved chains and the active one.
     pub fn processing(&self) -> Processing {
         Processing::read(&self.settings)
     }
@@ -79,23 +79,23 @@ impl GioClientSettings {
             })
     }
 
-    /// The steps as the step-switch page shows them
-    /// ([`Processing::page_steps`]).
+    /// The steps of the active chain as the step-switch page shows them
+    /// ([`Processing::stage_steps`]).
     pub fn steps(&self) -> (Vec<String>, Params) {
-        self.processing().page_steps()
+        self.processing().stage_steps()
     }
 
     /// Store a flat step list from the step-switch page into the active
-    /// chain and the fit switch ([`Processing::set_stage_steps`]).
+    /// chain ([`Processing::set_stage_steps`]).
     pub fn set_steps(&self, ids: &[String], params: &Params) -> Result<(), ClientSettingsError> {
         let mut processing = self.processing();
         processing.set_stage_steps(ids, params);
         self.set_processing(&processing)
     }
 
-    /// Call `callback` once per change to the chains, the active chain or
-    /// the fit switch, however many of them changed together, until the
-    /// returned value is dropped.
+    /// Call `callback` once per change to the chains or the active chain,
+    /// however many of them changed together, until the returned value is
+    /// dropped.
     pub fn watch_steps(
         &self,
         callback: impl Fn() + 'static,

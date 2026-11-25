@@ -912,7 +912,7 @@ mod tests {
         let all = listed(&case());
         let ids: Vec<_> = all.iter().map(|i| i.id.as_str()).collect();
         assert_eq!(ids.len(), 4, "{ids:?}");
-        assert!(!ids.contains(&"fit"), "fitting is a switch, not a step");
+        assert!(!ids.contains(&"fit"), "fitting is no step");
         let fr = find(&all, "en-fr");
         assert_eq!(fr.title, "Translate English to Français");
         assert_eq!(fr.step, "translate");

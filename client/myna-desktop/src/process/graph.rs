@@ -401,10 +401,8 @@ mod tests {
 
     #[test]
     fn every_preset_has_a_graph_and_a_unique_one() {
-        // `keyword` was fitting alone, which is no graph now (`process::fit`).
         let graphs: Vec<_> = ProcessingChain::ALL
             .into_iter()
-            .filter(|chain| *chain != ProcessingChain::KEYWORD)
             .map(Graph::preset)
             .collect();
         for (i, graph) in graphs.iter().enumerate() {

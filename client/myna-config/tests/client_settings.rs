@@ -760,7 +760,7 @@ fn the_steps_are_read_and_written_whole() {
         adapter.get("chinese-script"),
         Err(ClientSettingsError::UnknownKey { .. })
     ));
-    assert_eq!(adapter.steps(), (list(&["fit"]), Default::default()));
+    assert_eq!(adapter.steps(), (Vec::new(), Default::default()));
 
     adapter
         .set_steps(
@@ -782,7 +782,7 @@ fn a_choice_reaches_the_keyfile_as_the_active_chain() {
     let adapter = open_adapter(&files);
     adapter
         .set_steps(
-            &list(&["fit", "tidy", "translate"]),
+            &list(&["tidy", "translate"]),
             &params(&[("translate.to", "fr")]),
         )
         .unwrap();
@@ -805,7 +805,6 @@ fn a_choice_reaches_the_keyfile_as_the_active_chain() {
         "{text}"
     );
     assert!(text.contains("active-chain='chain-1'"), "{text}");
-    assert!(text.contains("fit-to-field=false"), "{text}");
     assert!(!text.contains("processing-steps"), "{text}");
 }
 
@@ -822,7 +821,7 @@ fn reading_the_steps_writes_nothing() {
     )
     .unwrap();
     let adapter = open_adapter(&files);
-    assert_eq!(adapter.steps().0, ["fit", "tidy", "script"]);
+    assert_eq!(adapter.steps().0, ["tidy", "script"]);
     assert_eq!(adapter.steps().1["script.mode"], "traditional");
     let before = std::fs::read_to_string(&path).unwrap();
     let _ = adapter.list().unwrap();

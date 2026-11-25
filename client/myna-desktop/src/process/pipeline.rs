@@ -147,8 +147,6 @@ pub struct Pipeline {
     written: Live<Vec<String>>,
     /// How Chinese is written once the graph is done; none to change.
     script: Live<ChineseScript>,
-    /// Whether each piece is fitted to its field before it is typed.
-    fitted: Live<bool>,
     /// `written` compiled, until it changes.
     vocabulary: (Vec<String>, Vocabulary),
     trace: Trace,
@@ -163,7 +161,6 @@ impl Pipeline {
             models: Box::new(models),
             written: Live::new(Vec::new()),
             script: Live::new(ChineseScript::AsRecognised),
-            fitted: Live::new(false),
             vocabulary: (Vec::new(), Vocabulary::default()),
             trace: Trace::default(),
             joins: Joins::default(),
@@ -183,14 +180,6 @@ impl Pipeline {
     #[must_use]
     pub fn scripted(mut self, script: Live<ChineseScript>) -> Self {
         self.script = script;
-        self
-    }
-
-    /// Whether each piece is fitted to its field ([`super::fit`]) after
-    /// the graph, streamed text included.
-    #[must_use]
-    pub fn fitted(mut self, on: Live<bool>) -> Self {
-        self.fitted = on;
         self
     }
 
@@ -286,9 +275,6 @@ impl Processor for Pipeline {
     }
 
     fn fit(&mut self, text: String, field: &Field) -> String {
-        if !self.fitted.get() {
-            return text;
-        }
         super::fit::fit(&text, field, self.vocabulary())
     }
 
@@ -727,8 +713,7 @@ mod tests {
     #[tokio::test]
     async fn a_term_keeps_its_capitals_when_fitted() {
         let mut pipeline = Pipeline::new(Graph::passthrough(), Scripted::Fails)
-            .written(Live::new(vec!["my sequel => MySQL".to_owned()]))
-            .fitted(Live::new(true));
+            .written(Live::new(vec!["my sequel => MySQL".to_owned()]));
         let mid = Field::after(FieldPurpose::Plain, Some('a'));
         assert_eq!(
             pipeline.fit("The my sequel dump.".into(), &mid),
@@ -739,17 +724,14 @@ mod tests {
     }
 
     /// Fitting is the last change: a step that recases after the words
-    /// before it cannot undo it, and off it changes nothing.
+    /// before it cannot undo it.
     #[tokio::test]
-    async fn fitting_runs_after_the_graph_and_only_when_on() {
-        let on = Live::new(true);
-        let mut pipeline = cleanup(Scripted::Says("The end.")).fitted(on.clone());
+    async fn fitting_runs_after_the_graph() {
+        let mut pipeline = cleanup(Scripted::Says("The end."));
         let mid = Field::after(FieldPurpose::Plain, Some('s'));
         let processed = pipeline.process("the end".into(), &mid).await;
         assert_eq!(processed, "The end.", "the cleanup recased it");
-        assert_eq!(pipeline.fit(processed.clone(), &mid), "the end.");
-        on.set(false);
-        assert_eq!(pipeline.fit(processed, &mid), "The end.");
+        assert_eq!(pipeline.fit(processed, &mid), "the end.");
     }
 
     #[tokio::test]
@@ -849,8 +831,7 @@ mod tests {
 
     #[tokio::test]
     async fn fitting_types_what_the_field_calls_for_and_asks_no_model() {
-        let mut pipeline =
-            Pipeline::new(Graph::passthrough(), Scripted::Fails).fitted(Live::new(true));
+        let mut pipeline = Pipeline::new(Graph::passthrough(), Scripted::Fails);
         let email = Field::after(FieldPurpose::Email, None);
         assert_eq!(pipeline.fit("Maria.".into(), &email), "maria");
         let go_on = Field::after(FieldPurpose::Plain, Some('s'));

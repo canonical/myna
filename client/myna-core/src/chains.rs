@@ -1,7 +1,6 @@
-//! Saved chains: named, ordered lists of steps, the one in use, and the
-//! fit-to-field switch that runs after any of them.
+//! Saved chains: named, ordered lists of steps, and the one in use.
 //!
-//! Stored as three keys (`chains`, `active-chain`, `fit-to-field`) that
+//! Stored as two keys (`chains`, `active-chain`) that
 //! [`write`] sets in one delayed apply, so a watcher on `change-event` wakes
 //! once per change. A chain's id never changes, its name may, so renaming
 //! keeps the active pointer. Each step carries its own parameters, keyed by
@@ -17,10 +16,9 @@ use crate::processing::{in_stage_order, param_key, Params};
 
 pub const KEY_CHAINS: &str = "chains";
 pub const KEY_ACTIVE_CHAIN: &str = "active-chain";
-pub const KEY_FIT_TO_FIELD: &str = "fit-to-field";
 
 /// Every key this module owns.
-pub const KEYS: [&str; 3] = [KEY_CHAINS, KEY_ACTIVE_CHAIN, KEY_FIT_TO_FIELD];
+pub const KEYS: [&str; 2] = [KEY_CHAINS, KEY_ACTIVE_CHAIN];
 
 /// The shipped example's id. Its content is a placeholder until
 /// `chains-showcase-example` picks it.
@@ -70,7 +68,6 @@ pub struct Processing {
     pub chains: Vec<Chain>,
     /// As stored; [`Processing::active`] reads a dangling id as none.
     pub active: Option<String>,
-    pub fit_to_field: bool,
 }
 
 /// The schema defaults, and what a machine with no schema installed reads.
@@ -86,7 +83,6 @@ impl Default for Processing {
                 ],
             }],
             active: None,
-            fit_to_field: true,
         }
     }
 }
@@ -150,8 +146,8 @@ impl Processing {
     /// The active chain as the stage-ordered step list the daemon compiles
     /// today: its steps that are on, once each, parameters keyed
     /// `<step>.<param>` (the first of a repeated step wins, an off step's
-    /// fill in, so a choice outlives its switch). The fit switch is not in
-    /// it: the daemon fits after the graph, as an output stage. Goes once
+    /// fill in, so a choice outlives its switch). Fitting to the field is no
+    /// step: the daemon fits after the graph, whatever the chain. Goes once
     /// the compiler walks chains in order (`chains-compiler-user-order`).
     pub fn stage_steps(&self) -> (Vec<String>, Params) {
         let steps: Vec<&ChainStep> = self
@@ -177,30 +173,17 @@ impl Processing {
         (in_stage_order(&ids), params)
     }
 
-    /// [`Processing::stage_steps`] with `fit` first when the switch is on:
-    /// the list the step-switch page shows.
-    pub fn page_steps(&self) -> (Vec<String>, Params) {
-        let (mut ids, params) = self.stage_steps();
-        if self.fit_to_field {
-            ids.insert(0, "fit".to_owned());
-        }
-        (ids, params)
-    }
-
     /// Replace the active chain's steps with a flat list and parameters, as
-    /// the step-switch page edits them: `fit` sets the switch, the rest
-    /// become the active chain in stage order, made as "My steps" when none
-    /// is. A step with parameters but not in `ids` stays as an off step that
+    /// the step-switch page edits them: they become the active chain in
+    /// stage order, made as "My steps" when none is. A step with parameters but not in `ids` stays as an off step that
     /// keeps them. Repeated steps are lost: that page has none.
     pub fn set_stage_steps(&mut self, ids: &[String], params: &Params) {
-        self.fit_to_field = ids.iter().any(|id| id == "fit");
-        let enabled: Vec<String> = ids.iter().filter(|id| *id != "fit").cloned().collect();
+        let enabled = ids.to_vec();
         let mut all = enabled.clone();
         all.extend(
             params
                 .keys()
-                .filter_map(|key| key.split_once('.').map(|(step, _)| step.to_owned()))
-                .filter(|step| step != "fit"),
+                .filter_map(|key| key.split_once('.').map(|(step, _)| step.to_owned())),
         );
         let steps: Vec<ChainStep> = in_stage_order(&all)
             .into_iter()
@@ -234,7 +217,7 @@ impl Processing {
         }
     }
 
-    /// Read the three keys; any missing from the installed schema reads its
+    /// Read the two keys; any missing from the installed schema reads its
     /// default.
     pub fn read(settings: &gio::Settings) -> Self {
         let default = Self::default();
@@ -251,16 +234,7 @@ impl Processing {
         let active = has(KEY_ACTIVE_CHAIN)
             .then(|| settings.string(KEY_ACTIVE_CHAIN).to_string())
             .filter(|id| !id.is_empty());
-        let fit_to_field = if has(KEY_FIT_TO_FIELD) {
-            settings.boolean(KEY_FIT_TO_FIELD)
-        } else {
-            default.fit_to_field
-        };
-        Self {
-            chains,
-            active,
-            fit_to_field,
-        }
+        Self { chains, active }
     }
 
     /// Write what differs from the store in one apply: watchers on
@@ -276,9 +250,6 @@ impl Processing {
                 KEY_ACTIVE_CHAIN,
                 self.active.clone().unwrap_or_default().to_variant(),
             ));
-        }
-        if self.fit_to_field != now.fit_to_field {
-            writes.push((KEY_FIT_TO_FIELD, self.fit_to_field.to_variant()));
         }
         if writes.is_empty() {
             return Ok(());
@@ -541,7 +512,6 @@ mod tests {
         Processing {
             chains: Vec::new(),
             active: None,
-            fit_to_field: false,
         }
     }
 
@@ -607,14 +577,8 @@ mod tests {
                 ChainStep::new("future").with("x", "1"),
             ],
         );
-        p.fit_to_field = true;
         assert_eq!(p.stage_steps(), (Vec::new(), Params::new()));
-        assert_eq!(p.page_steps().0, ids(&["fit"]));
         p.activate(Some(&id));
-        assert_eq!(
-            p.page_steps().0,
-            ids(&["fit", "tidy", "translate", "future"])
-        );
         let (list, params) = p.stage_steps();
         assert_eq!(list, ids(&["tidy", "translate", "future"]));
         assert_eq!(
@@ -630,13 +594,11 @@ mod tests {
     #[test]
     fn the_step_page_edits_the_active_chain_or_makes_one() {
         let mut p = empty();
-        p.set_stage_steps(&ids(&["fit"]), &Params::new());
-        assert!(p.fit_to_field);
-        assert!(p.chains.is_empty(), "fit alone makes no chain");
+        p.set_stage_steps(&[], &Params::new());
+        assert!(p.chains.is_empty(), "no steps make no chain");
 
         let params = Params::from([("translate.to".into(), "de".into())]);
         p.set_stage_steps(&ids(&["tidy", "translate"]), &params);
-        assert!(!p.fit_to_field);
         let chain = p.active().expect("made and activated").clone();
         assert_eq!(chain.name, "My steps");
         assert_eq!(
@@ -659,7 +621,7 @@ mod tests {
             ],
             "a choice outlives its switch"
         );
-        assert_eq!(p.page_steps(), (ids(&["tidy"]), params.clone()));
+        assert_eq!(p.stage_steps(), (ids(&["tidy"]), params.clone()));
         p.set_stage_steps(&[], &Params::new());
         assert_eq!(p.chains.len(), 1, "an emptied chain stays");
         assert!(p.active().unwrap().steps.is_empty());

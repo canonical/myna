@@ -6054,8 +6054,6 @@ fn build_myna_page(
 struct ProcessingGroups {
     /// Advice when the chosen chain has no model for a step; hidden otherwise.
     notice: adw::Banner,
-    /// The fit-to-field switch.
-    fit: adw::PreferencesGroup,
     /// The saved chains, one to pick.
     chain: adw::PreferencesGroup,
     /// Get more steps.
@@ -6069,7 +6067,6 @@ struct ProcessingGroups {
 fn processing_group() -> ProcessingGroups {
     ProcessingGroups {
         notice: adw::Banner::builder().use_markup(false).build(),
-        fit: adw::PreferencesGroup::new(),
         more: adw::PreferencesGroup::new(),
         chain: adw::PreferencesGroup::builder()
             .title(gettextrs::gettext("Chains"))
@@ -6126,7 +6123,6 @@ fn attach_steps(
     Some(crate::processing_ui::StepsPage::attach(
         deps,
         &crate::processing_ui::Slots {
-            fit: groups.fit.clone(),
             chains: groups.chain.clone(),
             more: groups.more.clone(),
         },
@@ -6178,7 +6174,6 @@ fn models_section(
 fn processing_page(groups: &ProcessingGroups, nav: &adw::NavigationView) -> adw::NavigationPage {
     let preferences = adw::PreferencesPage::new();
     preferences.set_vexpand(true);
-    preferences.add(&groups.fit);
     preferences.add(&groups.chain);
     preferences.add(&groups.more);
     groups.past_link.add(&groups.past.link_row(nav));

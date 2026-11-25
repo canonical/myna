@@ -427,7 +427,6 @@ mod tests {
             (ProcessingChain::EXACT, &[][..]),
             (ProcessingChain::TIDY, &["tidy"][..]),
             (ProcessingChain::TIDY_FRENCH, &["tidy", "translate=fr"][..]),
-            (ProcessingChain::KEYWORD, &["fit"][..]),
         ] {
             assert_eq!(preset_steps(chain), spec(steps), "{}", chain.nick());
             assert_eq!(compiled(steps, None).graph, Graph::preset(chain));
@@ -787,6 +786,35 @@ mod tests {
         assert_eq!(c.graph, Graph::preset(ProcessingChain::TIDY));
     }
 
+    /// A chain saved by a build that had more steps still loads: each step
+    /// this build deleted is reported Unknown and the rest runs.
+    #[test]
+    fn a_saved_chain_naming_a_deleted_step_loads_with_that_step_unknown() {
+        let deleted = [
+            "commands",
+            "emoji",
+            "snippets",
+            "casing",
+            "addresses",
+            "numbers",
+            "profanity",
+            "typography",
+            "original",
+        ];
+        for id in deleted {
+            let c = compiled(&["tidy", id, "translate=fr"], Some("en"));
+            assert_eq!(
+                states(&c),
+                [("tidy", "on"), (id, "unknown"), ("translate", "on")]
+            );
+            assert!(c.degraded(), "{id}");
+            assert_eq!(
+                c.graph,
+                compiled(&["tidy", "translate=fr"], Some("en")).graph
+            );
+        }
+    }
+
     #[test]
     fn tidy_spells_the_vocabulary_once() {
         let c = compiled(&["tidy"], None);
@@ -817,13 +845,8 @@ mod tests {
 
     #[test]
     fn stage_order_here_is_the_order_settings_writes() {
-        // `fit` is the fit-to-field switch, applied after the graph.
         let ids: Vec<&str> = Kind::ALL.iter().map(|k| k.id()).collect();
-        let stored: Vec<&str> = myna_core::processing::STEP_ORDER
-            .into_iter()
-            .filter(|id| *id != "fit")
-            .collect();
-        assert_eq!(ids, stored);
+        assert_eq!(ids, myna_core::processing::STEP_ORDER);
     }
 
     #[test]
@@ -860,7 +883,7 @@ mod tests {
             StepSpec::new("translate").with("to", "de"),
         ];
         assert_eq!(label(&german), "tidy+translate");
-        assert_eq!(label(&spec(&["fit", "tidy"])), "fit+tidy");
+        assert_eq!(label(&spec(&["tidy", "shout"])), "tidy+shout");
     }
 
     #[test]

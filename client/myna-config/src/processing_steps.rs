@@ -14,7 +14,6 @@ pub const TRANSLATE: &str = "translate";
 pub const TRANSLATE_TO: &str = "to";
 
 /// The steps the client carries itself, in no catalog.
-const FIT: &str = "fit";
 pub const SCRIPT: &str = "script";
 pub const SCRIPT_MODE: &str = "mode";
 
@@ -336,7 +335,6 @@ fn stage_rank(stage: &str) -> usize {
 /// The steps in stage order: the client's own, and every catalog step.
 fn step_ids(catalog: &[Entry]) -> Vec<(String, usize)> {
     let mut found: BTreeMap<String, usize> = BTreeMap::new();
-    found.insert(FIT.to_owned(), 0);
     found.insert(SCRIPT.to_owned(), stage_rank("target-language"));
     for entry in catalog {
         found
@@ -359,21 +357,15 @@ fn row(id: &str, inputs: &Inputs) -> Row {
     let own = inputs.catalog.iter().find(|e| e.step.id == id);
     let title = own
         .and_then(|e| plugin_catalog::label(&e.step.label_key))
-        .or_else(|| (id == FIT).then(|| gettextrs::gettext("Fitted to the field")))
         .or_else(|| (id == SCRIPT).then(|| gettextrs::gettext("Chinese script")))
         .unwrap_or_else(|| id.to_owned());
     let description = own
         .and_then(|e| plugin_catalog::label(&e.step.description_key))
         .or_else(|| {
-            (id == FIT).then(|| {
-                gettextrs::gettext(
-                    "No capital or full stop in an address, and no capital where you carry on a sentence.",
-                )
-            })
-        })
-        .or_else(|| {
             (id == SCRIPT).then(|| {
-                gettextrs::gettext("Types Chinese in the characters you choose. Other text is left alone.")
+                gettextrs::gettext(
+                    "Types Chinese in the characters you choose. Other text is left alone.",
+                )
             })
         })
         .unwrap_or_default();
@@ -899,17 +891,17 @@ mod tests {
         let mut rig = Rig::new();
         rig.catalog.reverse();
         let ids: Vec<String> = rig.rows().into_iter().map(|r| r.id).collect();
-        assert_eq!(ids, ["fit", "tidy", "translate", "script"]);
+        assert_eq!(ids, ["tidy", "translate", "script"]);
     }
 
     #[test]
     fn the_client_s_own_step_is_a_row_with_no_catalog_and_no_snap() {
-        let mut rig = Rig::new().on(&["fit"]);
+        let mut rig = Rig::new().on(&["script"]);
         rig.catalog.clear();
         rig.daemon = None;
         let rows = rig.rows();
-        assert_eq!(rows.len(), 2, "Fitted to the field and Chinese script");
-        assert_eq!(rows[0].standing, Standing::Ready);
+        assert_eq!(rows.len(), 1, "Chinese script");
+        assert_eq!(rows[0].id, SCRIPT);
         assert!(rows[0].enabled);
     }
 
@@ -1192,10 +1184,9 @@ mod tests {
         ];
         let rows = rig.rows();
         let ids: Vec<&str> = rows.iter().map(|r| r.id.as_str()).collect();
-        assert_eq!(ids, ["fit", "zzz", "aaa", "script", "mmm"]);
-        assert_eq!(rows[0].title, "Fitted to the field");
-        assert_eq!(rows[1].title, "zzz");
-        assert!(rows[1].description.is_empty());
+        assert_eq!(ids, ["zzz", "aaa", "script", "mmm"]);
+        assert_eq!(rows[0].title, "zzz");
+        assert!(rows[0].description.is_empty());
         assert!(rows.iter().filter(|r| r.id != SCRIPT).all(Row::switchable));
     }
 
@@ -1214,13 +1205,13 @@ mod tests {
             rig.row("translate").subtitle(),
             "Types your dictation in another language."
         );
-        let mut bare = Rig::new().on(&["fit"]);
+        let mut bare = Rig::new().on(&["script"]);
         bare.catalog.clear();
-        bare.installing.insert("fit".into(), None);
+        bare.installing.insert("script".into(), None);
         let row = Row {
             description: String::new(),
             standing: Standing::Installing(None),
-            ..bare.row("fit")
+            ..bare.row("script")
         };
         assert_eq!(row.subtitle(), "Getting the model ready");
     }
@@ -1339,7 +1330,7 @@ mod tests {
         assert_eq!(row.title, "Chinese script");
         assert!(!row.enabled);
         let ids: Vec<String> = rig.rows().into_iter().map(|r| r.id).collect();
-        assert_eq!(ids, ["fit", "script"]);
+        assert_eq!(ids, ["script"]);
     }
 
     #[test]

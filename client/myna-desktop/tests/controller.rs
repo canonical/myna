@@ -2394,7 +2394,6 @@ async fn terminal_fields_fold_layout_breaks_across_streaming_and_held_commits() 
 fn fitted() -> myna_desktop::process::pipeline::Pipeline {
     use myna_desktop::process::{graph::Graph, pipeline::*, resolve::Resolver};
     Pipeline::new(Graph::passthrough(), Resolver::open(Vec::new()))
-        .fitted(myna_desktop::live::Live::new(true))
 }
 
 async fn dictate_into(

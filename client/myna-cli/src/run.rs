@@ -83,8 +83,7 @@ impl Lab {
                     label: spec.label.clone(),
                     pipeline: Pipeline::new(spec.graph.clone(), resolver.clone())
                         .written(Live::new(config.vocabulary.clone()))
-                        .scripted(Live::new(script))
-                        .fitted(Live::new(spec.fit)),
+                        .scripted(Live::new(script)),
                     policy: CommitPolicy::for_needs(needs),
                 }
             })

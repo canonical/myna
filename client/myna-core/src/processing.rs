@@ -13,7 +13,7 @@ use gio::glib;
 
 use crate::chains::{
     chains_from_variant, chains_variant, Chain, ChainStep, Processing, KEY_ACTIVE_CHAIN,
-    KEY_CHAINS, KEY_FIT_TO_FIELD, MIGRATED_ID,
+    KEY_CHAINS, MIGRATED_ID,
 };
 use crate::settings::store_path;
 
@@ -25,7 +25,7 @@ const KEY_PROCESSING_PARAMS: &str = "processing-params";
 pub type Params = BTreeMap<String, String>;
 
 /// The steps this build knows, in stage order.
-pub const STEP_ORDER: [&str; 4] = ["fit", "tidy", "translate", "script"];
+pub const STEP_ORDER: [&str; 3] = ["tidy", "translate", "script"];
 
 /// The parameter key of `step`'s `param`: `translate.to`.
 pub fn param_key(step: &str, param: &str) -> String {
@@ -45,12 +45,9 @@ impl ProcessingChain {
     pub const TIDY: Self = Self("tidy");
     /// Tidied, then translated from English to French.
     pub const TIDY_FRENCH: Self = Self("tidy-french");
-    /// Typed as heard, fitted to the field: no capital or full stop in an
-    /// address, no capital that continues a sentence.
-    pub const KEYWORD: Self = Self("keyword");
 
     /// Every preset, in schema order.
-    pub const ALL: [Self; 4] = [Self::EXACT, Self::TIDY, Self::TIDY_FRENCH, Self::KEYWORD];
+    pub const ALL: [Self; 3] = [Self::EXACT, Self::TIDY, Self::TIDY_FRENCH];
 
     /// The schema enum nick.
     pub fn nick(self) -> &'static str {
@@ -116,7 +113,6 @@ impl ProcessingChain {
         let ids: &[&str] = match self {
             Self::TIDY => &["tidy"],
             Self::TIDY_FRENCH => &["tidy", "translate"],
-            Self::KEYWORD => &["fit"],
             _ => &[],
         };
         ids.iter().map(|id| (*id).to_owned()).collect()
@@ -155,7 +151,7 @@ pub fn chain_of(ids: &[String], params: &Params) -> ProcessingChain {
     let french = params
         .get(&param_key("translate", "to"))
         .is_none_or(|to| to == "fr");
-    let wanted: Vec<&str> = ["fit", "tidy", "translate"]
+    let wanted: Vec<&str> = ["tidy", "translate"]
         .into_iter()
         .filter(|id| has(id))
         .collect();
@@ -176,7 +172,6 @@ pub fn chain_of(ids: &[String], params: &Params) -> ProcessingChain {
     [
         ProcessingChain::TIDY_FRENCH,
         ProcessingChain::TIDY,
-        ProcessingChain::KEYWORD,
         ProcessingChain::EXACT,
     ]
     .into_iter()
@@ -194,7 +189,7 @@ pub fn with_chain(
 ) -> (Vec<String>, Params) {
     let mut next: Vec<String> = ids
         .iter()
-        .filter(|id| !["fit", "tidy", "translate"].contains(&id.as_str()))
+        .filter(|id| !["tidy", "translate"].contains(&id.as_str()))
         .cloned()
         .collect();
     next.extend(chain.steps());
@@ -365,10 +360,10 @@ pub fn migrate_legacy(path: &Path) -> bool {
 }
 
 /// Move a flat `processing-steps` list to a chain, once: its steps but
-/// `fit`, in stage order with their parameters, become the chain "My steps",
-/// made active; whether `fit` was among them becomes `fit-to-field`. Values
-/// already set in the new keys win. Both old keys are removed. Returns
-/// whether the file changed.
+/// `fit` (which is no step: text is always fitted to the field), in stage
+/// order with their parameters, become the chain "My steps", made active.
+/// Values already set in the new keys win. Both old keys are removed.
+/// Returns whether the file changed.
 ///
 /// Like [`migrate_legacy`], only development keyfiles carry the old keys
 /// (no tag has them). Delete this in the first release after it ships.
@@ -399,10 +394,6 @@ pub fn migrate_steps(path: &Path) -> bool {
     )
     .and_then(|value| value.get())
     .unwrap_or_default();
-    if raw(KEY_FIT_TO_FIELD).is_none() {
-        let fit = ids.iter().any(|id| id == "fit");
-        file.set_value(group, KEY_FIT_TO_FIELD, if fit { "true" } else { "false" });
-    }
     let kept: Vec<String> = ids
         .iter()
         .filter(|id| !id.is_empty() && *id != "fit")
@@ -503,10 +494,7 @@ mod tests {
                 "processing-chain='tidy-french'\n",
                 &[french, "processing-params={'translate.to': 'fr'}"],
             ),
-            (
-                "processing-chain='keyword'\n",
-                &["processing-steps=['fit']"],
-            ),
+            ("processing-chain='keyword'\n", &[]),
             ("processing-chain='summary'\n", &[]),
             // A chain this build does not know still outranks the older keys.
             ("processing-chain='summary'\nprocessing-tidy=true\n", &[]),
@@ -623,9 +611,8 @@ mod tests {
     fn a_list_that_matches_no_preset_reads_as_the_nearest() {
         let none = Params::new();
         let table = [
-            (ids(&["tidy", "fit"]), ProcessingChain::TIDY),
+            (ids(&["tidy", "x"]), ProcessingChain::TIDY),
             (ids(&["translate"]), ProcessingChain::TIDY_FRENCH),
-            (ids(&["fit", "translate"]), ProcessingChain::KEYWORD),
             (ids(&["script"]), ProcessingChain::EXACT),
             (ids(&["nonsense"]), ProcessingChain::EXACT),
         ];
@@ -671,15 +658,8 @@ mod tests {
     #[test]
     fn steps_are_ordered_by_stage_once_each() {
         assert_eq!(
-            in_stage_order(&ids(&[
-                "script",
-                "x",
-                "translate",
-                "fit",
-                "translate",
-                "tidy"
-            ])),
-            ids(&["fit", "tidy", "translate", "script", "x"])
+            in_stage_order(&ids(&["script", "x", "translate", "translate", "tidy"])),
+            ids(&["tidy", "translate", "script", "x"])
         );
     }
 
@@ -716,7 +696,7 @@ mod tests {
                            ('translate', true, {'to': 'fr'})])";
 
     #[test]
-    fn a_step_list_becomes_the_active_chain_and_the_fit_switch() {
+    fn a_step_list_becomes_the_active_chain_without_fit() {
         let (changed, lines) = migrate_both(
             "processing-steps=['translate', 'fit', 'tidy', 'future']\n\
              processing-params={'translate.to': 'de', 'future.x': '1', 'gone.y': '2'}\n\
@@ -731,7 +711,6 @@ mod tests {
                     "chains=[{EXAMPLE}, ('my-steps', 'My steps', [('tidy', true, {{}}), \
                      ('translate', true, {{'to': 'de'}}), ('future', true, {{'x': '1'}})])]"
                 ),
-                "fit-to-field=true".to_owned(),
                 "sounds=false".to_owned(),
             ]
         );
@@ -741,11 +720,11 @@ mod tests {
     fn a_list_of_fit_alone_or_nothing_makes_no_chain() {
         assert_eq!(
             migrate_both("processing-steps=['fit']\n"),
-            (true, vec!["fit-to-field=true".to_owned()])
+            (true, Vec::new())
         );
         assert_eq!(
             migrate_both("processing-steps=@as []\nprocessing-params=@a{ss} {}\n"),
-            (true, vec!["fit-to-field=false".to_owned()])
+            (true, Vec::new())
         );
         assert_eq!(
             migrate_both("processing-params={'translate.to': 'de'}\n"),
@@ -762,7 +741,7 @@ mod tests {
     #[test]
     fn the_step_migration_never_overwrites_the_new_keys() {
         let (_, lines) = migrate_both(
-            "processing-steps=['tidy']\nactive-chain='mine'\nfit-to-field=true\n\
+            "processing-steps=['tidy']\nactive-chain='mine'\n\
              chains=[('my-steps', 'Mine', @a(sba{ss}) [])]\n",
         );
         assert_eq!(
@@ -770,7 +749,6 @@ mod tests {
             [
                 "active-chain='mine'",
                 "chains=[('my-steps', 'Mine', []), ('my-steps-2', 'My steps', [('tidy', true, {})])]",
-                "fit-to-field=true",
             ]
         );
     }
@@ -787,7 +765,6 @@ mod tests {
                     "chains=[{EXAMPLE}, ('my-steps', 'My steps', [('tidy', true, {{}}), \
                      ('translate', true, {{'to': 'fr'}})])]"
                 ),
-                "fit-to-field=false".to_owned(),
             ]
         );
         let dir = tempdir();

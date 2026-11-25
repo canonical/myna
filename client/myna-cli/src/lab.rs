@@ -412,10 +412,9 @@ mod tests {
 
     #[tokio::test]
     async fn the_field_follows_what_was_typed() {
-        let spec = crate::spec::parse("keyword").unwrap();
+        let spec = crate::spec::parse("exact").unwrap();
         let policy = CommitPolicy::for_needs(spec.graph.needs());
-        let mut pipeline =
-            Pipeline::new(spec.graph, Slow(ms(0))).fitted(myna_desktop::live::Live::new(spec.fit));
+        let mut pipeline = Pipeline::new(spec.graph, Slow(ms(0)));
         let speech = Speech::typed("t".into(), "The end.");
         let mid = FieldSpec {
             mid_sentence: true,

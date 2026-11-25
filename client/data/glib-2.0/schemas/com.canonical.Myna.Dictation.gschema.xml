@@ -56,16 +56,6 @@
       </description>
     </key>
 
-    <key name="fit-to-field" type="b">
-      <default>true</default>
-      <summary>Fit the text to the field</summary>
-      <description>
-        After any chain, adjust the text to where it is typed: no capital or
-        full stop in an address or e-mail field, and no capital in the middle
-        of a sentence.
-      </description>
-    </key>
-
     <key name="processing-history" type="b">
       <default>false</default>
       <summary>Keep a record of what was changed</summary>

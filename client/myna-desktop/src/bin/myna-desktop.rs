@@ -151,8 +151,6 @@ struct Resolved {
     /// The script Chinese is converted to, or as recognised where the
     /// language is not Chinese.
     script: myna_core::ChineseScript,
-    /// Whether each piece is fitted to its field after the chain.
-    fit: bool,
     /// The saved chain in use: its id and name.
     chain: Option<(String, String)>,
     /// Every saved chain, for the bus's `Chains`.
@@ -198,7 +196,6 @@ impl Resolved {
             steps,
             graph,
             script,
-            fit: settings.processing.fit_to_field,
             chain: chain.map(|chain| (chain.id.clone(), chain.name.clone())),
             chains: settings.processing.chains.clone(),
             history: settings.processing_history,
@@ -348,8 +345,6 @@ struct LiveSettings {
     graph: Live<Graph>,
     /// How Chinese is written, read for each piece of text.
     script: Live<myna_core::ChineseScript>,
-    /// Whether text is fitted to the field, read for each piece.
-    fit: Live<bool>,
     /// The saved chain in use, read at each press for the record.
     chain: Live<Option<(String, String)>>,
     /// Every saved chain, read by the binder for the bus.
@@ -381,7 +376,6 @@ impl LiveSettings {
             graph: Live::new(resolved.graph.clone()),
             plain: Live::new(resolved.graph.clone()),
             script: Live::new(resolved.script),
-            fit: Live::new(resolved.fit),
             chain: Live::new(resolved.chain.clone()),
             chains: Live::new(resolved.chains.clone()),
             graph_changed: Arc::default(),
@@ -557,14 +551,6 @@ impl LiveSettings {
         if self.chains.get() != resolved.chains {
             self.chains.set(resolved.chains.clone());
             self.graph_changed.notify_one();
-        }
-        if self.fit.get() != resolved.fit {
-            myna_core::info_log!(
-                "settings",
-                "fit to field -> {} (live, from the next text)",
-                resolved.fit
-            );
-            self.fit.set(resolved.fit);
         }
         if self.history.get() != resolved.history {
             myna_core::info_log!(
@@ -990,8 +976,7 @@ async fn run_controller(
             );
             let pipeline = Pipeline::new(live.graph.clone(), resolver)
                 .written(live.vocabulary.clone())
-                .scripted(live.script.clone())
-                .fitted(live.fit.clone());
+                .scripted(live.script.clone());
             let context = Context {
                 steps: live.steps.clone(),
                 chain: live.chain.clone(),
@@ -1312,17 +1297,11 @@ fn print_status(args: &Args) -> ExitCode {
         },
     );
     let chain = settings.processing.active();
+    let named = chain.map_or_else(|| "(none)".into(), |chain| chain.name.clone());
     row(
         "chain",
-        chain.map_or_else(|| "(none)".into(), |chain| chain.name.clone()),
-        format!(
-            "fit to field {}",
-            if settings.processing.fit_to_field {
-                "on"
-            } else {
-                "off"
-            }
-        ),
+        named.clone(),
+        named,
         source(false, chain.is_some()),
     );
     row(
@@ -2022,9 +2001,7 @@ mod tests {
     #[test]
     fn a_chain_holds_the_dictation_as_far_as_its_nodes_need() {
         let a = Args::default();
-        // Fitted to the field by default, and fitting holds nothing back.
         let plain = unset();
-        assert!(resolved(&a, &plain).fit);
         assert_eq!(resolved(&a, &plain).commit, CommitPolicy::Streaming);
         let tidy = settings_of(myna_core::ProcessingChain::TIDY);
         assert_eq!(
@@ -2038,12 +2015,6 @@ mod tests {
 
         let live = LiveSettings::new(&resolved(&a, &plain), Live::new(SoundSet::default()));
         assert_eq!(live.graph.get(), Graph::passthrough());
-        assert!(live.fit.get());
-        let mut unfitted = plain.clone();
-        unfitted.processing.fit_to_field = false;
-        live.apply(&resolved(&a, &unfitted), "test");
-        assert!(!live.fit.get());
-        live.apply(&resolved(&a, &plain), "test");
         live.apply(&resolved(&a, &tidy), "test");
         assert_eq!(live.commit.get(), CommitPolicy::Horizon { sentences: 1 });
         assert_eq!(
