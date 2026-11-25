@@ -33,7 +33,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from myna.benchmarker import text_corpus
+from myna.benchmarker import text_corpus, text_eval
 from myna.benchmarker.text_gate import GateConfig, find_plugin, load_plugin, pair_of, socket_system
 from myna.benchmarker.text_metrics import (
     chrf,
@@ -485,9 +485,13 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--repeats", type=int, default=3, help="warm latency passes (default 3)")
     parser.add_argument("--json", dest="json_out", help="also write the full report here")
     parser.add_argument("--strict", action="store_true", help="treat a pending gate as a failure")
+    text_eval.add_arguments(parser)
 
 
 def cmd_text(args: argparse.Namespace) -> None:
+    if getattr(args, "eval_run", None):
+        text_eval.cmd_eval(args)
+        return
     gates: dict[str, GateConfig] = {}
     suites = args.suite or sorted(SUITES)
     system_spec = args.system

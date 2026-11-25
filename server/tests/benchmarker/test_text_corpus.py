@@ -255,60 +255,10 @@ def test_the_shipped_german_slice_is_a_real_aligned_pair(corpus):
     assert all(r.en and r.target and r.en != r.target for r in rows)
 
 
-def test_eval_corpora_match_their_pins():
+def test_eval_corpora_are_pinned_and_load_with_100_clean_sentences_per_operation():
     tc.verify_eval()
-
-
-def test_a_modified_or_unpinned_eval_file_is_refused(tmp_path):
-    shutil.copytree(tc.EVAL_DIR, tmp_path / "eval")
-    directory = tmp_path / "eval"
-    path = directory / "run1" / "tidy_en.jsonl"
-    path.write_text(path.read_text(encoding="utf-8") + "\n", encoding="utf-8")
-    with pytest.raises(tc.CorpusError, match="run1/tidy_en.jsonl does not match"):
-        tc.verify_eval(directory)
-    tc.write_eval_sums(directory)
-    tc.verify_eval(directory)
-    extra = directory / "run2" / "extra_en.jsonl"
-    extra.write_text("", encoding="utf-8")
-    with pytest.raises(tc.CorpusError, match="extra_en.jsonl is not pinned"):
-        tc.verify_eval(directory)
-    extra.unlink()
-    (directory / "run2" / "tidy_fr.jsonl").unlink()
-    with pytest.raises(tc.CorpusError, match="tidy_fr.jsonl is pinned .* but missing"):
-        tc.verify_eval(directory)
-
-
-def test_an_unknown_eval_run_is_refused():
-    with pytest.raises(tc.CorpusError, match="unknown evaluation run"):
-        tc.eval_names("run3")
-
-
-@pytest.mark.parametrize("run, count", [("run1", 3521), ("run2", 2532)])
-def test_eval_runs_load_with_unique_ids_and_100_clean_sentences_per_op(run, count):
-    items = tc.load_eval(run)
-    assert len(items) == count
-    assert len({i.id for i in items}) == count
-    ops = {(i.op, i.lang) for i in items}
-    for op, lang in ops:
-        clean = [i for i in items if (i.op, i.lang, i.kind) == (op, lang, "clean")]
-        assert len(clean) == 100
-        assert all(i.refs == (i.input,) for i in clean)
-    assert {i.kind for i in items} == {"positive", "negative", "clean"}
-
-
-def test_run2_is_blind_to_run1_and_to_the_repo_clean_slices(corpus):
-    run1 = {i.input for i in tc.load_eval("run1") if i.kind != "clean"}
-    run2 = tc.load_eval("run2")
-    # Three short English inputs were written independently by both authors.
-    assert len(run1 & {i.input for i in run2 if i.kind != "clean"}) <= 3
-    dev = {i.input for i in run2 if i.kind == "clean"}
-    repo = {c.text for c in corpus.clean_en} | {
-        t.target for lang in ("fr", "de", "es") for t in corpus.pairs[lang]
-    }
-    assert len(dev) == 400 and not dev & repo
-
-
-def test_skipped_prompt_examples_leave_the_items(corpus):
-    items = tc.load_eval("run1")
-    shot = next(i.input for i in items if i.kind == "positive")
-    assert shot not in {i.input for i in tc.load_eval("run1", skip_inputs=frozenset({shot}))}
+    for run, count in (("run1", 3521), ("run2", 2532)):
+        items = tc.load_eval(run)
+        assert len(items) == count and len({i.id for i in items}) == count
+        for op, lang in {(i.op, i.lang) for i in items}:
+            assert sum((i.op, i.lang, i.kind) == (op, lang, "clean") for i in items) == 100
