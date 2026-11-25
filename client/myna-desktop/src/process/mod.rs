@@ -21,7 +21,6 @@ pub mod landing;
 pub mod numbers;
 pub mod openai;
 pub mod pipeline;
-pub mod profanity;
 pub mod resolve;
 pub mod rules;
 pub mod script;

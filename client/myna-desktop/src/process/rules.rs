@@ -39,8 +39,6 @@ pub enum Rule {
     Addresses,
     /// Type spoken numbers as digits.
     Numbers,
-    /// Mask strong swear words.
-    Profanity,
     /// Quotes, apostrophes, dashes and spacing as the language writes them.
     Typography(super::typography::Style),
     /// Carry out spoken editing commands ("scratch that"), which reach
@@ -81,7 +79,6 @@ impl Rule {
             Rule::Casing => super::casing::apply(text),
             Rule::Addresses => super::addresses::apply(text),
             Rule::Numbers => super::numbers::apply(text),
-            Rule::Profanity => super::profanity::apply(text),
             Rule::Typography(style) => super::typography::apply(text, style),
             Rule::Commands => super::commands::apply(text),
             Rule::Continue => decapitalise(text, |word| {

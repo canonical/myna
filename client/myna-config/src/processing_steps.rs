@@ -25,7 +25,6 @@ pub const CASING: &str = "casing";
 pub const TYPOGRAPHY: &str = "typography";
 pub const ADDRESSES: &str = "addresses";
 pub const NUMBERS: &str = "numbers";
-pub const PROFANITY: &str = "profanity";
 
 /// A step the client carries itself, as Add step and the editor show it.
 pub struct BuiltIn {
@@ -42,26 +41,7 @@ pub struct BuiltIn {
 }
 
 /// The built-in steps Add step offers; fitting to the field is a switch.
-pub const BUILT_INS: [BuiltIn; 10] = [
-    BuiltIn {
-        id: PROFANITY,
-        stage: "clean-up",
-        languages: &["en"],
-        title: || gettextrs::gettext("Hide swearing"),
-        description: || {
-            gettextrs::gettext(
-                "Strong swear words keep their first letter and lose the rest. English only.",
-            )
-        },
-        example: || {
-            (
-                // The step hears English only, so the example stays English.
-                "What the fuck".to_owned(),
-                "What the f***".to_owned(),
-            )
-        },
-        credit: String::new,
-    },
+pub const BUILT_INS: [BuiltIn; 9] = [
     BuiltIn {
         id: NUMBERS,
         stage: "clean-up",
@@ -820,11 +800,7 @@ fn standing(
         Source::Unknown => None,
     };
     let own: Vec<&Entry> = inputs.catalog.iter().filter(|e| e.step.id == id).collect();
-    if [
-        EMOJI, COMMANDS, SNIPPETS, CASING, ADDRESSES, NUMBERS, PROFANITY,
-    ]
-    .contains(&id)
-    {
+    if [EMOJI, COMMANDS, SNIPPETS, CASING, ADDRESSES, NUMBERS].contains(&id) {
         if source.is_some_and(|from| from != "en") {
             return Standing::NotApplicable(gettextrs::gettext("Applies when the text is English"));
         }
@@ -1173,7 +1149,6 @@ mod tests {
                 "casing",
                 "addresses",
                 "numbers",
-                "profanity",
                 "translate",
                 "original",
                 "typography",
@@ -1486,7 +1461,6 @@ mod tests {
                 "casing",
                 "addresses",
                 "numbers",
-                "profanity",
                 "zzz",
                 "aaa",
                 "original",
@@ -1496,8 +1470,8 @@ mod tests {
             ]
         );
         assert_eq!(rows[0].title, "Fitted to the field");
-        assert_eq!(rows[8].title, "zzz");
-        assert!(rows[8].description.is_empty());
+        assert_eq!(rows[7].title, "zzz");
+        assert!(rows[7].description.is_empty());
         assert!(rows.iter().filter(|r| r.id != SCRIPT).all(Row::switchable));
     }
 
@@ -1651,7 +1625,6 @@ mod tests {
                 "casing",
                 "addresses",
                 "numbers",
-                "profanity",
                 "original",
                 "typography",
                 "script"

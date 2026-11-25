@@ -3197,13 +3197,12 @@ mod tests {
                     "Code casing",
                     "Spoken addresses",
                     "Numbers as digits",
-                    "Hide swearing",
                     "Keep the original",
                     "Typography",
                     "Chinese script"
                 ]
             );
-            let original = &catalog_rows(&rig)[8];
+            let original = &catalog_rows(&rig)[7];
             assert_eq!(original.subtitle(), "Applies after a translation");
             assert!(rig.page.translate_row.parent().is_some());
             assert_eq!(rig.page.translate_row.title(), "Translate");

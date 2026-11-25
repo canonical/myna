@@ -343,7 +343,7 @@ pub enum Fit {
 }
 
 /// The ids of the steps this build knows, in their default insert order.
-pub const KNOWN_STEPS: [&str; 12] = [
+pub const KNOWN_STEPS: [&str; 11] = [
     "commands",
     "tidy",
     "emoji",
@@ -351,7 +351,6 @@ pub const KNOWN_STEPS: [&str; 12] = [
     "casing",
     "addresses",
     "numbers",
-    "profanity",
     "translate",
     "original",
     "typography",
@@ -389,7 +388,6 @@ pub fn misfit(
     let param = |name: &str| params.get(name).filter(|v| !v.is_empty());
     match id {
         "commands" | "tidy" | "emoji" | "snippets" | "casing" | "addresses" | "numbers"
-        | "profanity"
             if lang.is_some_and(|l| l != "en") =>
         {
             Some(Misfit::NotEnglish)
