@@ -12,7 +12,7 @@ use myna_core::history::Skip;
 use myna_core::ChineseScript;
 
 pub use super::check::Check;
-use super::graph::{Graph, Id, Joins, Op, Src};
+use super::graph::{Graph, Id, Op, Src};
 use super::script;
 use super::vocabulary::Vocabulary;
 use super::wire::Params;
@@ -150,7 +150,6 @@ pub struct Pipeline {
     /// `written` compiled, until it changes.
     vocabulary: (Vec<String>, Vocabulary),
     trace: Trace,
-    joins: Joins,
 }
 
 impl Pipeline {
@@ -163,7 +162,6 @@ impl Pipeline {
             script: Live::new(ChineseScript::AsRecognised),
             vocabulary: (Vec::new(), Vocabulary::default()),
             trace: Trace::default(),
-            joins: Joins::default(),
         }
     }
 
@@ -278,17 +276,16 @@ impl Processor for Pipeline {
         super::fit::fit(&text, field, self.vocabulary())
     }
 
-    async fn process(&mut self, text: String, field: &Field) -> String {
+    async fn process(&mut self, text: String, _: &Field) -> String {
         let graph = self.started.clone().unwrap_or_else(|| self.graph.get());
         self.vocabulary();
-        let seq = self.joins.begin();
         let mut trace = Vec::new();
         let mut made: HashMap<Id, String> = HashMap::new();
         let read = |made: &HashMap<Id, String>, src: Src| match src {
             Src::Input => text.clone(),
             Src::Node(id) => made.get(&id).cloned().unwrap_or_default(),
         };
-        for id in graph.plan(field) {
+        for id in graph.plan() {
             let op = graph.node(id);
             let out = match op {
                 Op::Rule { from, rule } => rule.apply_with(&read(&made, *from), &self.vocabulary.1),
@@ -318,22 +315,9 @@ impl Processor for Pipeline {
                         None => input,
                     }
                 }
-                Op::Route { .. } => op
-                    .select(field)
-                    .map(|src| read(&made, src))
-                    .unwrap_or_default(),
-                Op::Join { parts, sep } => {
-                    let mut whole = None;
-                    for part in parts {
-                        let arrived = read(&made, *part);
-                        whole = self.joins.arrive(seq, id, parts, *part, arrived);
-                    }
-                    whole.map(|all| all.join(sep)).unwrap_or_default()
-                }
             };
             made.insert(id, out);
         }
-        self.joins.forget(seq);
         *self.trace.lock().unwrap_or_else(|p| p.into_inner()) = trace;
         script::convert(&read(&made, graph.out()), self.script.get())
     }
@@ -341,9 +325,8 @@ impl Processor for Pipeline {
 
 #[cfg(test)]
 mod tests {
-    use super::super::graph::{Builder, Needs};
+    use super::super::graph::Builder;
     use super::*;
-    use crate::process::rules::Rule;
     use myna_core::ProcessingChain;
     use myna_platform::text_input::FieldPurpose;
 
@@ -383,7 +366,6 @@ mod tests {
                 Src::Input,
                 Request::translate("en", "fr"),
                 Check::Usable { translation: true },
-                Needs::Sentence,
             ),
             _ => g.tidy(Src::Input),
         };
@@ -816,20 +798,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn rules_and_models_run_in_order() {
-        let mut g = Builder::default();
-        let asked = g.ask(
-            Src::Input,
-            Request::cleanup(None),
-            Check::Present,
-            Needs::Sentence,
-        );
-        let out = g.rule(asked, Rule::Address);
-        let mut pipeline = Pipeline::new(g.finish(out), Scripted::Says("Done."));
-        assert_eq!(pipeline.process(HEARD.into(), &here()).await, "done");
-    }
-
-    #[tokio::test]
     async fn fitting_types_what_the_field_calls_for_and_asks_no_model() {
         let mut pipeline = Pipeline::new(Graph::passthrough(), Scripted::Fails);
         let email = Field::after(FieldPurpose::Email, None);
@@ -839,40 +807,5 @@ mod tests {
         let fresh = Field::after(FieldPurpose::Plain, Some('.'));
         assert_eq!(pipeline.fit("The end.".into(), &fresh), "The end.");
         assert!(traced(&pipeline).is_empty());
-    }
-
-    /// The input beside its translation: one source feeding two nodes.
-    fn side_by_side() -> Graph {
-        let mut g = Builder::default();
-        let french = g.ask(
-            Src::Input,
-            Request::translate("en", "fr"),
-            Check::Present,
-            Needs::Sentence,
-        );
-        let out = g.join(vec![Src::Input, french], " / ");
-        g.finish(out)
-    }
-
-    #[tokio::test]
-    async fn a_join_types_each_piece_beside_its_own_translation() {
-        let mut pipeline = Pipeline::new(side_by_side(), Scripted::Says("Bonjour."));
-        for piece in ["Hello.", "Goodbye."] {
-            assert_eq!(
-                pipeline.process(piece.into(), &here()).await,
-                format!("{piece} / Bonjour.")
-            );
-        }
-        assert_eq!(traced(&pipeline).len(), 1);
-    }
-
-    #[tokio::test]
-    async fn a_failed_branch_of_a_join_hands_on_what_it_was_given() {
-        let mut pipeline = Pipeline::new(side_by_side(), Scripted::Fails);
-        assert_eq!(
-            pipeline.process("Hello.".into(), &here()).await,
-            "Hello. / Hello."
-        );
-        assert_eq!(traced(&pipeline)[0].skipped, Some(Skip::NoModel));
     }
 }

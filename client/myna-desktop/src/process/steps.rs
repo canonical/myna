@@ -10,7 +10,7 @@ use myna_core::{ChineseScript, ProcessingChain};
 use serde_json::Value;
 
 use super::disfluency::Lang;
-use super::graph::{Builder, Graph, Needs, Src};
+use super::graph::{Builder, Graph, Src};
 use super::pipeline::{Check, Request};
 use super::rules::Rule;
 use super::wire::Params;
@@ -295,7 +295,7 @@ pub fn compile(steps: &[StepSpec], ctx: &Context) -> Compiled {
                         at = g.rule(at, Rule::Vocabulary);
                         let request = Request::cleanup(None);
                         let state = ask_state(&request, ctx);
-                        at = g.ask(at, request, Check::ConservativeEdit, Needs::Sentence);
+                        at = g.ask(at, request, Check::ConservativeEdit);
                         state
                     }
                     Kind::Translate => {
@@ -316,7 +316,7 @@ pub fn compile(steps: &[StepSpec], ctx: &Context) -> Compiled {
                             None => {
                                 let direct = Request::translate(&from, &to);
                                 let state = ask_state(&direct, ctx);
-                                at = g.ask(at, direct, check, Needs::Sentence);
+                                at = g.ask(at, direct, check);
                                 state
                             }
                         };
@@ -715,7 +715,6 @@ mod tests {
         let direct = Request::translate("fr", "de").run_budget;
         assert_eq!(first.request.run_budget + second.request.run_budget, direct);
         assert_eq!(first.check, Check::Usable { translation: true });
-        assert_eq!(c.graph.needs(), Some(Needs::Sentence));
     }
 
     #[test]
@@ -791,7 +790,7 @@ mod tests {
         let c = compiled(&["tidy"], None);
         let vocab = c
             .graph
-            .plan(&crate::process::Field::default())
+            .plan()
             .into_iter()
             .filter(|&id| {
                 matches!(
@@ -804,7 +803,6 @@ mod tests {
             })
             .count();
         assert_eq!(vocab, 1, "the plain arm and tidy share one spelling");
-        assert_eq!(c.graph.needs(), Some(Needs::Sentence));
     }
 
     #[test]

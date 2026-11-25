@@ -4,7 +4,7 @@
 
 use myna_core::{ChineseScript, ProcessingChain};
 use myna_desktop::process::disfluency::Lang;
-use myna_desktop::process::graph::{Builder, Graph, Needs, Src};
+use myna_desktop::process::graph::{Builder, Graph, Src};
 use myna_desktop::process::pipeline::{Check, Request};
 use myna_desktop::process::rules::Rule;
 use myna_desktop::process::steps::{compile, Context, StepSpec, StepState};
@@ -104,7 +104,6 @@ fn chain(steps: &[&str]) -> Result<Graph, String> {
                     at,
                     Request::translate(from, to),
                     Check::Usable { translation: true },
-                    Needs::Sentence,
                 )
             }
             _ if ProcessingChain::from_nick(step).is_some() => {

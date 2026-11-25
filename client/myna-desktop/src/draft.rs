@@ -15,23 +15,20 @@ pub enum CommitPolicy {
     /// As each piece arrives. Nothing is held, so nothing can be revised.
     #[default]
     Streaming,
-    /// Once, when the dictation ends.
-    AtEnd,
     /// Everything but the last `sentences` complete sentences and the
     /// unfinished one after them, which stay open to revision.
     Horizon { sentences: usize },
 }
 
 impl CommitPolicy {
-    /// How long a chain holds text back: only as far as its nodes need,
-    /// the last finished sentence and the one being said, or all of it
-    /// until the end. With no node text is typed as it arrives.
-    pub fn for_needs(needs: Option<crate::process::graph::Needs>) -> Self {
-        use crate::process::graph::Needs;
-        match needs {
-            None => CommitPolicy::Streaming,
-            Some(Needs::Sentence) => CommitPolicy::Horizon { sentences: 1 },
-            Some(Needs::Dictation) => CommitPolicy::AtEnd,
+    /// How long a chain holds text back: the last finished sentence and
+    /// the one being said, so each piece is processed on its own. With no
+    /// node text is typed as it arrives.
+    pub fn for_chain(touches: bool) -> Self {
+        if touches {
+            CommitPolicy::Horizon { sentences: 1 }
+        } else {
+            CommitPolicy::Streaming
         }
     }
 
@@ -46,7 +43,6 @@ impl CommitPolicy {
         match self {
             _ if finished => pending.len(),
             CommitPolicy::Streaming => pending.len(),
-            CommitPolicy::AtEnd => 0,
             CommitPolicy::Horizon { sentences } => {
                 let ends = sentence_ends(pending);
                 ends.len()
@@ -175,28 +171,17 @@ mod tests {
     }
 
     #[test]
-    fn the_policy_follows_what_the_nodes_need() {
-        use crate::process::graph::Needs;
-        assert_eq!(CommitPolicy::for_needs(None), CommitPolicy::Streaming);
+    fn a_chain_that_changes_text_holds_a_sentence() {
+        assert_eq!(CommitPolicy::for_chain(false), CommitPolicy::Streaming);
         assert_eq!(
-            CommitPolicy::for_needs(Some(Needs::Sentence)),
+            CommitPolicy::for_chain(true),
             CommitPolicy::Horizon { sentences: 1 }
-        );
-        assert_eq!(
-            CommitPolicy::for_needs(Some(Needs::Dictation)),
-            CommitPolicy::AtEnd
         );
     }
 
     #[test]
     fn streaming_commits_everything_at_once() {
         assert_eq!(CommitPolicy::Streaming.ready("one two", false), 7);
-    }
-
-    #[test]
-    fn at_end_holds_until_finished() {
-        assert_eq!(CommitPolicy::AtEnd.ready("One. Two.", false), 0);
-        assert_eq!(CommitPolicy::AtEnd.ready("One. Two.", true), 9);
     }
 
     #[test]

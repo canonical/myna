@@ -2192,44 +2192,6 @@ fn completed(transcript: &str) -> SessionOutcome {
 }
 
 #[tokio::test]
-async fn at_end_holds_everything_for_one_commit_and_shows_it_as_a_draft() {
-    let injector = MockInjector::new().with_preedit_support();
-    let inject_log = injector.log();
-    let (builder, drafts) = held(
-        CommitPolicy::AtEnd,
-        injector,
-        events_session(
-            vec![
-                OrchestratorEvent::Final("hello".into()),
-                OrchestratorEvent::Unstable("wor".into()),
-                OrchestratorEvent::Final("world".into()),
-                OrchestratorEvent::Done("hello world".into()),
-            ],
-            completed("hello world"),
-        ),
-    );
-    builder.build().run().await;
-
-    let log = inject_log.lock().unwrap();
-    assert_eq!(log.commits, vec!["hello world"]);
-    assert!(
-        log.preedits.is_empty(),
-        "held text is not drawn in the field"
-    );
-    let pair = |s: &str, t: &str| (s.to_string(), t.to_string());
-    assert_eq!(
-        *drafts.0.lock().unwrap(),
-        vec![
-            pair("hello", ""),
-            pair("hello", "wor"),
-            pair("hello world", ""),
-            pair("hello world", ""),
-            pair("", ""),
-        ]
-    );
-}
-
-#[tokio::test]
 async fn horizon_commits_settled_sentences_while_the_user_speaks() {
     let injector = MockInjector::new();
     let inject_log = injector.log();
@@ -2261,7 +2223,7 @@ async fn held_text_is_processed_on_its_way_to_the_field() {
     let injector = MockInjector::new();
     let inject_log = injector.log();
     let (builder, drafts) = held(
-        CommitPolicy::AtEnd,
+        CommitPolicy::Horizon { sentences: 1 },
         injector,
         events_session(
             vec![
@@ -2285,7 +2247,7 @@ async fn held_text_is_written_when_the_session_fails_after_hearing_it() {
     let injector = MockInjector::new();
     let inject_log = injector.log();
     let (builder, _) = held(
-        CommitPolicy::AtEnd,
+        CommitPolicy::Horizon { sentences: 1 },
         injector,
         events_session(
             vec![OrchestratorEvent::Final("hello".into())],
@@ -2315,7 +2277,7 @@ async fn held_text_is_discarded_and_its_draft_hidden_when_focus_is_lost() {
         });
         (run, StopHandle::default())
     };
-    let (builder, drafts) = held(CommitPolicy::AtEnd, injector, session);
+    let (builder, drafts) = held(CommitPolicy::Horizon { sentences: 1 }, injector, session);
     builder.build().run().await;
 
     assert_eq!(inject_log.lock().unwrap().attempts(), 0);
@@ -2379,7 +2341,7 @@ async fn terminal_fields_fold_layout_breaks_across_streaming_and_held_commits() 
     let plain_injector = MockInjector::new();
     let plain_field = plain_injector.field();
     let (builder, _) = held(
-        CommitPolicy::AtEnd,
+        CommitPolicy::Horizon { sentences: 1 },
         plain_injector,
         events_session(
             vec![OrchestratorEvent::Final("one new line two".into())],
@@ -2499,7 +2461,10 @@ async fn landings_of(
 #[tokio::test]
 async fn text_that_lands_after_the_stop_edge_is_timed() {
     use myna_core::history::Outcome;
-    for policy in [CommitPolicy::AtEnd, CommitPolicy::Streaming] {
+    for policy in [
+        CommitPolicy::Horizon { sentences: 1 },
+        CommitPolicy::Streaming,
+    ] {
         let landed = landings_of(
             policy,
             MockInjector::new(),
@@ -2536,7 +2501,7 @@ async fn streamed_text_is_reported_as_heard_without_processing() {
 #[tokio::test]
 async fn processed_text_is_reported_with_what_it_became() {
     let landed = landings_of(
-        CommitPolicy::AtEnd,
+        CommitPolicy::Horizon { sentences: 1 },
         MockInjector::new(),
         [TriggerEdge::Press, TriggerEdge::Release],
         two_segment_focus_session(completed("first second")),
@@ -2567,7 +2532,7 @@ async fn text_dropped_for_lost_focus_is_reported_untimed() {
 async fn text_the_field_refuses_is_reported_as_lost() {
     use myna_core::history::Outcome;
     let landed = landings_of(
-        CommitPolicy::AtEnd,
+        CommitPolicy::Horizon { sentences: 1 },
         MockInjector::new().with_focus_event_during_commit(myna_desktop::FocusEvent::FocusOut),
         [TriggerEdge::Press, TriggerEdge::Release],
         events_session(
@@ -2586,7 +2551,7 @@ async fn text_the_field_refuses_is_reported_as_lost() {
 async fn held_text_discarded_on_a_cancelled_dictation_is_reported() {
     use myna_core::history::Outcome;
     let landed = landings_of(
-        CommitPolicy::AtEnd,
+        CommitPolicy::Horizon { sentences: 1 },
         MockInjector::new(),
         [TriggerEdge::Press, TriggerEdge::Release],
         events_session(

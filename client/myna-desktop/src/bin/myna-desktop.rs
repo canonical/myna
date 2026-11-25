@@ -54,7 +54,7 @@ use myna_desktop::indicator::readiness::{Readiness, ReadinessTee};
 use myna_desktop::inject::lazy::{IbusConnect, LazyInjector};
 use myna_desktop::inject::Injector as _;
 use myna_desktop::platform::Platform;
-use myna_desktop::process::graph::{Graph, Needs};
+use myna_desktop::process::graph::Graph;
 use myna_desktop::process::history::{Context, Recorded};
 use myna_desktop::process::pipeline::Pipeline;
 use myna_desktop::process::resolve::Resolver;
@@ -180,9 +180,7 @@ impl Resolved {
             },
         );
         // Conversion reads a sentence at a time and no more.
-        let needs = graph
-            .needs()
-            .max((script != myna_core::ChineseScript::AsRecognised).then_some(Needs::Sentence));
+        let touches = graph.touches() || script != myna_core::ChineseScript::AsRecognised;
         Self {
             activation,
             language,
@@ -192,7 +190,7 @@ impl Resolved {
             auto_stop: resolve_auto_stop(activation, settings.silence_timeout),
             sounds: settings.sounds,
             sound_set: settings.sound_set,
-            commit: CommitPolicy::for_needs(needs),
+            commit: CommitPolicy::for_chain(touches),
             steps,
             graph,
             script,
@@ -2007,10 +2005,6 @@ mod tests {
         assert_eq!(
             resolved(&a, &tidy).commit,
             CommitPolicy::Horizon { sentences: 1 }
-        );
-        assert_eq!(
-            CommitPolicy::for_needs(Some(Needs::Dictation)),
-            CommitPolicy::AtEnd
         );
 
         let live = LiveSettings::new(&resolved(&a, &plain), Live::new(SoundSet::default()));

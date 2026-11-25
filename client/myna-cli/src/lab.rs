@@ -315,7 +315,7 @@ mod tests {
 
     fn tidy(delay: u64) -> (Pipeline, CommitPolicy) {
         let spec = crate::spec::parse("tidy").unwrap();
-        let policy = CommitPolicy::for_needs(spec.graph.needs());
+        let policy = CommitPolicy::for_chain(spec.graph.touches());
         (Pipeline::new(spec.graph, Slow(ms(delay))), policy)
     }
 
@@ -413,7 +413,7 @@ mod tests {
     #[tokio::test]
     async fn the_field_follows_what_was_typed() {
         let spec = crate::spec::parse("exact").unwrap();
-        let policy = CommitPolicy::for_needs(spec.graph.needs());
+        let policy = CommitPolicy::for_chain(spec.graph.touches());
         let mut pipeline = Pipeline::new(spec.graph, Slow(ms(0)));
         let speech = Speech::typed("t".into(), "The end.");
         let mid = FieldSpec {

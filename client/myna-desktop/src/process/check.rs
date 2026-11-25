@@ -13,8 +13,6 @@ const LONGEST_DROP: usize = 6;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Check {
-    /// Not empty.
-    Present,
     /// A cleanup, whatever the model: the answer keeps what was said in
     /// order and only drops, recases and repunctuates, within bounds. The
     /// user's own words may stand in for what the speech model misheard.
@@ -32,7 +30,6 @@ impl Check {
             return Err(Skip::Empty);
         }
         match self {
-            Check::Present => Ok(()),
             Check::ConservativeEdit => conservative_edit(heard, answer, written),
             Check::Usable { translation } => usable(heard, answer, translation),
         }
@@ -541,11 +538,5 @@ mod tests {
         assert_eq!(usable("sure, I'll come", "Sure, I'll come."), Ok(()));
         let translate = Check::Usable { translation: true };
         assert_eq!(translate.verdict("Bien sûr.", "Of course.", &[]), Ok(()));
-    }
-
-    #[test]
-    fn present_wants_anything_but_blanks() {
-        assert_eq!(Check::Present.verdict("x", "y", &[]), Ok(()));
-        assert_eq!(Check::Present.verdict("x", " \t", &[]), Err(Skip::Empty));
     }
 }

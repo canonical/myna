@@ -11,7 +11,6 @@ use myna_core::ChineseScript;
 use myna_desktop::draft::CommitPolicy;
 use myna_desktop::inject::FieldPurpose;
 use myna_desktop::live::Live;
-use myna_desktop::process::graph::Needs;
 use myna_desktop::process::pipeline::{Pipeline, Request};
 use myna_desktop::process::resolve::Resolver;
 use myna_orchestrator::fsm::OrchestratorEvent;
@@ -70,10 +69,7 @@ impl Lab {
                     ChineseScript::AsRecognised
                 };
                 // As the daemon: conversion reads a sentence at a time.
-                let needs = spec
-                    .graph
-                    .needs()
-                    .max((script != ChineseScript::AsRecognised).then_some(Needs::Sentence));
+                let touches = spec.graph.touches() || script != ChineseScript::AsRecognised;
                 for request in spec.graph.requests() {
                     if !requests.iter().any(|r| r.key() == request.key()) {
                         requests.push(request);
@@ -84,7 +80,7 @@ impl Lab {
                     pipeline: Pipeline::new(spec.graph.clone(), resolver.clone())
                         .written(Live::new(config.vocabulary.clone()))
                         .scripted(Live::new(script)),
-                    policy: CommitPolicy::for_needs(needs),
+                    policy: CommitPolicy::for_chain(touches),
                 }
             })
             .collect();
