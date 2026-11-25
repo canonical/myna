@@ -114,6 +114,19 @@ CI runs it alone in a dispatched E2E run that `snaps.yml` starts after
 releasing a candidate to a branch. A sideloaded snap cannot test this: it
 keeps no store components and skips the old revision's refresh-mode.
 
+CI does not provision on every job: `.github/workflows/e2e-images.yml`
+provisions each desktop and release daily (the store's edge snaps go in
+it, so the nightly run sees them fresh) and `vm/image.sh push`es the VM up
+to the `rig` snapshot, with the snapd cache, to
+`ghcr.io/canonical/myna-e2e-<desktop>-<release>:<hash>` (an `lxc export
+--optimized-storage` of the btrfs `e2e` pool, a quarter of a plain export).
+The hash covers `vm/lib.sh`, `provision.sh` and the user-data, so editing
+them misses the image and the job provisions as before until the workflow
+has run on main. The e2e job `pull`s it while the workshop launches, and
+`provision.sh` then runs only the `dictation` stage, the one that needs
+the tree's fake backend. Keep tree-dependent work out of the stages up to
+`rig`.
+
 `dev/try-desktop.sh` (`make try-desktop`) reuses the provisioning above for a
 manual-test VM; it only ever copies the `installed` snapshot of an e2e VM.
 
