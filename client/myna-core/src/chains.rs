@@ -305,7 +305,7 @@ impl Processing {
 /// Why a step does not fit where it stands in a chain.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Misfit {
-    /// The steps that hear English words read English only.
+    /// Commands, tidy, emoji and snippets read English only.
     NotEnglish,
     /// A translation with no target.
     NoTarget,
@@ -343,12 +343,11 @@ pub enum Fit {
 }
 
 /// The ids of the steps this build knows, in their default insert order.
-pub const KNOWN_STEPS: [&str; 8] = [
+pub const KNOWN_STEPS: [&str; 7] = [
     "commands",
     "tidy",
     "emoji",
     "snippets",
-    "casing",
     "translate",
     "original",
     "script",
@@ -384,9 +383,7 @@ pub fn misfit(
 ) -> Option<Misfit> {
     let param = |name: &str| params.get(name).filter(|v| !v.is_empty());
     match id {
-        "commands" | "tidy" | "emoji" | "snippets" | "casing"
-            if lang.is_some_and(|l| l != "en") =>
-        {
+        "commands" | "tidy" | "emoji" | "snippets" if lang.is_some_and(|l| l != "en") => {
             Some(Misfit::NotEnglish)
         }
         "translate" => match param("to").map(|to| primary_language(to)) {

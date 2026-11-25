@@ -8,7 +8,6 @@ use myna_platform::text_input::FieldPurpose;
 
 pub use landing::Landing;
 
-pub mod casing;
 mod check;
 pub mod commands;
 pub mod disfluency;

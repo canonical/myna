@@ -21,7 +21,6 @@ pub const ORIGINAL: &str = "original";
 pub const EMOJI: &str = "emoji";
 pub const COMMANDS: &str = "commands";
 pub const SNIPPETS: &str = "snippets";
-pub const CASING: &str = "casing";
 
 /// A step the client carries itself, as Add step and the editor show it.
 pub struct BuiltIn {
@@ -38,26 +37,7 @@ pub struct BuiltIn {
 }
 
 /// The built-in steps Add step offers; fitting to the field is a switch.
-pub const BUILT_INS: [BuiltIn; 6] = [
-    BuiltIn {
-        id: CASING,
-        stage: "clean-up",
-        languages: &["en"],
-        title: || gettextrs::gettext("Code casing"),
-        description: || {
-            gettextrs::gettext(
-                "Say “camel case”, “snake case”, “kebab case”, “constant case”, “title case” or “all caps”, then the words, up to the next comma or full stop. English only.",
-            )
-        },
-        example: || {
-            (
-                // The step hears English only, so the example stays English.
-                "Call camel case get user name".to_owned(),
-                "Call getUserName".to_owned(),
-            )
-        },
-        credit: String::new,
-    },
+pub const BUILT_INS: [BuiltIn; 5] = [
     BuiltIn {
         id: SNIPPETS,
         stage: "clean-up",
@@ -741,7 +721,7 @@ fn standing(
         Source::Unknown => None,
     };
     let own: Vec<&Entry> = inputs.catalog.iter().filter(|e| e.step.id == id).collect();
-    if [EMOJI, COMMANDS, SNIPPETS, CASING].contains(&id) {
+    if [EMOJI, COMMANDS, SNIPPETS].contains(&id) {
         if source.is_some_and(|from| from != "en") {
             return Standing::NotApplicable(gettextrs::gettext("Applies when the text is English"));
         }
@@ -1076,7 +1056,6 @@ mod tests {
                 "tidy",
                 "emoji",
                 "snippets",
-                "casing",
                 "translate",
                 "original",
                 "script"
@@ -1380,14 +1359,11 @@ mod tests {
         let ids: Vec<&str> = rows.iter().map(|r| r.id.as_str()).collect();
         assert_eq!(
             ids,
-            [
-                "fit", "commands", "emoji", "snippets", "casing", "zzz", "aaa", "original",
-                "script", "mmm"
-            ]
+            ["fit", "commands", "emoji", "snippets", "zzz", "aaa", "original", "script", "mmm"]
         );
         assert_eq!(rows[0].title, "Fitted to the field");
-        assert_eq!(rows[5].title, "zzz");
-        assert!(rows[5].description.is_empty());
+        assert_eq!(rows[4].title, "zzz");
+        assert!(rows[4].description.is_empty());
         assert!(rows.iter().filter(|r| r.id != SCRIPT).all(Row::switchable));
     }
 
@@ -1533,7 +1509,7 @@ mod tests {
         let ids: Vec<String> = rig.rows().into_iter().map(|r| r.id).collect();
         assert_eq!(
             ids,
-            ["fit", "commands", "emoji", "snippets", "casing", "original", "script"]
+            ["fit", "commands", "emoji", "snippets", "original", "script"]
         );
     }
 
