@@ -140,8 +140,6 @@ struct Resolved {
     /// settings - no argv override exists for this one. Normalized only at
     /// the point a `SessionConfig` is built.
     vocabulary: Vec<String>,
-    /// The user's snippets, `name => text`, as stored.
-    snippets: Vec<String>,
     preedit: bool,
     mode: ModeInputs,
     auto_stop: AutoStop,
@@ -191,7 +189,6 @@ impl Resolved {
             activation,
             language,
             vocabulary: settings.vocabulary.clone(),
-            snippets: settings.snippets.clone(),
             preedit: resolve_preedit(args.preedit, mode.effective().mode),
             mode,
             auto_stop: resolve_auto_stop(activation, settings.silence_timeout),
@@ -335,8 +332,6 @@ struct LiveSettings {
     /// Raw as settings hand it over; read per press like `language`, and
     /// normalized there (not here) before it reaches a `SessionConfig`.
     vocabulary: Live<Vec<String>>,
-    /// Read at every piece the Snippets step types.
-    snippets: Live<Vec<String>>,
     /// Read at every stats tick of a running session, so a changed timeout
     /// applies to the session in progress.
     auto_stop: Live<AutoStop>,
@@ -379,7 +374,6 @@ impl LiveSettings {
             mode: Arc::new(std::sync::Mutex::new(resolved.mode)),
             language: Live::new(resolved.language.clone()),
             vocabulary: Live::new(resolved.vocabulary.clone()),
-            snippets: Live::new(resolved.snippets.clone()),
             auto_stop: Live::new(resolved.auto_stop),
             commit: Live::new(resolved.commit),
             steps: Live::new(resolved.steps.clone()),
@@ -509,14 +503,6 @@ impl LiveSettings {
                 resolved.vocabulary.len()
             );
             self.vocabulary.set(resolved.vocabulary.clone());
-        }
-        if self.snippets.get() != resolved.snippets {
-            myna_core::info_log!(
-                "settings",
-                "snippets -> {} (live, from the next piece)",
-                resolved.snippets.len()
-            );
-            self.snippets.set(resolved.snippets.clone());
         }
         if self.auto_stop.get() != resolved.auto_stop {
             myna_core::info_log!(
@@ -1004,7 +990,6 @@ async fn run_controller(
             );
             let pipeline = Pipeline::new(live.graph.clone(), resolver)
                 .written(live.vocabulary.clone())
-                .snippets(live.snippets.clone())
                 .scripted(live.script.clone())
                 .fitted(live.fit.clone());
             let context = Context {
@@ -2181,18 +2166,6 @@ mod tests {
         };
         live.apply(&resolved(&Args::default(), &changed), "test");
         assert_eq!(live.vocabulary.get(), vec!["Siobhan".to_string()]);
-    }
-
-    #[test]
-    fn a_snippets_change_reaches_the_live_cell() {
-        let saved = myna_core::Settings {
-            snippets: vec!["sign off => Best".into()],
-            ..Default::default()
-        };
-        let live = LiveSettings::new(&resolved(&Args::default(), &saved), Live::default());
-        assert_eq!(live.snippets.get(), vec!["sign off => Best".to_string()]);
-        live.apply(&resolved(&Args::default(), &unset()), "test");
-        assert!(live.snippets.get().is_empty());
     }
 
     #[test]

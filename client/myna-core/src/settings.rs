@@ -126,10 +126,6 @@ pub const DEFAULT_SILENCE_TIMEOUT_SECS: u32 = 30;
 /// setting that has drifted past the server's limits never fails a session.
 pub const KEY_VOCABULARY: &str = "vocabulary";
 
-/// Text the user saves under a name (`my address => 1 Main Street`), which
-/// the Snippets step types when "insert" and the name are said.
-pub const KEY_SNIPPETS: &str = "snippets";
-
 /// The settings, as a plain value: read once, no live binding. Callers that
 /// want change notification should hold a [`Store`] instead.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -156,8 +152,6 @@ pub struct Settings {
     pub sound_set: SoundSet,
     /// The user's local dictionary, raw (unnormalized) as stored.
     pub vocabulary: Vec<String>,
-    /// The user's snippets, `name => text`, as stored.
-    pub snippets: Vec<String>,
 }
 
 /// What a machine with no schema installed reads: every key's schema default.
@@ -173,7 +167,6 @@ impl Default for Settings {
             processing_history: false,
             sound_set: SoundSet::default(),
             vocabulary: Vec::new(),
-            snippets: Vec::new(),
         }
     }
 }
@@ -212,7 +205,6 @@ impl Settings {
                 .and_then(SoundSet::from_nick)
                 .unwrap_or(default.sound_set),
             vocabulary: store.strings(KEY_VOCABULARY).unwrap_or(default.vocabulary),
-            snippets: store.strings(KEY_SNIPPETS).unwrap_or(default.snippets),
         }
     }
 }

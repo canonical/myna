@@ -38,7 +38,6 @@ zbus = "5"
 # Publisher-owned D-Bus status labels use the shared `myna` gettext domain.
 gettext-rs = { version = "0.7", features = ["gettext-system"] }
 emojis = "0.9.1"
-gio.workspace = true
 
 # cargo-machete cannot see gettext-rs: it is only referenced through the
 # re-exported `gettextrs::` namespace (indicator/controller/inject/backend),

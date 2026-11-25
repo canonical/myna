@@ -3664,7 +3664,6 @@ fn backends_probe() -> glib::ExitCode {
             "Sound style",
             "Stop after silence (seconds)",
             "Vocabulary",
-            "Snippets",
         ]
     {
         eprintln!("the Dictation rows read {dictation_rows:?}");

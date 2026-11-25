@@ -89,8 +89,6 @@ enum Kind {
     Commands,
     /// Type spoken emoji as the emoji.
     Emoji,
-    /// Type the user's snippets for "insert <name>".
-    Snippets,
     /// Translate to `to`.
     Translate,
     /// Type what was said beside its translation.
@@ -100,11 +98,10 @@ enum Kind {
 }
 
 impl Kind {
-    const ALL: [Kind; 7] = [
+    const ALL: [Kind; 6] = [
         Kind::Commands,
         Kind::Tidy,
         Kind::Emoji,
-        Kind::Snippets,
         Kind::Translate,
         Kind::Original,
         Kind::Script,
@@ -119,7 +116,6 @@ impl Kind {
             Kind::Tidy => "tidy",
             Kind::Emoji => "emoji",
             Kind::Commands => "commands",
-            Kind::Snippets => "snippets",
             Kind::Translate => "translate",
             Kind::Original => "original",
             Kind::Script => "script",
@@ -130,7 +126,7 @@ impl Kind {
         match self {
             Kind::Translate => Some("to"),
             Kind::Script => Some("mode"),
-            Kind::Tidy | Kind::Commands | Kind::Emoji | Kind::Snippets | Kind::Original => None,
+            Kind::Tidy | Kind::Commands | Kind::Emoji | Kind::Original => None,
         }
     }
 }
@@ -358,10 +354,6 @@ pub fn compile(steps: &[StepSpec], ctx: &Context) -> Compiled {
                     }
                     Kind::Commands => {
                         at = g.rule(at, Rule::Commands);
-                        StepState::Applicable
-                    }
-                    Kind::Snippets => {
-                        at = g.rule(at, Rule::Snippets);
                         StepState::Applicable
                     }
                     Kind::Emoji => {
