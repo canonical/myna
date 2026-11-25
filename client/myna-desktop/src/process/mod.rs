@@ -19,6 +19,7 @@ pub mod request;
 pub mod resolve;
 pub mod rules;
 pub mod script;
+pub mod spec;
 pub mod status;
 pub mod step;
 pub mod steps;

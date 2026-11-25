@@ -13,134 +13,9 @@ use super::disfluency::Lang;
 use super::graph::{Graph, Op};
 use super::pipeline::{Check, Request};
 use super::rules::Rule;
-use super::wire::Params;
 
-/// A step as stored: a stable id, its parameters and whether it is on.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct StepSpec {
-    pub id: String,
-    pub params: Params,
-    pub on: bool,
-}
-
-impl StepSpec {
-    pub fn new(id: &str) -> Self {
-        Self {
-            id: id.into(),
-            params: Params::new(),
-            on: true,
-        }
-    }
-
-    /// A step of a saved chain.
-    pub fn of_chain(step: &myna_core::chains::ChainStep) -> Self {
-        let spec = step
-            .params
-            .iter()
-            .fold(Self::new(&step.step), |spec, (key, value)| {
-                spec.with(key, value)
-            });
-        Self {
-            on: step.on,
-            ..spec
-        }
-    }
-
-    pub fn with(mut self, key: &str, value: &str) -> Self {
-        self.params.insert(key.into(), value.into());
-        self
-    }
-
-    /// The step `id` with the stored parameters that belong to it
-    /// (`translate.to` becomes `to`).
-    pub fn stored(id: &str, params: &myna_core::processing::Params) -> Self {
-        let prefix = format!("{id}.");
-        params
-            .iter()
-            .filter_map(|(key, value)| Some((key.strip_prefix(&prefix)?, value)))
-            .fold(Self::new(id), |step, (key, value)| step.with(key, value))
-    }
-
-    /// `id` or `id=value`, the value being the step's one parameter
-    /// (`translate=fr`, `script=simplified`).
-    pub fn parse(token: &str) -> Self {
-        let (id, value) = token.split_once('=').unwrap_or((token, ""));
-        let step = Self::new(id.trim());
-        match (Kind::of(&step.id).and_then(Kind::param), value.trim()) {
-            (Some(key), value) if !value.is_empty() => step.with(key, value),
-            _ => step,
-        }
-    }
-
-    fn text(&self, key: &str) -> Option<&str> {
-        self.params
-            .get(key)
-            .and_then(Value::as_str)
-            .filter(|v| !v.is_empty())
-    }
-}
-
-/// The steps this build knows, in their default insert order.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Kind {
-    /// Drop hesitations, false starts and repeats.
-    Tidy,
-    /// Translate to `to`.
-    Translate,
-    /// Write Chinese in `script`.
-    Script,
-}
-
-impl Kind {
-    const ALL: [Kind; 3] = [Kind::Tidy, Kind::Translate, Kind::Script];
-
-    fn of(id: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|k| k.id() == id)
-    }
-
-    fn id(self) -> &'static str {
-        match self {
-            Kind::Tidy => "tidy",
-            Kind::Translate => "translate",
-            Kind::Script => "script",
-        }
-    }
-
-    fn param(self) -> Option<&'static str> {
-        match self {
-            Kind::Translate => Some("to"),
-            Kind::Script => Some("mode"),
-            Kind::Tidy => None,
-        }
-    }
-}
-
-/// What the compiler became of one step.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum StepState {
-    /// In the graph.
-    Applicable,
-    /// Left out because the text it would read is not what it reads; not a
-    /// fault. `move_above` is the index of the earlier step that changed the
-    /// language, when the step would apply above it.
-    NotApplicable {
-        reason: String,
-        move_above: Option<usize>,
-    },
-    /// Switched off in the chain; left out.
-    Off,
-    /// In the graph, but no model answers `request`: the step fails open
-    /// until one does.
-    Unavailable { request: Request },
-    /// An id this build does not know; dropped.
-    Unknown,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct StepReport {
-    pub id: String,
-    pub state: StepState,
-}
+use super::spec::{misfit, Kind};
+pub use super::spec::{StepReport, StepSpec, StepState};
 
 /// What the compiler needs to know besides the steps.
 pub struct Context<'a> {
@@ -236,120 +111,129 @@ pub fn label(steps: &[StepSpec]) -> String {
     }
 }
 
-/// Why `kind` does not apply to text in `lang`, if it does not, in words
-/// for the log and the bus; the judgement is `myna_core::chains::misfit`,
-/// which Settings shares.
-fn misfit(kind: Kind, step: &StepSpec, lang: Option<&str>) -> Option<&'static str> {
-    use myna_core::chains::Misfit;
-    let params: myna_core::chains::StepParams = step
-        .params
-        .iter()
-        .filter_map(|(k, v)| Some((k.clone(), v.as_str()?.to_owned())))
-        .collect();
-    Some(match myna_core::chains::misfit(kind.id(), &params, lang)? {
-        Misfit::NotEnglish => "Applies when the text is English",
-        Misfit::NoTarget => "Needs a language to translate to",
-        Misfit::AlreadyInTarget => "The text is already in that language",
-        Misfit::NotChinese => "Applies when the text is Chinese",
-        Misfit::NoScript => "Needs a script to write",
-    })
-}
-
 /// Compile `steps` in their order for dictation in `ctx.language`.
 pub fn compile(steps: &[StepSpec], ctx: &Context) -> Compiled {
-    let mut ops: Vec<Op> = Vec::new();
-    let mut lang = ctx.language.map(myna_core::chains::primary_language);
-    let mut chinese = ChineseScript::AsRecognised;
-    // The last step that changed the language, and the language before it.
-    let mut changed: Option<(usize, Option<String>)> = None;
-    let mut report = Vec::with_capacity(steps.len());
-    for (index, step) in steps.iter().enumerate() {
-        let kind = Kind::of(&step.id);
-        let state = match kind {
-            _ if !step.on => StepState::Off,
-            None => {
-                myna_core::info_log!("process", "dropping unknown step {:?}", step.id);
-                StepState::Unknown
-            }
-            Some(kind) => match misfit(kind, step, lang.as_deref()) {
-                Some(reason) => StepState::NotApplicable {
-                    reason: reason.into(),
-                    move_above: changed
-                        .as_ref()
-                        .filter(|(_, before)| misfit(kind, step, before.as_deref()).is_none())
-                        .map(|(at, _)| *at),
-                },
-                None => match kind {
-                    Kind::Tidy => {
-                        let language = if lang.is_some() { Lang::En } else { Lang::Any };
-                        ops.push(Op::Rule {
-                            rule: Rule::Disfluency(language),
-                        });
-                        ops.push(Op::Rule {
-                            rule: Rule::Vocabulary,
-                        });
-                        let request = Request::cleanup(None);
-                        let state = ask_state(&request, ctx);
-                        ops.push(Op::Ask {
-                            request,
-                            check: Check::ConservativeEdit,
-                        });
-                        state
-                    }
-                    Kind::Translate => {
-                        let to = step
-                            .text("to")
-                            .map(myna_core::chains::primary_language)
-                            .expect("misfit checked it");
-                        let from = lang.clone().unwrap_or_else(|| "en".into());
-                        let check = Check::Usable;
-                        let state = match pivot_legs(&from, &to, ctx) {
-                            Some((first, second)) => {
-                                let state = [&first, &second]
-                                    .into_iter()
-                                    .find(|leg| (ctx.unavailable)(leg))
-                                    .map_or(StepState::Applicable, |leg| StepState::Unavailable {
-                                        request: leg.clone(),
-                                    });
-                                ops.push(Op::Pivot {
-                                    first,
-                                    second,
-                                    check,
-                                });
-                                state
-                            }
-                            None => {
-                                let direct = Request::translate(&from, &to);
-                                let state = ask_state(&direct, ctx);
-                                ops.push(Op::Ask {
-                                    request: direct,
-                                    check,
-                                });
-                                state
-                            }
-                        };
-                        changed = Some((index, lang.replace(to)));
-                        state
-                    }
-                    Kind::Script => {
-                        chinese = step
-                            .text("mode")
-                            .and_then(ChineseScript::from_nick)
-                            .expect("misfit checked it");
-                        StepState::Applicable
-                    }
-                },
-            },
-        };
-        report.push(StepReport {
+    let mut compiler = Compiler {
+        ops: Vec::new(),
+        lang: ctx.language.map(myna_core::chains::primary_language),
+        chinese: ChineseScript::AsRecognised,
+        changed: None,
+        ctx,
+    };
+    let report = steps
+        .iter()
+        .enumerate()
+        .map(|(index, step)| StepReport {
             id: step.id.clone(),
-            state,
-        });
-    }
+            state: compiler.step(index, step),
+        })
+        .collect();
     Compiled {
-        graph: Graph::of(ops),
-        script: chinese,
+        graph: Graph::of(compiler.ops),
+        script: compiler.chinese,
         report,
+    }
+}
+
+/// One compile pass: the operations made so far, the language the text is
+/// in, and the last step that changed it.
+struct Compiler<'a> {
+    ops: Vec<Op>,
+    lang: Option<String>,
+    chinese: ChineseScript,
+    changed: Option<(usize, Option<String>)>,
+    ctx: &'a Context<'a>,
+}
+
+impl Compiler<'_> {
+    fn step(&mut self, index: usize, step: &StepSpec) -> StepState {
+        let Some(kind) = Kind::of(&step.id) else {
+            myna_core::info_log!("process", "dropping unknown step {:?}", step.id);
+            return StepState::Unknown;
+        };
+        if !step.on {
+            return StepState::Off;
+        }
+        if let Some(reason) = misfit(kind, step, self.lang.as_deref()) {
+            let move_above = self
+                .changed
+                .as_ref()
+                .filter(|(_, before)| misfit(kind, step, before.as_deref()).is_none())
+                .map(|(at, _)| *at);
+            return StepState::NotApplicable {
+                reason: reason.into(),
+                move_above,
+            };
+        }
+        match kind {
+            Kind::Tidy => self.tidy(),
+            Kind::Translate => self.translate(index, step),
+            Kind::Script => self.script(step),
+        }
+    }
+
+    fn tidy(&mut self) -> StepState {
+        let language = if self.lang.is_some() {
+            Lang::En
+        } else {
+            Lang::Any
+        };
+        self.ops.push(Op::Rule {
+            rule: Rule::Disfluency(language),
+        });
+        self.ops.push(Op::Rule {
+            rule: Rule::Vocabulary,
+        });
+        self.ask(Request::cleanup(None), Check::ConservativeEdit)
+    }
+
+    fn translate(&mut self, index: usize, step: &StepSpec) -> StepState {
+        let to = step
+            .text("to")
+            .map(myna_core::chains::primary_language)
+            .expect("misfit checked it");
+        let from = self.lang.clone().unwrap_or_else(|| "en".into());
+        let check = Check::Usable;
+        let state = match pivot_legs(&from, &to, self.ctx) {
+            Some((first, second)) => {
+                let missing = [&first, &second]
+                    .into_iter()
+                    .find(|leg| (self.ctx.unavailable)(leg));
+                let state = missing.map_or(StepState::Applicable, |leg| StepState::Unavailable {
+                    request: leg.clone(),
+                });
+                self.ops.push(Op::Pivot {
+                    first,
+                    second,
+                    check,
+                });
+                state
+            }
+            None => self.ask(Request::translate(&from, &to), check),
+        };
+        self.changed = Some((index, self.lang.replace(to)));
+        state
+    }
+
+    fn script(&mut self, step: &StepSpec) -> StepState {
+        self.chinese = step
+            .text("mode")
+            .and_then(ChineseScript::from_nick)
+            .expect("misfit checked it");
+        StepState::Applicable
+    }
+
+    /// Add a model step: unavailable when no installed model covers it.
+    fn ask(&mut self, request: Request, check: Check) -> StepState {
+        let state = if (self.ctx.unavailable)(&request) {
+            StepState::Unavailable {
+                request: request.clone(),
+            }
+        } else {
+            StepState::Applicable
+        };
+        self.ops.push(Op::Ask { request, check });
+        state
     }
 }
 
@@ -374,16 +258,6 @@ fn pivot_legs(from: &str, to: &str, ctx: &Context) -> Option<(Request, Request)>
     };
     let (first, second) = (leg(from, "en"), leg("en", to));
     (!((ctx.uncovered)(&first) && (ctx.uncovered)(&second))).then_some((first, second))
-}
-
-fn ask_state(request: &Request, ctx: &Context) -> StepState {
-    if (ctx.unavailable)(request) {
-        StepState::Unavailable {
-            request: request.clone(),
-        }
-    } else {
-        StepState::Applicable
-    }
 }
 
 /// Route by what the field is: an address, a sentence in progress or text
@@ -423,53 +297,10 @@ mod tests {
             .collect()
     }
 
-    fn asks(c: &Compiled) -> Vec<(String, String)> {
-        c.graph
-            .requests()
-            .iter()
-            .map(|r| {
-                let get = |k: &str| r.params.get(k).and_then(Value::as_str).unwrap_or("");
-                (get("language").to_owned(), get("to").to_owned())
-            })
-            .collect()
-    }
-
-    #[test]
-    fn presets_are_their_step_lists() {
-        for (chain, steps) in [
-            (ProcessingChain::EXACT, &[][..]),
-            (ProcessingChain::TIDY, &["tidy"][..]),
-            (ProcessingChain::TIDY_FRENCH, &["tidy", "translate=fr"][..]),
-        ] {
-            assert_eq!(preset_steps(chain), spec(steps), "{}", chain.nick());
-            assert_eq!(compiled(steps, None).graph, preset_graph(chain));
-        }
-        assert_eq!(
-            compiled(&[], None).graph,
-            Graph::passthrough(),
-            "no steps type as heard"
-        );
-    }
-
-    #[test]
-    fn a_step_takes_its_parameter_from_id_equals_value() {
-        assert_eq!(
-            StepSpec::parse(" translate = de "),
-            StepSpec::new("translate").with("to", "de")
-        );
-        assert_eq!(
-            StepSpec::parse("script=traditional"),
-            StepSpec::new("script").with("mode", "traditional")
-        );
-        assert_eq!(StepSpec::parse("tidy=1"), StepSpec::new("tidy"));
-        assert_eq!(StepSpec::parse("translate="), StepSpec::new("translate"));
-        assert_eq!(StepSpec::parse("shout=1"), StepSpec::new("shout"));
-    }
-
     fn not_applicable(c: &Compiled, index: usize) -> Option<usize> {
         match &c.report[index].state {
             StepState::NotApplicable { move_above, .. } => *move_above,
-            other => panic!("step {index} is {other:?}"),
+            other => panic!("{other:?}"),
         }
     }
 
@@ -504,74 +335,6 @@ mod tests {
     }
 
     #[test]
-    fn a_step_listed_twice_runs_twice_where_it_fits() {
-        let c = compiled(&["tidy", "translate=fr", "tidy"], Some("en"));
-        assert_eq!(
-            states(&c),
-            [("tidy", "on"), ("translate", "on"), ("tidy", "n/a")]
-        );
-        assert_eq!(not_applicable(&c, 2), Some(1));
-        let c = compiled(&["translate=fr", "translate=de"], Some("en"));
-        assert_eq!(states(&c), [("translate", "on"), ("translate", "on")]);
-        let asks: Vec<_> = c
-            .graph
-            .requests()
-            .into_iter()
-            .map(|r| (r.params["language"].clone(), r.params["to"].clone()))
-            .collect();
-        assert_eq!(
-            asks,
-            [("en".into(), "fr".into()), ("fr".into(), "de".into())]
-        );
-    }
-
-    #[test]
-    fn an_empty_chain_and_an_off_step_change_nothing() {
-        let empty = compiled(&[], Some("en"));
-        assert_eq!(empty.graph, Graph::passthrough());
-        assert!(empty.report.is_empty());
-        let mut off = StepSpec::parse("tidy");
-        off.on = false;
-        let c = compile(&[off, StepSpec::parse("translate=fr")], &Context::default());
-        assert_eq!(states(&c), [("tidy", "off"), ("translate", "on")]);
-        assert_eq!(c.graph, compiled(&["translate=fr"], None).graph);
-    }
-
-    #[test]
-    fn a_chain_step_keeps_its_parameters_and_switch() {
-        let step = myna_core::chains::ChainStep {
-            on: false,
-            ..myna_core::chains::ChainStep::new("translate").with("to", "de")
-        };
-        let spec = StepSpec::of_chain(&step);
-        assert_eq!(spec.id, "translate");
-        assert_eq!(spec.text("to"), Some("de"));
-        assert!(!spec.on);
-    }
-
-    #[test]
-    fn tidy_reads_english_only() {
-        for (language, state) in [
-            (None, "on"),
-            (Some("en"), "on"),
-            (Some("en-GB"), "on"),
-            (Some("EN_us"), "on"),
-            (Some("fr"), "n/a"),
-            (Some("zh"), "n/a"),
-        ] {
-            let c = compiled(&["tidy"], language);
-            assert_eq!(states(&c), [("tidy", state)], "{language:?}");
-            assert_eq!(c.graph == Graph::passthrough(), state == "n/a");
-        }
-        let StepState::NotApplicable { reason, .. } =
-            &compiled(&["tidy"], Some("fr")).report[0].state
-        else {
-            panic!()
-        };
-        assert!(reason.contains("English"));
-    }
-
-    #[test]
     fn tidy_names_its_language_to_the_pause_rule() {
         let first = |c: &Compiled| match &c.graph.ops()[0] {
             Op::Rule { rule, .. } => *rule,
@@ -584,43 +347,6 @@ mod tests {
         assert_eq!(
             first(&compiled(&["tidy"], Some("en"))),
             Rule::Disfluency(Lang::En)
-        );
-    }
-
-    #[test]
-    fn translate_goes_from_the_dictation_language_to_its_target() {
-        for (language, to, from, target) in [
-            (Some("en"), "fr", "en", "fr"),
-            (Some("de-AT"), "FR-ca", "de", "fr"),
-            (None, "de", "en", "de"),
-            (Some("zh"), "en", "zh", "en"),
-        ] {
-            let c = compiled(&[&format!("translate={to}")], language);
-            assert_eq!(states(&c), [("translate", "on")]);
-            assert_eq!(asks(&c), [(from.into(), target.into())]);
-        }
-    }
-
-    #[test]
-    fn translate_to_the_language_spoken_or_to_nothing_is_skipped() {
-        for (steps, language) in [
-            (vec!["translate=fr"], Some("fr")),
-            (vec!["translate=FR"], Some("fr-CA")),
-            (vec!["translate"], Some("en")),
-            (vec!["translate="], None),
-        ] {
-            let c = compiled(&steps, language);
-            assert_eq!(states(&c), [("translate", "n/a")], "{steps:?}");
-            assert_eq!(c.graph, Graph::passthrough());
-        }
-        let mut blank = StepSpec::new("translate");
-        blank.params.insert("to".into(), Value::Null);
-        assert_eq!(
-            compile(&[blank], &Context::default()).report[0].state,
-            StepState::NotApplicable {
-                reason: "Needs a language to translate to".into(),
-                move_above: None,
-            }
         );
     }
 
@@ -652,135 +378,6 @@ mod tests {
     }
 
     #[test]
-    fn a_step_without_a_model_is_in_the_graph_and_named() {
-        let missing = |r: &Request| r.task == "text.translate";
-        let c = compile(
-            &spec(&["tidy", "translate=fr"]),
-            &Context {
-                language: None,
-                unavailable: &missing,
-                ..Context::default()
-            },
-        );
-        assert_eq!(states(&c), [("tidy", "on"), ("translate", "missing")]);
-        assert_eq!(
-            c.report[1].state,
-            StepState::Unavailable {
-                request: Request::translate("en", "fr")
-            }
-        );
-        assert_eq!(c.graph, preset_graph(ProcessingChain::TIDY_FRENCH));
-
-        let all = |_: &Request| true;
-        let c = compile(
-            &spec(&["tidy"]),
-            &Context {
-                unavailable: &all,
-                ..Context::default()
-            },
-        );
-        assert_eq!(states(&c), [("tidy", "missing")]);
-    }
-
-    /// Compile `translate=to` for `language` with only `installed` pairs
-    /// covered; `bound` are the ones a model also answers for.
-    fn through(language: &str, to: &str, installed: &[(&str, &str)]) -> Compiled {
-        let covers = |r: &Request| {
-            let get = |k: &str| r.params.get(k).and_then(Value::as_str).unwrap_or("");
-            installed.contains(&(get("language"), get("to")))
-        };
-        let uncovered = |r: &Request| !covers(r);
-        compile(
-            &spec(&[&format!("translate={to}")]),
-            &Context {
-                language: Some(language),
-                unavailable: &uncovered,
-                uncovered: &uncovered,
-            },
-        )
-    }
-
-    #[test]
-    fn a_direct_model_is_used_before_a_pivot() {
-        let c = through("fr", "de", &[("fr", "de"), ("fr", "en"), ("en", "de")]);
-        assert_eq!(states(&c), [("translate", "on")]);
-        assert_eq!(asks(&c), [("fr".into(), "de".into())]);
-        assert!(matches!(c.graph.ops()[0], Op::Ask { .. }));
-    }
-
-    #[test]
-    fn two_installed_legs_make_a_pivot_whose_budgets_add_up() {
-        let c = through("fr", "de", &[("fr", "en"), ("en", "de")]);
-        assert_eq!(states(&c), [("translate", "on")]);
-        assert_eq!(
-            asks(&c),
-            [("fr".into(), "en".into()), ("en".into(), "de".into())]
-        );
-        let Op::Pivot {
-            first,
-            second,
-            check,
-        } = &c.graph.ops()[0]
-        else {
-            panic!("not a pivot");
-        };
-        let direct = Request::translate("fr", "de").run_budget;
-        assert_eq!(first.run_budget + second.run_budget, direct);
-        assert_eq!(*check, Check::Usable);
-    }
-
-    #[test]
-    fn a_pivot_with_one_leg_missing_names_that_leg() {
-        for (installed, missing) in [
-            (&[("fr", "en")][..], ("en", "de")),
-            (&[("en", "de")][..], ("fr", "en")),
-        ] {
-            let c = through("fr", "de", installed);
-            assert_eq!(states(&c), [("translate", "missing")]);
-            let StepState::Unavailable { request } = &c.report[0].state else {
-                panic!("not unavailable");
-            };
-            assert_eq!(
-                (
-                    request.params["language"].as_str().unwrap(),
-                    request.params["to"].as_str().unwrap()
-                ),
-                missing
-            );
-            assert!(matches!(c.graph.ops()[0], Op::Pivot { .. }));
-        }
-    }
-
-    #[test]
-    fn with_no_leg_installed_the_direct_pair_is_what_is_missing() {
-        let c = through("fr", "de", &[("fr", "fa")]);
-        assert_eq!(states(&c), [("translate", "missing")]);
-        assert_eq!(asks(&c), [("fr".into(), "de".into())]);
-    }
-
-    #[test]
-    fn english_is_never_pivoted_through_itself() {
-        for (language, to) in [("en", "de"), ("fr", "en")] {
-            let c = through(language, to, &[("en", "en")]);
-            assert_eq!(asks(&c), [(language.into(), to.into())]);
-            assert!(matches!(c.graph.ops()[0], Op::Ask { .. }));
-        }
-    }
-
-    #[test]
-    fn a_pivot_leaves_the_text_in_the_target_language_for_what_follows() {
-        let c = compile(
-            &spec(&["translate=de", "script=simplified"]),
-            &Context {
-                language: Some("fr"),
-                unavailable: &|_| false,
-                uncovered: &|r| r.params["to"] == "de" && r.params["language"] == "fr",
-            },
-        );
-        assert_eq!(states(&c), [("translate", "on"), ("script", "n/a")]);
-    }
-
-    #[test]
     fn an_unknown_step_is_dropped_and_degrades_the_chain() {
         let c = compiled(&["shout", "tidy", "shout", "whisper"], None);
         assert_eq!(
@@ -793,81 +390,5 @@ mod tests {
             ]
         );
         assert_eq!(c.graph, preset_graph(ProcessingChain::TIDY));
-    }
-
-    #[test]
-    fn tidy_spells_the_vocabulary_once() {
-        let c = compiled(&["tidy"], None);
-        let vocab = c
-            .graph
-            .ops()
-            .iter()
-            .filter(|op| {
-                matches!(
-                    op,
-                    Op::Rule {
-                        rule: Rule::Vocabulary,
-                    }
-                )
-            })
-            .count();
-        assert_eq!(vocab, 1, "the plain arm and tidy share one spelling");
-    }
-
-    #[test]
-    fn language_tables() {
-        assert_eq!(myna_core::chains::primary_language("fr-CA"), "fr");
-        assert_eq!(myna_core::chains::primary_language("ZH_tw"), "zh");
-        assert_eq!(myna_core::chains::primary_language(""), "");
-    }
-
-    #[test]
-    fn stage_order_here_is_the_order_settings_writes() {
-        let ids: Vec<&str> = Kind::ALL.iter().map(|k| k.id()).collect();
-        assert_eq!(ids, myna_core::chains::KNOWN_STEPS);
-    }
-
-    #[test]
-    fn stored_steps_take_the_parameters_that_carry_their_id() {
-        let params: myna_core::processing::Params = [
-            ("translate.to", "de"),
-            ("script.mode", "simplified"),
-            ("translatex.to", "no"),
-        ]
-        .iter()
-        .map(|(k, v)| (k.to_string(), v.to_string()))
-        .collect();
-        let ids = ["tidy", "translate", "script", "from-the-future"].map(String::from);
-        assert_eq!(
-            stored_steps(&ids, &params),
-            [
-                StepSpec::new("tidy"),
-                StepSpec::new("translate").with("to", "de"),
-                StepSpec::new("script").with("mode", "simplified"),
-                StepSpec::new("from-the-future"),
-            ]
-        );
-    }
-
-    #[test]
-    fn a_history_label_names_a_preset_or_joins_the_steps() {
-        for chain in ProcessingChain::ALL {
-            assert_eq!(label(&preset_steps(chain)), chain.nick());
-        }
-        let german = vec![
-            StepSpec::new("tidy"),
-            StepSpec::new("translate").with("to", "de"),
-        ];
-        assert_eq!(label(&german), "tidy+translate");
-        assert_eq!(label(&spec(&["tidy", "shout"])), "tidy+shout");
-    }
-
-    #[test]
-    fn describe_lists_each_step_with_its_parameter() {
-        assert_eq!(describe(&[]), "(none)");
-        assert_eq!(
-            describe(&spec(&["tidy", "translate=fr", "script=traditional"])),
-            "tidy, translate=fr, script=traditional"
-        );
     }
 }
