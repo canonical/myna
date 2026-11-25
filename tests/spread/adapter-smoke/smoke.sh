@@ -58,18 +58,19 @@ for mode in batch streaming; do
 
     # The content share itself: assert from inside the myna snap's mount
     # namespace (the path does not exist on the host at all).
-    if ! sudo snap run --shell myna.testbed -c 'test -S /var/snap/myna/current/backend/provider/myna.sock'; then
+    if ! (cd / && sudo snap run --shell myna.testbed -c 'test -S /var/snap/myna/current/backend/provider/myna.sock'); then
         echo "=== content share not visible inside the myna snap ==="
         snap connections myna || true
-        sudo snap run --shell myna.testbed -c 'ls -laR /var/snap/myna/current/backend/ 2>&1' || true
+        (cd / && sudo snap run --shell myna.testbed -c 'ls -laR /var/snap/myna/current/backend/ 2>&1') || true
         exit 1
     fi
 
     # myna.testbed is stdin-triggered (Enter starts the utterance); feed it
     # one Enter and hold the pipe open while the clip plays out.
+    # Run from `/`: root cannot traverse the lab user's home unprivileged.
     ( printf '\n'; sleep 60 ) | \
-        myna.testbed --clip /var/snap/myna/current/fixture.wav \
-            --language en --mode "$mode" \
+        (cd / && exec myna.testbed --clip /var/snap/myna/current/fixture.wav \
+            --language en --mode "$mode") \
             > "$mode.out" 2>&1 || true
     cat "$mode.out"
 
