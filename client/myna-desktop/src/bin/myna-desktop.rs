@@ -471,7 +471,7 @@ impl LiveSettings {
     }
 
     /// Write the new resolution through, logging only what actually moved -
-    /// GSettings notifies per key, so most changes touch neither of these.
+    /// GSettings notifies per key, so most changes touch none of these.
     ///
     /// A change that resolves to the value already in force is the interesting
     /// *silent* case (a flag outranks it), so it is logged too - at the debug
@@ -479,97 +479,54 @@ impl LiveSettings {
     /// filling a long-lived daemon's journal.
     fn apply(&self, resolved: &Resolved, reason: &str) {
         self.apply_preedit(resolved.preedit, reason);
-        if self.language.get() != resolved.language {
-            myna_core::info_log!(
-                "settings",
-                "language -> {} (live, from the next press)",
-                resolved.language.as_deref().unwrap_or("(backend default)")
-            );
-            self.language.set(resolved.language.clone());
+        let woke = self
+            .language
+            .update(&resolved.language, "language (from the next press)")
+            | self
+                .chain
+                .update(&resolved.chain, "chain (from the next dictation)")
+            | self.chains.update(&resolved.chains, "saved chains");
+        if woke {
             self.graph_changed.notify_one();
         }
-        if self.vocabulary.get() != resolved.vocabulary {
-            myna_core::info_log!(
-                "settings",
-                "vocabulary -> {} word(s) (live, from the next press)",
-                resolved.vocabulary.len()
-            );
-            self.vocabulary.set(resolved.vocabulary.clone());
-        }
-        if self.auto_stop.get() != resolved.auto_stop {
-            myna_core::info_log!(
-                "settings",
-                "silence timeout -> {:?} (live, applies to a running session)",
-                resolved.auto_stop.silence
-            );
-            self.auto_stop.set(resolved.auto_stop);
-        }
-        if self.commit.get() != resolved.commit {
-            myna_core::info_log!(
-                "settings",
-                "commit -> {:?} (live, from the next press)",
-                resolved.commit
-            );
-            self.commit.set(resolved.commit);
-        }
-        if self.steps.get() != resolved.steps || self.plain.get() != resolved.graph {
-            myna_core::info_log!(
-                "settings",
-                "processing steps -> {} (live, from the next text)",
-                myna_desktop::process::steps::label(&resolved.steps)
-            );
-            self.steps.set(resolved.steps.clone());
-            self.plain.set(resolved.graph.clone());
-            self.graph.set(resolved.graph.clone());
+        if self.apply_steps(resolved) {
             self.graph_changed.notify_one();
         }
-        if self.script.get() != resolved.script {
-            myna_core::info_log!(
-                "settings",
-                "chinese script -> {} (live, from the next text)",
-                resolved.script.nick()
-            );
-            if resolved.script != myna_core::ChineseScript::AsRecognised {
-                myna_desktop::process::script::warm();
-            }
-            self.script.set(resolved.script);
+        if self
+            .script
+            .update(&resolved.script, "chinese script (from the next text)")
+            && resolved.script != myna_core::ChineseScript::AsRecognised
+        {
+            myna_desktop::process::script::warm();
         }
-        if self.chain.get() != resolved.chain {
-            myna_core::info_log!(
-                "settings",
-                "chain -> {} (live, from the next dictation)",
-                resolved
-                    .chain
-                    .as_ref()
-                    .map_or("(none)", |(id, _)| id.as_str())
-            );
-            self.chain.set(resolved.chain.clone());
-            self.graph_changed.notify_one();
+        self.vocabulary
+            .update(&resolved.vocabulary, "vocabulary (from the next press)");
+        self.auto_stop.update(
+            &resolved.auto_stop,
+            "silence timeout (applies to a running session)",
+        );
+        self.commit
+            .update(&resolved.commit, "commit (from the next press)");
+        self.history.update(&resolved.history, "processing history");
+        self.sounds.update(&resolved.sounds, "sounds");
+        self.sound_set.update(&resolved.sound_set, "sound set");
+    }
+
+    /// Store the steps and what they compile to without models. The binder
+    /// then writes the graph it compiled with the models installed; true
+    /// when either the steps or that plain graph is news.
+    fn apply_steps(&self, resolved: &Resolved) -> bool {
+        if self.steps.get() == resolved.steps && self.plain.get() == resolved.graph {
+            return false;
         }
-        if self.chains.get() != resolved.chains {
-            self.chains.set(resolved.chains.clone());
-            self.graph_changed.notify_one();
-        }
-        if self.history.get() != resolved.history {
-            myna_core::info_log!(
-                "settings",
-                "processing history -> {} (live)",
-                resolved.history
-            );
-            self.history.set(resolved.history);
-        }
-        if self.sounds.get() != resolved.sounds {
-            myna_core::info_log!("settings", "sounds -> {} (live)", resolved.sounds);
-            self.sounds.set(resolved.sounds);
-        }
-        if self.sound_set.get() != resolved.sound_set {
-            myna_core::info_log!(
-                "settings",
-                "sound set -> {} (live)",
-                resolved.sound_set.nick()
-            );
-            self.sound_set.set(resolved.sound_set);
-        }
+        myna_core::info_log!(
+            "settings",
+            "processing steps -> {} (live, from the next text)",
+            myna_desktop::process::steps::label(&resolved.steps)
+        );
+        self.steps.set(resolved.steps.clone());
+        self.plain.set(resolved.graph.clone());
+        true
     }
 
     fn apply_preedit(&self, preedit: bool, reason: &str) {
