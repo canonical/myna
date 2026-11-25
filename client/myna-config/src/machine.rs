@@ -497,22 +497,35 @@ mod tests {
         assert_eq!(report, DaemonReport::default());
     }
 
+    /// Settings with `ids` as the steps of the active chain; `params` are
+    /// `<step>.<param>` keys, as the flat form used to carry them.
+    fn settings_with(ids: &[&str], params: &[(&str, &str)]) -> myna_core::Settings {
+        use myna_core::chains::ChainStep;
+        let mut settings = myna_core::Settings::default();
+        let steps = ids
+            .iter()
+            .map(|id| ChainStep {
+                step: (*id).to_owned(),
+                on: true,
+                params: params
+                    .iter()
+                    .filter_map(|(key, value)| {
+                        let (step, name) = key.split_once('.')?;
+                        (step == *id).then(|| (name.to_owned(), (*value).to_owned()))
+                    })
+                    .collect(),
+            })
+            .collect();
+        let id = settings.processing.add("c", steps);
+        settings.processing.activate(Some(&id));
+        settings
+    }
+
     #[test]
     fn the_steps_line_names_each_step_with_its_parameters() {
-        let settings = |ids: &[&str], params: &[(&str, &str)]| {
-            let mut settings = myna_core::Settings::default();
-            settings.processing.set_stage_steps(
-                &ids.iter().map(|s| s.to_string()).collect::<Vec<_>>(),
-                &params
-                    .iter()
-                    .map(|(k, v)| (k.to_string(), v.to_string()))
-                    .collect(),
-            );
-            settings
-        };
-        assert_eq!(steps_line(&settings(&[], &[])), None);
+        assert_eq!(steps_line(&settings_with(&[], &[])), None);
         assert_eq!(
-            steps_line(&settings(
+            steps_line(&settings_with(
                 &["tidy", "translate", "script"],
                 &[
                     ("translate.to", "fr"),
@@ -528,14 +541,8 @@ mod tests {
     #[test]
     fn the_translations_are_the_active_chains_pairs_from_the_dictation_language() {
         let settings = |language: Option<&str>, ids: &[&str]| {
-            let mut settings = myna_core::Settings {
-                language: language.map(str::to_owned),
-                ..Default::default()
-            };
-            settings.processing.set_stage_steps(
-                &ids.iter().map(|s| s.to_string()).collect::<Vec<_>>(),
-                &[("translate.to".to_owned(), "fr".to_owned())].into(),
-            );
+            let mut settings = settings_with(ids, &[("translate.to", "fr")]);
+            settings.language = language.map(str::to_owned);
             settings
         };
         let pair = vec![("fa".to_owned(), "fr".to_owned())];

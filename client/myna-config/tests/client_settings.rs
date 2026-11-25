@@ -740,96 +740,7 @@ fn sounds_are_a_boolean_that_defaults_on() {
     ));
 }
 
-fn list(ids: &[&str]) -> Vec<String> {
-    ids.iter().map(|id| (*id).to_owned()).collect()
-}
-
-fn params(pairs: &[(&str, &str)]) -> myna_core::processing::Params {
-    pairs
-        .iter()
-        .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
-        .collect()
-}
-
-/// The steps are read and written whole, and Chinese script is no setting.
-#[test]
-fn the_steps_are_read_and_written_whole() {
-    let files = TestFiles::new("views");
-    let adapter = open_adapter(&files);
-    assert!(matches!(
-        adapter.get("chinese-script"),
-        Err(ClientSettingsError::UnknownKey { .. })
-    ));
-    assert_eq!(adapter.steps(), (Vec::new(), Default::default()));
-
-    adapter
-        .set_steps(
-            &list(&["tidy", "translate", "script"]),
-            &params(&[("translate.to", "fr"), ("script.mode", "simplified")]),
-        )
-        .unwrap();
-    let (ids, params) = adapter.steps();
-    assert_eq!(ids, ["tidy", "translate", "script"]);
-    assert_eq!(params["translate.to"], "fr");
-    assert_eq!(params["script.mode"], "simplified");
-}
-
-/// What the daemon reads is what the page wrote: the page's steps as the
-/// active chain, with each step's own parameters, in the keyfile.
-#[test]
-fn a_choice_reaches_the_keyfile_as_the_active_chain() {
-    let files = TestFiles::new("views-keyfile");
-    let adapter = open_adapter(&files);
-    adapter
-        .set_steps(
-            &list(&["tidy", "translate"]),
-            &params(&[("translate.to", "fr")]),
-        )
-        .unwrap();
-    adapter
-        .set_steps(
-            &list(&["tidy", "translate", "script"]),
-            &params(&[
-                ("translate.to", "fr"),
-                ("script.mode", "traditional-taiwan"),
-            ]),
-        )
-        .unwrap();
-    gio::Settings::sync();
-    let text = std::fs::read_to_string(files.0.join("settings/keyfile")).unwrap();
-    assert!(
-        text.contains(
-            "('chain-1', 'My steps', [('tidy', true, {}), ('translate', true, {'to': 'fr'}), \
-             ('script', true, {'mode': 'traditional-taiwan'})])"
-        ),
-        "{text}"
-    );
-    assert!(text.contains("active-chain='chain-1'"), "{text}");
-    assert!(!text.contains("processing-steps"), "{text}");
-}
-
-/// Reading the steps changes nothing in the store.
-#[test]
-fn reading_the_steps_writes_nothing() {
-    let files = TestFiles::new("views-nearest");
-    let path = files.0.join("settings/keyfile");
-    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    std::fs::write(
-        &path,
-        "[com/canonical/myna/dictation]\nactive-chain='c'\n\
-         chains=[('c', 'C', [('tidy', true, {}), ('script', true, {'mode': 'traditional'})])]\n",
-    )
-    .unwrap();
-    let adapter = open_adapter(&files);
-    assert_eq!(adapter.steps().0, ["tidy", "script"]);
-    assert_eq!(adapter.steps().1["script.mode"], "traditional");
-    let before = std::fs::read_to_string(&path).unwrap();
-    let _ = adapter.list().unwrap();
-    let _ = adapter.processing();
-    assert_eq!(std::fs::read_to_string(&path).unwrap(), before);
-}
-
-/// A step list written by anyone wakes whoever watches the steps, and is no
+/// A chain written by anyone wakes whoever watches the steps, and is no
 /// row's change.
 #[test]
 fn a_change_to_the_stored_steps_wakes_the_watchers_and_no_row() {
@@ -855,12 +766,13 @@ fn a_change_to_the_stored_steps_wakes_the_watchers_and_no_row() {
                 }
             });
             let writer = GioClientSettings::open_with_source(&source, &path).unwrap();
-            writer
-                .set_steps(
-                    &list(&["script"]),
-                    &params(&[("script.mode", "simplified")]),
-                )
-                .unwrap();
+            let mut processing = writer.processing();
+            processing.chains.push(myna_core::chains::Chain {
+                id: "c".into(),
+                name: "C".into(),
+                steps: vec![myna_core::chains::ChainStep::new("script").with("mode", "simplified")],
+            });
+            writer.set_processing(&processing).unwrap();
 
             let deadline = Instant::now() + Duration::from_secs(5);
             while woken.load(std::sync::atomic::Ordering::SeqCst) == 0 && Instant::now() < deadline
@@ -879,7 +791,9 @@ fn a_change_to_the_stored_steps_wakes_the_watchers_and_no_row() {
 
             // A dropped watch hears no more.
             drop(watch);
-            writer.set_steps(&list(&["tidy"]), &params(&[])).unwrap();
+            let mut processing = writer.processing();
+            processing.chains[0].name = "Renamed".into();
+            writer.set_processing(&processing).unwrap();
             let settle = Instant::now() + Duration::from_millis(300);
             while Instant::now() < settle {
                 while context.iteration(false) {}

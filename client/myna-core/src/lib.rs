@@ -38,6 +38,7 @@ pub use capabilities::Capabilities;
 pub use capture::{
     AudioSource, CaptureError, CaptureHealth, CaptureHealthStream, CaptureStream, StopHandle,
 };
+pub use chains::ProcessingChain;
 pub use control::{ClientControl, ServerControl};
 pub use events::{
     Disposition, ErrorData, Progress, Segment, StreamingMode, TranscriptionEvent,
@@ -45,7 +46,7 @@ pub use events::{
     WARNING_GPU_UNAVAILABLE, WARNING_MEMORY_PRESSURE,
 };
 pub use mode::{effective_mode, streams_by_default, EffectiveMode, ModeSource};
-pub use processing::{ChineseScript, ProcessingChain};
+pub use processing::ChineseScript;
 pub use protocol::PROTOCOL_VERSION;
 pub use session::{
     normalize_keywords, spoken_written, SessionConfig, KEYWORDS_MAX_ENTRIES,

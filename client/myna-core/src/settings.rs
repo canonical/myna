@@ -694,7 +694,6 @@ mod tests {
         let read = Settings::from_store(&store).processing;
         assert_eq!(read.active.as_deref(), Some("gone"));
         assert!(read.active().is_none());
-        assert!(read.stage_steps().0.is_empty());
     }
 
     /// Deleting the active chain changes two keys; a watcher in another

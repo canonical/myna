@@ -29,6 +29,7 @@ use crate::processing_steps::{
 };
 use crate::step_catalog::{self, Item, Job, Language, LanguageState, Offer};
 use crate::ui::InstallControl;
+use myna_core::processing::Params;
 
 /// How long a finished install may wait for the daemon to offer its model
 /// before the row offers it again.
@@ -1227,6 +1228,34 @@ impl StepsPage {
         }
     }
 
+    /// The chain's steps as the flat id list and `<step>.<param>` map the row
+    /// builders take: the ones that are on, once each, and every step's
+    /// parameters, so a choice outlives its switch.
+    fn flat(chain: Option<&Chain>) -> (Vec<String>, Params) {
+        let steps: Vec<&ChainStep> = chain.into_iter().flat_map(|c| &c.steps).collect();
+        let ids = steps
+            .iter()
+            .filter(|step| step.on)
+            .map(|step| step.step.clone())
+            .fold(Vec::new(), |mut ids, id| {
+                if !ids.contains(&id) {
+                    ids.push(id);
+                }
+                ids
+            });
+        let mut params = Params::new();
+        let (on, off): (Vec<&ChainStep>, Vec<&ChainStep>) =
+            steps.iter().copied().partition(|step| step.on);
+        for step in on.into_iter().chain(off) {
+            for (name, value) in &step.params {
+                params
+                    .entry(myna_core::processing::param_key(&step.step, name))
+                    .or_insert_with(|| value.clone());
+            }
+        }
+        (ids, params)
+    }
+
     /// Install `entries` as one operation, shown under `id`.
     fn start_install(self: &Rc<Self>, id: &str, entries: &[Entry]) {
         if self.installing.borrow().contains_key(id) || !self.removing.borrow().is_empty() {
@@ -1265,14 +1294,7 @@ impl StepsPage {
 
     fn render_catalog(self: &Rc<Self>, processing: &Processing) {
         let target = self.catalog_chain(processing);
-        let flat = target.as_ref().map_or_else(Default::default, |chain| {
-            Processing {
-                chains: vec![chain.clone()],
-                active: Some(chain.id.clone()),
-            }
-            .stage_steps()
-        });
-        let (ids, params) = flat;
+        let (ids, params) = Self::flat(target.as_ref());
         let offered = self.offered.borrow().clone();
         let source = Source::of_setting(&self.deps.store.language());
         let translate_from = target.as_ref().map_or_else(
@@ -2527,7 +2549,6 @@ mod tests {
             format!("[com/canonical/myna/dictation]\n{keyfile}"),
         )
         .unwrap();
-        myna_core::processing::migrate_steps(&dir.join("keyfile"));
         let source =
             gio::SettingsSchemaSource::from_directory(dir.join("schemas"), None, false).unwrap();
         let store =

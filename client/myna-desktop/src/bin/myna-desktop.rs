@@ -1539,9 +1539,6 @@ fn main() -> ExitCode {
 
     // Everything resolvable, resolved once: flags, then the user's settings,
     // then the built-in.
-    if myna_core::processing::migrate_legacy_store() {
-        myna_core::info_log!("settings", "moved the legacy processing keys to steps");
-    }
     let settings = myna_core::Settings::load();
     let resolved = Resolved::new(&args, &settings, None);
     myna_core::info_log!(
@@ -1914,8 +1911,24 @@ mod tests {
         ids: &[String],
         params: &myna_core::processing::Params,
     ) -> myna_core::Settings {
+        use myna_core::chains::ChainStep;
         let mut settings = unset();
-        settings.processing.set_stage_steps(ids, params);
+        let steps = ids
+            .iter()
+            .map(|id| ChainStep {
+                step: id.clone(),
+                on: true,
+                params: params
+                    .iter()
+                    .filter_map(|(key, value)| {
+                        let (step, name) = key.split_once('.')?;
+                        (step == id).then(|| (name.to_owned(), value.clone()))
+                    })
+                    .collect(),
+            })
+            .collect();
+        let id = settings.processing.add("c", steps);
+        settings.processing.activate(Some(&id));
         settings
     }
 
@@ -2044,9 +2057,15 @@ mod tests {
         assert_ne!(graph, Graph::passthrough());
 
         let mut future = tidy.clone();
-        let (mut ids, params) = future.processing.stage_steps();
-        ids.push("from-the-future".into());
-        future.processing.set_stage_steps(&ids, &params);
+        let active = future.processing.active.clone().expect("a chain is in use");
+        future
+            .processing
+            .chains
+            .iter_mut()
+            .find(|chain| chain.id == active)
+            .expect("the active chain exists")
+            .steps
+            .push(myna_core::chains::ChainStep::new("from-the-future"));
         live.apply(&resolved(&a, &future), "test");
         assert_eq!(live.steps.get().len(), 2);
         assert_eq!(live.graph.get(), graph);
@@ -2066,10 +2085,18 @@ mod tests {
     fn a_chinese_script_streams_by_sentence_and_only_for_chinese() {
         use myna_core::ChineseScript::{AsRecognised, Traditional};
         let a = Args::default();
-        let with = |language: Option<&str>, chain, script| {
-            let (steps, params) =
-                myna_core::processing::with_chain(&[], &Default::default(), chain);
-            let (steps, params) = myna_core::processing::with_script(&steps, &params, script);
+        let with = |language: Option<&str>,
+                    chain: myna_core::ProcessingChain,
+                    script: myna_core::ChineseScript| {
+            let mut steps = chain.steps();
+            let mut params = chain.params();
+            if script != AsRecognised {
+                steps.push("script".to_owned());
+                params.insert(
+                    myna_core::processing::param_key("script", "mode"),
+                    script.nick().to_owned(),
+                );
+            }
             myna_core::Settings {
                 language: language.map(str::to_owned),
                 ..settings_with(&steps, &params)

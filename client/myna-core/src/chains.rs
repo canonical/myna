@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
 use gio::glib::{self, prelude::ObjectExt, value::ToValue, variant::ToVariant};
 use gio::prelude::SettingsExt;
 
-use crate::processing::{in_stage_order, param_key, Params};
+use crate::processing::{param_key, Params};
 
 pub const KEY_CHAINS: &str = "chains";
 pub const KEY_ACTIVE_CHAIN: &str = "active-chain";
@@ -24,8 +24,57 @@ pub const KEYS: [&str; 2] = [KEY_CHAINS, KEY_ACTIVE_CHAIN];
 /// `chains-showcase-example` picks it.
 pub const EXAMPLE_ID: &str = "example";
 
-/// The id of the chain the step-list migration makes.
-pub const MIGRATED_ID: &str = "my-steps";
+/// A named set of steps the Settings page offers as one choice. Not stored:
+/// a choice writes its steps and parameters, and the stored list reads back
+/// as the nearest preset.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct ProcessingChain(&'static str);
+
+impl ProcessingChain {
+    /// Nothing: typed as heard.
+    pub const EXACT: Self = Self("exact");
+    /// Hesitations, false starts and repeats dropped.
+    pub const TIDY: Self = Self("tidy");
+    /// Tidied, then translated from English to French.
+    pub const TIDY_FRENCH: Self = Self("tidy-french");
+
+    /// Every preset, in schema order.
+    pub const ALL: [Self; 3] = [Self::EXACT, Self::TIDY, Self::TIDY_FRENCH];
+
+    /// The schema enum nick.
+    pub fn nick(self) -> &'static str {
+        self.0
+    }
+
+    /// The preset a nick names; `None` for one this build does not know.
+    pub fn from_nick(nick: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|chain| chain.nick() == nick)
+    }
+
+    /// The steps a preset enables, in stage order.
+    pub fn steps(self) -> Vec<String> {
+        let ids: &[&str] = match self {
+            Self::TIDY => &["tidy"],
+            Self::TIDY_FRENCH => &["tidy", "translate"],
+            _ => &[],
+        };
+        ids.iter().map(|id| (*id).to_owned()).collect()
+    }
+
+    /// The parameters a preset sets.
+    pub fn params(self) -> Params {
+        match self {
+            Self::TIDY_FRENCH => [(param_key("translate", "to"), "fr".to_owned())].into(),
+            _ => Params::new(),
+        }
+    }
+}
+
+impl Default for ProcessingChain {
+    fn default() -> Self {
+        Self::EXACT
+    }
+}
 
 /// A step's parameters by bare name: `to` for a translation's target.
 pub type StepParams = BTreeMap<String, String>;
@@ -141,80 +190,6 @@ impl Processing {
             steps,
         });
         id
-    }
-
-    /// The active chain as the stage-ordered step list the daemon compiles
-    /// today: its steps that are on, once each, parameters keyed
-    /// `<step>.<param>` (the first of a repeated step wins, an off step's
-    /// fill in, so a choice outlives its switch). Fitting to the field is no
-    /// step: the daemon fits after the graph, whatever the chain. Goes once
-    /// the compiler walks chains in order (`chains-compiler-user-order`).
-    pub fn stage_steps(&self) -> (Vec<String>, Params) {
-        let steps: Vec<&ChainStep> = self
-            .active()
-            .into_iter()
-            .flat_map(|chain| &chain.steps)
-            .collect();
-        let mut ids = Vec::new();
-        for step in steps.iter().filter(|step| step.on) {
-            if !ids.contains(&step.step) {
-                ids.push(step.step.clone());
-            }
-        }
-        let mut params = Params::new();
-        let (on, off): (Vec<&ChainStep>, Vec<&ChainStep>) = steps.iter().partition(|step| step.on);
-        for step in on.into_iter().chain(off) {
-            for (name, value) in &step.params {
-                params
-                    .entry(param_key(&step.step, name))
-                    .or_insert_with(|| value.clone());
-            }
-        }
-        (in_stage_order(&ids), params)
-    }
-
-    /// Replace the active chain's steps with a flat list and parameters, as
-    /// the step-switch page edits them: they become the active chain in
-    /// stage order, made as "My steps" when none is. A step with parameters but not in `ids` stays as an off step that
-    /// keeps them. Repeated steps are lost: that page has none.
-    pub fn set_stage_steps(&mut self, ids: &[String], params: &Params) {
-        let enabled = ids.to_vec();
-        let mut all = enabled.clone();
-        all.extend(
-            params
-                .keys()
-                .filter_map(|key| key.split_once('.').map(|(step, _)| step.to_owned())),
-        );
-        let steps: Vec<ChainStep> = in_stage_order(&all)
-            .into_iter()
-            .map(|id| ChainStep {
-                on: enabled.contains(&id),
-                params: params
-                    .iter()
-                    .filter_map(|(key, value)| {
-                        let name = key.strip_prefix(&format!("{id}."))?;
-                        Some((name.to_owned(), value.clone()))
-                    })
-                    .collect(),
-                step: id,
-            })
-            .collect();
-        let active = self.active.clone().filter(|id| self.chain(id).is_some());
-        match active {
-            Some(id) => {
-                let chain = self
-                    .chains
-                    .iter_mut()
-                    .find(|chain| chain.id == id)
-                    .expect("active() found it");
-                chain.steps = steps;
-            }
-            None if enabled.is_empty() => {}
-            None => {
-                let id = self.add("My steps", steps);
-                self.active = Some(id);
-            }
-        }
     }
 
     /// Read the two keys; any missing from the installed schema reads its
@@ -504,10 +479,6 @@ fn to_raw(chains: &[Chain]) -> Raw {
 mod tests {
     use super::*;
 
-    fn ids(list: &[&str]) -> Vec<String> {
-        list.iter().map(|s| (*s).to_owned()).collect()
-    }
-
     fn empty() -> Processing {
         Processing {
             chains: Vec::new(),
@@ -559,72 +530,6 @@ mod tests {
         assert_eq!(p.active.as_deref(), Some(id.as_str()));
         assert!(p.activate(None));
         assert_eq!(p.active, None);
-    }
-
-    #[test]
-    fn stage_steps_take_the_active_chain_on_steps_once_each() {
-        let mut p = empty();
-        let id = p.add(
-            "A",
-            vec![
-                ChainStep::new("translate").with("to", "de"),
-                ChainStep::new("tidy"),
-                ChainStep {
-                    on: false,
-                    ..ChainStep::new("script").with("mode", "simplified")
-                },
-                ChainStep::new("translate").with("to", "fr"),
-                ChainStep::new("future").with("x", "1"),
-            ],
-        );
-        assert_eq!(p.stage_steps(), (Vec::new(), Params::new()));
-        p.activate(Some(&id));
-        let (list, params) = p.stage_steps();
-        assert_eq!(list, ids(&["tidy", "translate", "future"]));
-        assert_eq!(
-            params,
-            Params::from([
-                ("translate.to".into(), "de".into()),
-                ("script.mode".into(), "simplified".into()),
-                ("future.x".into(), "1".into())
-            ])
-        );
-    }
-
-    #[test]
-    fn the_step_page_edits_the_active_chain_or_makes_one() {
-        let mut p = empty();
-        p.set_stage_steps(&[], &Params::new());
-        assert!(p.chains.is_empty(), "no steps make no chain");
-
-        let params = Params::from([("translate.to".into(), "de".into())]);
-        p.set_stage_steps(&ids(&["tidy", "translate"]), &params);
-        let chain = p.active().expect("made and activated").clone();
-        assert_eq!(chain.name, "My steps");
-        assert_eq!(
-            chain.steps,
-            [
-                ChainStep::new("tidy"),
-                ChainStep::new("translate").with("to", "de")
-            ]
-        );
-        p.set_stage_steps(&ids(&["tidy"]), &params);
-        assert_eq!(p.chains.len(), 1);
-        assert_eq!(
-            p.active().unwrap().steps,
-            [
-                ChainStep::new("tidy"),
-                ChainStep {
-                    on: false,
-                    ..ChainStep::new("translate").with("to", "de")
-                }
-            ],
-            "a choice outlives its switch"
-        );
-        assert_eq!(p.stage_steps(), (ids(&["tidy"]), params.clone()));
-        p.set_stage_steps(&[], &Params::new());
-        assert_eq!(p.chains.len(), 1, "an emptied chain stays");
-        assert!(p.active().unwrap().steps.is_empty());
     }
 
     #[test]

@@ -58,7 +58,6 @@ pub const fn appearance_policy(animations_enabled: bool, high_contrast: bool) ->
 }
 
 pub fn run() -> glib::ExitCode {
-    myna_core::processing::migrate_legacy_store();
     if smoke_requested(std::env::var_os(TEMPLATE_ENV).as_deref()) {
         return template_probe();
     }

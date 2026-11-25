@@ -11,7 +11,6 @@ use crate::ports::{
     ClientSettings, ClientSettingsCallback, ClientSettingsError, ClientSettingsSubscription,
 };
 use myna_core::chains::Processing;
-use myna_core::processing::Params;
 use myna_core::settings::SCHEMA_ID;
 
 /// The chain keys, which have their own page and no row of their own.
@@ -77,20 +76,6 @@ impl GioClientSettings {
                 key: myna_core::chains::KEY_CHAINS.to_owned(),
                 message: error.to_string(),
             })
-    }
-
-    /// The steps of the active chain as the step-switch page shows them
-    /// ([`Processing::stage_steps`]).
-    pub fn steps(&self) -> (Vec<String>, Params) {
-        self.processing().stage_steps()
-    }
-
-    /// Store a flat step list from the step-switch page into the active
-    /// chain ([`Processing::set_stage_steps`]).
-    pub fn set_steps(&self, ids: &[String], params: &Params) -> Result<(), ClientSettingsError> {
-        let mut processing = self.processing();
-        processing.set_stage_steps(ids, params);
-        self.set_processing(&processing)
     }
 
     /// Call `callback` once per change to the chains or the active chain,
