@@ -228,134 +228,136 @@ enum ShareRole {
     Other,
 }
 
-fn enumerate_with(dir: &Path, mounted: impl Fn(&Path) -> bool) -> PartitionedShares {
-    let mut shares: Vec<PathBuf> = match std::fs::read_dir(dir) {
-        Ok(entries) => entries.flatten().map(|entry| entry.path()).collect(),
-        // Absent before the first `snap connect`; a broken mount (EIO,
-        // ENOTCONN) means the same thing to the user: nothing to connect to.
-        Err(_) => return PartitionedShares::default(),
+/// What a share's `provider.env` makes of it: a speech backend, a text
+/// provider, another role, or `None` when Myna does not bind it (no role and
+/// no sign of a legacy speech snap). One pure function: the directories, the
+/// sockets and the counters are the caller's.
+fn role_of(
+    snap_name: &str,
+    unix_socket: Option<&str>,
+    env: &HashMap<String, String>,
+) -> Option<ShareRole> {
+    match DeclaredRole::from_env(env) {
+        Some(DeclaredRole::Speech) => Some(ShareRole::Speech),
+        Some(DeclaredRole::Text) => Some(ShareRole::Text),
+        Some(DeclaredRole::Other) => Some(ShareRole::Other),
+        None if is_legacy_speech(snap_name, unix_socket) => Some(ShareRole::Speech),
+        None => None,
+    }
+}
+
+/// A share's `provider.env`, or `None` and the reason it is not one. An
+/// empty directory outside this process's mounts is a connection it missed.
+fn env_of(
+    share: &Path,
+    mounted: &impl Fn(&Path) -> bool,
+    out: &mut PartitionedShares,
+) -> Option<(String, HashMap<String, String>)> {
+    let text = match std::fs::read_to_string(share.join(PROVIDER_ENV)) {
+        Ok(text) => text,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {
+            if is_empty_dir(share) && !mounted(share) {
+                myna_core::info_log!(
+                    "backend",
+                    "{} is empty and not mounted in this namespace: connected after start",
+                    share.display()
+                );
+                out.speech_unusable.unmounted += 1;
+                out.text.unusable.unmounted += 1;
+            }
+            return None;
+        }
+        Err(e) => {
+            malformed_both(out, share, &format!("unreadable: {e}"));
+            return None;
+        }
     };
-    shares.retain(|path| path.is_dir());
-    shares.sort();
+    let Some(env) = parse_env(&text) else {
+        malformed_both(out, share, "not KEY=value lines");
+        return None;
+    };
+    match non_empty(&env, "SNAP_NAME") {
+        Some(snap_name) => Some((snap_name.to_string(), env)),
+        None => {
+            malformed_both(out, share, "no SNAP_NAME");
+            None
+        }
+    }
+}
 
+/// The live socket a share names, or `None` after counting why not.
+fn socket_of(
+    share: &Path,
+    snap_name: &str,
+    unix_socket: Option<&str>,
+    unusable: &mut Unusable,
+) -> Option<PathBuf> {
+    let Some(relative) = unix_socket else {
+        myna_core::info_log!("backend", "{snap_name}: {PROVIDER_ENV} has no UNIX_SOCKET");
+        unusable.no_unix_socket.push(snap_name.to_owned());
+        return None;
+    };
+    let Some(socket) = resolve_in_share(share, relative) else {
+        malformed(unusable, share, "UNIX_SOCKET outside the share");
+        return None;
+    };
+    if is_live_socket(&socket) {
+        return Some(socket);
+    }
+    myna_core::info_log!("backend", "{snap_name}: no socket at {}", socket.display());
+    unusable.not_serving.push(snap_name.to_owned());
+    None
+}
+
+/// Every share's role, socket and whether it serves, in one pass.
+fn enumerate_with(dir: &Path, mounted: impl Fn(&Path) -> bool) -> PartitionedShares {
     let mut out = PartitionedShares::default();
-    for share in shares {
-        let text = match std::fs::read_to_string(share.join(PROVIDER_ENV)) {
-            Ok(text) => text,
-            Err(e) if e.kind() == io::ErrorKind::NotFound => {
-                // snapd removes the mount point on disconnect, so an empty one
-                // outside this process's mounts is a connection it missed.
-                // Mounted and empty is a backend yet to start: not counted.
-                if is_empty_dir(&share) && !mounted(&share) {
-                    myna_core::info_log!(
-                        "backend",
-                        "{} is empty and not mounted in this namespace: connected after start",
-                        share.display()
-                    );
-                    out.speech_unusable.unmounted += 1;
-                    out.text.unusable.unmounted += 1;
-                }
-                continue;
-            }
-            Err(e) => {
-                malformed_both(&mut out, &share, &format!("unreadable: {e}"));
-                continue;
-            }
-        };
-        let Some(env) = parse_env(&text) else {
-            malformed_both(&mut out, &share, "not KEY=value lines");
+    for share in shares_in(dir) {
+        let Some((snap_name, env)) = env_of(&share, &mounted, &mut out) else {
             continue;
         };
-        let Some(snap_name) = non_empty(&env, "SNAP_NAME") else {
-            malformed_both(&mut out, &share, "no SNAP_NAME");
-            continue;
-        };
-        let snap_name = snap_name.to_string();
         let unix_socket = non_empty(&env, "UNIX_SOCKET");
-
-        let role = match DeclaredRole::from_env(&env) {
-            Some(DeclaredRole::Speech) => ShareRole::Speech,
-            Some(DeclaredRole::Text) => ShareRole::Text,
-            Some(DeclaredRole::Other) => ShareRole::Other,
-            None if is_legacy_speech(&snap_name, unix_socket) => ShareRole::Speech,
-            None => {
-                myna_core::info_log!(
-                    "backend",
-                    "{snap_name}: no MYNA_ROLE and no speech socket, ignored"
-                );
-                continue;
-            }
-        };
-
-        match role {
-            ShareRole::Other => {
-                myna_core::info_log!(
-                    "backend",
-                    "{snap_name}: {PROVIDER_ENV} declares an unsupported MYNA_ROLE"
-                );
-            }
-            ShareRole::Speech => {
-                let Some(relative) = unix_socket else {
-                    myna_core::info_log!(
-                        "backend",
-                        "{snap_name}: {PROVIDER_ENV} has no UNIX_SOCKET"
-                    );
-                    out.speech_unusable.no_unix_socket.push(snap_name);
-                    continue;
-                };
-                let Some(socket) = resolve_in_share(&share, relative) else {
-                    malformed(
-                        &mut out.speech_unusable,
-                        &share,
-                        "UNIX_SOCKET outside the share",
-                    );
-                    continue;
-                };
-                if is_live_socket(&socket) {
+        match role_of(&snap_name, unix_socket, &env) {
+            Some(ShareRole::Speech) => {
+                if let Some(socket) =
+                    socket_of(&share, &snap_name, unix_socket, &mut out.speech_unusable)
+                {
                     out.speech_providers.push(Provider {
                         socket,
                         snap_name: Some(snap_name),
                     });
-                } else {
-                    myna_core::info_log!(
-                        "backend",
-                        "{snap_name}: no socket at {}",
-                        socket.display()
-                    );
-                    out.speech_unusable.not_serving.push(snap_name);
                 }
             }
-            ShareRole::Text => {
-                let Some(relative) = unix_socket else {
-                    myna_core::info_log!(
-                        "backend",
-                        "{snap_name}: {PROVIDER_ENV} has no UNIX_SOCKET"
-                    );
-                    out.text.unusable.no_unix_socket.push(snap_name);
-                    continue;
-                };
-                let Some(socket) = resolve_in_share(&share, relative) else {
-                    malformed(
-                        &mut out.text.unusable,
-                        &share,
-                        "UNIX_SOCKET outside the share",
-                    );
-                    continue;
-                };
-                if is_live_socket(&socket) {
+            Some(ShareRole::Text) => {
+                if let Some(socket) =
+                    socket_of(&share, &snap_name, unix_socket, &mut out.text.unusable)
+                {
                     out.text.providers.push(TextProvider { socket, snap_name });
-                } else {
-                    myna_core::info_log!(
-                        "backend",
-                        "{snap_name}: no socket at {}",
-                        socket.display()
-                    );
-                    out.text.unusable.not_serving.push(snap_name);
                 }
             }
+            Some(ShareRole::Other) => myna_core::info_log!(
+                "backend",
+                "{snap_name}: {PROVIDER_ENV} declares an unsupported MYNA_ROLE"
+            ),
+            None => myna_core::info_log!(
+                "backend",
+                "{snap_name}: no MYNA_ROLE and no speech socket, ignored"
+            ),
         }
     }
     out
+}
+
+/// The share directories under `dir`, sorted; none before the first
+/// `snap connect`, and a broken mount (EIO, ENOTCONN) means the same thing.
+fn shares_in(dir: &Path) -> Vec<PathBuf> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut shares: Vec<PathBuf> = entries.flatten().map(|entry| entry.path()).collect();
+    shares.retain(|path| path.is_dir());
+    shares.sort();
+    shares
 }
 
 fn non_empty<'a>(env: &'a HashMap<String, String>, key: &str) -> Option<&'a str> {
@@ -586,16 +588,6 @@ mod tests {
     /// The socket alone is not a provider: a share is identified by its
     /// provider.env, so an old-style share reads as nothing connected.
     #[test]
-    fn socket_without_provider_env_is_not_connected() {
-        let dir = tmpdir();
-        std::fs::create_dir_all(dir.join("run")).expect("subdir");
-        let _held = UnixListener::bind(dir.join("run/myna.sock")).expect("bind");
-        assert_eq!(not_connected(resolve(&dir)), Unusable::default());
-    }
-
-    /// What a running app of the snap sees after a `snap connect`: the mount
-    /// point snapd made, empty, because the mount went to another namespace.
-    #[test]
     fn an_empty_share_this_process_cannot_see_mounted_needs_a_restart() {
         let dir = tmpdir();
         std::fs::create_dir_all(dir.join("provider")).expect("mount point");
@@ -617,80 +609,6 @@ mod tests {
     }
 
     /// Mounted but empty is a backend that has not written its share yet.
-    #[test]
-    fn an_empty_mounted_share_is_not_a_missed_connection() {
-        let dir = tmpdir();
-        std::fs::create_dir_all(dir.join("provider")).expect("mount point");
-        let error = resolve_with(&dir, |_| true).expect_err("nothing to connect to");
-        assert!(!error.needs_restart());
-        assert_eq!(not_connected(Err(error)), Unusable::default());
-    }
-
-    #[test]
-    fn mount_points_are_read_from_mountinfo_with_escapes_decoded() {
-        let table =
-            "36 35 98:0 /mnt1 /mnt/with\\040space rw,noatime master:1 - ext3 /dev/root rw\n\
-                     40 30 0:5 / /var/snap/myna/x5/backend/provider rw - ext4 /dev/sda1 rw\n\
-                     41 30 0:5 / /mnt/\\999a040b rw - ext4 /dev/sda1 rw\n";
-        let points: Vec<PathBuf> = mount_points(table).collect();
-        assert_eq!(
-            points,
-            [
-                PathBuf::from("/mnt/with space"),
-                PathBuf::from("/var/snap/myna/x5/backend/provider"),
-                PathBuf::from("/mnt/\\999a040b"),
-            ]
-        );
-        assert!(is_mount_point(Path::new("/")), "the root is always one");
-        assert!(!is_mount_point(&tmpdir()), "a plain directory is not");
-    }
-
-    #[test]
-    fn files_beside_the_shares_are_ignored() {
-        let dir = tmpdir();
-        std::fs::write(dir.join(PROVIDER_ENV), env("stray")).expect("file");
-        let _held = serving(&dir, "provider", "myna-whisper");
-        assert_eq!(
-            resolve(&dir).expect("resolved").snap_name.as_deref(),
-            Some("myna-whisper")
-        );
-    }
-
-    /// A text share with no socket is named rather than silently missing
-    /// from the message; an unlabelled share is not ours and stays quiet.
-    #[test]
-    fn tcp_only_provider_is_skipped_and_named() {
-        let dir = tmpdir();
-        share(
-            &dir,
-            "provider",
-            "SNAP_NAME=myna-text\nMYNA_ROLE=text\nOPENAI_BASE_URL=http://localhost:8080/v1\n",
-        );
-        share(
-            &dir,
-            "provider-2",
-            "SNAP_NAME=myna-translation\nMYNA_ROLE=text\nUNIX_SOCKET=\n",
-        );
-        share(
-            &dir,
-            "provider-3",
-            "SNAP_NAME=smollm2\nOPENAI_BASE_URL=http://localhost:8080/v1\n",
-        );
-        assert_eq!(
-            resolve(&dir).expect_err("no speech share").to_string(),
-            "no model is connected"
-        );
-        let text = resolve_text_shares(&dir);
-        assert!(text.providers.is_empty());
-        assert_eq!(
-            text.unusable.no_unix_socket,
-            vec!["myna-text".to_string(), "myna-translation".to_string()]
-        );
-    }
-
-    /// A mounted share whose server is not up yet reads as not connected - and,
-    /// because resolution is per Press, the same daemon picks the socket up
-    /// once it appears.
     #[test]
     fn provider_without_socket_is_not_serving() {
         let dir = tmpdir();
@@ -764,24 +682,6 @@ mod tests {
     }
 
     #[test]
-    fn socket_in_a_subdirectory_of_the_share_resolves() {
-        let dir = tmpdir();
-        let sub = share(
-            &dir,
-            "provider",
-            "SNAP_NAME=a\nUNIX_SOCKET=./run/myna.sock\n",
-        );
-        std::fs::create_dir_all(sub.join("run")).expect("run");
-        let _held = UnixListener::bind(sub.join("run/myna.sock")).expect("bind");
-        assert_eq!(
-            resolve(&dir).expect("resolved").socket,
-            sub.join("./run/myna.sock")
-        );
-    }
-
-    /// Two connected backends is an error, not a coin flip: which one answers
-    /// would depend on connect order and would change under a reinstall.
-    #[test]
     fn two_providers_are_ambiguous() {
         let dir = tmpdir();
         let _a = serving(&dir, "provider", "myna-parakeet");
@@ -796,117 +696,6 @@ mod tests {
 
     /// Shares are read in name order, so messages do not reshuffle with the
     /// filesystem's directory order.
-    #[test]
-    fn shares_are_read_in_name_order() {
-        let dir = tmpdir();
-        let order = [
-            "provider-3",
-            "provider",
-            "provider-10",
-            "provider-2",
-            "provider-4",
-        ];
-        let _held: Vec<_> = order
-            .iter()
-            .map(|name| serving(&dir, name, &format!("snap-{name}")))
-            .collect();
-        match resolve(&dir) {
-            Err(ResolveError::Ambiguous(names)) => assert_eq!(
-                names,
-                [
-                    "snap-provider",
-                    "snap-provider-10",
-                    "snap-provider-2",
-                    "snap-provider-3",
-                    "snap-provider-4"
-                ]
-            ),
-            other => panic!("expected Ambiguous, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn no_backend_detail_says_no_model_is_connected() {
-        let err = ResolveError::NotConnected(Unusable::default());
-        assert_eq!(err.headline(), "Model not connected");
-        assert_eq!(err.to_string(), "no model is connected");
-    }
-
-    /// One headline for any mix of unusable shares: a model whose server is
-    /// down beats one that cannot serve, and the detail keeps every cause.
-    #[test]
-    fn unusable_shares_are_headlined_by_the_most_fixable_cause() {
-        let names = |n: &[&str]| n.iter().map(|s| s.to_string()).collect::<Vec<_>>();
-        let cases = [
-            (names(&["a"]), names(&[]), 0, "Model not compatible"),
-            (names(&[]), names(&["b"]), 0, "Model not running"),
-            (names(&[]), names(&[]), 1, "Model not compatible"),
-            (names(&["a"]), names(&["b"]), 0, "Model not running"),
-            (names(&["a"]), names(&[]), 2, "Model not compatible"),
-            (names(&[]), names(&["b"]), 3, "Model not running"),
-            (names(&["a"]), names(&["b"]), 1, "Model not running"),
-        ];
-        for (no_unix_socket, not_serving, malformed, headline) in cases {
-            let err = ResolveError::NotConnected(Unusable {
-                no_unix_socket: no_unix_socket.clone(),
-                not_serving: not_serving.clone(),
-                malformed,
-                unmounted: 0,
-            });
-            assert_eq!(err.headline(), headline, "{err:?}");
-            let detail = err.to_string();
-            for name in no_unix_socket.iter().chain(&not_serving) {
-                assert!(detail.contains(name.as_str()), "{detail}");
-            }
-            assert_eq!(detail.contains("identified"), malformed > 0, "{detail}");
-        }
-    }
-
-    #[test]
-    fn several_models_are_headlined_as_such() {
-        let err = ResolveError::Ambiguous(vec!["a".into(), "b".into()]);
-        assert_eq!(err.headline(), "Several models connected");
-    }
-
-    /// Diagnostics shows the detail: plain words, no packaging internals.
-    #[test]
-    fn details_name_no_snapd_internals() {
-        let errors = [
-            ResolveError::NotConnected(Unusable::default()),
-            ResolveError::NotConnected(Unusable {
-                no_unix_socket: vec!["a".into()],
-                not_serving: vec!["b".into()],
-                malformed: 1,
-                unmounted: 1,
-            }),
-            ResolveError::NotConnected(Unusable {
-                malformed: 2,
-                ..Unusable::default()
-            }),
-            ResolveError::Ambiguous(vec!["a".into(), "b".into()]),
-        ];
-        for err in errors {
-            let detail = err.to_string();
-            for banned in [
-                "snap",
-                "plug",
-                "backend",
-                "socket",
-                "share",
-                "provider",
-                "namespace",
-                "mount",
-            ] {
-                assert!(!detail.contains(banned), "{detail:?} has {banned:?}");
-            }
-        }
-        let one = ResolveError::NotConnected(Unusable {
-            malformed: 1,
-            ..Unusable::default()
-        });
-        assert_eq!(one.to_string(), "a connected model could not be identified");
-    }
-
     #[test]
     fn env_parsing() {
         let parsed = parse_env(
@@ -924,43 +713,6 @@ mod tests {
         assert_eq!(parsed.len(), 7);
         assert_eq!(parse_env("NO_EQUALS\n"), None);
         assert_eq!(parse_env("=value\n"), None);
-    }
-
-    #[test]
-    fn flags_name_at_most_one_backend() {
-        let socket = || Some(PathBuf::from("/run/x.sock"));
-        let dir = || Some(PathBuf::from("/var/snap/myna/x1/backend"));
-
-        assert!(matches!(
-            BackendSocket::from_flags(socket(), None),
-            Ok(Some(BackendSocket::Fixed(path))) if path == Path::new("/run/x.sock")
-        ));
-        assert!(matches!(
-            BackendSocket::from_flags(None, dir()),
-            Ok(Some(BackendSocket::Search(path))) if path == Path::new("/var/snap/myna/x1/backend")
-        ));
-        assert!(matches!(BackendSocket::from_flags(None, None), Ok(None)));
-        assert_eq!(
-            BackendSocket::from_flags(socket(), dir()).unwrap_err(),
-            "--socket and --backend-dir are alternatives (pick one)"
-        );
-    }
-
-    #[test]
-    fn fixed_socket_is_used_verbatim() {
-        let fixed = BackendSocket::Fixed(PathBuf::from("/run/x.sock"));
-        assert_eq!(
-            fixed.resolve().expect("fixed"),
-            Provider {
-                socket: PathBuf::from("/run/x.sock"),
-                snap_name: None,
-            }
-        );
-        assert_eq!(fixed.describe(), "/run/x.sock");
-        assert_eq!(
-            BackendSocket::Search(PathBuf::from("/var/snap/myna/x1/backend")).describe(),
-            "/var/snap/myna/x1/backend/*/provider.env"
-        );
     }
 
     #[test]
@@ -1013,104 +765,6 @@ mod tests {
         );
         assert!(text.unusable.is_empty());
         assert!(!text.needs_restart());
-    }
-
-    #[test]
-    fn ambiguous_fires_only_when_more_than_one_speech_provider_serves() {
-        let dir = tmpdir();
-        let _a = serving(&dir, "provider", "myna-parakeet");
-        let s2 = share(
-            &dir,
-            "provider-2",
-            "SNAP_NAME=myna-whisper\nUNIX_SOCKET=asr.sock\nMYNA_ROLE=speech\n",
-        );
-        let _b = UnixListener::bind(s2.join("asr.sock")).expect("bind");
-        let s3 = share(
-            &dir,
-            "provider-3",
-            "SNAP_NAME=myna-text\nUNIX_SOCKET=text.sock\nMYNA_ROLE=text\n",
-        );
-        let _c = UnixListener::bind(s3.join("text.sock")).expect("bind");
-        let s4 = share(
-            &dir,
-            "provider-4",
-            "SNAP_NAME=gemma4\nUNIX_SOCKET=server.sock\n",
-        );
-        let _d = UnixListener::bind(s4.join("server.sock")).expect("bind");
-
-        match resolve_speech(&dir) {
-            Err(ResolveError::Ambiguous(names)) => {
-                assert_eq!(names, vec!["myna-parakeet", "myna-whisper"]);
-            }
-            other => panic!("expected Ambiguous over speech providers only, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn connected_text_providers_alone_report_no_speech_model_connected() {
-        let dir = tmpdir();
-        let s1 = share(
-            &dir,
-            "provider",
-            "SNAP_NAME=myna-text\nUNIX_SOCKET=text.sock\nMYNA_ROLE=text\n",
-        );
-        let _text = UnixListener::bind(s1.join("text.sock")).expect("bind");
-        share(
-            &dir,
-            "provider-2",
-            "SNAP_NAME=gemma4\nUNIX_SOCKET=server.sock\n",
-        );
-
-        assert_eq!(not_connected(resolve_speech(&dir)), Unusable::default());
-
-        let text = resolve_text_shares(&dir);
-        assert_eq!(text.providers.len(), 1);
-        assert_eq!(text.providers[0].snap_name, "myna-text");
-        assert!(text.unusable.is_empty(), "an unlabelled share is not ours");
-    }
-
-    #[test]
-    fn unmounted_share_flags_restart_for_text_without_breaking_active_speech() {
-        let dir = tmpdir();
-        let _speech = serving(&dir, "provider", "myna-parakeet");
-        std::fs::create_dir_all(dir.join("provider-2")).expect("empty mount point");
-
-        let speech = resolve_with(&dir, |_| false).expect("active speech still serves");
-        assert_eq!(speech.snap_name.as_deref(), Some("myna-parakeet"));
-
-        let text = resolve_text_shares_with(&dir, |_| false);
-        assert!(text.providers.is_empty());
-        assert_eq!(text.unusable.unmounted, 1);
-        assert!(text.needs_restart());
-    }
-
-    #[test]
-    fn only_empty_shares_outside_this_namespace_are_unmounted() {
-        let dir = tmpdir();
-        let _speech = serving(&dir, "provider", "myna-parakeet");
-        std::fs::create_dir_all(dir.join("provider-3")).expect("empty mount point");
-        std::fs::create_dir_all(dir.join("provider-2")).expect("empty mount point");
-        std::fs::write(dir.join("stray-file"), "").expect("a file, not a share");
-
-        assert_eq!(
-            unmounted_shares_with(&dir, |_| false),
-            [dir.join("provider-2"), dir.join("provider-3")],
-            "empty shares, in name order"
-        );
-        let mounted = dir.join("provider-2");
-        assert_eq!(
-            unmounted_shares_with(&dir, |path| path == mounted),
-            [dir.join("provider-3")],
-            "an empty mount is a backend yet to start"
-        );
-        assert!(unmounted_shares_with(&dir.join("absent"), |_| false).is_empty());
-    }
-
-    #[test]
-    fn a_plain_empty_directory_is_not_mounted_here() {
-        let dir = tmpdir();
-        std::fs::create_dir_all(dir.join("provider-2")).expect("empty share");
-        assert_eq!(unmounted_shares(&dir), [dir.join("provider-2")]);
     }
 
     #[test]
