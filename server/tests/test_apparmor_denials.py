@@ -106,6 +106,13 @@ PORTAL = (
 )
 
 
+PERFMON = (
+    "Nov 25 23:12:25.203114 chug kernel: audit: type=1400 audit(1795649545.200:30806): "
+    'apparmor="DENIED" operation="capable" class="cap" profile="snap.myna-whisper.server" '
+    'pid=1454745 comm="python3" capability=38  capname="perfmon"'
+)
+
+
 RTKIT = (
     "Oct 20 20:24:04.647567 myna-e2e-noble-run kernel: audit: type=1107 "
     "audit(1792527844.642:191): pid=835 uid=101 auid=4294967295 ses=4294967295 "
@@ -133,6 +140,7 @@ RTKIT = (
             "/proc/driver/nvidia/capabilities/mig/config",
             "nvidia-smi",
         ),
+        PERFMON,
         PORTAL,
     ],
 )
@@ -154,6 +162,7 @@ def test_known_harmless_denials_are_allowed(line):
         unlink("snap.myna-whisper.server", "/dev/nvidia0"),
         kernel("snap.myna-whisper.server", "/dev/nvidia0"),
         kernel("snap.myna-whisper.whisper", "/proc/driver/nvidia/params"),
+        PERFMON.replace("perfmon", "sys_admin"),
         # Another process's environment, not its own.
         kernel("snap.myna-whisper.server", "/proc/1/environ"),
         kernel("snap.myna-whisper.server", "/proc/1234723/cmdline"),

@@ -91,6 +91,11 @@ ALLOWED: tuple[Allowed, ...] = (
         " MIG configuration; the capability is still reported",
     ),
     Allowed(
+        {"operation": "capable", "capname": "perfmon"},
+        "CUDA initialisation checks CAP_PERFMON once (GPU performance counters);"
+        " the context is created and serves without it",
+    ),
+    Allowed(
         {
             "subject": r"snap\.myna\.hud",
             "operation": "open",
