@@ -10,7 +10,7 @@ use myna_core::{ChineseScript, ProcessingChain};
 use serde_json::Value;
 
 use super::disfluency::Lang;
-use super::graph::{Builder, Graph, Src};
+use super::graph::{Graph, Op};
 use super::pipeline::{Check, Request};
 use super::rules::Rule;
 use super::wire::Params;
@@ -257,8 +257,7 @@ fn misfit(kind: Kind, step: &StepSpec, lang: Option<&str>) -> Option<&'static st
 
 /// Compile `steps` in their order for dictation in `ctx.language`.
 pub fn compile(steps: &[StepSpec], ctx: &Context) -> Compiled {
-    let mut g = Builder::default();
-    let mut at = Src::Input;
+    let mut ops: Vec<Op> = Vec::new();
     let mut lang = ctx.language.map(myna_core::chains::primary_language);
     let mut chinese = ChineseScript::AsRecognised;
     // The last step that changed the language, and the language before it.
@@ -283,11 +282,18 @@ pub fn compile(steps: &[StepSpec], ctx: &Context) -> Compiled {
                 None => match kind {
                     Kind::Tidy => {
                         let language = if lang.is_some() { Lang::En } else { Lang::Any };
-                        at = g.rule(at, Rule::Disfluency(language));
-                        at = g.rule(at, Rule::Vocabulary);
+                        ops.push(Op::Rule {
+                            rule: Rule::Disfluency(language),
+                        });
+                        ops.push(Op::Rule {
+                            rule: Rule::Vocabulary,
+                        });
                         let request = Request::cleanup(None);
                         let state = ask_state(&request, ctx);
-                        at = g.ask(at, request, Check::ConservativeEdit);
+                        ops.push(Op::Ask {
+                            request,
+                            check: Check::ConservativeEdit,
+                        });
                         state
                     }
                     Kind::Translate => {
@@ -305,13 +311,20 @@ pub fn compile(steps: &[StepSpec], ctx: &Context) -> Compiled {
                                     .map_or(StepState::Applicable, |leg| StepState::Unavailable {
                                         request: leg.clone(),
                                     });
-                                at = g.pivot(at, first, second, check);
+                                ops.push(Op::Pivot {
+                                    first,
+                                    second,
+                                    check,
+                                });
                                 state
                             }
                             None => {
                                 let direct = Request::translate(&from, &to);
                                 let state = ask_state(&direct, ctx);
-                                at = g.ask(at, direct, check);
+                                ops.push(Op::Ask {
+                                    request: direct,
+                                    check,
+                                });
                                 state
                             }
                         };
@@ -334,10 +347,15 @@ pub fn compile(steps: &[StepSpec], ctx: &Context) -> Compiled {
         });
     }
     Compiled {
-        graph: g.finish(at),
+        graph: Graph::of(ops),
         script: chinese,
         report,
     }
+}
+
+/// The graph a preset names: its steps compiled for unknown language.
+pub fn preset_graph(chain: ProcessingChain) -> Graph {
+    compile(&preset_steps(chain), &Context::default()).graph
 }
 
 /// The two legs that translate `from` to `to` through English, when no
@@ -373,7 +391,7 @@ fn ask_state(request: &Request, ctx: &Context) -> StepState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::process::graph::{Id, Op};
+    use crate::process::graph::Op;
 
     fn spec(ids: &[&str]) -> Vec<StepSpec> {
         ids.iter().map(|t| StepSpec::parse(t)).collect()
@@ -424,7 +442,7 @@ mod tests {
             (ProcessingChain::TIDY_FRENCH, &["tidy", "translate=fr"][..]),
         ] {
             assert_eq!(preset_steps(chain), spec(steps), "{}", chain.nick());
-            assert_eq!(compiled(steps, None).graph, Graph::preset(chain));
+            assert_eq!(compiled(steps, None).graph, preset_graph(chain));
         }
         assert_eq!(
             compiled(&[], None).graph,
@@ -555,7 +573,7 @@ mod tests {
 
     #[test]
     fn tidy_names_its_language_to_the_pause_rule() {
-        let first = |c: &Compiled| match c.graph.node(crate::process::graph::Id::first()) {
+        let first = |c: &Compiled| match &c.graph.ops()[0] {
             Op::Rule { rule, .. } => *rule,
             op => panic!("{op:?}"),
         };
@@ -651,7 +669,7 @@ mod tests {
                 request: Request::translate("en", "fr")
             }
         );
-        assert_eq!(c.graph, Graph::preset(ProcessingChain::TIDY_FRENCH));
+        assert_eq!(c.graph, preset_graph(ProcessingChain::TIDY_FRENCH));
 
         let all = |_: &Request| true;
         let c = compile(
@@ -687,7 +705,7 @@ mod tests {
         let c = through("fr", "de", &[("fr", "de"), ("fr", "en"), ("en", "de")]);
         assert_eq!(states(&c), [("translate", "on")]);
         assert_eq!(asks(&c), [("fr".into(), "de".into())]);
-        assert!(matches!(c.graph.node(Id::first()), Op::Ask { .. }));
+        assert!(matches!(c.graph.ops()[0], Op::Ask { .. }));
     }
 
     #[test]
@@ -698,12 +716,17 @@ mod tests {
             asks(&c),
             [("fr".into(), "en".into()), ("en".into(), "de".into())]
         );
-        let Op::Pivot { first, second, .. } = c.graph.node(Id::first()) else {
+        let Op::Pivot {
+            first,
+            second,
+            check,
+        } = &c.graph.ops()[0]
+        else {
             panic!("not a pivot");
         };
         let direct = Request::translate("fr", "de").run_budget;
-        assert_eq!(first.request.run_budget + second.request.run_budget, direct);
-        assert_eq!(first.check, Check::Usable);
+        assert_eq!(first.run_budget + second.run_budget, direct);
+        assert_eq!(*check, Check::Usable);
     }
 
     #[test]
@@ -724,7 +747,7 @@ mod tests {
                 ),
                 missing
             );
-            assert!(matches!(c.graph.node(Id::first()), Op::Pivot { .. }));
+            assert!(matches!(c.graph.ops()[0], Op::Pivot { .. }));
         }
     }
 
@@ -740,7 +763,7 @@ mod tests {
         for (language, to) in [("en", "de"), ("fr", "en")] {
             let c = through(language, to, &[("en", "en")]);
             assert_eq!(asks(&c), [(language.into(), to.into())]);
-            assert!(matches!(c.graph.node(Id::first()), Op::Ask { .. }));
+            assert!(matches!(c.graph.ops()[0], Op::Ask { .. }));
         }
     }
 
@@ -769,7 +792,7 @@ mod tests {
                 ("whisper", "unknown")
             ]
         );
-        assert_eq!(c.graph, Graph::preset(ProcessingChain::TIDY));
+        assert_eq!(c.graph, preset_graph(ProcessingChain::TIDY));
     }
 
     #[test]
@@ -777,14 +800,13 @@ mod tests {
         let c = compiled(&["tidy"], None);
         let vocab = c
             .graph
-            .plan()
-            .into_iter()
-            .filter(|&id| {
+            .ops()
+            .iter()
+            .filter(|op| {
                 matches!(
-                    c.graph.node(id),
+                    op,
                     Op::Rule {
                         rule: Rule::Vocabulary,
-                        ..
                     }
                 )
             })

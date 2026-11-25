@@ -15,6 +15,7 @@ pub mod graph;
 pub mod history;
 pub mod landing;
 pub mod pipeline;
+pub mod request;
 pub mod resolve;
 pub mod rules;
 pub mod script;

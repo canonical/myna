@@ -4,7 +4,7 @@
 
 use myna_core::{ChineseScript, ProcessingChain};
 use myna_desktop::process::disfluency::Lang;
-use myna_desktop::process::graph::{Builder, Graph, Src};
+use myna_desktop::process::graph::{Graph, Op};
 use myna_desktop::process::pipeline::{Check, Request};
 use myna_desktop::process::rules::Rule;
 use myna_desktop::process::steps::{compile, Context, StepSpec, StepState};
@@ -74,9 +74,11 @@ pub fn parse(spec: &str) -> Result<Spec, String> {
         }
     }
     let graph = match steps.as_slice() {
-        [] => Graph::preset(ProcessingChain::EXACT),
+        [] => myna_desktop::process::steps::preset_graph(ProcessingChain::EXACT),
         [one] if ProcessingChain::from_nick(one).is_some() => {
-            Graph::preset(ProcessingChain::from_nick(one).expect("checked"))
+            myna_desktop::process::steps::preset_graph(
+                ProcessingChain::from_nick(one).expect("checked"),
+            )
         }
         many => chain(many)?,
     };
@@ -89,18 +91,31 @@ pub fn parse(spec: &str) -> Result<Spec, String> {
 
 /// Steps run one after another, each reading the one before.
 fn chain(steps: &[&str]) -> Result<Graph, String> {
-    let mut g = Builder::default();
-    let mut at = Src::Input;
+    let mut ops = Vec::new();
     for step in steps {
-        at = match step.split_once('=').unwrap_or((step, "")) {
-            ("disfluency", "") => g.rule(at, Rule::Disfluency(Lang::Any)),
-            ("vocabulary", "") => g.rule(at, Rule::Vocabulary),
-            ("address", "") => g.rule(at, Rule::Address),
-            ("continue", "") => g.rule(at, Rule::Continue),
-            ("cleanup", "") => g.tidy(at),
+        ops.push(match step.split_once('=').unwrap_or((step, "")) {
+            ("disfluency", "") => Op::Rule {
+                rule: Rule::Disfluency(Lang::Any),
+            },
+            ("vocabulary", "") => Op::Rule {
+                rule: Rule::Vocabulary,
+            },
+            ("address", "") => Op::Rule {
+                rule: Rule::Address,
+            },
+            ("continue", "") => Op::Rule {
+                rule: Rule::Continue,
+            },
+            ("cleanup", "") => Op::Ask {
+                request: Request::cleanup(None),
+                check: Check::ConservativeEdit,
+            },
             ("translate", pair) if !pair.is_empty() => {
                 let (from, to) = pair.split_once(':').unwrap_or(("en", pair));
-                g.ask(at, Request::translate(from, to), Check::Usable)
+                Op::Ask {
+                    request: Request::translate(from, to),
+                    check: Check::Usable,
+                }
             }
             _ if ProcessingChain::from_nick(step).is_some() => {
                 return Err(format!(
@@ -108,9 +123,9 @@ fn chain(steps: &[&str]) -> Result<Graph, String> {
                 ))
             }
             _ => return Err(format!("unknown step {step:?} (want {STEPS})")),
-        };
+        });
     }
-    Ok(g.finish(at))
+    Ok(Graph::of(ops))
 }
 
 /// Every ordered subset of the comma list `items`, shortest first: 3 items
@@ -175,7 +190,12 @@ mod tests {
     fn a_preset_id_is_the_daemons_preset() {
         for chain in ProcessingChain::ALL {
             let spec = parse(chain.nick()).unwrap();
-            assert_eq!(spec.graph, Graph::preset(chain), "{}", chain.nick());
+            assert_eq!(
+                spec.graph,
+                myna_desktop::process::steps::preset_graph(chain),
+                "{}",
+                chain.nick()
+            );
             assert_eq!(spec.label, chain.nick());
         }
     }
@@ -184,19 +204,19 @@ mod tests {
     fn a_list_of_steps_builds_the_graph_the_preset_is() {
         assert_eq!(
             parse("disfluency,vocabulary,cleanup").unwrap().graph,
-            Graph::preset(ProcessingChain::TIDY)
+            myna_desktop::process::steps::preset_graph(ProcessingChain::TIDY)
         );
         assert_eq!(
             parse("disfluency,vocabulary,cleanup,translate=fr")
                 .unwrap()
                 .graph,
-            Graph::preset(ProcessingChain::TIDY_FRENCH)
+            myna_desktop::process::steps::preset_graph(ProcessingChain::TIDY_FRENCH)
         );
         assert_eq!(
             parse("disfluency,vocabulary,cleanup,translate=en:fr")
                 .unwrap()
                 .graph,
-            Graph::preset(ProcessingChain::TIDY_FRENCH)
+            myna_desktop::process::steps::preset_graph(ProcessingChain::TIDY_FRENCH)
         );
     }
 
@@ -211,13 +231,13 @@ mod tests {
         for list in ["tidy,translate=fr", " tidy , translate=FR "] {
             assert_eq!(
                 parse_steps(list, None).unwrap().graph,
-                Graph::preset(ProcessingChain::TIDY_FRENCH),
+                myna_desktop::process::steps::preset_graph(ProcessingChain::TIDY_FRENCH),
                 "{list}"
             );
         }
         assert_ne!(
             parse_steps("translate=fr,tidy", None).unwrap().graph,
-            Graph::preset(ProcessingChain::TIDY_FRENCH),
+            myna_desktop::process::steps::preset_graph(ProcessingChain::TIDY_FRENCH),
             "the order given is the order run"
         );
         let fr = parse_steps("tidy,translate=de", Some("fr")).unwrap();
@@ -243,7 +263,10 @@ mod tests {
         assert_eq!(spec.graph, Graph::passthrough());
         assert_eq!(spec.script, ChineseScript::TraditionalTaiwan);
         let spec = parse("tidy,script=simplified").unwrap();
-        assert_eq!(spec.graph, Graph::preset(ProcessingChain::TIDY));
+        assert_eq!(
+            spec.graph,
+            myna_desktop::process::steps::preset_graph(ProcessingChain::TIDY)
+        );
         assert_eq!(spec.script, ChineseScript::Simplified);
         assert!(parse("script=klingon")
             .unwrap_err()

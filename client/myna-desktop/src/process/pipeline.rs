@@ -3,7 +3,6 @@
 //! A step that needs a model names a [`Request`], what it needs done, and
 //! never a model. [`Models`] answers the request with whatever fits.
 
-use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -12,74 +11,14 @@ use myna_core::history::Skip;
 use myna_core::ChineseScript;
 
 pub use super::check::Check;
-use super::graph::{Graph, Id, Op, Src};
+use super::graph::{Graph, Op};
 use super::script;
 use super::vocabulary::Vocabulary;
-use super::wire::Params;
 use super::{Field, Processor};
 use crate::inject::fold_control_chars;
 use crate::live::Live;
 
-/// What a step asks of a model: a purpose, never a model.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Request {
-    /// What to do with the text: `text.cleanup`, `text.translate`.
-    pub task: String,
-    /// What the task is about: `language`, `to`.
-    /// Ordered, so equal requests make equal keys.
-    pub params: Params,
-    /// How long one answer may take before the step is skipped.
-    pub run_budget: Duration,
-    /// How long finding and loading a model may take before the next
-    /// candidate is tried.
-    pub bind_budget: Duration,
-}
-
-impl Request {
-    /// A request built from data: the task and its parameters, as a step
-    /// declares them. The run budget follows the task.
-    pub fn of(task: &str, params: Params) -> Self {
-        let run_budget = match task {
-            "text.cleanup" => Duration::from_secs(1),
-            _ => Duration::from_secs(10),
-        };
-        Self {
-            task: task.into(),
-            params,
-            run_budget,
-            bind_budget: BIND_BUDGET,
-        }
-    }
-
-    pub fn cleanup(language: Option<String>) -> Self {
-        let params = language
-            .map(|l| ("language".to_owned(), l.into()))
-            .into_iter()
-            .collect();
-        Self::of("text.cleanup", params)
-    }
-
-    /// A dictation typed at once is translated at once, so the budget is a
-    /// long dictation's: a sentence takes a model 60-260 ms.
-    pub fn translate(from: &str, to: &str) -> Self {
-        let params = [("language", from), ("to", to)]
-            .into_iter()
-            .map(|(k, v)| (k.to_owned(), v.into()))
-            .collect();
-        Self::of("text.translate", params)
-    }
-
-    /// What a binding is cached under: everything that picks a model and
-    /// nothing that does not (the run budget).
-    pub fn key(&self) -> String {
-        let params = serde_json::to_string(&self.params).unwrap_or_default();
-        format!("{}|{params}", self.task)
-    }
-}
-
-/// A model that takes longer to load than this is not the one to dictate
-/// with: the next candidate is tried.
-pub const BIND_BUDGET: Duration = Duration::from_secs(5);
+pub use super::request::{Request, BIND_BUDGET};
 
 /// How long past its run budget a model's own deadline may take to report.
 const RUN_GRACE: Duration = Duration::from_millis(100);
@@ -270,52 +209,31 @@ impl Processor for Pipeline {
         let graph = self.started.clone().unwrap_or_else(|| self.graph.get());
         self.vocabulary();
         let mut trace = Vec::new();
-        let mut made: HashMap<Id, String> = HashMap::new();
-        let read = |made: &HashMap<Id, String>, src: Src| match src {
-            Src::Input => text.clone(),
-            Src::Node(id) => made.get(&id).cloned().unwrap_or_default(),
-        };
-        for id in graph.plan() {
-            let op = graph.node(id);
-            let out = match op {
-                Op::Rule { from, rule } => rule.apply_with(&read(&made, *from), &self.vocabulary.1),
-                Op::Ask {
-                    from,
-                    request,
-                    check,
-                    ..
-                } => {
-                    let input = read(&made, *from);
-                    self.ask(request, *check, input, &mut trace).await
-                }
+        let mut text = text;
+        for op in graph.ops() {
+            text = match op {
+                Op::Rule { rule } => rule.apply_with(&text, &self.vocabulary.1),
+                Op::Ask { request, check } => self.ask(request, *check, text, &mut trace).await,
                 Op::Pivot {
-                    from,
                     first,
                     second,
-                } => {
-                    let input = read(&made, *from);
-                    match self
-                        .try_ask(&first.request, first.check, &input, &mut trace)
+                    check,
+                } => match self.try_ask(first, *check, &text, &mut trace).await {
+                    Some(mid) => self
+                        .try_ask(second, *check, &mid, &mut trace)
                         .await
-                    {
-                        Some(mid) => self
-                            .try_ask(&second.request, second.check, &mid, &mut trace)
-                            .await
-                            .unwrap_or(input),
-                        None => input,
-                    }
-                }
+                        .unwrap_or(text),
+                    None => text,
+                },
             };
-            made.insert(id, out);
         }
         *self.trace.lock().unwrap_or_else(|p| p.into_inner()) = trace;
-        script::convert(&read(&made, graph.out()), self.script.get())
+        script::convert(&text, self.script.get())
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::super::graph::Builder;
     use super::*;
     use myna_core::ProcessingChain;
     use myna_platform::text_input::FieldPurpose;
@@ -346,16 +264,21 @@ mod tests {
     }
 
     fn graph_of(chain: ProcessingChain) -> Graph {
-        Graph::preset(chain)
+        super::super::steps::preset_graph(chain)
     }
 
     fn only(task: &str) -> Graph {
-        let mut g = Builder::default();
-        let out = match task {
-            "text.translate" => g.ask(Src::Input, Request::translate("en", "fr"), Check::Usable),
-            _ => g.tidy(Src::Input),
+        let op = match task {
+            "text.translate" => Op::Ask {
+                request: Request::translate("en", "fr"),
+                check: Check::Usable,
+            },
+            _ => Op::Ask {
+                request: Request::cleanup(None),
+                check: Check::ConservativeEdit,
+            },
         };
-        g.finish(out)
+        Graph::of(vec![op])
     }
 
     fn cleanup(models: Scripted) -> Pipeline {
@@ -384,14 +307,11 @@ mod tests {
     }
 
     fn pivot() -> Graph {
-        let mut g = Builder::default();
-        let out = g.pivot(
-            Src::Input,
-            Request::translate("fr", "en"),
-            Request::translate("en", "de"),
-            Check::Usable,
-        );
-        g.finish(out)
+        Graph::of(vec![Op::Pivot {
+            first: Request::translate("fr", "en"),
+            second: Request::translate("en", "de"),
+            check: Check::Usable,
+        }])
     }
 
     #[tokio::test]
@@ -492,7 +412,7 @@ mod tests {
 
     #[test]
     fn a_request_built_from_data_is_the_one_the_constructors_build() {
-        let params = |pairs: &[(&str, &str)]| -> Params {
+        let params = |pairs: &[(&str, &str)]| -> crate::process::wire::Params {
             pairs
                 .iter()
                 .map(|(k, v)| ((*k).to_owned(), (*v).into()))

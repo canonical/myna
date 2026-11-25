@@ -1944,7 +1944,7 @@ mod tests {
         use myna_core::ProcessingChain;
         let hold = |chain| {
             myna_desktop::process::steps::Compiled {
-                graph: Graph::preset(chain),
+                graph: myna_desktop::process::steps::preset_graph(chain),
                 script: AsRecognised,
                 report: Vec::new(),
             }
