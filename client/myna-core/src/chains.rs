@@ -343,7 +343,7 @@ pub enum Fit {
 }
 
 /// The ids of the steps this build knows, in their default insert order.
-pub const KNOWN_STEPS: [&str; 9] = [
+pub const KNOWN_STEPS: [&str; 8] = [
     "commands",
     "tidy",
     "emoji",
@@ -351,7 +351,6 @@ pub const KNOWN_STEPS: [&str; 9] = [
     "casing",
     "translate",
     "original",
-    "typography",
     "script",
 ];
 

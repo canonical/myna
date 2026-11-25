@@ -25,7 +25,6 @@ pub mod script;
 pub mod snippets;
 pub mod step;
 pub mod steps;
-pub mod typography;
 pub mod vocabulary;
 pub mod wire;
 

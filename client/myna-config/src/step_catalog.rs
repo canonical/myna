@@ -739,7 +739,6 @@ mod tests {
                 "Code casing",
                 "Translate",
                 "Keep the original",
-                "Typography",
                 "Chinese script"
             ]
         );
@@ -953,7 +952,7 @@ mod tests {
     fn built_ins_and_every_entry_are_listed_with_their_facts() {
         let all = listed(&case());
         let ids: Vec<_> = all.iter().map(|i| i.id.as_str()).collect();
-        assert_eq!(ids.len(), 10, "{ids:?}");
+        assert_eq!(ids.len(), 9, "{ids:?}");
         assert!(!ids.contains(&"fit"), "fitting is a switch, not a step");
         let fr = find(&all, "en-fr");
         assert_eq!(fr.title, "Translate English to Français");
@@ -1006,15 +1005,7 @@ mod tests {
         assert_eq!(
             ids,
             [
-                "commands",
-                "tidy",
-                "emoji",
-                "snippets",
-                "casing",
-                "en-fr",
-                "fr-en",
-                "original",
-                "typography",
+                "commands", "tidy", "emoji", "snippets", "casing", "en-fr", "fr-en", "original",
                 "script"
             ],
             "{ids:?}"
@@ -1252,7 +1243,6 @@ mod tests {
                 "z-translate",
                 "a-late",
                 "original",
-                "typography",
                 "script"
             ],
             "{ids:?}"

@@ -10,16 +10,7 @@ use myna_core::{ChineseScript, ProcessingChain};
 use serde_json::Value;
 
 use super::disfluency::Lang;
-use super::graph::{Builder, Form, Graph, Needs, Src, When};
-use super::typography::Style;
-use myna_platform::text_input::FieldPurpose;
-
-/// The fields typography leaves alone.
-const PLAIN_ONLY: &[FieldPurpose] = &[
-    FieldPurpose::Terminal,
-    FieldPurpose::Url,
-    FieldPurpose::Email,
-];
+use super::graph::{Builder, Form, Graph, Needs, Src};
 use super::pipeline::{Check, Request};
 use super::rules::Rule;
 use super::wire::Params;
@@ -106,15 +97,12 @@ enum Kind {
     Translate,
     /// Type what was said beside its translation.
     Original,
-    /// Quotes, dashes and spacing as the text's language writes them,
-    /// except where code or an address goes.
-    Typography,
     /// Write Chinese in `script`.
     Script,
 }
 
 impl Kind {
-    const ALL: [Kind; 9] = [
+    const ALL: [Kind; 8] = [
         Kind::Commands,
         Kind::Tidy,
         Kind::Emoji,
@@ -122,7 +110,6 @@ impl Kind {
         Kind::Casing,
         Kind::Translate,
         Kind::Original,
-        Kind::Typography,
         Kind::Script,
     ];
 
@@ -139,7 +126,6 @@ impl Kind {
             Kind::Casing => "casing",
             Kind::Translate => "translate",
             Kind::Original => "original",
-            Kind::Typography => "typography",
             Kind::Script => "script",
         }
     }
@@ -153,8 +139,7 @@ impl Kind {
             | Kind::Emoji
             | Kind::Snippets
             | Kind::Casing
-            | Kind::Original
-            | Kind::Typography => None,
+            | Kind::Original => None,
         }
     }
 }
@@ -394,13 +379,6 @@ pub fn compile(steps: &[StepSpec], ctx: &Context) -> Compiled {
                     }
                     Kind::Emoji => {
                         at = g.rule(at, Rule::Emoji);
-                        StepState::Applicable
-                    }
-                    Kind::Typography => {
-                        let style = Style::of(lang.as_deref());
-                        let typeset = g.rule(at, Rule::Typography(style));
-                        // Curly quotes break a command, a URL or an address.
-                        at = g.route(vec![(When::Purpose(PLAIN_ONLY), at)], typeset);
                         StepState::Applicable
                     }
                     Kind::Original => {

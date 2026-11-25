@@ -935,42 +935,6 @@ mod tests {
         assert_eq!(traced(&pipeline).len(), 1);
     }
 
-    #[tokio::test]
-    async fn typography_follows_the_language_and_leaves_a_terminal_alone() {
-        use crate::process::steps::{compile, Context, StepSpec};
-        let graph = |steps: &[&str]| {
-            let steps: Vec<StepSpec> = steps.iter().map(|s| StepSpec::parse(s)).collect();
-            compile(
-                &steps,
-                &Context {
-                    language: Some("en"),
-                    ..Context::default()
-                },
-            )
-            .graph
-        };
-        let mut english = Pipeline::new(graph(&["typography"]), Scripted::Fails);
-        let said = "It's \"done\"";
-        assert_eq!(
-            english.process(said.into(), &here()).await,
-            "It\u{2019}s \u{201c}done\u{201d}"
-        );
-        let terminal = Field {
-            purpose: FieldPurpose::Terminal,
-            ..Field::default()
-        };
-        assert_eq!(english.process(said.into(), &terminal).await, said);
-
-        let mut french = Pipeline::new(
-            graph(&["translate=fr", "typography"]),
-            Scripted::Says("Bonjour !"),
-        );
-        assert_eq!(
-            french.process("Hello!".into(), &here()).await,
-            "Bonjour\u{202f}!"
-        );
-    }
-
     #[test]
     fn lines_keep_their_breaks() {
         assert_eq!(lines("a"), [("a", "")]);
