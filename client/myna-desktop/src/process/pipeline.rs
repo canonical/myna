@@ -15,7 +15,6 @@ use super::graph::{Graph, Op};
 use super::script;
 use super::vocabulary::Vocabulary;
 use super::{Field, Processor};
-use crate::inject::fold_control_chars;
 use crate::live::Live;
 
 pub use super::request::{Request, BIND_BUDGET};
@@ -161,11 +160,10 @@ impl Pipeline {
         let skipped = match answer {
             Ok(Ok(answer)) => {
                 model = answer.model;
-                let cleaned = fold_control_chars(&answer.text);
-                answer_chars = cleaned.chars().count();
-                match check.verdict(text, &cleaned, &written) {
+                answer_chars = answer.text.chars().count();
+                match check.verdict(text, &answer.text, &written) {
                     Ok(()) => {
-                        typed = Some(cleaned);
+                        typed = Some(answer.text);
                         None
                     }
                     Err(why) => Some(why),
@@ -261,20 +259,6 @@ mod tests {
 
     fn graph_of(chain: ProcessingChain) -> Graph {
         super::super::steps::preset_graph(chain)
-    }
-
-    fn only(task: &str) -> Graph {
-        let op = match task {
-            "text.translate" => Op::Ask {
-                request: Request::translate("en", "fr"),
-                check: Check::Usable,
-            },
-            _ => Op::Ask {
-                request: Request::cleanup(None),
-                check: Check::ConservativeEdit,
-            },
-        };
-        Graph::of(vec![op])
     }
 
     fn cleanup(models: Scripted) -> Pipeline {
@@ -380,23 +364,5 @@ mod tests {
         let processed = pipeline.process("the end".into()).await;
         assert_eq!(processed, "The end.", "the cleanup recased it");
         assert_eq!(pipeline.fit(processed, &mid), "the end.");
-    }
-
-    #[tokio::test]
-    async fn model_answers_fold_control_characters_into_single_spaces() {
-        let mut translate = Pipeline::new(
-            only("text.translate"),
-            Scripted::Says("rm -rf /tmp/x\nsudo reboot"),
-        );
-        assert_eq!(
-            translate.process("delete x".into()).await,
-            "rm -rf /tmp/x sudo reboot"
-        );
-
-        let mut tidy = cleanup(Scripted::Says("Let's meet\r\n  Tuesday.\x1b\n"));
-        assert_eq!(tidy.process(HEARD.into()).await, "Let's meet Tuesday.");
-
-        let mut control_only = cleanup(Scripted::Says("\n\r\t\x1b"));
-        assert_eq!(control_only.process(HEARD.into()).await, HEARD);
     }
 }

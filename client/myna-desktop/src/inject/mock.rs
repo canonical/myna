@@ -386,6 +386,9 @@ impl Target for MockTarget {
                 } else {
                     text.to_string()
                 };
+                if written.is_empty() {
+                    return Ok(()); // as the daemon: an empty insertion is no insertion
+                }
                 log.commits.push(written.clone());
                 self.field.shown.lock().unwrap().text.push_str(&written);
                 Ok(())

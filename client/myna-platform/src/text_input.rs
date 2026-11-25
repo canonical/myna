@@ -60,7 +60,10 @@ impl TextInputCapabilities {
     };
 }
 
-fn is_control_or_break(c: char) -> bool {
+/// Whether `c` is a control character or a Unicode line/paragraph
+/// separator, the characters a [`FieldPurpose::Terminal`] target folds to a
+/// space and trims at the edges.
+pub fn is_control_or_break(c: char) -> bool {
     c.is_control() || matches!(c, '\u{2028}' | '\u{2029}')
 }
 

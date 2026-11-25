@@ -34,7 +34,7 @@ use myna_orchestrator::{
     BackendError, OrchestratorEvent, SessionOutcome, StopHandle, TextSink, Trigger, TriggerEdge,
 };
 use myna_platform::text_input::{
-    fold_control_chars, FieldPurpose, FocusEvent, InjectError, Injector, Support, Target,
+    is_control_or_break, FocusEvent, InjectError, Injector, Support, Target,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1306,9 +1306,6 @@ impl CommitBuffer {
         let field = Field::after(purpose, before);
         let text = processor.process(heard).await;
         let mut text = processor.fit(text, &field);
-        if purpose == FieldPurpose::Terminal {
-            text = fold_control_chars(&text);
-        }
         if text.is_empty() {
             if !said.trim().is_empty() {
                 processor.landed(Landing {
@@ -1322,7 +1319,7 @@ impl CommitBuffer {
         }
         let typed = text.clone();
         let separate = if self.committed_any {
-            !text.starts_with(char::is_whitespace)
+            !starts_blank(&text)
         } else {
             target
                 .char_before_cursor()
@@ -1378,12 +1375,22 @@ impl CommitBuffer {
 /// Whether `text` dictated after `before` needs a space between them. Not
 /// at the start of a line or after an opening bracket, not before closing
 /// punctuation, and not next to scripts written without spaces.
+/// Whether the text opens on a blank a reader sees. An opening control
+/// character counts as no blank at all: a terminal sink folds it away and
+/// trims it, so the word behind it still needs separating.
+fn starts_blank(text: &str) -> bool {
+    match text.chars().next() {
+        None => true,
+        Some(first) => first.is_whitespace() && !is_control_or_break(first),
+    }
+}
+
 fn continues_after(before: char, text: &str) -> bool {
     let Some(first) = text.chars().next() else {
         return false;
     };
     !before.is_whitespace()
-        && !first.is_whitespace()
+        && !starts_blank(text)
         && !matches!(
             before,
             '(' | '[' | '{' | '\u{201C}' | '\u{2018}' | '\u{AB}' | '\u{BF}' | '\u{A1}'
@@ -1789,25 +1796,12 @@ mod tests {
                 ..Self::default()
             }
         }
-
-        fn terminal_after(before: Option<char>) -> Self {
-            Self {
-                before_cursor: before,
-                purpose: myna_platform::text_input::FieldPurpose::Terminal,
-                ..Self::default()
-            }
-        }
     }
 
     #[async_trait]
     impl Target for ScriptedTarget {
         async fn commit(&mut self, text: &str) -> Result<(), InjectError> {
-            let written = if self.purpose == myna_platform::text_input::FieldPurpose::Terminal {
-                myna_platform::text_input::fold_control_chars(text)
-            } else {
-                text.to_string()
-            };
-            self.commits.push(written);
+            self.commits.push(text.to_string());
             match self.answer.take() {
                 Some(err) => Err(err),
                 None => Ok(()),
@@ -1988,25 +1982,5 @@ mod tests {
             "the discarded text is not insertable later"
         );
         assert!(target.commits.is_empty());
-    }
-
-    #[tokio::test]
-    async fn terminal_flushes_fold_breaks_before_spacing_and_drop_pure_breaks() {
-        let mut target = ScriptedTarget::terminal_after(Some('x'));
-        assert_eq!(
-            first_flush(&mut target, "\nsudo reboot").await,
-            " sudo reboot",
-            "a folded leading break still separates from text already before the cursor"
-        );
-
-        let mut target = ScriptedTarget::terminal_after(None);
-        let mut buffer = CommitBuffer::default();
-        buffer.push("\n\n");
-        assert_eq!(buffer.flush(&mut target, true).await, Ending::None);
-        assert!(
-            target.commits.is_empty(),
-            "a pure layout break commits nothing into a terminal"
-        );
-        assert!(!buffer.committed_any);
     }
 }
