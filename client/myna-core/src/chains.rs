@@ -51,14 +51,15 @@ impl ProcessingChain {
         Self::ALL.into_iter().find(|chain| chain.nick() == nick)
     }
 
-    /// The steps a preset enables, in stage order.
+    /// The steps a preset enables: the first `n` of [`KNOWN_STEPS`], which
+    /// is in stage order.
     pub fn steps(self) -> Vec<String> {
-        let ids: &[&str] = match self {
-            Self::TIDY => &["tidy"],
-            Self::TIDY_FRENCH => &["tidy", "translate"],
-            _ => &[],
+        let n = match self {
+            Self::TIDY => 1,
+            Self::TIDY_FRENCH => 2,
+            _ => 0,
         };
-        ids.iter().map(|id| (*id).to_owned()).collect()
+        KNOWN_STEPS[..n].iter().map(|id| (*id).to_owned()).collect()
     }
 
     /// The parameters a preset sets.

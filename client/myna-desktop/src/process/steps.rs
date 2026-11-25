@@ -802,7 +802,7 @@ mod tests {
     #[test]
     fn stage_order_here_is_the_order_settings_writes() {
         let ids: Vec<&str> = Kind::ALL.iter().map(|k| k.id()).collect();
-        assert_eq!(ids, myna_core::processing::STEP_ORDER);
+        assert_eq!(ids, myna_core::chains::KNOWN_STEPS);
     }
 
     #[test]

@@ -10,9 +10,6 @@ use std::collections::BTreeMap;
 /// Step parameters as stored: `<step>.<param>` to its value.
 pub type Params = BTreeMap<String, String>;
 
-/// The steps this build knows, in stage order.
-pub const STEP_ORDER: [&str; 3] = ["tidy", "translate", "script"];
-
 /// The parameter key of `step`'s `param`: `translate.to`.
 pub fn param_key(step: &str, param: &str) -> String {
     format!("{step}.{param}")
@@ -62,14 +59,18 @@ impl ChineseScript {
 /// Stage order, one of each; ids this build does not know keep their order
 /// after the known ones, so a newer build's step survives a round trip.
 pub fn in_stage_order(ids: &[String]) -> Vec<String> {
-    let rank = |id: &String| STEP_ORDER.iter().position(|known| known == id);
+    let rank = |id: &String| {
+        crate::chains::KNOWN_STEPS
+            .iter()
+            .position(|known| known == id)
+    };
     let mut ordered: Vec<String> = Vec::new();
     for id in ids {
         if !ordered.contains(id) {
             ordered.push(id.clone());
         }
     }
-    ordered.sort_by_key(|id| rank(id).unwrap_or(STEP_ORDER.len()));
+    ordered.sort_by_key(|id| rank(id).unwrap_or(crate::chains::KNOWN_STEPS.len()));
     ordered
 }
 

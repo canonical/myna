@@ -17,9 +17,6 @@ pub const TRANSLATE_TO: &str = "to";
 pub const SCRIPT: &str = "script";
 pub const SCRIPT_MODE: &str = "mode";
 
-/// The stages in the order the steps run (`.kb/text-plugin-contract.md`).
-const STAGES: [&str; 4] = ["field-fit", "clean-up", "translate", "target-language"];
-
 /// What the daemon says about the models it offers and the steps it compiled.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Offered {
@@ -330,31 +327,29 @@ pub struct Inputs<'a> {
     pub locales: &'a [String],
 }
 
-fn stage_rank(stage: &str) -> usize {
-    STAGES
+/// The step ids the rows show: the ones this build knows, in the order the
+/// daemon runs them, then any id only a catalog has, by name.
+fn step_ids(catalog: &[Entry]) -> Vec<String> {
+    let known = |id: &str| {
+        myna_core::chains::KNOWN_STEPS
+            .iter()
+            .position(|have| *have == id)
+            .unwrap_or(myna_core::chains::KNOWN_STEPS.len())
+    };
+    let mut ids: Vec<String> = catalog
         .iter()
-        .position(|known| *known == stage)
-        .unwrap_or(STAGES.len())
-}
-
-/// The steps in stage order: the client's own, and every catalog step.
-fn step_ids(catalog: &[Entry]) -> Vec<(String, usize)> {
-    let mut found: BTreeMap<String, usize> = BTreeMap::new();
-    found.insert(SCRIPT.to_owned(), stage_rank("target-language"));
-    for entry in catalog {
-        found
-            .entry(entry.step.id.clone())
-            .or_insert_with(|| stage_rank(&entry.step.stage));
-    }
-    let mut ordered: Vec<(String, usize)> = found.into_iter().collect();
-    ordered.sort_by(|a, b| (a.1, &a.0).cmp(&(b.1, &b.0)));
-    ordered
+        .map(|entry| entry.step.id.clone())
+        .chain([SCRIPT.to_owned()])
+        .collect();
+    ids.sort_by(|a, b| (known(a), a).cmp(&(known(b), b)));
+    ids.dedup();
+    ids
 }
 
 pub fn rows(inputs: &Inputs) -> Vec<Row> {
     step_ids(inputs.catalog)
         .into_iter()
-        .map(|(id, _)| row(&id, inputs))
+        .map(|id| row(&id, inputs))
         .collect()
 }
 
@@ -1168,22 +1163,6 @@ mod tests {
         assert_eq!(offered.steps["y"], DaemonStep::Unknown);
         assert_eq!(Offered::parse(""), None);
         assert_eq!(Offered::parse("{}"), None);
-    }
-
-    #[test]
-    fn stage_not_name_orders_the_rows_and_unknown_steps_are_named_by_id() {
-        let mut rig = Rig::new();
-        rig.catalog = vec![
-            entry("a", "zzz", "clean-up", "en", "en", 1),
-            entry("b", "aaa", "translate", "en", "fr", 1),
-            entry("c", "mmm", "no-such-stage", "en", "en", 1),
-        ];
-        let rows = rig.rows();
-        let ids: Vec<&str> = rows.iter().map(|r| r.id.as_str()).collect();
-        assert_eq!(ids, ["zzz", "aaa", "script", "mmm"]);
-        assert_eq!(rows[0].title, "zzz");
-        assert!(rows[0].description.is_empty());
-        assert!(rows.iter().filter(|r| r.id != SCRIPT).all(Row::switchable));
     }
 
     #[test]

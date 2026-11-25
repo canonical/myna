@@ -32,7 +32,7 @@ from pathlib import Path
 
 CATALOG_VERSION = 1
 LICENSES = ("Apache-2.0", "MIT", "MPL-2.0", "CC-BY-4.0")
-STAGES = ("field-fit", "clean-up", "translate", "target-language")
+STAGES = ("clean-up", "translate", "target-language")
 CLASSES = ("edit", "translate", "rewrite")
 NEEDS = ("sentence", "dictation")
 COMMON_LICENSES = Path("/usr/share/common-licenses")
