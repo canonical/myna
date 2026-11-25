@@ -1,0 +1,73 @@
+{"id": "casing-en-001", "op": "casing", "lang": "en", "input": "He was shouting in all caps.", "refs": ["He was shouting in all caps."], "kind": "negative", "class": "negative_prose"}
+{"id": "casing-en-002", "op": "casing", "lang": "en", "input": "Rename camel case old name, to snake case new name.", "refs": ["Rename oldName, to new_name."], "kind": "positive", "class": "combo"}
+{"id": "casing-en-003", "op": "casing", "lang": "en", "input": "The sign says all caps no parking, I think.", "refs": ["The sign says NO PARKING, I think."], "kind": "positive", "class": "upper"}
+{"id": "casing-en-004", "op": "casing", "lang": "en", "input": "She writes her name in all caps on every form.", "refs": ["She writes her name in all caps on every form."], "kind": "negative", "class": "negative_prose"}
+{"id": "casing-en-005", "op": "casing", "lang": "en", "input": "Use camel case first name, and Pascal case last name.", "refs": ["Use firstName, and LastName."], "kind": "positive", "class": "combo"}
+{"id": "casing-en-006", "op": "casing", "lang": "en", "input": "Define constant case page size.", "refs": ["Define PAGE_SIZE."], "kind": "positive", "class": "constant"}
+{"id": "casing-en-007", "op": "casing", "lang": "en", "input": "Camel case user name.", "refs": ["userName."], "kind": "positive", "class": "camel"}
+{"id": "casing-en-008", "op": "casing", "lang": "en", "input": "Kebab case main menu.", "refs": ["main-menu."], "kind": "positive", "class": "kebab"}
+{"id": "casing-en-009", "op": "casing", "lang": "en", "input": "Constant case max retries.", "refs": ["MAX_RETRIES."], "kind": "positive", "class": "constant"}
+{"id": "casing-en-010", "op": "casing", "lang": "en", "input": "Use constant case max items, here.", "refs": ["Use MAX_ITEMS, here."], "kind": "positive", "class": "constant"}
+{"id": "casing-en-011", "op": "casing", "lang": "en", "input": "There are no spaces left on the bus.", "refs": ["There are no spaces left on the bus."], "kind": "negative", "class": "negative_prose"}
+{"id": "casing-en-012", "op": "casing", "lang": "en", "input": "The camel case convention is popular in Java.", "refs": ["The camel case convention is popular in Java."], "kind": "negative", "class": "negative_prose"}
+{"id": "casing-en-013", "op": "casing", "lang": "en", "input": "Is it snake case, or kebab case?", "refs": ["Is it snake case, or kebab case?"], "kind": "negative", "class": "negative_prose"}
+{"id": "casing-en-014", "op": "casing", "lang": "en", "input": "Type upper case danger high voltage.", "refs": ["Type DANGER HIGH VOLTAGE."], "kind": "positive", "class": "upper"}
+{"id": "casing-en-015", "op": "casing", "lang": "en", "input": "Upper case warning.", "refs": ["WARNING."], "kind": "positive", "class": "upper"}
+{"id": "casing-en-016", "op": "casing", "lang": "en", "input": "Define Pascal case payment service, and register it.", "refs": ["Define PaymentService, and register it."], "kind": "positive", "class": "pascal"}
+{"id": "casing-en-017", "op": "casing", "lang": "en", "input": "Rename it to snake case get user name.", "refs": ["Rename it to get_user_name."], "kind": "positive", "class": "snake"}
+{"id": "casing-en-018", "op": "casing", "lang": "en", "input": "No spaces are allowed in the file name.", "refs": ["No spaces are allowed in the file name."], "kind": "negative", "class": "negative_prose"}
+{"id": "casing-en-019", "op": "casing", "lang": "en", "input": "Type lower case Quiet Please, on the door.", "refs": ["Type quiet please, on the door."], "kind": "positive", "class": "lower"}
+{"id": "casing-en-020", "op": "casing", "lang": "en", "input": "Rename the variable to camel case get user name.", "refs": ["Rename the variable to getUserName."], "kind": "positive", "class": "camel"}
+{"id": "casing-en-021", "op": "casing", "lang": "en", "input": "Title case the war of the worlds.", "refs": ["The War Of The Worlds.", "The War of the Worlds."], "kind": "positive", "class": "title"}
+{"id": "casing-en-022", "op": "casing", "lang": "en", "input": "No spaces Open Street Map.", "refs": ["openstreetmap."], "kind": "positive", "class": "smash"}
+{"id": "casing-en-023", "op": "casing", "lang": "en", "input": "Screaming snake case default timeout.", "refs": ["DEFAULT_TIMEOUT."], "kind": "positive", "class": "constant"}
+{"id": "casing-en-024", "op": "casing", "lang": "en", "input": "The class is kebab case nav bar.", "refs": ["The class is nav-bar."], "kind": "positive", "class": "kebab"}
+{"id": "casing-en-025", "op": "casing", "lang": "en", "input": "Write title case summer in the city, as the heading.", "refs": ["Write Summer In The City, as the heading.", "Write Summer in the City, as the heading."], "kind": "positive", "class": "title"}
+{"id": "casing-en-026", "op": "casing", "lang": "en", "input": "All caps do not touch.", "refs": ["DO NOT TOUCH."], "kind": "positive", "class": "upper"}
+{"id": "casing-en-027", "op": "casing", "lang": "en", "input": "Was that snake case or camel case?", "refs": ["Was that snake case or camel case?"], "kind": "negative", "class": "negative_prose"}
+{"id": "casing-en-028", "op": "casing", "lang": "en", "input": "Use kebab case sign in button, for the id.", "refs": ["Use sign-in-button, for the id."], "kind": "positive", "class": "kebab"}
+{"id": "casing-en-029", "op": "casing", "lang": "en", "input": "Title case chapter one.", "refs": ["Chapter One."], "kind": "positive", "class": "title"}
+{"id": "casing-en-030", "op": "casing", "lang": "en", "input": "Call snake case get user, then camel case save user.", "refs": ["Call get_user, then saveUser."], "kind": "positive", "class": "combo"}
+{"id": "casing-en-031", "op": "casing", "lang": "en", "input": "He typed in lower case, then switched to upper case.", "refs": ["He typed in lower case, then switched to upper case."], "kind": "negative", "class": "negative_prose"}
+{"id": "casing-en-032", "op": "casing", "lang": "en", "input": "Snake case user name.", "refs": ["user_name."], "kind": "positive", "class": "snake"}
+{"id": "casing-en-033", "op": "casing", "lang": "en", "input": "No spaces available at the lot, sorry.", "refs": ["No spaces available at the lot, sorry."], "kind": "negative", "class": "negative_prose"}
+{"id": "casing-en-034", "op": "casing", "lang": "en", "input": "I prefer kebab case over snake case.", "refs": ["I prefer kebab case over snake case."], "kind": "negative", "class": "negative_prose"}
+{"id": "casing-en-035", "op": "casing", "lang": "en", "input": "The headline is in title case.", "refs": ["The headline is in title case."], "kind": "negative", "class": "negative_prose"}
+{"id": "casing-en-036", "op": "casing", "lang": "en", "input": "Snake case is common in Python.", "refs": ["Snake case is common in Python."], "kind": "negative", "class": "negative_prose"}
+{"id": "casing-en-037", "op": "casing", "lang": "en", "input": "Dash case main menu.", "refs": ["main-menu."], "kind": "positive", "class": "kebab"}
+{"id": "casing-en-038", "op": "casing", "lang": "en", "input": "Pascal case order manager.", "refs": ["OrderManager."], "kind": "positive", "class": "pascal"}
+{"id": "casing-en-039", "op": "casing", "lang": "en", "input": "The title case rules differ between style guides.", "refs": ["The title case rules differ between style guides."], "kind": "negative", "class": "negative_prose"}
+{"id": "casing-en-040", "op": "casing", "lang": "en", "input": "Constant case is another name for screaming snake case.", "refs": ["Constant case is another name for screaming snake case."], "kind": "negative", "class": "negative_prose"}
+{"id": "casing-en-041", "op": "casing", "lang": "en", "input": "The case of the missing camel was solved.", "refs": ["The case of the missing camel was solved."], "kind": "negative", "class": "negative_prose"}
+{"id": "casing-en-042", "op": "casing", "lang": "en", "input": "Camel case user name, snake case user name, kebab case user name.", "refs": ["userName, user_name, user-name."], "kind": "positive", "class": "combo"}
+{"id": "casing-en-043", "op": "casing", "lang": "en", "input": "Title case the long goodbye.", "refs": ["The Long Goodbye."], "kind": "positive", "class": "title"}
+{"id": "casing-en-044", "op": "casing", "lang": "en", "input": "Please use camel case for variables.", "refs": ["Please use camel case for variables."], "kind": "negative", "class": "negative_prose"}
+{"id": "casing-en-045", "op": "casing", "lang": "en", "input": "Use lower case letters for the file name.", "refs": ["Use lower case letters for the file name."], "kind": "negative", "class": "negative_prose"}
+{"id": "casing-en-046", "op": "casing", "lang": "en", "input": "Is it all caps or title case?", "refs": ["Is it all caps or title case?"], "kind": "negative", "class": "negative_prose"}
+{"id": "casing-en-047", "op": "casing", "lang": "en", "input": "Lower case THE END.", "refs": ["the end."], "kind": "positive", "class": "lower"}
+{"id": "casing-en-048", "op": "casing", "lang": "en", "input": "The camel crossed.", "refs": ["The camel crossed."], "kind": "negative", "class": "negative_prose"}
+{"id": "casing-en-049", "op": "casing", "lang": "en", "input": "Type no spaces my user name, as the handle.", "refs": ["Type myusername, as the handle."], "kind": "positive", "class": "smash"}
+{"id": "casing-en-050", "op": "casing", "lang": "en", "input": "Open snake case config file, then save.", "refs": ["Open config_file, then save."], "kind": "positive", "class": "snake"}
+{"id": "casing-en-051", "op": "casing", "lang": "en", "input": "Our linter enforces snake case for function names.", "refs": ["Our linter enforces snake case for function names."], "kind": "negative", "class": "negative_prose"}
+{"id": "casing-en-052", "op": "casing", "lang": "en", "input": "Lower case Hello There.", "refs": ["hello there."], "kind": "positive", "class": "lower"}
+{"id": "casing-en-053", "op": "casing", "lang": "en", "input": "The password needs upper case letters and numbers.", "refs": ["The password needs upper case letters and numbers."], "kind": "negative", "class": "negative_prose"}
+{"id": "casing-en-054", "op": "casing", "lang": "en", "input": "Create a function called camel case send message.", "refs": ["Create a function called sendMessage."], "kind": "positive", "class": "camel"}
+{"id": "casing-en-055", "op": "casing", "lang": "en", "input": "Kebab case looks like a skewer of words.", "refs": ["Kebab case looks like a skewer of words."], "kind": "negative", "class": "negative_prose"}
+{"id": "casing-en-056", "op": "casing", "lang": "en", "input": "Write all caps urgent, at the top.", "refs": ["Write URGENT, at the top."], "kind": "positive", "class": "upper"}
+{"id": "casing-en-057", "op": "casing", "lang": "en", "input": "Pascal case was named after the language.", "refs": ["Pascal case was named after the language."], "kind": "negative", "class": "negative_prose"}
+{"id": "casing-en-058", "op": "casing", "lang": "en", "input": "The column is snake case created at.", "refs": ["The column is created_at."], "kind": "positive", "class": "snake"}
+{"id": "casing-en-059", "op": "casing", "lang": "en", "input": "The field is camel case first name, and the other is last name.", "refs": ["The field is firstName, and the other is last name."], "kind": "positive", "class": "camel"}
+{"id": "casing-en-060", "op": "casing", "lang": "en", "input": "Title case quarterly sales report.", "refs": ["Quarterly Sales Report."], "kind": "positive", "class": "title"}
+{"id": "casing-en-061", "op": "casing", "lang": "en", "input": "Dash case and kebab case are the same thing.", "refs": ["Dash case and kebab case are the same thing."], "kind": "negative", "class": "negative_prose"}
+{"id": "casing-en-062", "op": "casing", "lang": "en", "input": "Add a field named camel case birth date.", "refs": ["Add a field named birthDate."], "kind": "positive", "class": "camel"}
+{"id": "casing-en-063", "op": "casing", "lang": "en", "input": "Call camel case get user name, then return.", "refs": ["Call getUserName, then return."], "kind": "positive", "class": "camel"}
+{"id": "casing-en-064", "op": "casing", "lang": "en", "input": "The heading is title case project overview.", "refs": ["The heading is Project Overview."], "kind": "positive", "class": "title"}
+{"id": "casing-en-065", "op": "casing", "lang": "en", "input": "Upper case and lower case differ by one bit in ASCII.", "refs": ["Upper case and lower case differ by one bit in ASCII."], "kind": "negative", "class": "negative_prose"}
+{"id": "casing-en-066", "op": "casing", "lang": "en", "input": "Pascal case user name.", "refs": ["UserName."], "kind": "positive", "class": "pascal"}
+{"id": "casing-en-067", "op": "casing", "lang": "en", "input": "We use camel case.", "refs": ["We use camel case."], "kind": "negative", "class": "negative_prose"}
+{"id": "casing-en-068", "op": "casing", "lang": "en", "input": "Set snake case max size.", "refs": ["Set max_size."], "kind": "positive", "class": "snake"}
+{"id": "casing-en-069", "op": "casing", "lang": "en", "input": "Name the class Pascal case shopping cart.", "refs": ["Name the class ShoppingCart."], "kind": "positive", "class": "pascal"}
+{"id": "casing-en-070", "op": "casing", "lang": "en", "input": "Open camel case my first app, in the editor.", "refs": ["Open myFirstApp, in the editor."], "kind": "positive", "class": "camel"}
+{"id": "casing-en-071", "op": "casing", "lang": "en", "input": "Lower case letters are fine.", "refs": ["Lower case letters are fine."], "kind": "negative", "class": "negative_prose"}
+{"id": "casing-en-072", "op": "casing", "lang": "en", "input": "Name the file dash case user profile page.", "refs": ["Name the file user-profile-page."], "kind": "positive", "class": "kebab"}
+{"id": "casing-en-073", "op": "casing", "lang": "en", "input": "The domain is no spaces my cool site.", "refs": ["The domain is mycoolsite."], "kind": "positive", "class": "smash"}

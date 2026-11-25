@@ -11,6 +11,9 @@ Three JSONL slices under ``textcorpus/``, pinned by ``SHA256SUMS``:
                     code, see ``fleurs_codes``), built by
                     ``myna-bench build-text-corpus --pair en:<l>``.
 
+``eval/run1`` and ``eval/run2`` hold the per-operation evaluation corpora of
+``myna-bench text --eval`` (see ``text_eval``), pinned by ``eval/SHA256SUMS``.
+
 ``NOTICE`` carries the provenance. The FLEURS slices are regenerated with
 ``myna-bench build-text-corpus`` from the cached FLEURS ``test.tsv`` files; the
 selection is a seeded hash order, so the output is reproducible byte for byte.
@@ -29,6 +32,10 @@ from pathlib import Path
 from myna.benchmarker import fleurs_codes
 
 CORPUS_DIR = Path(__file__).parent / "textcorpus"
+EVAL_DIR = CORPUS_DIR / "eval"
+EVAL_RUNS = ("run1", "run2")
+EVAL_LANGS = ("en", "fr", "de", "es")
+CLEAN_PER_LANG = 100
 SUMS = "SHA256SUMS"
 SLICES = ("clean_en", "disfluent_en", "translate_en_fr")
 SEED = "myna-text-corpus-v1"
@@ -62,6 +69,22 @@ class Translation:
 class Clean:
     id: str
     text: str
+
+
+@dataclass(frozen=True)
+class EvalItem:
+    """One input of the per-operation evaluation and the outputs that count as right.
+
+    ``kind`` is ``positive`` (must change), ``negative`` (must stay) or
+    ``clean`` (an ordinary sentence, any change is a break)."""
+
+    id: str
+    op: str
+    lang: str
+    input: str
+    refs: tuple[str, ...]
+    kind: str
+    cls: str
 
 
 @dataclass(frozen=True)
@@ -148,6 +171,90 @@ def load(directory: Path = CORPUS_DIR, *, check: bool = True) -> TextCorpus:
         ),
         pairs={lang: load_pair(lang, directory, check=False) for lang in langs},
     )
+
+
+def eval_names(run: str, directory: Path = EVAL_DIR) -> list[str]:
+    """The pinned files of one evaluation run, relative to ``directory``."""
+    if run not in EVAL_RUNS:
+        raise CorpusError(f"unknown evaluation run {run!r}: one of {', '.join(EVAL_RUNS)}")
+    return sorted(f"{run}/{p.name}" for p in (directory / run).glob("*.jsonl"))
+
+
+def write_eval_sums(directory: Path = EVAL_DIR) -> None:
+    names = [n for run in EVAL_RUNS for n in eval_names(run, directory)]
+    lines = [f"{sha256_file(directory / n)}  {n}\n" for n in names]
+    (directory / SUMS).write_text("".join(lines), encoding="utf-8")
+
+
+def verify_eval(directory: Path = EVAL_DIR) -> None:
+    sums = read_sums(directory)
+    on_disk = {n for run in EVAL_RUNS for n in eval_names(run, directory)}
+    for name in sorted(on_disk | set(sums)):
+        if name not in sums:
+            raise CorpusError(f"eval/{name} is not pinned in eval/{SUMS}")
+        if name not in on_disk:
+            raise CorpusError(f"eval/{name} is pinned in eval/{SUMS} but missing")
+        if sums[name] != sha256_file(directory / name):
+            raise CorpusError(f"eval/{name} does not match its pin in eval/{SUMS}")
+
+
+def _clean_sentences(lang: str, run: str, directory: Path) -> list[str]:
+    """The ordinary sentences a run grades breaks on, ``CLEAN_PER_LANG`` per language.
+
+    Run 1 reuses the first lines of the FLEURS test slices; run 2 uses FLEURS
+    dev sentences that no arm was trained on."""
+    if run == "run2":
+        rows = _rows(directory / run, "clean_dev")
+        return [r["text"] for r in rows if r["lang"] == lang][:CLEAN_PER_LANG]
+    base = directory.parent
+    if lang == "en":
+        return [r["text"] for r in _rows(base, "clean_en")][:CLEAN_PER_LANG]
+    return [r[lang] for r in _rows(base, pair_slice(lang))][:CLEAN_PER_LANG]
+
+
+def load_eval(
+    run: str,
+    directory: Path = EVAL_DIR,
+    *,
+    check: bool = True,
+    skip_inputs: frozenset[str] = frozenset(),
+) -> list[EvalItem]:
+    """Every item of one evaluation run: the corpus rows, then the clean sentences.
+
+    Each operation in a language gets its own copy of that language's clean
+    sentences (ids ``clean-<op>-<lang>-<k>``; ``clean2-`` for run 2), so an
+    operation's break rate is measured on its own items. ``skip_inputs`` drops
+    corpus rows whose input is a prompt example."""
+    if check:
+        verify_eval(directory)
+        verify(directory.parent)
+    prefix = "clean2" if run == "run2" else "clean"
+    groups: dict[tuple[str, str], list[EvalItem]] = {}
+    for name in eval_names(run, directory):
+        stem = Path(name).stem
+        if stem == "clean_dev":
+            continue
+        for row in _rows(directory / run, stem):
+            if row["input"] in skip_inputs:
+                continue
+            item = EvalItem(
+                row["id"],
+                row["op"],
+                row["lang"],
+                row["input"],
+                tuple(row["refs"]),
+                row["kind"],
+                row["class"],
+            )
+            groups.setdefault((item.op, item.lang), []).append(item)
+    items: list[EvalItem] = []
+    for (op, lang), rows in sorted(groups.items()):
+        items.extend(rows)
+        for k, text in enumerate(_clean_sentences(lang, run, directory)):
+            items.append(
+                EvalItem(f"{prefix}-{op}-{lang}-{k:03}", op, lang, text, (text,), "clean", "clean")
+            )
+    return items
 
 
 def read_fleurs_tsv(path: Path) -> dict[str, str]:

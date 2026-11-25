@@ -1,0 +1,190 @@
+{"id": "tidy-en-001", "op": "tidy", "lang": "en", "input": "Um, I think we should ship on Friday.", "refs": ["I think we should ship on Friday."], "kind": "positive", "class": "vocalized_pause"}
+{"id": "tidy-en-002", "op": "tidy", "lang": "en", "input": "We should, uh, ship on Friday.", "refs": ["We should ship on Friday."], "kind": "positive", "class": "vocalized_pause"}
+{"id": "tidy-en-003", "op": "tidy", "lang": "en", "input": "Uh, can you send me the report?", "refs": ["Can you send me the report?"], "kind": "positive", "class": "vocalized_pause"}
+{"id": "tidy-en-004", "op": "tidy", "lang": "en", "input": "The meeting is, um, at three o'clock.", "refs": ["The meeting is at three o'clock."], "kind": "positive", "class": "vocalized_pause"}
+{"id": "tidy-en-005", "op": "tidy", "lang": "en", "input": "Erm, I am not sure about that.", "refs": ["I am not sure about that."], "kind": "positive", "class": "vocalized_pause"}
+{"id": "tidy-en-006", "op": "tidy", "lang": "en", "input": "So, uh, the build failed again.", "refs": ["So the build failed again."], "kind": "positive", "class": "vocalized_pause"}
+{"id": "tidy-en-007", "op": "tidy", "lang": "en", "input": "I'll call her tomorrow, um.", "refs": ["I'll call her tomorrow."], "kind": "positive", "class": "vocalized_pause"}
+{"id": "tidy-en-008", "op": "tidy", "lang": "en", "input": "Please open the file, uh, and read the first line.", "refs": ["Please open the file and read the first line."], "kind": "positive", "class": "vocalized_pause"}
+{"id": "tidy-en-009", "op": "tidy", "lang": "en", "input": "Um, uh, I forgot the password.", "refs": ["I forgot the password."], "kind": "positive", "class": "vocalized_pause"}
+{"id": "tidy-en-010", "op": "tidy", "lang": "en", "input": "We need, erm, more time.", "refs": ["We need more time."], "kind": "positive", "class": "vocalized_pause"}
+{"id": "tidy-en-011", "op": "tidy", "lang": "en", "input": "Could you, um, check the logs?", "refs": ["Could you check the logs?"], "kind": "positive", "class": "vocalized_pause"}
+{"id": "tidy-en-012", "op": "tidy", "lang": "en", "input": "The deadline is, uh, next Monday.", "refs": ["The deadline is next Monday."], "kind": "positive", "class": "vocalized_pause"}
+{"id": "tidy-en-013", "op": "tidy", "lang": "en", "input": "Uh, thanks for the update.", "refs": ["Thanks for the update."], "kind": "positive", "class": "vocalized_pause"}
+{"id": "tidy-en-014", "op": "tidy", "lang": "en", "input": "I was thinking, um, that we could split the work.", "refs": ["I was thinking that we could split the work."], "kind": "positive", "class": "vocalized_pause"}
+{"id": "tidy-en-015", "op": "tidy", "lang": "en", "input": "Um, the server is down.", "refs": ["The server is down."], "kind": "positive", "class": "vocalized_pause"}
+{"id": "tidy-en-016", "op": "tidy", "lang": "en", "input": "He said, uh, he would be late.", "refs": ["He said he would be late."], "kind": "positive", "class": "vocalized_pause"}
+{"id": "tidy-en-017", "op": "tidy", "lang": "en", "input": "Let's meet at, erm, noon.", "refs": ["Let's meet at noon."], "kind": "positive", "class": "vocalized_pause"}
+{"id": "tidy-en-018", "op": "tidy", "lang": "en", "input": "The patch fixes, um, the crash on startup.", "refs": ["The patch fixes the crash on startup."], "kind": "positive", "class": "vocalized_pause"}
+{"id": "tidy-en-019", "op": "tidy", "lang": "en", "input": "Uh, where did you put the keys?", "refs": ["Where did you put the keys?"], "kind": "positive", "class": "vocalized_pause"}
+{"id": "tidy-en-020", "op": "tidy", "lang": "en", "input": "We ordered, uh, twelve units.", "refs": ["We ordered twelve units."], "kind": "positive", "class": "vocalized_pause"}
+{"id": "tidy-en-021", "op": "tidy", "lang": "en", "input": "Um, hello everyone.", "refs": ["Hello everyone."], "kind": "positive", "class": "vocalized_pause"}
+{"id": "tidy-en-022", "op": "tidy", "lang": "en", "input": "It takes, um, about ten minutes.", "refs": ["It takes about ten minutes."], "kind": "positive", "class": "vocalized_pause"}
+{"id": "tidy-en-023", "op": "tidy", "lang": "en", "input": "I think, um, it works.", "refs": ["I think it works."], "kind": "positive", "class": "vocalized_pause"}
+{"id": "tidy-en-024", "op": "tidy", "lang": "en", "input": "Please, uh, remind me tomorrow.", "refs": ["Please remind me tomorrow."], "kind": "positive", "class": "vocalized_pause"}
+{"id": "tidy-en-025", "op": "tidy", "lang": "en", "input": "I I think we should go.", "refs": ["I think we should go."], "kind": "positive", "class": "repeat_k1"}
+{"id": "tidy-en-026", "op": "tidy", "lang": "en", "input": "We should should go home.", "refs": ["We should go home."], "kind": "positive", "class": "repeat_k1"}
+{"id": "tidy-en-027", "op": "tidy", "lang": "en", "input": "The the report is ready.", "refs": ["The report is ready."], "kind": "positive", "class": "repeat_k1"}
+{"id": "tidy-en-028", "op": "tidy", "lang": "en", "input": "Can you you send it today?", "refs": ["Can you send it today?"], "kind": "positive", "class": "repeat_k1"}
+{"id": "tidy-en-029", "op": "tidy", "lang": "en", "input": "I need to to finish this.", "refs": ["I need to finish this."], "kind": "positive", "class": "repeat_k1"}
+{"id": "tidy-en-030", "op": "tidy", "lang": "en", "input": "Please send send the invoice.", "refs": ["Please send the invoice."], "kind": "positive", "class": "repeat_k1"}
+{"id": "tidy-en-031", "op": "tidy", "lang": "en", "input": "We are are ready to start.", "refs": ["We are ready to start."], "kind": "positive", "class": "repeat_k1"}
+{"id": "tidy-en-032", "op": "tidy", "lang": "en", "input": "It's a a good idea.", "refs": ["It's a good idea."], "kind": "positive", "class": "repeat_k1"}
+{"id": "tidy-en-033", "op": "tidy", "lang": "en", "input": "Let's go to the the park.", "refs": ["Let's go to the park."], "kind": "positive", "class": "repeat_k1"}
+{"id": "tidy-en-034", "op": "tidy", "lang": "en", "input": "I want to to buy a ticket.", "refs": ["I want to buy a ticket."], "kind": "positive", "class": "repeat_k1"}
+{"id": "tidy-en-035", "op": "tidy", "lang": "en", "input": "The server is is down.", "refs": ["The server is down."], "kind": "positive", "class": "repeat_k1"}
+{"id": "tidy-en-036", "op": "tidy", "lang": "en", "input": "They will will arrive at noon.", "refs": ["They will arrive at noon."], "kind": "positive", "class": "repeat_k1"}
+{"id": "tidy-en-037", "op": "tidy", "lang": "en", "input": "My my laptop is broken.", "refs": ["My laptop is broken."], "kind": "positive", "class": "repeat_k1"}
+{"id": "tidy-en-038", "op": "tidy", "lang": "en", "input": "He went to to the store.", "refs": ["He went to the store."], "kind": "positive", "class": "repeat_k1"}
+{"id": "tidy-en-039", "op": "tidy", "lang": "en", "input": "Open the the door please.", "refs": ["Open the door please."], "kind": "positive", "class": "repeat_k1"}
+{"id": "tidy-en-040", "op": "tidy", "lang": "en", "input": "We we need more coffee.", "refs": ["We need more coffee."], "kind": "positive", "class": "repeat_k1"}
+{"id": "tidy-en-041", "op": "tidy", "lang": "en", "input": "I think think it works.", "refs": ["I think it works."], "kind": "positive", "class": "repeat_k1"}
+{"id": "tidy-en-042", "op": "tidy", "lang": "en", "input": "Is is the build green?", "refs": ["Is the build green?"], "kind": "positive", "class": "repeat_k1"}
+{"id": "tidy-en-043", "op": "tidy", "lang": "en", "input": "Our team team meets on Monday.", "refs": ["Our team meets on Monday."], "kind": "positive", "class": "repeat_k1"}
+{"id": "tidy-en-044", "op": "tidy", "lang": "en", "input": "Check the the logs first.", "refs": ["Check the logs first."], "kind": "positive", "class": "repeat_k1"}
+{"id": "tidy-en-045", "op": "tidy", "lang": "en", "input": "She is is going to call you.", "refs": ["She is going to call you."], "kind": "positive", "class": "repeat_k1"}
+{"id": "tidy-en-046", "op": "tidy", "lang": "en", "input": "The meeting meeting starts at nine.", "refs": ["The meeting starts at nine."], "kind": "positive", "class": "repeat_k1"}
+{"id": "tidy-en-047", "op": "tidy", "lang": "en", "input": "I think I think we should go.", "refs": ["I think we should go."], "kind": "positive", "class": "repeat_k2"}
+{"id": "tidy-en-048", "op": "tidy", "lang": "en", "input": "Can you can you open the file?", "refs": ["Can you open the file?"], "kind": "positive", "class": "repeat_k2"}
+{"id": "tidy-en-049", "op": "tidy", "lang": "en", "input": "Let's go to let's go to the park.", "refs": ["Let's go to the park."], "kind": "positive", "class": "repeat_k3"}
+{"id": "tidy-en-050", "op": "tidy", "lang": "en", "input": "He said he said it was fine.", "refs": ["He said it was fine."], "kind": "positive", "class": "repeat_k2"}
+{"id": "tidy-en-051", "op": "tidy", "lang": "en", "input": "On Monday on Monday we ship.", "refs": ["On Monday we ship."], "kind": "positive", "class": "repeat_k2"}
+{"id": "tidy-en-052", "op": "tidy", "lang": "en", "input": "In the morning in the morning I run.", "refs": ["In the morning I run."], "kind": "positive", "class": "repeat_k3"}
+{"id": "tidy-en-053", "op": "tidy", "lang": "en", "input": "The report the report is ready.", "refs": ["The report is ready."], "kind": "positive", "class": "repeat_k2"}
+{"id": "tidy-en-054", "op": "tidy", "lang": "en", "input": "Please check please check the logs.", "refs": ["Please check the logs."], "kind": "positive", "class": "repeat_k2"}
+{"id": "tidy-en-055", "op": "tidy", "lang": "en", "input": "It might be it might be broken.", "refs": ["It might be broken."], "kind": "positive", "class": "repeat_k3"}
+{"id": "tidy-en-056", "op": "tidy", "lang": "en", "input": "The build is the build is failing.", "refs": ["The build is failing."], "kind": "positive", "class": "repeat_k3"}
+{"id": "tidy-en-057", "op": "tidy", "lang": "en", "input": "We moved to we moved to a new office.", "refs": ["We moved to a new office."], "kind": "positive", "class": "repeat_k3"}
+{"id": "tidy-en-058", "op": "tidy", "lang": "en", "input": "You can you can use the tab key.", "refs": ["You can use the tab key."], "kind": "positive", "class": "repeat_k2"}
+{"id": "tidy-en-059", "op": "tidy", "lang": "en", "input": "Send it to send it to the team.", "refs": ["Send it to the team."], "kind": "positive", "class": "repeat_k3"}
+{"id": "tidy-en-060", "op": "tidy", "lang": "en", "input": "Have you seen have you seen the new design?", "refs": ["Have you seen the new design?"], "kind": "positive", "class": "repeat_k3"}
+{"id": "tidy-en-061", "op": "tidy", "lang": "en", "input": "Look at look at the graph.", "refs": ["Look at the graph."], "kind": "positive", "class": "repeat_k2"}
+{"id": "tidy-en-062", "op": "tidy", "lang": "en", "input": "There is there is a problem.", "refs": ["There is a problem."], "kind": "positive", "class": "repeat_k2"}
+{"id": "tidy-en-063", "op": "tidy", "lang": "en", "input": "We need to we need to leave now.", "refs": ["We need to leave now."], "kind": "positive", "class": "repeat_k3"}
+{"id": "tidy-en-064", "op": "tidy", "lang": "en", "input": "I want to I want to book a room.", "refs": ["I want to book a room."], "kind": "positive", "class": "repeat_k3"}
+{"id": "tidy-en-065", "op": "tidy", "lang": "en", "input": "It is in it is in the drawer.", "refs": ["It is in the drawer."], "kind": "positive", "class": "repeat_k3"}
+{"id": "tidy-en-066", "op": "tidy", "lang": "en", "input": "Please send me please send me the file.", "refs": ["Please send me the file."], "kind": "positive", "class": "repeat_k3"}
+{"id": "tidy-en-067", "op": "tidy", "lang": "en", "input": "I will call I will call you tomorrow.", "refs": ["I will call you tomorrow."], "kind": "positive", "class": "repeat_k3"}
+{"id": "tidy-en-068", "op": "tidy", "lang": "en", "input": "Can we meet can we meet on Friday?", "refs": ["Can we meet on Friday?"], "kind": "positive", "class": "repeat_k3"}
+{"id": "tidy-en-069", "op": "tidy", "lang": "en", "input": "She wants to she wants to join us.", "refs": ["She wants to join us."], "kind": "positive", "class": "repeat_k3"}
+{"id": "tidy-en-070", "op": "tidy", "lang": "en", "input": "We have to we have to restart the server.", "refs": ["We have to restart the server."], "kind": "positive", "class": "repeat_k3"}
+{"id": "tidy-en-071", "op": "tidy", "lang": "en", "input": "Do you want do you want some tea?", "refs": ["Do you want some tea?"], "kind": "positive", "class": "repeat_k3"}
+{"id": "tidy-en-072", "op": "tidy", "lang": "en", "input": "They are going they are going to be late.", "refs": ["They are going to be late."], "kind": "positive", "class": "repeat_k3"}
+{"id": "tidy-en-073", "op": "tidy", "lang": "en", "input": "I was going I was going to call you.", "refs": ["I was going to call you."], "kind": "positive", "class": "repeat_k3"}
+{"id": "tidy-en-074", "op": "tidy", "lang": "en", "input": "We should send we should send the invoice.", "refs": ["We should send the invoice."], "kind": "positive", "class": "repeat_k3"}
+{"id": "tidy-en-075", "op": "tidy", "lang": "en", "input": "That is a that is a good plan.", "refs": ["That is a good plan."], "kind": "positive", "class": "repeat_k3"}
+{"id": "tidy-en-076", "op": "tidy", "lang": "en", "input": "You can use you can use the tab key.", "refs": ["You can use the tab key."], "kind": "positive", "class": "repeat_k3"}
+{"id": "tidy-en-077", "op": "tidy", "lang": "en", "input": "I was going to I was going to call you.", "refs": ["I was going to call you."], "kind": "positive", "class": "repeat_k4"}
+{"id": "tidy-en-078", "op": "tidy", "lang": "en", "input": "He said he would he said he would come.", "refs": ["He said he would come."], "kind": "positive", "class": "repeat_k4"}
+{"id": "tidy-en-079", "op": "tidy", "lang": "en", "input": "We are going to we are going to be late.", "refs": ["We are going to be late."], "kind": "positive", "class": "repeat_k4"}
+{"id": "tidy-en-080", "op": "tidy", "lang": "en", "input": "Please remember to please remember to lock the door.", "refs": ["Please remember to lock the door."], "kind": "positive", "class": "repeat_k3"}
+{"id": "tidy-en-081", "op": "tidy", "lang": "en", "input": "On Monday morning on Monday morning we ship.", "refs": ["On Monday morning we ship."], "kind": "positive", "class": "repeat_k3"}
+{"id": "tidy-en-082", "op": "tidy", "lang": "en", "input": "I think we should I think we should wait.", "refs": ["I think we should wait."], "kind": "positive", "class": "repeat_k4"}
+{"id": "tidy-en-083", "op": "tidy", "lang": "en", "input": "We need to finish we need to finish the draft.", "refs": ["We need to finish the draft."], "kind": "positive", "class": "repeat_k4"}
+{"id": "tidy-en-084", "op": "tidy", "lang": "en", "input": "It is going to it is going to be fine.", "refs": ["It is going to be fine."], "kind": "positive", "class": "repeat_k4"}
+{"id": "tidy-en-085", "op": "tidy", "lang": "en", "input": "Can you send me can you send me the link?", "refs": ["Can you send me the link?"], "kind": "positive", "class": "repeat_k4"}
+{"id": "tidy-en-086", "op": "tidy", "lang": "en", "input": "Let me know if let me know if you need help.", "refs": ["Let me know if you need help."], "kind": "positive", "class": "repeat_k4"}
+{"id": "tidy-en-087", "op": "tidy", "lang": "en", "input": "We are looking for we are looking for a new tool.", "refs": ["We are looking for a new tool."], "kind": "positive", "class": "repeat_k4"}
+{"id": "tidy-en-088", "op": "tidy", "lang": "en", "input": "The server is running the server is running again.", "refs": ["The server is running again."], "kind": "positive", "class": "repeat_k4"}
+{"id": "tidy-en-089", "op": "tidy", "lang": "en", "input": "I am trying to I am trying to fix the bug.", "refs": ["I am trying to fix the bug."], "kind": "positive", "class": "repeat_k4"}
+{"id": "tidy-en-090", "op": "tidy", "lang": "en", "input": "Do you know where do you know where the keys are?", "refs": ["Do you know where the keys are?"], "kind": "positive", "class": "repeat_k4"}
+{"id": "tidy-en-091", "op": "tidy", "lang": "en", "input": "She told me that she told me that it was done.", "refs": ["She told me that it was done."], "kind": "positive", "class": "repeat_k4"}
+{"id": "tidy-en-092", "op": "tidy", "lang": "en", "input": "We can we can try again.", "refs": ["We can try again."], "kind": "positive", "class": "repeat_k2"}
+{"id": "tidy-en-093", "op": "tidy", "lang": "en", "input": "It is it is working now.", "refs": ["It is working now."], "kind": "positive", "class": "repeat_k2"}
+{"id": "tidy-en-094", "op": "tidy", "lang": "en", "input": "Then we then we deploy.", "refs": ["Then we deploy."], "kind": "positive", "class": "repeat_k2"}
+{"id": "tidy-en-095", "op": "tidy", "lang": "en", "input": "She was she was late.", "refs": ["She was late."], "kind": "positive", "class": "repeat_k2"}
+{"id": "tidy-en-096", "op": "tidy", "lang": "en", "input": "How many how many are left?", "refs": ["How many are left?"], "kind": "positive", "class": "repeat_k2"}
+{"id": "tidy-en-097", "op": "tidy", "lang": "en", "input": "It was very very cold.", "refs": ["It was very very cold."], "kind": "negative", "class": "reduplication_keep"}
+{"id": "tidy-en-098", "op": "tidy", "lang": "en", "input": "That is a very, very good idea.", "refs": ["That is a very, very good idea."], "kind": "negative", "class": "reduplication_keep"}
+{"id": "tidy-en-099", "op": "tidy", "lang": "en", "input": "She said bye bye and left.", "refs": ["She said bye bye and left."], "kind": "negative", "class": "reduplication_keep"}
+{"id": "tidy-en-100", "op": "tidy", "lang": "en", "input": "We had had enough of the delays.", "refs": ["We had had enough of the delays."], "kind": "negative", "class": "reduplication_keep"}
+{"id": "tidy-en-101", "op": "tidy", "lang": "en", "input": "I know that that is true.", "refs": ["I know that that is true."], "kind": "negative", "class": "reduplication_keep"}
+{"id": "tidy-en-102", "op": "tidy", "lang": "en", "input": "It is so so expensive.", "refs": ["It is so so expensive."], "kind": "negative", "class": "reduplication_keep"}
+{"id": "tidy-en-103", "op": "tidy", "lang": "en", "input": "I really really like this plan.", "refs": ["I really really like this plan."], "kind": "negative", "class": "reduplication_keep"}
+{"id": "tidy-en-104", "op": "tidy", "lang": "en", "input": "Bora Bora is a lovely island.", "refs": ["Bora Bora is a lovely island."], "kind": "negative", "class": "reduplication_keep"}
+{"id": "tidy-en-105", "op": "tidy", "lang": "en", "input": "We went to Walla Walla last year.", "refs": ["We went to Walla Walla last year."], "kind": "negative", "class": "reduplication_keep"}
+{"id": "tidy-en-106", "op": "tidy", "lang": "en", "input": "It is way way too loud.", "refs": ["It is way way too loud."], "kind": "negative", "class": "reduplication_keep"}
+{"id": "tidy-en-107", "op": "tidy", "lang": "en", "input": "Night night, sleep well.", "refs": ["Night night, sleep well."], "kind": "negative", "class": "reduplication_keep"}
+{"id": "tidy-en-108", "op": "tidy", "lang": "en", "input": "The singer sang la la la during the chorus.", "refs": ["The singer sang la la la during the chorus."], "kind": "negative", "class": "reduplication_keep"}
+{"id": "tidy-en-109", "op": "tidy", "lang": "en", "input": "Knock knock, who is there?", "refs": ["Knock knock, who is there?"], "kind": "negative", "class": "reduplication_keep"}
+{"id": "tidy-en-110", "op": "tidy", "lang": "en", "input": "No no, that is not what I meant.", "refs": ["No no, that is not what I meant."], "kind": "negative", "class": "reduplication_keep"}
+{"id": "tidy-en-111", "op": "tidy", "lang": "en", "input": "The word had had is grammatical.", "refs": ["The word had had is grammatical."], "kind": "negative", "class": "reduplication_keep"}
+{"id": "tidy-en-112", "op": "tidy", "lang": "en", "input": "He is a little little bit tired.", "refs": ["He is a little little bit tired."], "kind": "negative", "class": "reduplication_keep"}
+{"id": "tidy-en-113", "op": "tidy", "lang": "en", "input": "I like pizza.", "refs": ["I like pizza."], "kind": "negative", "class": "ambiguous_keep"}
+{"id": "tidy-en-114", "op": "tidy", "lang": "en", "input": "It looks like rain.", "refs": ["It looks like rain."], "kind": "negative", "class": "ambiguous_keep"}
+{"id": "tidy-en-115", "op": "tidy", "lang": "en", "input": "Well, that depends on the budget.", "refs": ["Well, that depends on the budget."], "kind": "negative", "class": "ambiguous_keep"}
+{"id": "tidy-en-116", "op": "tidy", "lang": "en", "input": "The well is dry.", "refs": ["The well is dry."], "kind": "negative", "class": "ambiguous_keep"}
+{"id": "tidy-en-117", "op": "tidy", "lang": "en", "input": "So we left early.", "refs": ["So we left early."], "kind": "negative", "class": "ambiguous_keep"}
+{"id": "tidy-en-118", "op": "tidy", "lang": "en", "input": "It was, like, totally unexpected.", "refs": ["It was, like, totally unexpected."], "kind": "negative", "class": "ambiguous_keep"}
+{"id": "tidy-en-119", "op": "tidy", "lang": "en", "input": "She is well aware of the risk.", "refs": ["She is well aware of the risk."], "kind": "negative", "class": "ambiguous_keep"}
+{"id": "tidy-en-120", "op": "tidy", "lang": "en", "input": "So, what should we do next?", "refs": ["So, what should we do next?"], "kind": "negative", "class": "ambiguous_keep"}
+{"id": "tidy-en-121", "op": "tidy", "lang": "en", "input": "Things like that happen often.", "refs": ["Things like that happen often."], "kind": "negative", "class": "ambiguous_keep"}
+{"id": "tidy-en-122", "op": "tidy", "lang": "en", "input": "We do well under pressure.", "refs": ["We do well under pressure."], "kind": "negative", "class": "ambiguous_keep"}
+{"id": "tidy-en-123", "op": "tidy", "lang": "en", "input": "I feel like we should wait.", "refs": ["I feel like we should wait."], "kind": "negative", "class": "ambiguous_keep"}
+{"id": "tidy-en-124", "op": "tidy", "lang": "en", "input": "Like I said, the deadline is firm.", "refs": ["Like I said, the deadline is firm."], "kind": "negative", "class": "ambiguous_keep"}
+{"id": "tidy-en-125", "op": "tidy", "lang": "en", "input": "Do you like it?", "refs": ["Do you like it?"], "kind": "negative", "class": "ambiguous_keep"}
+{"id": "tidy-en-126", "op": "tidy", "lang": "en", "input": "That is, like, really loud.", "refs": ["That is, like, really loud."], "kind": "negative", "class": "ambiguous_keep"}
+{"id": "tidy-en-127", "op": "tidy", "lang": "en", "input": "You know, it is fine.", "refs": ["You know, it is fine."], "kind": "negative", "class": "ambiguous_keep"}
+{"id": "tidy-en-128", "op": "tidy", "lang": "en", "input": "Well, I guess we can try.", "refs": ["Well, I guess we can try."], "kind": "negative", "class": "ambiguous_keep"}
+{"id": "tidy-en-129", "op": "tidy", "lang": "en", "input": "Meet me on Monday, no, Tuesday.", "refs": ["Meet me on Tuesday."], "kind": "positive", "class": "self_repair"}
+{"id": "tidy-en-130", "op": "tidy", "lang": "en", "input": "Set the port to 8080, no, 9090.", "refs": ["Set the port to 9090."], "kind": "positive", "class": "self_repair"}
+{"id": "tidy-en-131", "op": "tidy", "lang": "en", "input": "Use port 8080, no, 9090.", "refs": ["Use port 9090."], "kind": "positive", "class": "self_repair"}
+{"id": "tidy-en-132", "op": "tidy", "lang": "en", "input": "Send it to John, I mean, Mary.", "refs": ["Send it to Mary."], "kind": "positive", "class": "self_repair"}
+{"id": "tidy-en-133", "op": "tidy", "lang": "en", "input": "The meeting is at three, sorry, four o'clock.", "refs": ["The meeting is at four o'clock."], "kind": "positive", "class": "self_repair"}
+{"id": "tidy-en-134", "op": "tidy", "lang": "en", "input": "Turn left, no, right at the corner.", "refs": ["Turn right at the corner."], "kind": "positive", "class": "self_repair"}
+{"id": "tidy-en-135", "op": "tidy", "lang": "en", "input": "We need five, wait, six chairs.", "refs": ["We need six chairs."], "kind": "positive", "class": "self_repair"}
+{"id": "tidy-en-136", "op": "tidy", "lang": "en", "input": "Call me at nine, no, ten.", "refs": ["Call me at ten."], "kind": "positive", "class": "self_repair"}
+{"id": "tidy-en-137", "op": "tidy", "lang": "en", "input": "Open the blue, sorry, the green folder.", "refs": ["Open the green folder."], "kind": "positive", "class": "self_repair"}
+{"id": "tidy-en-138", "op": "tidy", "lang": "en", "input": "It costs twenty, I mean, thirty dollars.", "refs": ["It costs thirty dollars."], "kind": "positive", "class": "self_repair"}
+{"id": "tidy-en-139", "op": "tidy", "lang": "en", "input": "Email Anna, no, Ben about the invoice.", "refs": ["Email Ben about the invoice."], "kind": "positive", "class": "self_repair"}
+{"id": "tidy-en-140", "op": "tidy", "lang": "en", "input": "The flight leaves on Friday, no, Saturday.", "refs": ["The flight leaves on Saturday."], "kind": "positive", "class": "self_repair"}
+{"id": "tidy-en-141", "op": "tidy", "lang": "en", "input": "Install version 2.1, no, 2.2.", "refs": ["Install version 2.2."], "kind": "positive", "class": "self_repair"}
+{"id": "tidy-en-142", "op": "tidy", "lang": "en", "input": "Book a table for four, sorry, five.", "refs": ["Book a table for five."], "kind": "positive", "class": "self_repair"}
+{"id": "tidy-en-143", "op": "tidy", "lang": "en", "input": "Use the red, no, the yellow cable.", "refs": ["Use the yellow cable."], "kind": "positive", "class": "self_repair"}
+{"id": "tidy-en-144", "op": "tidy", "lang": "en", "input": "Move it to the left, I mean, the right.", "refs": ["Move it to the right."], "kind": "positive", "class": "self_repair"}
+{"id": "tidy-en-145", "op": "tidy", "lang": "en", "input": "Her name is Karen, no, Karin.", "refs": ["Her name is Karin."], "kind": "positive", "class": "self_repair"}
+{"id": "tidy-en-146", "op": "tidy", "lang": "en", "input": "Deploy to staging, no, production.", "refs": ["Deploy to production."], "kind": "positive", "class": "self_repair"}
+{"id": "tidy-en-147", "op": "tidy", "lang": "en", "input": "Deadline is the fifth, sorry, the sixth of May.", "refs": ["Deadline is the sixth of May."], "kind": "positive", "class": "self_repair"}
+{"id": "tidy-en-148", "op": "tidy", "lang": "en", "input": "Ping Alice, wait, Alex.", "refs": ["Ping Alex."], "kind": "positive", "class": "self_repair"}
+{"id": "tidy-en-149", "op": "tidy", "lang": "en", "input": "Set the timeout to ten seconds, no, thirty seconds.", "refs": ["Set the timeout to thirty seconds."], "kind": "positive", "class": "self_repair"}
+{"id": "tidy-en-150", "op": "tidy", "lang": "en", "input": "Reserve room 12, no, room 14.", "refs": ["Reserve room 14."], "kind": "positive", "class": "self_repair"}
+{"id": "tidy-en-151", "op": "tidy", "lang": "en", "input": "Go to the bank, no, the post office first.", "refs": ["Go to the post office first."], "kind": "positive", "class": "self_repair"}
+{"id": "tidy-en-152", "op": "tidy", "lang": "en", "input": "The file is in docs, sorry, in src.", "refs": ["The file is in src."], "kind": "positive", "class": "self_repair"}
+{"id": "tidy-en-153", "op": "tidy", "lang": "en", "input": "I'll take the early, no, the late train.", "refs": ["I'll take the late train."], "kind": "positive", "class": "self_repair"}
+{"id": "tidy-en-154", "op": "tidy", "lang": "en", "input": "The report is due Wednesday, I mean, Thursday.", "refs": ["The report is due Thursday."], "kind": "positive", "class": "self_repair"}
+{"id": "tidy-en-155", "op": "tidy", "lang": "en", "input": "Add two, no, three eggs.", "refs": ["Add three eggs."], "kind": "positive", "class": "self_repair"}
+{"id": "tidy-en-156", "op": "tidy", "lang": "en", "input": "Open port 22, no, 2222.", "refs": ["Open port 2222."], "kind": "positive", "class": "self_repair"}
+{"id": "tidy-en-157", "op": "tidy", "lang": "en", "input": "Restart the database, sorry, the web server.", "refs": ["Restart the web server."], "kind": "positive", "class": "self_repair"}
+{"id": "tidy-en-158", "op": "tidy", "lang": "en", "input": "Take the second, no, the third exit.", "refs": ["Take the third exit."], "kind": "positive", "class": "self_repair"}
+{"id": "tidy-en-159", "op": "tidy", "lang": "en", "input": "Do not merge this branch.", "refs": ["Do not merge this branch."], "kind": "negative", "class": "negation_trap"}
+{"id": "tidy-en-160", "op": "tidy", "lang": "en", "input": "We should not ship on Friday.", "refs": ["We should not ship on Friday."], "kind": "negative", "class": "negation_trap"}
+{"id": "tidy-en-161", "op": "tidy", "lang": "en", "input": "I never said that.", "refs": ["I never said that."], "kind": "negative", "class": "negation_trap"}
+{"id": "tidy-en-162", "op": "tidy", "lang": "en", "input": "Please do not delete the backup.", "refs": ["Please do not delete the backup."], "kind": "negative", "class": "negation_trap"}
+{"id": "tidy-en-163", "op": "tidy", "lang": "en", "input": "It isn't ready yet.", "refs": ["It isn't ready yet."], "kind": "negative", "class": "negation_trap"}
+{"id": "tidy-en-164", "op": "tidy", "lang": "en", "input": "They won't approve the change.", "refs": ["They won't approve the change."], "kind": "negative", "class": "negation_trap"}
+{"id": "tidy-en-165", "op": "tidy", "lang": "en", "input": "I can't attend the meeting.", "refs": ["I can't attend the meeting."], "kind": "negative", "class": "negation_trap"}
+{"id": "tidy-en-166", "op": "tidy", "lang": "en", "input": "Do not restart the server.", "refs": ["Do not restart the server."], "kind": "negative", "class": "negation_trap"}
+{"id": "tidy-en-167", "op": "tidy", "lang": "en", "input": "He did not call me back.", "refs": ["He did not call me back."], "kind": "negative", "class": "negation_trap"}
+{"id": "tidy-en-168", "op": "tidy", "lang": "en", "input": "We shouldn't skip the tests.", "refs": ["We shouldn't skip the tests."], "kind": "negative", "class": "negation_trap"}
+{"id": "tidy-en-169", "op": "tidy", "lang": "en", "input": "I don't think that is right.", "refs": ["I don't think that is right."], "kind": "negative", "class": "negation_trap"}
+{"id": "tidy-en-170", "op": "tidy", "lang": "en", "input": "Never push to main.", "refs": ["Never push to main."], "kind": "negative", "class": "negation_trap"}
+{"id": "tidy-en-171", "op": "tidy", "lang": "en", "input": "That is not what I meant.", "refs": ["That is not what I meant."], "kind": "negative", "class": "negation_trap"}
+{"id": "tidy-en-172", "op": "tidy", "lang": "en", "input": "She hasn't replied yet.", "refs": ["She hasn't replied yet."], "kind": "negative", "class": "negation_trap"}
+{"id": "tidy-en-173", "op": "tidy", "lang": "en", "input": "You must not share the password.", "refs": ["You must not share the password."], "kind": "negative", "class": "negation_trap"}
+{"id": "tidy-en-174", "op": "tidy", "lang": "en", "input": "It doesn't work on my machine.", "refs": ["It doesn't work on my machine."], "kind": "negative", "class": "negation_trap"}
+{"id": "tidy-en-175", "op": "tidy", "lang": "en", "input": "Don't forget the keys.", "refs": ["Don't forget the keys."], "kind": "negative", "class": "negation_trap"}
+{"id": "tidy-en-176", "op": "tidy", "lang": "en", "input": "I do not want any sugar.", "refs": ["I do not want any sugar."], "kind": "negative", "class": "negation_trap"}
+{"id": "tidy-en-177", "op": "tidy", "lang": "en", "input": "We will not be late.", "refs": ["We will not be late."], "kind": "negative", "class": "negation_trap"}
+{"id": "tidy-en-178", "op": "tidy", "lang": "en", "input": "This is not a bug, it is a feature.", "refs": ["This is not a bug, it is a feature."], "kind": "negative", "class": "negation_trap"}
+{"id": "tidy-en-179", "op": "tidy", "lang": "en", "input": "Um, do not merge this branch.", "refs": ["Do not merge this branch."], "kind": "positive", "class": "negation_with_disfluency"}
+{"id": "tidy-en-180", "op": "tidy", "lang": "en", "input": "We should, uh, not ship on Friday.", "refs": ["We should not ship on Friday."], "kind": "positive", "class": "negation_with_disfluency"}
+{"id": "tidy-en-181", "op": "tidy", "lang": "en", "input": "I I do not want any sugar.", "refs": ["I do not want any sugar."], "kind": "positive", "class": "negation_with_disfluency"}
+{"id": "tidy-en-182", "op": "tidy", "lang": "en", "input": "Please do do not delete the backup.", "refs": ["Please do not delete the backup."], "kind": "positive", "class": "negation_with_disfluency"}
+{"id": "tidy-en-183", "op": "tidy", "lang": "en", "input": "We shouldn't, wait, we should ship on Friday.", "refs": ["We should ship on Friday."], "kind": "positive", "class": "negation_repair"}
+{"id": "tidy-en-184", "op": "tidy", "lang": "en", "input": "Do not, I mean, do merge the branch.", "refs": ["Do merge the branch."], "kind": "positive", "class": "negation_repair"}
+{"id": "tidy-en-185", "op": "tidy", "lang": "en", "input": "Let's meet, not on Monday, no, on Tuesday afternoon.", "refs": ["Let's meet on Tuesday afternoon."], "kind": "positive", "class": "negation_repair"}
+{"id": "tidy-en-186", "op": "tidy", "lang": "en", "input": "We can't, sorry, we can ship on Friday.", "refs": ["We can ship on Friday."], "kind": "positive", "class": "negation_repair"}
+{"id": "tidy-en-187", "op": "tidy", "lang": "en", "input": "I won't, wait, I will attend the call tomorrow.", "refs": ["I will attend the call tomorrow."], "kind": "positive", "class": "negation_repair"}
+{"id": "tidy-en-188", "op": "tidy", "lang": "en", "input": "You should not, no, you should send it today.", "refs": ["You should send it today."], "kind": "positive", "class": "negation_repair"}
+{"id": "tidy-en-189", "op": "tidy", "lang": "en", "input": "Do not, wait, do approve the request.", "refs": ["Do approve the request."], "kind": "positive", "class": "negation_repair"}
+{"id": "tidy-en-190", "op": "tidy", "lang": "en", "input": "They don't, I mean, they do accept all major cards.", "refs": ["They do accept all major cards."], "kind": "positive", "class": "negation_repair"}

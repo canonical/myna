@@ -1,0 +1,125 @@
+{"id": "tidy-es-001", "op": "tidy", "lang": "es", "input": "Eh, creo que deberíamos entregarlo el viernes.", "refs": ["Creo que deberíamos entregarlo el viernes."], "kind": "positive", "class": "vocalized_pause"}
+{"id": "tidy-es-002", "op": "tidy", "lang": "es", "input": "Deberíamos, eh, entregarlo el viernes.", "refs": ["Deberíamos entregarlo el viernes."], "kind": "positive", "class": "vocalized_pause"}
+{"id": "tidy-es-003", "op": "tidy", "lang": "es", "input": "Eh, ¿puedes enviarme el informe?", "refs": ["¿Puedes enviarme el informe?"], "kind": "positive", "class": "vocalized_pause"}
+{"id": "tidy-es-004", "op": "tidy", "lang": "es", "input": "La reunión es, eh, a las tres.", "refs": ["La reunión es a las tres."], "kind": "positive", "class": "vocalized_pause"}
+{"id": "tidy-es-005", "op": "tidy", "lang": "es", "input": "Abre el archivo, eh, y lee la primera línea.", "refs": ["Abre el archivo y lee la primera línea."], "kind": "positive", "class": "vocalized_pause"}
+{"id": "tidy-es-006", "op": "tidy", "lang": "es", "input": "Llamaré a María mañana, eh.", "refs": ["Llamaré a María mañana."], "kind": "positive", "class": "vocalized_pause"}
+{"id": "tidy-es-007", "op": "tidy", "lang": "es", "input": "Eh, eh, olvidé la contraseña.", "refs": ["Olvidé la contraseña."], "kind": "positive", "class": "vocalized_pause"}
+{"id": "tidy-es-008", "op": "tidy", "lang": "es", "input": "Necesitamos, em, más tiempo.", "refs": ["Necesitamos más tiempo."], "kind": "positive", "class": "vocalized_pause"}
+{"id": "tidy-es-009", "op": "tidy", "lang": "es", "input": "¿Podrías, eh, revisar los registros?", "refs": ["¿Podrías revisar los registros?"], "kind": "positive", "class": "vocalized_pause"}
+{"id": "tidy-es-010", "op": "tidy", "lang": "es", "input": "La fecha límite es, eh, el próximo lunes.", "refs": ["La fecha límite es el próximo lunes."], "kind": "positive", "class": "vocalized_pause"}
+{"id": "tidy-es-011", "op": "tidy", "lang": "es", "input": "Eh, gracias por la actualización.", "refs": ["Gracias por la actualización."], "kind": "positive", "class": "vocalized_pause"}
+{"id": "tidy-es-012", "op": "tidy", "lang": "es", "input": "Dijo, eh, que llegaría tarde.", "refs": ["Dijo que llegaría tarde."], "kind": "positive", "class": "vocalized_pause"}
+{"id": "tidy-es-013", "op": "tidy", "lang": "es", "input": "Quedemos a, em, mediodía.", "refs": ["Quedemos a mediodía."], "kind": "positive", "class": "vocalized_pause"}
+{"id": "tidy-es-014", "op": "tidy", "lang": "es", "input": "El parche corrige, eh, el cierre inesperado al arrancar.", "refs": ["El parche corrige el cierre inesperado al arrancar."], "kind": "positive", "class": "vocalized_pause"}
+{"id": "tidy-es-015", "op": "tidy", "lang": "es", "input": "¿Dónde pusiste, eh, las llaves?", "refs": ["¿Dónde pusiste las llaves?"], "kind": "positive", "class": "vocalized_pause"}
+{"id": "tidy-es-016", "op": "tidy", "lang": "es", "input": "Pedimos, eh, doce unidades.", "refs": ["Pedimos doce unidades."], "kind": "positive", "class": "vocalized_pause"}
+{"id": "tidy-es-017", "op": "tidy", "lang": "es", "input": "Tarda, em, unos diez minutos.", "refs": ["Tarda unos diez minutos."], "kind": "positive", "class": "vocalized_pause"}
+{"id": "tidy-es-018", "op": "tidy", "lang": "es", "input": "El servidor está, o sea, caído otra vez.", "refs": ["El servidor está caído otra vez."], "kind": "positive", "class": "lexical_filler"}
+{"id": "tidy-es-019", "op": "tidy", "lang": "es", "input": "Tenemos que, este, reiniciar el servidor.", "refs": ["Tenemos que reiniciar el servidor."], "kind": "positive", "class": "lexical_filler"}
+{"id": "tidy-es-020", "op": "tidy", "lang": "es", "input": "La entrega es, este, el martes.", "refs": ["La entrega es el martes."], "kind": "positive", "class": "lexical_filler"}
+{"id": "tidy-es-021", "op": "tidy", "lang": "es", "input": "El cliente quiere, o sea, una respuesta antes del mediodía.", "refs": ["El cliente quiere una respuesta antes del mediodía."], "kind": "positive", "class": "lexical_filler"}
+{"id": "tidy-es-022", "op": "tidy", "lang": "es", "input": "Voy a, pues, enviar el expediente esta noche.", "refs": ["Voy a enviar el expediente esta noche."], "kind": "positive", "class": "lexical_filler"}
+{"id": "tidy-es-023", "op": "tidy", "lang": "es", "input": "Llegó, este, tarde a la reunión.", "refs": ["Llegó tarde a la reunión."], "kind": "positive", "class": "lexical_filler"}
+{"id": "tidy-es-024", "op": "tidy", "lang": "es", "input": "Yo yo creo que deberíamos irnos.", "refs": ["Yo creo que deberíamos irnos."], "kind": "positive", "class": "repeat_k1"}
+{"id": "tidy-es-025", "op": "tidy", "lang": "es", "input": "Deberíamos deberíamos volver a casa.", "refs": ["Deberíamos volver a casa."], "kind": "positive", "class": "repeat_k1"}
+{"id": "tidy-es-026", "op": "tidy", "lang": "es", "input": "El el informe está listo.", "refs": ["El informe está listo."], "kind": "positive", "class": "repeat_k1"}
+{"id": "tidy-es-027", "op": "tidy", "lang": "es", "input": "¿Puedes puedes enviarlo hoy?", "refs": ["¿Puedes enviarlo hoy?"], "kind": "positive", "class": "repeat_k1"}
+{"id": "tidy-es-028", "op": "tidy", "lang": "es", "input": "Tengo que que terminar esto.", "refs": ["Tengo que terminar esto."], "kind": "positive", "class": "repeat_k1"}
+{"id": "tidy-es-029", "op": "tidy", "lang": "es", "input": "Por favor envía envía la factura.", "refs": ["Por favor envía la factura."], "kind": "positive", "class": "repeat_k1"}
+{"id": "tidy-es-030", "op": "tidy", "lang": "es", "input": "Estamos estamos listos para empezar.", "refs": ["Estamos listos para empezar."], "kind": "positive", "class": "repeat_k1"}
+{"id": "tidy-es-031", "op": "tidy", "lang": "es", "input": "Es una una buena idea.", "refs": ["Es una buena idea."], "kind": "positive", "class": "repeat_k1"}
+{"id": "tidy-es-032", "op": "tidy", "lang": "es", "input": "Vamos al al parque.", "refs": ["Vamos al parque."], "kind": "positive", "class": "repeat_k1"}
+{"id": "tidy-es-033", "op": "tidy", "lang": "es", "input": "Quiero comprar un un billete.", "refs": ["Quiero comprar un billete."], "kind": "positive", "class": "repeat_k1"}
+{"id": "tidy-es-034", "op": "tidy", "lang": "es", "input": "El servidor está está caído.", "refs": ["El servidor está caído."], "kind": "positive", "class": "repeat_k1"}
+{"id": "tidy-es-035", "op": "tidy", "lang": "es", "input": "Mi mi portátil está roto.", "refs": ["Mi portátil está roto."], "kind": "positive", "class": "repeat_k1"}
+{"id": "tidy-es-036", "op": "tidy", "lang": "es", "input": "Creo que creo que deberíamos irnos.", "refs": ["Creo que deberíamos irnos."], "kind": "positive", "class": "repeat_k2"}
+{"id": "tidy-es-037", "op": "tidy", "lang": "es", "input": "¿Me puedes me puedes abrir el archivo?", "refs": ["¿Me puedes abrir el archivo?"], "kind": "positive", "class": "repeat_k2"}
+{"id": "tidy-es-038", "op": "tidy", "lang": "es", "input": "Dijo que dijo que todo estaba bien.", "refs": ["Dijo que todo estaba bien."], "kind": "positive", "class": "repeat_k2"}
+{"id": "tidy-es-039", "op": "tidy", "lang": "es", "input": "En la en la carpeta compartida está el contrato.", "refs": ["En la carpeta compartida está el contrato."], "kind": "positive", "class": "repeat_k2"}
+{"id": "tidy-es-040", "op": "tidy", "lang": "es", "input": "Ella llegó ella llegó anoche.", "refs": ["Ella llegó anoche."], "kind": "positive", "class": "repeat_k2"}
+{"id": "tidy-es-041", "op": "tidy", "lang": "es", "input": "Me gustaría me gustaría reservar una mesa.", "refs": ["Me gustaría reservar una mesa."], "kind": "positive", "class": "repeat_k2"}
+{"id": "tidy-es-042", "op": "tidy", "lang": "es", "input": "Vamos a vamos a tener que esperar.", "refs": ["Vamos a tener que esperar."], "kind": "positive", "class": "repeat_k2"}
+{"id": "tidy-es-043", "op": "tidy", "lang": "es", "input": "Es una es una cuestión de tiempo.", "refs": ["Es una cuestión de tiempo."], "kind": "positive", "class": "repeat_k2"}
+{"id": "tidy-es-044", "op": "tidy", "lang": "es", "input": "No sé no sé dónde está.", "refs": ["No sé dónde está."], "kind": "positive", "class": "repeat_k2"}
+{"id": "tidy-es-045", "op": "tidy", "lang": "es", "input": "Voy a hablar voy a hablar con Pablo.", "refs": ["Voy a hablar con Pablo."], "kind": "positive", "class": "repeat_k3"}
+{"id": "tidy-es-046", "op": "tidy", "lang": "es", "input": "Nos vamos a nos vamos a la estación.", "refs": ["Nos vamos a la estación."], "kind": "positive", "class": "repeat_k3"}
+{"id": "tidy-es-047", "op": "tidy", "lang": "es", "input": "Podemos ir al podemos ir al cine.", "refs": ["Podemos ir al cine."], "kind": "positive", "class": "repeat_k3"}
+{"id": "tidy-es-048", "op": "tidy", "lang": "es", "input": "Es posible que es posible que esté roto.", "refs": ["Es posible que esté roto."], "kind": "positive", "class": "repeat_k3"}
+{"id": "tidy-es-049", "op": "tidy", "lang": "es", "input": "Va a ser va a ser necesario cambiar el plan.", "refs": ["Va a ser necesario cambiar el plan."], "kind": "positive", "class": "repeat_k3"}
+{"id": "tidy-es-050", "op": "tidy", "lang": "es", "input": "Me gustaría mucho me gustaría mucho entenderlo.", "refs": ["Me gustaría mucho entenderlo."], "kind": "positive", "class": "repeat_k3"}
+{"id": "tidy-es-051", "op": "tidy", "lang": "es", "input": "Tengo que ir tengo que ir al banco.", "refs": ["Tengo que ir al banco."], "kind": "positive", "class": "repeat_k3"}
+{"id": "tidy-es-052", "op": "tidy", "lang": "es", "input": "Esta mañana fui al esta mañana fui al mercado.", "refs": ["Esta mañana fui al mercado."], "kind": "positive", "class": "repeat_k4"}
+{"id": "tidy-es-053", "op": "tidy", "lang": "es", "input": "Yo no sé si yo no sé si va a llegar.", "refs": ["Yo no sé si va a llegar."], "kind": "positive", "class": "repeat_k4"}
+{"id": "tidy-es-054", "op": "tidy", "lang": "es", "input": "Lo que quiero decir lo que quiero decir es otra cosa.", "refs": ["Lo que quiero decir es otra cosa."], "kind": "positive", "class": "repeat_k4"}
+{"id": "tidy-es-055", "op": "tidy", "lang": "es", "input": "Esa es la razón esa es la razón por la que vengo.", "refs": ["Esa es la razón por la que vengo."], "kind": "positive", "class": "repeat_k4"}
+{"id": "tidy-es-056", "op": "tidy", "lang": "es", "input": "Voy a tener que voy a tener que irme.", "refs": ["Voy a tener que irme."], "kind": "positive", "class": "repeat_k4"}
+{"id": "tidy-es-057", "op": "tidy", "lang": "es", "input": "Quedamos el martes, digo, el miércoles.", "refs": ["Quedamos el miércoles."], "kind": "positive", "class": "self_repair"}
+{"id": "tidy-es-058", "op": "tidy", "lang": "es", "input": "Pon el puerto en 8080, no, 9090.", "refs": ["Pon el puerto en 9090."], "kind": "positive", "class": "self_repair"}
+{"id": "tidy-es-059", "op": "tidy", "lang": "es", "input": "Abre el puerto 22, no, 2222.", "refs": ["Abre el puerto 2222."], "kind": "positive", "class": "self_repair"}
+{"id": "tidy-es-060", "op": "tidy", "lang": "es", "input": "Reinicia la base de datos, perdón, el servidor web.", "refs": ["Reinicia el servidor web."], "kind": "positive", "class": "self_repair"}
+{"id": "tidy-es-061", "op": "tidy", "lang": "es", "input": "Toma la segunda, no, la tercera salida.", "refs": ["Toma la tercera salida."], "kind": "positive", "class": "self_repair"}
+{"id": "tidy-es-062", "op": "tidy", "lang": "es", "input": "Salgo el lunes, mejor dicho, el martes por la mañana.", "refs": ["Salgo el martes por la mañana."], "kind": "positive", "class": "self_repair"}
+{"id": "tidy-es-063", "op": "tidy", "lang": "es", "input": "El informe está en la carpeta A, quiero decir, en la carpeta B.", "refs": ["El informe está en la carpeta B."], "kind": "positive", "class": "self_repair"}
+{"id": "tidy-es-064", "op": "tidy", "lang": "es", "input": "Llama a Pablo, no, a Pedro, antes del mediodía.", "refs": ["Llama a Pedro antes del mediodía."], "kind": "positive", "class": "self_repair"}
+{"id": "tidy-es-065", "op": "tidy", "lang": "es", "input": "La reunión es a las tres, perdón, a las cuatro.", "refs": ["La reunión es a las cuatro."], "kind": "positive", "class": "self_repair"}
+{"id": "tidy-es-066", "op": "tidy", "lang": "es", "input": "Vive en Sevilla, no, en Cádiz.", "refs": ["Vive en Cádiz."], "kind": "positive", "class": "self_repair"}
+{"id": "tidy-es-067", "op": "tidy", "lang": "es", "input": "Envíaselo a María, o mejor, a Clara.", "refs": ["Envíaselo a Clara."], "kind": "positive", "class": "self_repair"}
+{"id": "tidy-es-068", "op": "tidy", "lang": "es", "input": "Necesitamos cinco, no, seis sillas.", "refs": ["Necesitamos seis sillas."], "kind": "positive", "class": "self_repair"}
+{"id": "tidy-es-069", "op": "tidy", "lang": "es", "input": "Voy a tomar té, no, café.", "refs": ["Voy a tomar café."], "kind": "positive", "class": "self_repair"}
+{"id": "tidy-es-070", "op": "tidy", "lang": "es", "input": "Llegó el jueves, no, el viernes por la noche.", "refs": ["Llegó el viernes por la noche."], "kind": "positive", "class": "self_repair"}
+{"id": "tidy-es-071", "op": "tidy", "lang": "es", "input": "El presupuesto es de diez mil, quiero decir, doce mil euros.", "refs": ["El presupuesto es de doce mil euros."], "kind": "positive", "class": "self_repair"}
+{"id": "tidy-es-072", "op": "tidy", "lang": "es", "input": "Gire a la izquierda, perdón, a la derecha en el semáforo.", "refs": ["Gire a la derecha en el semáforo."], "kind": "positive", "class": "self_repair"}
+{"id": "tidy-es-073", "op": "tidy", "lang": "es", "input": "No podemos, perdón, podemos entregar el viernes.", "refs": ["Podemos entregar el viernes."], "kind": "positive", "class": "negation_repair"}
+{"id": "tidy-es-074", "op": "tidy", "lang": "es", "input": "No lo envíes, espera, envía el informe hoy.", "refs": ["Envía el informe hoy."], "kind": "positive", "class": "negation_repair"}
+{"id": "tidy-es-075", "op": "tidy", "lang": "es", "input": "No voy a ir, bueno, sí, iré mañana.", "refs": ["Iré mañana."], "kind": "positive", "class": "negation_repair"}
+{"id": "tidy-es-076", "op": "tidy", "lang": "es", "input": "Quedemos, no el lunes, no, el martes por la tarde.", "refs": ["Quedemos el martes por la tarde."], "kind": "positive", "class": "negation_repair"}
+{"id": "tidy-es-077", "op": "tidy", "lang": "es", "input": "No aceptan, quiero decir, aceptan todas las tarjetas.", "refs": ["Aceptan todas las tarjetas."], "kind": "positive", "class": "negation_repair"}
+{"id": "tidy-es-078", "op": "tidy", "lang": "es", "input": "Eh, no fusiones esta rama.", "refs": ["No fusiones esta rama."], "kind": "positive", "class": "negation_with_disfluency"}
+{"id": "tidy-es-079", "op": "tidy", "lang": "es", "input": "No deberíamos, eh, entregar el viernes.", "refs": ["No deberíamos entregar el viernes."], "kind": "positive", "class": "negation_with_disfluency"}
+{"id": "tidy-es-080", "op": "tidy", "lang": "es", "input": "Yo yo no quiero azúcar.", "refs": ["Yo no quiero azúcar."], "kind": "positive", "class": "negation_with_disfluency"}
+{"id": "tidy-es-081", "op": "tidy", "lang": "es", "input": "Por favor, no no borres la copia de seguridad.", "refs": ["Por favor, no borres la copia de seguridad."], "kind": "positive", "class": "negation_with_disfluency"}
+{"id": "tidy-es-082", "op": "tidy", "lang": "es", "input": "No fusiones esta rama.", "refs": ["No fusiones esta rama."], "kind": "negative", "class": "negation_trap"}
+{"id": "tidy-es-083", "op": "tidy", "lang": "es", "input": "No deberíamos entregar el viernes.", "refs": ["No deberíamos entregar el viernes."], "kind": "negative", "class": "negation_trap"}
+{"id": "tidy-es-084", "op": "tidy", "lang": "es", "input": "Yo nunca dije eso.", "refs": ["Yo nunca dije eso."], "kind": "negative", "class": "negation_trap"}
+{"id": "tidy-es-085", "op": "tidy", "lang": "es", "input": "Por favor, no borres la copia de seguridad.", "refs": ["Por favor, no borres la copia de seguridad."], "kind": "negative", "class": "negation_trap"}
+{"id": "tidy-es-086", "op": "tidy", "lang": "es", "input": "Todavía no está listo.", "refs": ["Todavía no está listo."], "kind": "negative", "class": "negation_trap"}
+{"id": "tidy-es-087", "op": "tidy", "lang": "es", "input": "No aprobarán el cambio.", "refs": ["No aprobarán el cambio."], "kind": "negative", "class": "negation_trap"}
+{"id": "tidy-es-088", "op": "tidy", "lang": "es", "input": "No puedo asistir a la reunión.", "refs": ["No puedo asistir a la reunión."], "kind": "negative", "class": "negation_trap"}
+{"id": "tidy-es-089", "op": "tidy", "lang": "es", "input": "No me devolvió la llamada.", "refs": ["No me devolvió la llamada."], "kind": "negative", "class": "negation_trap"}
+{"id": "tidy-es-090", "op": "tidy", "lang": "es", "input": "Nunca compartas la contraseña.", "refs": ["Nunca compartas la contraseña."], "kind": "negative", "class": "negation_trap"}
+{"id": "tidy-es-091", "op": "tidy", "lang": "es", "input": "No funciona en mi ordenador.", "refs": ["No funciona en mi ordenador."], "kind": "negative", "class": "negation_trap"}
+{"id": "tidy-es-092", "op": "tidy", "lang": "es", "input": "No olvides las llaves.", "refs": ["No olvides las llaves."], "kind": "negative", "class": "negation_trap"}
+{"id": "tidy-es-093", "op": "tidy", "lang": "es", "input": "No quiero azúcar.", "refs": ["No quiero azúcar."], "kind": "negative", "class": "negation_trap"}
+{"id": "tidy-es-094", "op": "tidy", "lang": "es", "input": "No llegaremos tarde.", "refs": ["No llegaremos tarde."], "kind": "negative", "class": "negation_trap"}
+{"id": "tidy-es-095", "op": "tidy", "lang": "es", "input": "Esto no es un error, es una función.", "refs": ["Esto no es un error, es una función."], "kind": "negative", "class": "negation_trap"}
+{"id": "tidy-es-096", "op": "tidy", "lang": "es", "input": "Todavía no ha respondido.", "refs": ["Todavía no ha respondido."], "kind": "negative", "class": "negation_trap"}
+{"id": "tidy-es-097", "op": "tidy", "lang": "es", "input": "Nunca subas cambios directamente a la rama principal.", "refs": ["Nunca subas cambios directamente a la rama principal."], "kind": "negative", "class": "negation_trap"}
+{"id": "tidy-es-098", "op": "tidy", "lang": "es", "input": "Se despidió con un bye bye y se fue.", "refs": ["Se despidió con un bye bye y se fue."], "kind": "negative", "class": "reduplication_keep"}
+{"id": "tidy-es-099", "op": "tidy", "lang": "es", "input": "Bora Bora es una isla preciosa.", "refs": ["Bora Bora es una isla preciosa."], "kind": "negative", "class": "reduplication_keep"}
+{"id": "tidy-es-100", "op": "tidy", "lang": "es", "input": "Escucho a Duran Duran todas las mañanas.", "refs": ["Escucho a Duran Duran todas las mañanas."], "kind": "negative", "class": "reduplication_keep"}
+{"id": "tidy-es-101", "op": "tidy", "lang": "es", "input": "Tic tac, tic tac, el reloj sigue corriendo.", "refs": ["Tic tac, tic tac, el reloj sigue corriendo."], "kind": "negative", "class": "reduplication_keep"}
+{"id": "tidy-es-102", "op": "tidy", "lang": "es", "input": "El perro estuvo haciendo guau guau toda la noche.", "refs": ["El perro estuvo haciendo guau guau toda la noche."], "kind": "negative", "class": "reduplication_keep"}
+{"id": "tidy-es-103", "op": "tidy", "lang": "es", "input": "Estuvo diciendo bla bla bla durante una hora.", "refs": ["Estuvo diciendo bla bla bla durante una hora."], "kind": "negative", "class": "reduplication_keep"}
+{"id": "tidy-es-104", "op": "tidy", "lang": "es", "input": "Cantaron la la la todo el camino.", "refs": ["Cantaron la la la todo el camino."], "kind": "negative", "class": "reduplication_keep"}
+{"id": "tidy-es-105", "op": "tidy", "lang": "es", "input": "Brindaron con un chin chin y se sentaron.", "refs": ["Brindaron con un chin chin y se sentaron."], "kind": "negative", "class": "reduplication_keep"}
+{"id": "tidy-es-106", "op": "tidy", "lang": "es", "input": "Los pollitos hacían pío pío en el patio.", "refs": ["Los pollitos hacían pío pío en el patio."], "kind": "negative", "class": "reduplication_keep"}
+{"id": "tidy-es-107", "op": "tidy", "lang": "es", "input": "Pago Pago es la capital de Samoa Americana.", "refs": ["Pago Pago es la capital de Samoa Americana."], "kind": "negative", "class": "reduplication_keep"}
+{"id": "tidy-es-108", "op": "tidy", "lang": "es", "input": "Toc toc, ¿se puede pasar?", "refs": ["Toc toc, ¿se puede pasar?"], "kind": "negative", "class": "reduplication_keep"}
+{"id": "tidy-es-109", "op": "tidy", "lang": "es", "input": "Bailaron un cha cha chá toda la noche.", "refs": ["Bailaron un cha cha chá toda la noche."], "kind": "negative", "class": "reduplication_keep"}
+{"id": "tidy-es-110", "op": "tidy", "lang": "es", "input": "Los niños gritaban pam pam mientras jugaban.", "refs": ["Los niños gritaban pam pam mientras jugaban."], "kind": "negative", "class": "reduplication_keep"}
+{"id": "tidy-es-111", "op": "tidy", "lang": "es", "input": "Es muy muy bueno.", "refs": ["Es muy muy bueno."], "kind": "negative", "class": "ambiguous_keep"}
+{"id": "tidy-es-112", "op": "tidy", "lang": "es", "input": "Hace mucho mucho frío esta mañana.", "refs": ["Hace mucho mucho frío esta mañana."], "kind": "negative", "class": "ambiguous_keep"}
+{"id": "tidy-es-113", "op": "tidy", "lang": "es", "input": "Está realmente realmente contenta.", "refs": ["Está realmente realmente contenta."], "kind": "negative", "class": "ambiguous_keep"}
+{"id": "tidy-es-114", "op": "tidy", "lang": "es", "input": "No, no, eso no es lo que quise decir.", "refs": ["No, no, eso no es lo que quise decir."], "kind": "negative", "class": "ambiguous_keep"}
+{"id": "tidy-es-115", "op": "tidy", "lang": "es", "input": "Bueno, ¿qué hacemos ahora?", "refs": ["Bueno, ¿qué hacemos ahora?"], "kind": "negative", "class": "ambiguous_keep"}
+{"id": "tidy-es-116", "op": "tidy", "lang": "es", "input": "Bueno, de acuerdo, le envío el presupuesto.", "refs": ["Bueno, de acuerdo, le envío el presupuesto."], "kind": "negative", "class": "ambiguous_keep"}
+{"id": "tidy-es-117", "op": "tidy", "lang": "es", "input": "Llovía, pues nos quedamos en casa.", "refs": ["Llovía, pues nos quedamos en casa."], "kind": "negative", "class": "ambiguous_keep"}
+{"id": "tidy-es-118", "op": "tidy", "lang": "es", "input": "Pues claro que puedes venir.", "refs": ["Pues claro que puedes venir."], "kind": "negative", "class": "ambiguous_keep"}
+{"id": "tidy-es-119", "op": "tidy", "lang": "es", "input": "Ya ya, ya voy.", "refs": ["Ya ya, ya voy."], "kind": "negative", "class": "ambiguous_keep"}
+{"id": "tidy-es-120", "op": "tidy", "lang": "es", "input": "Quiero decir que el plan no es suficiente.", "refs": ["Quiero decir que el plan no es suficiente."], "kind": "negative", "class": "ambiguous_keep"}
+{"id": "tidy-es-121", "op": "tidy", "lang": "es", "input": "Perdón, no entendí la pregunta.", "refs": ["Perdón, no entendí la pregunta."], "kind": "negative", "class": "ambiguous_keep"}
+{"id": "tidy-es-122", "op": "tidy", "lang": "es", "input": "O sea que al final no vienes.", "refs": ["O sea que al final no vienes."], "kind": "negative", "class": "ambiguous_keep"}
+{"id": "tidy-es-123", "op": "tidy", "lang": "es", "input": "Este informe es muy largo.", "refs": ["Este informe es muy largo."], "kind": "negative", "class": "ambiguous_keep"}
+{"id": "tidy-es-124", "op": "tidy", "lang": "es", "input": "Lo has hecho muy bien, ¿eh?", "refs": ["Lo has hecho muy bien, ¿eh?"], "kind": "negative", "class": "ambiguous_keep"}
+{"id": "tidy-es-125", "op": "tidy", "lang": "es", "input": "Está lejos lejos de aquí.", "refs": ["Está lejos lejos de aquí."], "kind": "negative", "class": "ambiguous_keep"}

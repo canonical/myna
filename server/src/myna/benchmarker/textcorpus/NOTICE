@@ -79,3 +79,32 @@ translate_en_<l>, the other pair slices
   Pair input: translate_en_uk data/uk_ua/test.tsv sha256 afabf1e7e138632dd65781a768257b9d86c591175ae08e8ca201d00081815d49
   Pair input: translate_en_vi data/vi_vn/test.tsv sha256 eb744c2be5f677b49c35527d428a4f647294bd0f67abd790c296e91efaaffb93
   Pair input: translate_en_zh-Hans data/cmn_hans_cn/test.tsv sha256 5734461648f816181d7dab5fc79204b18c4b9bc2cd5138225b25c72d18385d21
+
+eval/run1/*.jsonl, eval/run2/*.jsonl (except eval/run2/clean_dev.jsonl)
+  Original work written for this repository by Claude agents (not by native
+  speakers), licensed with it (AGPL-3.0-or-later). No external text or dataset
+  was copied. Rows are (input, refs, kind, class): kind is positive (must
+  change), negative (must stay) or clean-style negatives; refs lists every
+  output that counts as right. Operations: tidy, numbers, addresses and
+  commands in en/fr/de/es, casing and emoji in en (run 1 only).
+  run1 is the corpus the model arms were developed against, so it is not
+  blind. run2 was written after every arm was frozen by an author that had
+  not seen run1's failures: it is the blind corpus. Both share their authors'
+  blind spots and the English rule-shaped references (commands, casing, emoji)
+  were checked against the Rust rules they grade. Findings and caveats:
+  server/.kb/text-processing-evaluation.md.
+
+eval/run2/clean_dev.jsonl
+  Derived from Google FLEURS dev transcriptions (en_us, fr_fr, de_de, es_419;
+  the raw cased, punctuated column), redistributed under the original licence.
+  Source:  https://huggingface.co/datasets/google/fleurs
+  Licence: CC-BY-4.0  (https://creativecommons.org/licenses/by/4.0/)
+  Inputs:  data/en_us/dev.tsv  sha256 9d57ee7e91e9d4c92edb39f6bbea668ef8dc2a3ff96eb510d5580b2ad05d17ec
+           data/fr_fr/dev.tsv  sha256 3e0b792358c1cb4a426fe1c18fc1571d5406b390d738a2ed1bfd3c8b9d28de44
+           data/de_de/dev.tsv  sha256 055b6ddecc9ad493d9ead86babe3ebe225148dd3c174fa6f95cb83a4f9586e18
+           data/es_419/dev.tsv sha256 352b2a5f03f02fe752254fab737f76519963650f4630d2fb63957177aeec927f
+  100 sentences per language of 5 to 35 words, in a seeded shuffle (seed
+  20261125), after dropping any whose letters-only form occurs in any
+  training or development text of any arm or in the clean_en and
+  translate_en_<l> slices. The 400 rows are the clean sentences of run2:
+  every operation is graded on a copy of its language's 100.
