@@ -230,7 +230,7 @@ pub async fn replay(
                 let started = Instant::now();
                 let start_ms = clock;
                 let at = Field::after(field.purpose, before);
-                let out = pipeline.process(heard.clone(), &at).await;
+                let out = pipeline.process(heard.clone()).await;
                 let mut out = pipeline.fit(out, &at);
                 let ms = started.elapsed().as_secs_f64() * 1e3;
                 if field.purpose == FieldPurpose::Terminal {
