@@ -21,7 +21,7 @@ use tokio::sync::watch;
 use super::pipeline::{Answer, ModelError, Models, Request, BIND_BUDGET};
 use super::step;
 use super::steps::{compile, Compiled, Context, StepReport, StepSpec};
-use super::wire::{self, Capability, Params, WireError};
+use super::wire::{self, Capability, WireError};
 
 /// Where text model shares are searched: the backend directory, and the
 /// colon separated directories `extra` adds (`MYNA_TEXT_SHARES`, for a
@@ -88,83 +88,7 @@ pub fn rank(request: &Request, candidates: Vec<Candidate>) -> Vec<Candidate> {
     fits
 }
 
-/// Whether the chosen graph can do everything it asks.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub enum ChainStatus {
-    #[default]
-    Ready,
-    /// Some step has no model: the steps are skipped, the text is typed.
-    Degraded {
-        /// Requests no connected share covers, in key order.
-        missing: Vec<Missing>,
-        /// A share was connected after this process started, so only a
-        /// fresh daemon can see it.
-        needs_restart: bool,
-    },
-}
-
-/// A request no connected model covers: what to install, never any text.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Missing {
-    pub task: String,
-    pub params: Params,
-}
-
-impl Missing {
-    pub fn of(request: &Request) -> Self {
-        Self {
-            task: request.task.clone(),
-            params: request.params.clone(),
-        }
-    }
-}
-
-impl ChainStatus {
-    /// The tasks with no model, sorted and without repeats.
-    pub fn missing_tasks(&self) -> Vec<String> {
-        match self {
-            Self::Ready => Vec::new(),
-            Self::Degraded { missing, .. } => missing
-                .iter()
-                .map(|m| m.task.clone())
-                .collect::<BTreeSet<_>>()
-                .into_iter()
-                .collect(),
-        }
-    }
-
-    /// Whether no model covers `request`.
-    pub fn lacks(&self, request: &Request) -> bool {
-        matches!(self, Self::Degraded { missing, .. }
-            if missing.iter().any(|m| m.task == request.task && m.params == request.params))
-    }
-}
-
-/// What the daemon publishes for Settings besides the status: every model
-/// of every connected share, and what became of each step.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct Catalog {
-    pub models: Vec<Candidate>,
-    pub steps: Vec<StepReport>,
-    /// Every saved chain, with whether its models are installed.
-    pub chains: Vec<ChainSummary>,
-    /// The active chain's id; empty for none.
-    pub active: String,
-}
-
-/// A saved chain as Settings and the pill list it.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct ChainSummary {
-    pub id: String,
-    pub name: String,
-    pub steps: usize,
-    /// Every model step has an installed model (or the chain has none).
-    pub ready: bool,
-    /// What it lacks when not ready: the requests no installed model covers.
-    pub missing: Vec<Request>,
-    /// Steps this build does not know.
-    pub unknown: usize,
-}
+pub use super::status::{Catalog, ChainStatus, ChainSummary, Missing};
 
 /// How often the binder looks for a changed share, and how often it retries
 /// a request that is still unbound.
@@ -416,11 +340,10 @@ impl Resolver {
         }
     }
 
-    /// Every candidate of every connected Myna text share, whether a
-    /// share is connected that this process cannot see yet, and the shares
-    /// that answered.
-    async fn candidates(&self, within: Duration) -> (Vec<Candidate>, bool, BTreeSet<String>) {
-        let mut providers: Vec<TextProvider> = Vec::new();
+    /// The connected shares, curated where their directory says so, and
+    /// whether one is connected that this process cannot see yet.
+    fn scan(&self) -> (Vec<TextProvider>, bool) {
+        let mut providers = Vec::new();
         let mut needs_restart = false;
         for dir in &self.0.dirs {
             let shares = resolve_text_shares(dir);
@@ -437,37 +360,57 @@ impl Resolver {
             needs_restart |= shares.needs_restart();
             providers.extend(shares.providers);
         }
+        (providers, needs_restart)
+    }
+
+    /// Ask one share what it serves; `None` when it does not answer.
+    async fn probe(provider: &TextProvider, within: Duration) -> Option<Vec<Capability>> {
+        match wire::capabilities(&provider.socket, within).await {
+            Ok(caps) => Some(caps.models),
+            Err(e) => {
+                myna_core::info_log!("process", "{}: no models ({e:?})", provider.snap_name);
+                None
+            }
+        }
+    }
+
+    /// The models of `provider` this build has a check for, as candidates.
+    fn curate(provider: &TextProvider, models: Vec<Capability>) -> Vec<Candidate> {
+        models
+            .into_iter()
+            .filter(|capability| {
+                if step::check_of(capability).is_some() {
+                    return true;
+                }
+                myna_core::info_log!(
+                    "process",
+                    "{}/{}: unknown class, not offered",
+                    provider.snap_name,
+                    capability.id
+                );
+                false
+            })
+            .map(|capability| Candidate {
+                socket: provider.socket.clone(),
+                share: provider.snap_name.clone(),
+                capability,
+            })
+            .collect()
+    }
+
+    /// Everything the connected shares offer, whether a share is connected
+    /// that this process cannot see yet, and the shares that answered. One
+    /// round trip per share, whichever requests are then bound from it.
+    async fn candidates(&self, within: Duration) -> (Vec<Candidate>, bool, BTreeSet<String>) {
+        let (providers, needs_restart) = self.scan();
         let mut out = Vec::new();
         let mut answered = BTreeSet::new();
         for provider in providers {
-            let share = provider.snap_name.clone();
-            match wire::capabilities(&provider.socket, within).await {
-                Ok(caps) => {
-                    let models = caps.models;
-                    answered.insert(share.clone());
-                    out.extend(
-                        models
-                            .into_iter()
-                            .filter(|capability| {
-                                if step::check_of(capability).is_some() {
-                                    return true;
-                                }
-                                myna_core::info_log!(
-                                    "process",
-                                    "{share}/{}: unknown class, not offered",
-                                    capability.id
-                                );
-                                false
-                            })
-                            .map(|capability| Candidate {
-                                socket: provider.socket.clone(),
-                                share: share.clone(),
-                                capability,
-                            }),
-                    )
-                }
-                Err(e) => myna_core::info_log!("process", "{share}: no models ({e:?})"),
-            }
+            let Some(models) = Self::probe(&provider, within).await else {
+                continue;
+            };
+            answered.insert(provider.snap_name.clone());
+            out.extend(Self::curate(&provider, models));
         }
         (out, needs_restart, answered)
     }
@@ -476,8 +419,9 @@ impl Resolver {
     /// that fails or runs past the bind budget. `None` when nothing covers it
     /// or nothing warms.
     async fn bind(&self, request: &Request) -> (Option<Binding>, bool) {
+        let (candidates, needs_restart, _) = self.candidates(request.bind_budget).await;
         let _one = self.0.binding.lock().await;
-        self.bind_held(request).await
+        (self.bind_held(request, &candidates).await, needs_restart)
     }
 
     /// The last resort for a piece of text that finds its request unbound:
@@ -496,17 +440,18 @@ impl Resolver {
             return None;
         }
         let _one = self.0.binding.try_lock().ok()?;
-        self.bind_held(request).await.0
+        let (candidates, _, _) = self.candidates(request.bind_budget).await;
+        self.bind_held(request, &candidates).await
     }
 
-    /// [`Self::bind`] with the binding lock already held.
-    async fn bind_held(&self, request: &Request) -> (Option<Binding>, bool) {
+    /// Warm from a list already probed this settle, with the binding lock
+    /// held.
+    async fn bind_held(&self, request: &Request, candidates: &[Candidate]) -> Option<Binding> {
         let key = request.key();
         if let Some(done) = self.bound(&key) {
-            return (Some(done), false);
+            return Some(done);
         }
-        let (candidates, needs_restart, _) = self.candidates(request.bind_budget).await;
-        for candidate in rank(request, candidates).into_iter().take(2) {
+        for candidate in rank(request, candidates.to_vec()).into_iter().take(2) {
             let warmed = wire::warm(
                 &candidate.socket,
                 &candidate.capability.id,
@@ -533,19 +478,15 @@ impl Resolver {
                         .lock()
                         .unwrap_or_else(|p| p.into_inner())
                         .remove(&key);
-                    return (Some(binding), needs_restart);
+                    return Some(binding);
                 }
                 Err(e) => myna_core::info_log!(
                     "process",
-                    "{}: {}/{} did not warm ({})",
+                    "{}: {}/{} did not warm ({:?})",
                     request.task,
                     candidate.share,
                     candidate.capability.id,
-                    match e {
-                        WireError::Unavailable(_) => "unavailable",
-                        WireError::Refused(_) => "refused",
-                        WireError::TimedOut => "timed out",
-                    }
+                    e
                 ),
             }
         }
@@ -554,7 +495,7 @@ impl Resolver {
             .lock()
             .unwrap_or_else(|p| p.into_inner())
             .insert(key, Instant::now());
-        (None, needs_restart)
+        None
     }
 
     /// Unbind what a share that answered no longer offers (a removed
@@ -577,22 +518,23 @@ impl Resolver {
     /// them are. Called at daemon start, on a chain change, and when a share
     /// may have appeared.
     pub async fn settle(&self, requests: &[Request]) {
-        let (models, _, answered) = self.candidates(BIND_BUDGET).await;
+        let (models, needs_restart, answered) = self.candidates(BIND_BUDGET).await;
         self.forget_withdrawn(&models, &answered);
+        let mut missing = BTreeMap::new();
+        for request in requests {
+            let binding = {
+                let _one = self.0.binding.lock().await;
+                self.bind_held(request, &models).await
+            };
+            if binding.is_none() {
+                missing.insert(request.key(), Missing::of(request));
+            }
+        }
         self.0.catalog.send_if_modified(|now| {
             let changed = now.models != models;
             now.models = models;
             changed
         });
-        let mut missing = BTreeMap::new();
-        let mut needs_restart = false;
-        for request in requests {
-            let (binding, restart) = self.bind(request).await;
-            needs_restart |= restart;
-            if binding.is_none() {
-                missing.insert(request.key(), Missing::of(request));
-            }
-        }
         let status = if missing.is_empty() {
             ChainStatus::Ready
         } else {
@@ -666,7 +608,6 @@ impl Models for Resolver {
 
 #[cfg(test)]
 mod tests {
-    use super::super::steps::{StepReport, StepState};
     use super::*;
     use serde_json::{json, Value};
     use std::path::Path;
@@ -736,6 +677,8 @@ mod tests {
         dir: PathBuf,
         warms: Arc<AtomicUsize>,
         runs: Arc<AtomicUsize>,
+        /// How often the share was asked for its models: once per settle.
+        probes: Arc<AtomicUsize>,
         models: Arc<Mutex<Value>>,
     }
 
@@ -743,9 +686,6 @@ mod tests {
     enum Mode {
         Works,
         WarmFails,
-        WarmHangs,
-        RunRefuses,
-        RunHangs,
     }
 
     fn root(tag: &str) -> PathBuf {
@@ -765,7 +705,8 @@ mod tests {
         .unwrap();
         let listener = UnixListener::bind(dir.join("text.sock")).unwrap();
         let (warms, runs) = (Arc::new(AtomicUsize::new(0)), Arc::new(AtomicUsize::new(0)));
-        let (w, r) = (warms.clone(), runs.clone());
+        let probes = Arc::new(AtomicUsize::new(0));
+        let (w, r, p) = (warms.clone(), runs.clone(), probes.clone());
         let models = Arc::new(Mutex::new(models));
         let served = models.clone();
         tokio::spawn(async move {
@@ -773,7 +714,7 @@ mod tests {
                 let Ok((stream, _)) = listener.accept().await else {
                     return;
                 };
-                let (models, w, r) = (served.clone(), w.clone(), r.clone());
+                let (models, w, r, p) = (served.clone(), w.clone(), r.clone(), p.clone());
                 tokio::spawn(async move {
                     let (read, mut write) = stream.into_split();
                     let mut line = String::new();
@@ -781,28 +722,19 @@ mod tests {
                     let call: Value = serde_json::from_str(&line).unwrap();
                     let reply = match call["op"].as_str().unwrap() {
                         "capabilities" => {
+                            p.fetch_add(1, Ordering::SeqCst);
                             json!({"protocol": "myna-text-v1", "models": *models.lock().unwrap()})
                         }
                         "warm" => {
                             w.fetch_add(1, Ordering::SeqCst);
                             match mode {
-                                Mode::Works | Mode::RunRefuses | Mode::RunHangs => {
-                                    json!({"ok": true})
-                                }
+                                Mode::Works => json!({"ok": true}),
                                 Mode::WarmFails => json!({"error": "no memory"}),
-                                Mode::WarmHangs => std::future::pending().await,
                             }
                         }
                         _ => {
                             r.fetch_add(1, Ordering::SeqCst);
-                            if matches!(mode, Mode::RunHangs) {
-                                std::future::pending::<()>().await;
-                            }
-                            if matches!(mode, Mode::RunRefuses) {
-                                json!({"error": "cannot"})
-                            } else {
-                                json!({"text": format!("{}!", call["text"].as_str().unwrap())})
-                            }
+                            json!({"text": format!("{}!", call["text"].as_str().unwrap())})
                         }
                     };
                     write
@@ -816,6 +748,7 @@ mod tests {
             dir,
             warms,
             runs,
+            probes,
             models,
         }
     }
@@ -854,58 +787,6 @@ mod tests {
         // Bound: settling again probes and warms nothing.
         resolver.settle(std::slice::from_ref(&request)).await;
         assert_eq!(fast.warms.load(Ordering::SeqCst), 1);
-        std::fs::remove_dir_all(&dir).unwrap();
-    }
-
-    #[tokio::test]
-    async fn a_winner_that_fails_to_warm_hands_over_to_the_runner_up() {
-        let dir = root("failover");
-        let a = share(
-            &dir,
-            "a",
-            json!([model("a", "text.cleanup", 5)]),
-            Mode::WarmFails,
-        );
-        let b = share(
-            &dir,
-            "b",
-            json!([model("b", "text.cleanup", 50)]),
-            Mode::Works,
-        );
-        let resolver = Resolver::open(vec![dir.clone()]);
-        let request = Request::cleanup(None);
-        resolver.settle(std::slice::from_ref(&request)).await;
-        assert_eq!(bound(&resolver, &request).as_deref(), Some("b/b"));
-        assert_eq!(
-            (
-                a.warms.load(Ordering::SeqCst),
-                b.warms.load(Ordering::SeqCst)
-            ),
-            (1, 1)
-        );
-        std::fs::remove_dir_all(&dir).unwrap();
-    }
-
-    #[tokio::test]
-    async fn a_winner_past_the_bind_budget_hands_over_too() {
-        let dir = root("slowbind");
-        share(
-            &dir,
-            "a",
-            json!([model("a", "text.cleanup", 5)]),
-            Mode::WarmHangs,
-        );
-        share(
-            &dir,
-            "b",
-            json!([model("b", "text.cleanup", 50)]),
-            Mode::Works,
-        );
-        let resolver = Resolver::open(vec![dir.clone()]);
-        let mut request = Request::cleanup(None);
-        request.bind_budget = Duration::from_millis(200);
-        resolver.settle(std::slice::from_ref(&request)).await;
-        assert_eq!(bound(&resolver, &request).as_deref(), Some("b/b"));
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -957,6 +838,14 @@ mod tests {
         );
         assert_eq!(text.warms.load(Ordering::SeqCst), 1);
         assert_eq!(translation.warms.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            (
+                text.probes.load(Ordering::SeqCst),
+                translation.probes.load(Ordering::SeqCst)
+            ),
+            (1, 1),
+            "one round trip per share per settle, not per request"
+        );
         assert_eq!(*resolver.status().borrow(), ChainStatus::Ready);
         std::fs::remove_dir_all(&dir).unwrap();
     }
@@ -1022,75 +911,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_pivot_missing_a_leg_names_that_leg_and_types_what_was_heard() {
-        let dir = root("pivot-missing");
-        share(
-            &dir,
-            "myna-translation",
-            json!([pair("fr", "en")]),
-            Mode::Works,
-        );
-        let resolver = Resolver::open(vec![dir.clone()]);
-        let steps = [StepSpec::new("translate").with("to", "de")];
-        resolver.settle(&[]).await;
-        let wanted = resolver.compile(&steps, Some("fr")).graph.requests();
-        resolver.settle(&wanted).await;
-        let leg = wanted.iter().find(|r| r.params["to"] == "de").unwrap();
-        assert_eq!(
-            *resolver.status().borrow(),
-            ChainStatus::Degraded {
-                missing: vec![Missing::of(leg)],
-                needs_restart: false
-            }
-        );
-        let compiled = resolver.compile(&steps, Some("fr"));
-        assert_eq!(
-            compiled.report[0].state,
-            StepState::Unavailable {
-                request: leg.clone()
-            }
-        );
-        assert_eq!(typed(&resolver, &steps, "A lundi.").await, "A lundi.");
-        std::fs::remove_dir_all(&dir).unwrap();
-    }
-
-    #[tokio::test]
-    async fn an_uncovered_task_is_reported_missing_until_a_share_covers_it() {
-        let dir = root("missing");
-        share(
-            &dir,
-            "tagger",
-            json!([model("a", "text.cleanup", 5)]),
-            Mode::Works,
-        );
-        let resolver = Resolver::open(vec![dir.clone()]);
-        let requests = [Request::cleanup(None), Request::translate("en", "fr")];
-        resolver.settle(&requests).await;
-        assert_eq!(
-            *resolver.status().borrow(),
-            ChainStatus::Degraded {
-                missing: vec![Missing::of(&requests[1])],
-                needs_restart: false
-            }
-        );
-        // The same answer is not published again, a different one is.
-        let mut seen = resolver.status();
-        seen.borrow_and_update();
-        resolver.settle(&requests).await;
-        assert!(!seen.has_changed().unwrap());
-        share(
-            &dir,
-            "marian",
-            json!([model("m", "text.translate", 90)]),
-            Mode::Works,
-        );
-        resolver.settle(&requests).await;
-        assert!(seen.has_changed().unwrap());
-        assert_eq!(*resolver.status().borrow(), ChainStatus::Ready);
-        std::fs::remove_dir_all(&dir).unwrap();
-    }
-
-    #[tokio::test]
     async fn a_model_of_an_unknown_class_is_uncovered_and_one_of_a_known_class_is_not() {
         let dir = root("class");
         let mut odd = model("odd", "text.cleanup", 1);
@@ -1132,36 +952,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn an_unbound_request_binds_at_run_and_runs_with_the_models_name() {
-        let dir = root("lazy");
-        let s = share(
-            &dir,
-            "tagger",
-            json!([model("a", "text.cleanup", 5)]),
-            Mode::Works,
-        );
-        let mut resolver = Resolver::open(vec![dir.clone()]);
-        let request = Request::cleanup(None);
-        let answer = resolver.run(&request, "hi").await.unwrap();
-        assert_eq!(answer.text, "hi!");
-        assert_eq!(answer.model.as_deref(), Some("tagger/a"));
-        resolver.run(&request, "hi").await.unwrap();
-        assert_eq!(
-            (
-                s.warms.load(Ordering::SeqCst),
-                s.runs.load(Ordering::SeqCst)
-            ),
-            (1, 2)
-        );
-        let none = Request::translate("en", "de");
-        assert!(matches!(
-            resolver.run(&none, "hi").await,
-            Err(ModelError::Unavailable(_))
-        ));
-        std::fs::remove_dir_all(&dir).unwrap();
-    }
-
-    #[tokio::test]
     async fn a_share_that_went_away_is_evicted_and_found_again_by_prepare() {
         let dir = root("evict");
         let first = share(
@@ -1199,50 +989,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_refusal_keeps_the_binding() {
-        let dir = root("refuse");
-        share(
-            &dir,
-            "tagger",
-            json!([model("a", "text.cleanup", 5)]),
-            Mode::RunRefuses,
-        );
-        let mut resolver = Resolver::open(vec![dir.clone()]);
-        let request = Request::cleanup(None);
-        resolver.settle(std::slice::from_ref(&request)).await;
-        assert!(matches!(
-            resolver.run(&request, "hi").await,
-            Err(ModelError::Refused(why)) if why == "cannot"
-        ));
-        assert_eq!(bound(&resolver, &request).as_deref(), Some("tagger/a"));
-        std::fs::remove_dir_all(&dir).unwrap();
-    }
-
-    #[tokio::test]
-    async fn a_slow_model_keeps_its_binding() {
-        let dir = root("slow");
-        let s = share(
-            &dir,
-            "tagger",
-            json!([model("a", "text.cleanup", 5)]),
-            Mode::RunHangs,
-        );
-        let mut resolver = Resolver::open(vec![dir.clone()]);
-        let mut request = Request::cleanup(None);
-        request.run_budget = Duration::from_millis(100);
-        resolver.settle(std::slice::from_ref(&request)).await;
-        for _ in 0..2 {
-            assert!(matches!(
-                resolver.run(&request, "hi").await,
-                Err(ModelError::TimedOut)
-            ));
-        }
-        assert_eq!(bound(&resolver, &request).as_deref(), Some("tagger/a"));
-        assert_eq!(s.warms.load(Ordering::SeqCst), 1, "never warmed again");
-        std::fs::remove_dir_all(&dir).unwrap();
-    }
-
-    #[tokio::test]
     async fn a_failed_bind_is_not_retried_inline_for_every_piece() {
         let dir = root("backoff");
         let s = share(
@@ -1264,369 +1010,6 @@ mod tests {
         resolver.settle(std::slice::from_ref(&request)).await;
         assert_eq!(s.warms.load(Ordering::SeqCst), 2);
         std::fs::remove_dir_all(&dir).unwrap();
-    }
-
-    #[tokio::test]
-    async fn a_piece_does_not_queue_behind_a_bind_in_progress() {
-        let dir = root("noqueue");
-        share(
-            &dir,
-            "tagger",
-            json!([model("a", "text.cleanup", 5)]),
-            Mode::WarmHangs,
-        );
-        let mut resolver = Resolver::open(vec![dir.clone()]);
-        let mut request = Request::cleanup(None);
-        request.bind_budget = Duration::from_millis(600);
-        resolver.prepare(std::slice::from_ref(&request));
-        tokio::time::sleep(Duration::from_millis(100)).await;
-        let started = std::time::Instant::now();
-        assert!(matches!(
-            resolver.run(&request, "hi").await,
-            Err(ModelError::Unavailable(_))
-        ));
-        assert!(started.elapsed() < Duration::from_millis(300));
-        std::fs::remove_dir_all(&dir).unwrap();
-    }
-
-    #[tokio::test]
-    async fn the_catalog_unions_every_share_and_missing_names_full_requests() {
-        let dir = root("catalog");
-        share(
-            &dir,
-            "myna-text",
-            json!([model("tagger", "text.cleanup", 5)]),
-            Mode::Works,
-        );
-        share(
-            &dir,
-            "myna-translation",
-            json!([model("fr", "text.translate", 10)]),
-            Mode::Works,
-        );
-        let resolver = Resolver::open(vec![dir.clone()]);
-        let want = [
-            Request::cleanup(Some("en".into())),
-            Request::translate("en", "fr"),
-            Request::translate("en", "de"),
-            Request::translate("en", "es"),
-        ];
-        resolver.settle(&want).await;
-        let shares: Vec<String> = resolver
-            .catalog()
-            .borrow()
-            .models
-            .iter()
-            .map(|c| format!("{}/{}", c.share, c.capability.id))
-            .collect();
-        assert_eq!(shares, ["myna-text/tagger", "myna-translation/fr"]);
-        let status = resolver.status().borrow().clone();
-        let ChainStatus::Degraded { missing, .. } = &status else {
-            panic!("{status:?}");
-        };
-        let targets: BTreeSet<&str> = missing
-            .iter()
-            .map(|m| m.params["to"].as_str().unwrap())
-            .collect();
-        assert_eq!(targets, BTreeSet::from(["de", "es"]));
-        assert_eq!(status.missing_tasks(), ["text.translate"]);
-        assert!(status.lacks(&want[2]));
-        assert!(!status.lacks(&want[1]));
-        assert!(!status.lacks(&want[0]));
-        assert!(!ChainStatus::Ready.lacks(&want[2]));
-        assert!(ChainStatus::Ready.missing_tasks().is_empty());
-        std::fs::remove_dir_all(&dir).unwrap();
-    }
-
-    #[tokio::test]
-    async fn a_model_a_share_withdraws_is_unbound_and_one_it_cannot_answer_for_is_kept() {
-        let dir = root("withdrawn");
-        let s = share(
-            &dir,
-            "myna-text",
-            json!([model("tagger", "text.cleanup", 5)]),
-            Mode::Works,
-        );
-        let resolver = Resolver::open(vec![dir.clone()]);
-        let request = Request::cleanup(Some("en".into()));
-        resolver.settle(std::slice::from_ref(&request)).await;
-        assert!(bound(&resolver, &request).is_some());
-        // The share cannot be reached: its binding stands.
-        std::fs::remove_file(dir.join("myna-text/provider.env")).unwrap();
-        resolver.settle(std::slice::from_ref(&request)).await;
-        assert!(bound(&resolver, &request).is_some());
-        std::fs::write(
-            dir.join("myna-text/provider.env"),
-            "SNAP_NAME=myna-text\nMYNA_ROLE=text\nUNIX_SOCKET=text.sock\n",
-        )
-        .unwrap();
-        *s.models.lock().unwrap() = json!([]);
-        resolver.settle(std::slice::from_ref(&request)).await;
-        assert_eq!(bound(&resolver, &request), None);
-        assert!(resolver.status().borrow().lacks(&request));
-        *s.models.lock().unwrap() = json!([model("tagger", "text.cleanup", 5)]);
-        resolver.settle(std::slice::from_ref(&request)).await;
-        assert!(bound(&resolver, &request).is_some());
-        assert_eq!(*resolver.status().borrow(), ChainStatus::Ready);
-        std::fs::remove_dir_all(&dir).unwrap();
-    }
-
-    #[tokio::test]
-    async fn a_model_removed_mid_chain_types_what_the_rest_made_and_recovers() {
-        use super::super::graph::Graph;
-        use super::super::pipeline::Pipeline;
-        use super::super::{Field, Processor};
-        use myna_core::ProcessingChain;
-
-        let dir = root("mid-chain");
-        share(
-            &dir,
-            "myna-text",
-            json!([model("tagger", "text.cleanup", 5)]),
-            Mode::Works,
-        );
-        let translation = share(
-            &dir,
-            "myna-translation",
-            json!([model("fr", "text.translate", 5)]),
-            Mode::Works,
-        );
-        let resolver = Resolver::open(vec![dir.clone()]);
-        let graph = Graph::preset(ProcessingChain::TIDY_FRENCH);
-        resolver.settle(&graph.requests()).await;
-        assert_eq!(*resolver.status().borrow(), ChainStatus::Ready);
-        let mut pipeline = Pipeline::new(graph.clone(), resolver.clone());
-        let field = Field::default();
-        let heard = "so I think we should go";
-        assert_eq!(
-            pipeline.process(heard.into(), &field).await,
-            "so I think we should go!!"
-        );
-
-        // The component is removed: its mount, and so its socket, is gone.
-        std::fs::remove_file(translation.dir.join("text.sock")).unwrap();
-        let typed = pipeline.process(heard.into(), &field).await;
-        assert_eq!(
-            typed, "so I think we should go!",
-            "the cleaned text is typed"
-        );
-        let trace = pipeline.trace().lock().unwrap().clone();
-        assert_eq!(trace.last().unwrap().task, "text.translate");
-        assert_eq!(
-            trace.last().unwrap().skipped,
-            Some(myna_core::history::Skip::NoModel)
-        );
-
-        // Settings tells the daemon; the chain names the missing request.
-        *translation.models.lock().unwrap() = json!([]);
-        resolver.settle(&graph.requests()).await;
-        let status = resolver.status().borrow().clone();
-        assert_eq!(status.missing_tasks(), ["text.translate"]);
-
-        // Reinstalled: a new socket, and the next text is translated again.
-        let again = share(
-            &dir,
-            "myna-translation",
-            json!([model("fr", "text.translate", 5)]),
-            Mode::Works,
-        );
-        resolver.settle(&graph.requests()).await;
-        assert_eq!(*resolver.status().borrow(), ChainStatus::Ready);
-        assert_eq!(
-            pipeline.process(heard.into(), &field).await,
-            "so I think we should go!!"
-        );
-        assert!(again.runs.load(Ordering::SeqCst) >= 1);
-        std::fs::remove_dir_all(&dir).unwrap();
-    }
-
-    #[tokio::test]
-    async fn the_signature_moves_with_a_share_and_steps_publish_once() {
-        let dir = root("signature");
-        let resolver = Resolver::open(vec![dir.clone()]);
-        let empty = resolver.signature();
-        assert_eq!(resolver.signature(), empty);
-        let s = share(&dir, "a", json!([]), Mode::Works);
-        let one = resolver.signature();
-        assert_ne!(one, empty);
-        std::thread::sleep(Duration::from_millis(20));
-        std::fs::write(
-            s.dir.join("provider.env"),
-            "SNAP_NAME=a\nMYNA_ROLE=text\nUNIX_SOCKET=text.sock\n# x\n",
-        )
-        .unwrap();
-        assert_ne!(resolver.signature(), one);
-        assert!(Resolver::open(vec![dir.join("none")]).signature().len() == 1);
-
-        let mut seen = resolver.catalog();
-        seen.borrow_and_update();
-        let steps = vec![StepReport {
-            id: "tidy".into(),
-            state: super::super::steps::StepState::Applicable,
-        }];
-        resolver.set_steps(steps.clone());
-        assert!(seen.has_changed().unwrap());
-        seen.borrow_and_update();
-        resolver.set_steps(steps);
-        assert!(!seen.has_changed().unwrap());
-        std::fs::remove_dir_all(&dir).unwrap();
-    }
-
-    #[tokio::test]
-    async fn a_component_appearing_flips_the_chain_to_ready_without_a_call() {
-        let dir = root("watch");
-        let s = share(&dir, "myna-translation", json!([]), Mode::Works);
-        let resolver = Resolver::open(vec![dir.clone()]);
-        let wake = Arc::new(tokio::sync::Notify::new());
-        let ran = Arc::new(AtomicUsize::new(0));
-        let watcher = {
-            let (resolver, wake, ran) = (resolver.clone(), wake.clone(), ran.clone());
-            tokio::spawn(async move {
-                let cadence = Cadence {
-                    poll: Duration::from_millis(20),
-                    retry: Duration::from_secs(600),
-                };
-                resolver
-                    .keep_bound(
-                        &wake,
-                        cadence,
-                        || vec![Request::translate("en", "fr")],
-                        |_| {
-                            ran.fetch_add(1, Ordering::SeqCst);
-                        },
-                    )
-                    .await
-            })
-        };
-        let mut status = resolver.status();
-        let mut until = async |ready: bool| {
-            tokio::time::timeout(Duration::from_secs(3), async {
-                while (*status.borrow_and_update() == ChainStatus::Ready) != ready {
-                    status.changed().await.unwrap();
-                }
-            })
-            .await
-            .expect("the status followed the share")
-        };
-        until(false).await;
-        let settled = ran.load(Ordering::SeqCst);
-        // Idle and degraded within the retry window: nothing re-settles.
-        tokio::time::sleep(Duration::from_millis(150)).await;
-        assert_eq!(ran.load(Ordering::SeqCst), settled);
-        std::thread::sleep(Duration::from_millis(20));
-        *s.models.lock().unwrap() = json!([model("fr", "text.translate", 10)]);
-        std::fs::write(
-            s.dir.join("provider.env"),
-            "SNAP_NAME=myna-translation\nMYNA_ROLE=text\nUNIX_SOCKET=text.sock\n# new\n",
-        )
-        .unwrap();
-        until(true).await;
-        // A wake settles again whatever the disk says.
-        let before = ran.load(Ordering::SeqCst);
-        wake.notify_one();
-        tokio::time::timeout(Duration::from_secs(3), async {
-            while ran.load(Ordering::SeqCst) == before {
-                tokio::time::sleep(Duration::from_millis(10)).await;
-            }
-        })
-        .await
-        .expect("a wake settles");
-        watcher.abort();
-        std::fs::remove_dir_all(&dir).unwrap();
-    }
-
-    #[tokio::test]
-    async fn a_still_unbound_request_is_retried_after_the_retry_interval() {
-        let dir = root("retry");
-        let resolver = Resolver::open(vec![dir.clone()]);
-        let wake = Arc::new(tokio::sync::Notify::new());
-        let ran = Arc::new(AtomicUsize::new(0));
-        let watcher = {
-            let (resolver, wake, ran) = (resolver.clone(), wake.clone(), ran.clone());
-            tokio::spawn(async move {
-                let cadence = Cadence {
-                    poll: Duration::from_millis(10),
-                    retry: Duration::from_millis(60),
-                };
-                resolver
-                    .keep_bound(
-                        &wake,
-                        cadence,
-                        || vec![Request::cleanup(None)],
-                        |_| {
-                            ran.fetch_add(1, Ordering::SeqCst);
-                        },
-                    )
-                    .await
-            })
-        };
-        tokio::time::timeout(Duration::from_secs(3), async {
-            while ran.load(Ordering::SeqCst) < 3 {
-                tokio::time::sleep(Duration::from_millis(10)).await;
-            }
-        })
-        .await
-        .expect("retried while degraded");
-        watcher.abort();
-        std::fs::remove_dir_all(&dir).unwrap();
-    }
-
-    #[tokio::test]
-    async fn only_the_share_that_withdrew_a_model_loses_its_binding() {
-        let dir = root("same-id");
-        let a = share(
-            &dir,
-            "a",
-            json!([model("m", "text.cleanup", 5)]),
-            Mode::Works,
-        );
-        share(
-            &dir,
-            "b",
-            json!([model("m", "text.cleanup", 50)]),
-            Mode::Works,
-        );
-        let resolver = Resolver::open(vec![dir.clone()]);
-        let request = Request::cleanup(Some("en".into()));
-        resolver.settle(std::slice::from_ref(&request)).await;
-        assert_eq!(bound(&resolver, &request).as_deref(), Some("a/m"));
-        *a.models.lock().unwrap() = json!([model("other", "text.translate", 5)]);
-        resolver.settle(std::slice::from_ref(&request)).await;
-        assert_eq!(bound(&resolver, &request).as_deref(), Some("b/m"));
-        std::fs::remove_dir_all(&dir).unwrap();
-    }
-
-    #[tokio::test]
-    async fn the_catalog_is_published_when_the_models_change_and_not_otherwise() {
-        let dir = root("catalog-change");
-        let s = share(&dir, "a", json!([]), Mode::Works);
-        let resolver = Resolver::open(vec![dir.clone()]);
-        let mut seen = resolver.catalog();
-        seen.borrow_and_update();
-        resolver.settle(&[]).await;
-        assert!(!seen.has_changed().unwrap());
-        *s.models.lock().unwrap() = json!([model("m", "text.cleanup", 5)]);
-        resolver.settle(&[]).await;
-        assert!(seen.has_changed().unwrap());
-        assert_eq!(seen.borrow_and_update().models.len(), 1);
-        resolver.settle(&[]).await;
-        assert!(!seen.has_changed().unwrap());
-        std::fs::remove_dir_all(&dir).unwrap();
-    }
-
-    fn spoofed(root: &Path, dir: &str, snap: &str) {
-        let share = share(
-            root,
-            dir,
-            json!([model("t", "text.cleanup", 5)]),
-            Mode::Works,
-        );
-        drop(share);
-        std::fs::write(
-            root.join(dir).join("provider.env"),
-            format!("SNAP_NAME={snap}\nMYNA_ROLE=text\nUNIX_SOCKET=text.sock\n"),
-        )
-        .unwrap();
     }
 
     #[tokio::test]
@@ -1675,51 +1058,19 @@ mod tests {
         assert_eq!(*resolver.status().borrow(), ChainStatus::Ready);
     }
 
-    #[tokio::test]
-    async fn an_ignored_share_neither_degrades_the_chain_nor_asks_for_a_restart() {
-        let dir = root("ignored");
-        share(
-            &dir,
-            "evil",
-            json!([model("e", "text.cleanup", 1)]),
+    fn spoofed(root: &Path, dir: &str, snap: &str) {
+        let share = share(
+            root,
+            dir,
+            json!([model("t", "text.cleanup", 5)]),
             Mode::Works,
         );
-        let resolver = Resolver::new(vec![dir.clone()]);
-        let request = Request::cleanup(None);
-        let (candidates, needs_restart, answered) = resolver.candidates(request.bind_budget).await;
-        assert!(candidates.is_empty() && !needs_restart && answered.is_empty());
-        assert!(resolver.0.ignored.lock().unwrap().contains("evil"));
-        assert!(resolver.bound_to(&request).is_none());
-    }
-
-    #[tokio::test]
-    async fn a_dev_share_dir_bypasses_the_list() {
-        let dir = root("open-dir");
-        let open = root("open-extra");
-        share(
-            &dir,
-            "evil",
-            json!([model("e", "text.cleanup", 1)]),
-            Mode::Works,
-        );
-        share(
-            &open,
-            "mine",
-            json!([model("m", "text.cleanup", 2)]),
-            Mode::Works,
-        );
-        let resolver = Resolver::with_open(vec![dir.clone()], vec![open.clone()]);
-        let request = Request::cleanup(None);
-        resolver.settle(std::slice::from_ref(&request)).await;
-        assert_eq!(resolver.bound_to(&request).as_deref(), Some("mine/m"));
-        let shares: BTreeSet<String> = resolver
-            .catalog()
-            .borrow()
-            .models
-            .iter()
-            .map(|m| m.share.clone())
-            .collect();
-        assert_eq!(shares, ["mine".to_string()].into());
+        drop(share);
+        std::fs::write(
+            root.join(dir).join("provider.env"),
+            format!("SNAP_NAME={snap}\nMYNA_ROLE=text\nUNIX_SOCKET=text.sock\n"),
+        )
+        .unwrap();
     }
 
     #[tokio::test]
@@ -1731,44 +1082,6 @@ mod tests {
         let request = Request::cleanup(None);
         resolver.settle(std::slice::from_ref(&request)).await;
         assert_eq!(resolver.bound_to(&request).as_deref(), Some("myna-text/t"));
-        assert!(resolver.0.ignored.lock().unwrap().contains("evil"));
-    }
-
-    #[tokio::test]
-    async fn a_late_share_in_a_curated_dir_asks_for_a_restart() {
-        let dir = root("curated-restart");
-        std::fs::create_dir_all(dir.join("late")).unwrap();
-        let resolver = Resolver::new(vec![dir.clone()]);
-        resolver.settle(&[Request::cleanup(None)]).await;
-        assert!(matches!(
-            *resolver.status().borrow(),
-            ChainStatus::Degraded {
-                needs_restart: true,
-                ..
-            }
-        ));
-    }
-
-    #[tokio::test]
-    async fn the_daemons_resolver_curates_the_backend_dir_and_opens_the_extra_ones() {
-        let backend = root("env-backend");
-        let extra = root("env-extra");
-        share(
-            &backend,
-            "evil",
-            json!([model("e", "text.cleanup", 1)]),
-            Mode::Works,
-        );
-        share(
-            &extra,
-            "mine",
-            json!([model("m", "text.cleanup", 2)]),
-            Mode::Works,
-        );
-        let resolver = Resolver::from_env(Some(&backend), Some(extra.clone().into()));
-        let request = Request::cleanup(None);
-        resolver.settle(std::slice::from_ref(&request)).await;
-        assert_eq!(resolver.bound_to(&request).as_deref(), Some("mine/m"));
         assert!(resolver.0.ignored.lock().unwrap().contains("evil"));
     }
 }

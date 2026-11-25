@@ -18,6 +18,7 @@ pub mod pipeline;
 pub mod resolve;
 pub mod rules;
 pub mod script;
+pub mod status;
 pub mod step;
 pub mod steps;
 pub mod vocabulary;
