@@ -93,6 +93,10 @@ def kernel(profile: str, name: str, comm: str = "python3") -> str:
     )
 
 
+def unlink(profile: str, name: str, comm: str = "python3") -> str:
+    return kernel(profile, name, comm).replace('operation="open"', 'operation="unlink"')
+
+
 PORTAL = (
     'Oct 14 17:37:52.161008 framework dbus-broker[1213517]: apparmor="DENIED" '
     'operation="dbus_method_call" bus="session" path="/org/freedesktop/portal/desktop" '
@@ -121,6 +125,9 @@ RTKIT = (
         kernel("snap.myna.hud", "/etc/vulkan/icd.d/", "myna-hud"),
         kernel("snap.myna.hud", "/etc/vulkan/implicit_layer.d/", "myna-hud"),
         kernel("snap.myna-whisper.server", "/proc/1234723/environ"),
+        unlink("snap.myna-whisper.server", "/dev/char/195:255"),
+        unlink("snap.myna-parakeet.server", "/dev/char/507:1"),
+        unlink("snap.myna.hud", "/dev/char/195:0", "myna-hud"),
         PORTAL,
     ],
 )
@@ -137,6 +144,10 @@ def test_known_harmless_denials_are_allowed(line):
         kernel("snap.myna.testbed", "/sys/fs/cgroup/user.slice/cpu.max.evil"),
         kernel("snap.myna-whisper.server", "/etc/vulkan/icd.d/"),
         kernel("snap.myna.hud", "/etc/vulkan/icd.d/nvidia.json", "myna-hud"),
+        unlink("snap.myna-whisper.server", "/dev/char/195:255/../../etc/shadow"),
+        kernel("snap.myna-whisper.server", "/dev/char/195:255"),
+        unlink("snap.myna-whisper.server", "/dev/nvidia0"),
+        kernel("snap.myna-whisper.server", "/dev/nvidia0"),
         # Another process's environment, not its own.
         kernel("snap.myna-whisper.server", "/proc/1/environ"),
         kernel("snap.myna-whisper.server", "/proc/1234723/cmdline"),

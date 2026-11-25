@@ -78,6 +78,14 @@ ALLOWED: tuple[Allowed, ...] = (
         " environ and takes it as unset; snapd's base template lacks the rule",
     ),
     Allowed(
+        {"operation": "unlink", "name": r"/dev/char/\d+:\d+"},
+        "NVIDIA's user-space libraries (CUDA, nvidia-smi) try to replace their"
+        " /dev/char/<major>:<minor> symlinks, which the driver package already"
+        " installed; snapd's opengl interface grants /dev/nvidia* and nothing"
+        " under /dev/char, as it should. The major of nvidia-uvm is assigned at"
+        " boot. CUDA runs and transcribes regardless",
+    ),
+    Allowed(
         {
             "subject": r"snap\.myna\.hud",
             "operation": "open",
