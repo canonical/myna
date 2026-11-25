@@ -205,7 +205,7 @@ impl Processor for Pipeline {
         super::fit::fit(&text, field, self.vocabulary())
     }
 
-    async fn process(&mut self, text: String, _: &Field) -> String {
+    async fn process(&mut self, text: String) -> String {
         let graph = self.started.clone().unwrap_or_else(|| self.graph.get());
         self.vocabulary();
         let mut trace = Vec::new();
@@ -285,10 +285,6 @@ mod tests {
         Pipeline::new(graph_of(ProcessingChain::TIDY), models)
     }
 
-    fn here() -> Field {
-        Field::default()
-    }
-
     /// Answers by the language a request translates to, or fails for it.
     struct ByTarget(Vec<(&'static str, Option<&'static str>)>);
 
@@ -321,10 +317,7 @@ mod tests {
             ("de", Some("Bis Montag.")),
         ]);
         let mut pipeline = Pipeline::new(pivot(), models);
-        assert_eq!(
-            pipeline.process("A lundi.".into(), &here()).await,
-            "Bis Montag."
-        );
+        assert_eq!(pipeline.process("A lundi.".into()).await, "Bis Montag.");
         let trace = traced(&pipeline);
         assert_eq!(trace.len(), 2);
         assert!(trace.iter().all(|step| step.skipped.is_none()));
@@ -334,18 +327,12 @@ mod tests {
     async fn a_pivot_with_a_failed_leg_types_what_was_heard_never_the_half() {
         let first_fails = ByTarget(vec![("de", Some("Bis Montag."))]);
         let mut pipeline = Pipeline::new(pivot(), first_fails);
-        assert_eq!(
-            pipeline.process("A lundi.".into(), &here()).await,
-            "A lundi."
-        );
+        assert_eq!(pipeline.process("A lundi.".into()).await, "A lundi.");
         assert_eq!(traced(&pipeline).len(), 1, "the second leg never ran");
 
         let second_fails = ByTarget(vec![("en", Some("See you Monday."))]);
         let mut pipeline = Pipeline::new(pivot(), second_fails);
-        assert_eq!(
-            pipeline.process("A lundi.".into(), &here()).await,
-            "A lundi."
-        );
+        assert_eq!(pipeline.process("A lundi.".into()).await, "A lundi.");
         let trace = traced(&pipeline);
         assert_eq!(trace.len(), 2);
         assert_eq!(trace[1].skipped, Some(Skip::NoModel));
@@ -355,10 +342,7 @@ mod tests {
     async fn each_leg_is_checked_against_its_own_input() {
         let empty = ByTarget(vec![("en", Some("   ")), ("de", Some("Bis Montag."))]);
         let mut pipeline = Pipeline::new(pivot(), empty);
-        assert_eq!(
-            pipeline.process("A lundi.".into(), &here()).await,
-            "A lundi."
-        );
+        assert_eq!(pipeline.process("A lundi.".into()).await, "A lundi.");
         assert_eq!(traced(&pipeline)[0].skipped, Some(Skip::Empty));
 
         let runaway = ByTarget(vec![
@@ -366,10 +350,7 @@ mod tests {
             ("de", Some("ja ja ja ja ja ja ja ja ja ja ja ja ja ja ja ja ja ja ja ja ja ja ja ja ja ja ja ja")),
         ]);
         let mut pipeline = Pipeline::new(pivot(), runaway);
-        assert_eq!(
-            pipeline.process("A lundi.".into(), &here()).await,
-            "A lundi."
-        );
+        assert_eq!(pipeline.process("A lundi.".into()).await, "A lundi.");
         assert_eq!(traced(&pipeline)[1].skipped, Some(Skip::OddLength));
 
         // 50 chars: too long for what was heard (8), fine for the first
@@ -377,16 +358,16 @@ mod tests {
         let long = "Wir sehen uns am Montag um zehn Uhr im Buero, ja.";
         let wide = ByTarget(vec![("en", Some("See you Monday.")), ("de", Some(long))]);
         let mut pipeline = Pipeline::new(pivot(), wide);
-        assert_eq!(pipeline.process("A lundi.".into(), &here()).await, long);
+        assert_eq!(pipeline.process("A lundi.".into()).await, long);
     }
 
     #[tokio::test]
     async fn the_graph_changed_while_running_applies_to_the_next_text() {
         let shared = Live::new(Graph::passthrough());
         let mut pipeline = Pipeline::new(shared.clone(), Scripted::Says("Bonjour."));
-        assert_eq!(pipeline.process("Hello.".into(), &here()).await, "Hello.");
+        assert_eq!(pipeline.process("Hello.".into()).await, "Hello.");
         shared.set(only("text.translate"));
-        assert_eq!(pipeline.process("Hello.".into(), &here()).await, "Bonjour.");
+        assert_eq!(pipeline.process("Hello.".into()).await, "Bonjour.");
     }
 
     #[test]
@@ -435,10 +416,7 @@ mod tests {
     #[tokio::test]
     async fn an_answer_made_of_words_that_were_said_is_typed() {
         let mut pipeline = cleanup(Scripted::Says("Let's meet Tuesday."));
-        assert_eq!(
-            pipeline.process(HEARD.into(), &here()).await,
-            "Let's meet Tuesday."
-        );
+        assert_eq!(pipeline.process(HEARD.into()).await, "Let's meet Tuesday.");
         let trace = traced(&pipeline);
         assert_eq!(trace.len(), 1);
         assert_eq!(trace[0].task, "text.cleanup");
@@ -450,9 +428,7 @@ mod tests {
     async fn a_missing_model_still_loses_the_stutters_and_pauses() {
         let mut pipeline = cleanup(Scripted::Fails);
         assert_eq!(
-            pipeline
-                .process("Um, I I think we, uh, ship.".into(), &here())
-                .await,
+            pipeline.process("Um, I I think we, uh, ship.".into()).await,
             "I think we ship."
         );
         assert_eq!(traced(&pipeline)[0].skipped, Some(Skip::NoModel));
@@ -465,7 +441,7 @@ mod tests {
     #[tokio::test]
     async fn an_answer_with_a_new_word_is_dropped_for_what_was_heard() {
         let mut pipeline = cleanup(Scripted::Says("Sure! Let's meet Tuesday."));
-        assert_eq!(pipeline.process(HEARD.into(), &here()).await, HEARD);
+        assert_eq!(pipeline.process(HEARD.into()).await, HEARD);
         let trace = traced(&pipeline);
         assert_eq!(trace[0].model.as_deref(), Some("scripted"));
         assert_eq!(trace[0].skipped, Some(Skip::NewWord));
@@ -476,12 +452,12 @@ mod tests {
         let written = Live::new(Vec::new());
         let mut pipeline = cleanup(Scripted::Says("Restart MySQL.")).written(written.clone());
         assert_eq!(
-            pipeline.process("restart my sequel".into(), &here()).await,
+            pipeline.process("restart my sequel".into()).await,
             "restart my sequel"
         );
         written.set(vec!["MySQL".into()]);
         assert_eq!(
-            pipeline.process("restart my sequel".into(), &here()).await,
+            pipeline.process("restart my sequel".into()).await,
             "Restart MySQL."
         );
     }
@@ -491,18 +467,12 @@ mod tests {
         let script = Live::new(ChineseScript::AsRecognised);
         let mut pipeline =
             Pipeline::new(Graph::passthrough(), Scripted::Fails).scripted(script.clone());
-        assert_eq!(
-            pipeline.process("头发 NASA".into(), &here()).await,
-            "头发 NASA"
-        );
+        assert_eq!(pipeline.process("头发 NASA".into()).await, "头发 NASA");
         script.set(ChineseScript::Traditional);
-        assert_eq!(
-            pipeline.process("头发 NASA".into(), &here()).await,
-            "頭髮 NASA"
-        );
+        assert_eq!(pipeline.process("头发 NASA".into()).await, "頭髮 NASA");
         let mut tidy = Pipeline::new(graph_of(ProcessingChain::TIDY), Scripted::Says("我们出发"))
             .scripted(script);
-        assert_eq!(tidy.process("我们出发".into(), &here()).await, "我們出發");
+        assert_eq!(tidy.process("我们出发".into()).await, "我們出發");
     }
 
     #[tokio::test]
@@ -522,18 +492,14 @@ mod tests {
         let said = "软件 NASA";
         assert_eq!(
             typed(&["script=traditional-taiwan"], "zh")
-                .process(said.into(), &here())
+                .process(said.into())
                 .await,
             "軟體 NASA"
         );
-        assert_eq!(
-            typed(&[], "zh").process(said.into(), &here()).await,
-            said,
-            "off"
-        );
+        assert_eq!(typed(&[], "zh").process(said.into()).await, said, "off");
         assert_eq!(
             typed(&["script=traditional-taiwan"], "en")
-                .process(said.into(), &here())
+                .process(said.into())
                 .await,
             said,
             "not applicable to English"
@@ -559,13 +525,13 @@ mod tests {
             .written(written.clone());
         let said = "I run my sequel";
         assert_eq!(
-            pipeline.process(said.into(), &here()).await,
+            pipeline.process(said.into()).await,
             "I run MySQL",
             "the model echoing its input passes the check with the term"
         );
         assert_eq!(*seen.lock().unwrap(), "I run MySQL");
         written.set(vec!["Postgres".to_owned()]);
-        assert_eq!(pipeline.process(said.into(), &here()).await, said);
+        assert_eq!(pipeline.process(said.into()).await, said);
     }
 
     /// The graph is read as a dictation starts: a chain switched while it
@@ -576,15 +542,9 @@ mod tests {
         let mut pipeline = Pipeline::new(shared.clone(), Scripted::Says("As heard."));
         pipeline.prepare();
         shared.set(graph_of(ProcessingChain::TIDY));
-        assert_eq!(
-            pipeline.process("as heard".into(), &here()).await,
-            "as heard"
-        );
+        assert_eq!(pipeline.process("as heard".into()).await, "as heard");
         pipeline.prepare();
-        assert_eq!(
-            pipeline.process("as heard".into(), &here()).await,
-            "As heard."
-        );
+        assert_eq!(pipeline.process("as heard".into()).await, "As heard.");
     }
 
     #[tokio::test]
@@ -606,7 +566,7 @@ mod tests {
     async fn fitting_runs_after_the_graph() {
         let mut pipeline = cleanup(Scripted::Says("The end."));
         let mid = Field::after(FieldPurpose::Plain, Some('s'));
-        let processed = pipeline.process("the end".into(), &mid).await;
+        let processed = pipeline.process("the end".into()).await;
         assert_eq!(processed, "The end.", "the cleanup recased it");
         assert_eq!(pipeline.fit(processed, &mid), "the end.");
     }
@@ -614,13 +574,13 @@ mod tests {
     #[tokio::test]
     async fn an_empty_answer_is_dropped_for_what_was_heard() {
         let mut pipeline = cleanup(Scripted::Says("  "));
-        assert_eq!(pipeline.process(HEARD.into(), &here()).await, HEARD);
+        assert_eq!(pipeline.process(HEARD.into()).await, HEARD);
     }
 
     #[tokio::test]
     async fn a_missing_model_types_what_was_heard() {
         let mut pipeline = cleanup(Scripted::Fails);
-        assert_eq!(pipeline.process(HEARD.into(), &here()).await, HEARD);
+        assert_eq!(pipeline.process(HEARD.into()).await, HEARD);
         let trace = traced(&pipeline);
         assert_eq!(trace[0].model, None);
         assert_eq!(trace[0].skipped, Some(Skip::NoModel));
@@ -629,24 +589,24 @@ mod tests {
     #[tokio::test]
     async fn a_refusal_is_recorded_as_a_code_without_the_far_sides_words() {
         let mut pipeline = cleanup(Scripted::Refuses);
-        assert_eq!(pipeline.process(HEARD.into(), &here()).await, HEARD);
+        assert_eq!(pipeline.process(HEARD.into()).await, HEARD);
         assert_eq!(traced(&pipeline)[0].skipped, Some(Skip::Refused));
     }
 
     #[tokio::test]
     async fn a_model_that_reports_its_own_timeout_is_recorded_as_one() {
         let mut pipeline = cleanup(Scripted::TimesOut);
-        assert_eq!(pipeline.process(HEARD.into(), &here()).await, HEARD);
+        assert_eq!(pipeline.process(HEARD.into()).await, HEARD);
         assert_eq!(traced(&pipeline)[0].skipped, Some(Skip::Timeout));
     }
 
     #[tokio::test(start_paused = true)]
     async fn a_model_over_its_budget_types_what_was_heard() {
         let mut pipeline = cleanup(Scripted::Hangs);
-        assert_eq!(pipeline.process(HEARD.into(), &here()).await, HEARD);
+        assert_eq!(pipeline.process(HEARD.into()).await, HEARD);
         assert_eq!(traced(&pipeline)[0].skipped, Some(Skip::Timeout));
         // The trace is of the last text alone.
-        assert_eq!(pipeline.process(HEARD.into(), &here()).await, HEARD);
+        assert_eq!(pipeline.process(HEARD.into()).await, HEARD);
         assert_eq!(traced(&pipeline).len(), 1);
     }
 
@@ -657,18 +617,15 @@ mod tests {
             Scripted::Says("rm -rf /tmp/x\nsudo reboot"),
         );
         assert_eq!(
-            translate.process("delete x".into(), &here()).await,
+            translate.process("delete x".into()).await,
             "rm -rf /tmp/x sudo reboot"
         );
 
         let mut tidy = cleanup(Scripted::Says("Let's meet\r\n  Tuesday.\x1b\n"));
-        assert_eq!(
-            tidy.process(HEARD.into(), &here()).await,
-            "Let's meet Tuesday."
-        );
+        assert_eq!(tidy.process(HEARD.into()).await, "Let's meet Tuesday.");
 
         let mut control_only = cleanup(Scripted::Says("\n\r\t\x1b"));
-        assert_eq!(control_only.process(HEARD.into(), &here()).await, HEARD);
+        assert_eq!(control_only.process(HEARD.into()).await, HEARD);
     }
 
     #[tokio::test]
@@ -678,10 +635,10 @@ mod tests {
         let graph = || compile(&steps, &Context::default()).graph;
 
         let mut folded = Pipeline::new(graph(), Scripted::Says("rm x\nsudo y"));
-        assert_eq!(folded.process(HEARD.into(), &here()).await, "rm x sudo y");
+        assert_eq!(folded.process(HEARD.into()).await, "rm x sudo y");
 
         let mut refused = Pipeline::new(graph(), Scripted::Refuses);
-        let typed = refused.process("Um, let's meet.".into(), &here()).await;
+        let typed = refused.process("Um, let's meet.".into()).await;
         assert_eq!(
             typed, "Let's meet.",
             "the rules ran, the models failed open"
@@ -689,7 +646,7 @@ mod tests {
         assert_eq!(traced(&refused).len(), 2);
 
         let mut chatty = Pipeline::new(graph(), Scripted::Says("\n\r"));
-        assert!(!chatty.process(HEARD.into(), &here()).await.is_empty());
+        assert!(!chatty.process(HEARD.into()).await.is_empty());
     }
 
     #[tokio::test]

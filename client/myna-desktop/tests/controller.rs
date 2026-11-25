@@ -2143,7 +2143,7 @@ async fn a_warning_an_empty_utterance_could_not_show_waits_for_the_next() {
 // ── Held text: commit policies, processing and the draft view ───────────────
 
 use myna_desktop::draft::{CommitPolicy, DraftView};
-use myna_desktop::process::{Field, Processor};
+use myna_desktop::process::Processor;
 
 /// Records every draft shown, as (stable, tail).
 #[derive(Clone, Default)]
@@ -2160,7 +2160,7 @@ struct Shout;
 
 #[async_trait::async_trait]
 impl Processor for Shout {
-    async fn process(&mut self, text: String, _: &Field) -> String {
+    async fn process(&mut self, text: String) -> String {
         text.to_uppercase()
     }
 }
@@ -2312,7 +2312,7 @@ struct LayoutRule;
 
 #[async_trait::async_trait]
 impl Processor for LayoutRule {
-    async fn process(&mut self, text: String, _: &Field) -> String {
+    async fn process(&mut self, text: String) -> String {
         text.replace(" new line ", "\n").replace("new line ", "\n")
     }
 }
@@ -2428,7 +2428,7 @@ struct Tally(Landings);
 
 #[async_trait::async_trait]
 impl Processor for Tally {
-    async fn process(&mut self, text: String, _: &Field) -> String {
+    async fn process(&mut self, text: String) -> String {
         text.to_uppercase()
     }
 

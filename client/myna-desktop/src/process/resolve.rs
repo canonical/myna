@@ -857,10 +857,10 @@ mod tests {
 
     async fn typed(resolver: &Resolver, steps: &[StepSpec], text: &str) -> String {
         use super::super::pipeline::Pipeline;
-        use super::super::{Field, Processor};
+        use super::super::Processor;
         let graph = resolver.compile(steps, Some("fr")).graph;
         Pipeline::new(graph, resolver.clone())
-            .process(text.into(), &Field::default())
+            .process(text.into())
             .await
     }
 

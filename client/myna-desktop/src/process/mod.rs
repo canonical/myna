@@ -54,7 +54,7 @@ pub trait Processor: Send {
 
     /// Never fails: a step that cannot run, is too slow or returns nonsense
     /// passes its input through, so a dictation is never lost to processing.
-    async fn process(&mut self, text: String, field: &Field) -> String;
+    async fn process(&mut self, text: String) -> String;
 
     /// The last change before a piece is typed, after `process` and also
     /// when text streams unprocessed: fitting it to `field`.
@@ -72,7 +72,7 @@ pub struct Unprocessed;
 
 #[async_trait]
 impl Processor for Unprocessed {
-    async fn process(&mut self, text: String, _: &Field) -> String {
+    async fn process(&mut self, text: String) -> String {
         text
     }
 }

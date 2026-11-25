@@ -1144,7 +1144,7 @@ struct AsHeard<'a>(&'a mut dyn Processor);
 
 #[async_trait]
 impl Processor for AsHeard<'_> {
-    async fn process(&mut self, text: String, _: &Field) -> String {
+    async fn process(&mut self, text: String) -> String {
         text
     }
 
@@ -1304,7 +1304,7 @@ impl CommitBuffer {
             target.char_before_cursor()
         };
         let field = Field::after(purpose, before);
-        let text = processor.process(heard, &field).await;
+        let text = processor.process(heard).await;
         let mut text = processor.fit(text, &field);
         if purpose == FieldPurpose::Terminal {
             text = fold_control_chars(&text);
@@ -1933,7 +1933,7 @@ mod tests {
 
     #[async_trait]
     impl Processor for Reply {
-        async fn process(&mut self, _: String, _: &Field) -> String {
+        async fn process(&mut self, _: String) -> String {
             self.reply.to_owned()
         }
 

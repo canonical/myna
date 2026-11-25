@@ -69,8 +69,8 @@ impl<P: Processor> Processor for Recorded<P> {
         self.inner.fit(text, field)
     }
 
-    async fn process(&mut self, text: String, field: &Field) -> String {
-        let typed = self.inner.process(text, field).await;
+    async fn process(&mut self, text: String) -> String {
+        let typed = self.inner.process(text).await;
         self.steps = Some(
             self.context
                 .trace
@@ -132,7 +132,7 @@ mod tests {
 
     #[async_trait]
     impl Processor for Shout {
-        async fn process(&mut self, text: String, _: &Field) -> String {
+        async fn process(&mut self, text: String) -> String {
             text.to_uppercase()
         }
     }
@@ -186,7 +186,7 @@ mod tests {
     async fn records_what_was_heard_and_what_was_typed() {
         let path = scratch("on");
         let mut recorded = Recorded::new(Shout, Live::new(true), Some(path.clone()), context());
-        let typed = recorded.process("um hi".into(), &Field::default()).await;
+        let typed = recorded.process("um hi".into()).await;
         assert_eq!(typed, "UM HI");
         recorded.landed(landing("um hi", &typed));
         recorded.landed(landing("bye", "BYE"));
@@ -230,7 +230,7 @@ mod tests {
 
     #[async_trait]
     impl Processor for Fits {
-        async fn process(&mut self, text: String, _: &Field) -> String {
+        async fn process(&mut self, text: String) -> String {
             text
         }
 
@@ -261,7 +261,7 @@ mod tests {
     async fn text_discarded_while_held_carries_no_steps_and_leaves_none_behind() {
         let path = scratch("discarded");
         let mut recorded = Recorded::new(Shout, Live::new(true), Some(path.clone()), context());
-        recorded.process("a".into(), &Field::default()).await;
+        recorded.process("a".into()).await;
         recorded.landed(Landing {
             outcome: Outcome::Discarded,
             ..landing("held", "")
@@ -277,7 +277,7 @@ mod tests {
     async fn steps_belong_to_the_piece_they_ran_for() {
         let path = scratch("steps-once");
         let mut recorded = Recorded::new(Shout, Live::new(true), Some(path.clone()), context());
-        recorded.process("a".into(), &Field::default()).await;
+        recorded.process("a".into()).await;
         recorded.landed(landing("a", "A"));
         recorded.landed(landing("b", "b"));
         let lines = lines(&path);
