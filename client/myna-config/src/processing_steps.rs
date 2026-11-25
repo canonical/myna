@@ -106,12 +106,14 @@ impl Source {
         if language.contains([',', ' ', ';']) || matches!(language, "auto" | "multi") {
             return Self::Unknown;
         }
-        Self::One(primary(language))
+        Self::One(catalog_code(language))
     }
 }
 
-/// `fr` for `fr-CA`; `zh-Hans` stays whole, as the models name it.
-fn primary(tag: &str) -> String {
+/// The catalog's code for a locale: `fr` for `fr-CA`; `zh-Hans` stays whole,
+/// as the models name it, which is why this is not
+/// [`myna_core::chains::primary_language`].
+fn catalog_code(tag: &str) -> String {
     let tag = tag.replace('_', "-");
     if tag.starts_with("zh-") {
         let mut parts = tag.splitn(3, '-');
@@ -403,7 +405,7 @@ pub fn default_script(locales: &[String]) -> ChineseScript {
             let name = locale.split(['.', '@']).next().unwrap_or_default();
             name.replace('_', "-").to_ascii_lowercase()
         })
-        .find(|locale| is_chinese(locale))
+        .find(|locale| myna_core::chains::may_be_chinese(Some(locale)))
         .unwrap_or_default();
     if first.ends_with("-tw") || first.contains("-hant-tw") {
         ChineseScript::TraditionalTaiwan
@@ -440,15 +442,6 @@ fn script_row(inputs: &Inputs) -> ScriptRow {
     }
 }
 
-/// Whether a language code, a locale or a dictation setting is Chinese.
-fn is_chinese(code: &str) -> bool {
-    let code = code.to_ascii_lowercase();
-    ["zh", "yue", "cmn"].iter().any(|c| {
-        code.strip_prefix(c)
-            .is_some_and(|rest| rest.is_empty() || rest.starts_with(['-', '_']))
-    })
-}
-
 /// Whether the text at the script step's position is Chinese, as far as
 /// Settings can tell: the translation target when one runs, else the
 /// dictation language, which an unset one leaves to the desktop's.
@@ -461,15 +454,15 @@ fn text_is_chinese(inputs: &Inputs) -> bool {
         .flatten()
         .filter(|to| matches!(inputs.source, Source::One(from) if from != to));
     if let Some(to) = translated {
-        return is_chinese(to);
+        return myna_core::chains::may_be_chinese(Some(to));
     }
     match inputs.source {
         Source::Unknown => true,
         Source::One(_) if inputs.language_unset => inputs
             .locales
             .first()
-            .is_some_and(|locale| is_chinese(locale)),
-        Source::One(from) => is_chinese(from),
+            .is_some_and(|locale| myna_core::chains::may_be_chinese(Some(locale))),
+        Source::One(from) => myna_core::chains::may_be_chinese(Some(from)),
     }
 }
 
@@ -555,7 +548,7 @@ fn translate_row(inputs: &Inputs) -> TranslateRow {
     let rank = |code: &str| {
         order
             .iter()
-            .position(|locale| primary(locale) == code || locale.starts_with(code))
+            .position(|locale| catalog_code(locale) == code || locale.starts_with(code))
             .unwrap_or(order.len())
     };
     targets.sort_by(|a, b| (rank(&a.code), &a.name).cmp(&(rank(&b.code), &b.name)));

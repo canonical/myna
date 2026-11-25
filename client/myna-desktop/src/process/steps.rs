@@ -226,14 +226,6 @@ pub fn label(steps: &[StepSpec]) -> String {
     }
 }
 
-/// The language code before any region: `fr` for `fr-CA`.
-fn primary(tag: &str) -> String {
-    tag.split(['-', '_'])
-        .next()
-        .unwrap_or_default()
-        .to_ascii_lowercase()
-}
-
 /// Why `kind` does not apply to text in `lang`, if it does not, in words
 /// for the log and the bus; the judgement is `myna_core::chains::misfit`,
 /// which Settings shares.
@@ -257,7 +249,7 @@ fn misfit(kind: Kind, step: &StepSpec, lang: Option<&str>) -> Option<&'static st
 pub fn compile(steps: &[StepSpec], ctx: &Context) -> Compiled {
     let mut g = Builder::default();
     let mut at = Src::Input;
-    let mut lang = ctx.language.map(primary);
+    let mut lang = ctx.language.map(myna_core::chains::primary_language);
     let mut chinese = ChineseScript::AsRecognised;
     // The last step that changed the language, and the language before it.
     let mut changed: Option<(usize, Option<String>)> = None;
@@ -289,7 +281,10 @@ pub fn compile(steps: &[StepSpec], ctx: &Context) -> Compiled {
                         state
                     }
                     Kind::Translate => {
-                        let to = step.text("to").map(primary).expect("misfit checked it");
+                        let to = step
+                            .text("to")
+                            .map(myna_core::chains::primary_language)
+                            .expect("misfit checked it");
                         let from = lang.clone().unwrap_or_else(|| "en".into());
                         let check = Check::Usable;
                         let state = match pivot_legs(&from, &to, ctx) {
@@ -789,9 +784,9 @@ mod tests {
 
     #[test]
     fn language_tables() {
-        assert_eq!(primary("fr-CA"), "fr");
-        assert_eq!(primary("ZH_tw"), "zh");
-        assert_eq!(primary(""), "");
+        assert_eq!(myna_core::chains::primary_language("fr-CA"), "fr");
+        assert_eq!(myna_core::chains::primary_language("ZH_tw"), "zh");
+        assert_eq!(myna_core::chains::primary_language(""), "");
     }
 
     #[test]

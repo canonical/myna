@@ -22,21 +22,9 @@ pub fn warm() -> std::thread::JoinHandle<()> {
     })
 }
 
-/// Whether dictation in `language` is Chinese (`None`: the backend's
-/// choice, which may be).
-pub fn chinese(language: Option<&str>) -> bool {
-    language.is_none_or(|l| {
-        let l = l.to_ascii_lowercase();
-        ["zh", "yue", "cmn"].iter().any(|c| {
-            l.strip_prefix(c)
-                .is_some_and(|r| r.is_empty() || r.starts_with(['-', '_']))
-        })
-    })
-}
-
 /// Whether `script` is to be applied to dictation in `language`.
 pub fn applies(script: ChineseScript, language: Option<&str>) -> bool {
-    script != ChineseScript::AsRecognised && chinese(language)
+    script != ChineseScript::AsRecognised && myna_core::chains::may_be_chinese(language)
 }
 
 fn is_han(c: char) -> bool {
@@ -49,7 +37,8 @@ fn is_kana_or_hangul(c: char) -> bool {
 }
 
 /// Whether `text` has Chinese in it: ideographs, and no kana or hangul
-/// (which share the ideographs but make it Japanese or Korean).
+/// (which share the ideographs but make it Japanese or Korean). Unlike
+/// `may_be_chinese` this reads the text, not the language code.
 fn is_chinese(text: &str) -> bool {
     text.chars().any(is_han) && !text.chars().any(is_kana_or_hangul)
 }
