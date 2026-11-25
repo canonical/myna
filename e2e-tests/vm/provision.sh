@@ -14,11 +14,15 @@
 #   localized        installed plus the Swedish language pack, which
 #                    translates snap's own output, and the Simplified
 #                    Chinese one, whose speakers get another model
-#   dictation        localized plus the dictation suite's rig: a virtual
-#                    PipeWire microphone, GTK4 for the field fixture, and the
-#                    fake backend snap (a scripted transcript) connected to
-#                    myna:backend. Needs the snap built: `make snap-fake`, or
-#                    E2E_FAKE_SNAP=PATH; without it the stage is skipped.
+#   rig              localized plus the dictation suite's rig: a virtual
+#                    PipeWire microphone and GTK4 for the field fixture
+#   dictation        rig plus the fake backend snap (a scripted transcript)
+#                    connected to myna:backend. Needs the snap built: `make
+#                    snap-fake`, or E2E_FAKE_SNAP=PATH; without it the stage
+#                    is skipped.
+#
+# Everything up to `rig` is independent of the tree under test, and is what
+# image.sh publishes; `dictation` is the only stage that is not.
 #
 # run-suite.sh copies one per suite and leaves the VM itself untouched;
 # reprovision on a new edge revision or a stale image with --force.
@@ -36,7 +40,7 @@ while [ $# -gt 0 ]; do
         --release) RELEASE=$2; shift 2 ;;
         --desktop) E2E_DESKTOP=$2; shift 2 ;;
         --force) FORCE=1; shift ;;
-        -h|--help) sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "unknown option $1" >&2; exit 2 ;;
     esac
 done
@@ -108,8 +112,9 @@ stage localized '
 # E2E_FAKE_SNAP.
 FAKE_SNAP=${E2E_FAKE_SNAP:-$(find "$HERE/../../fake-snap" -maxdepth 1 -name 'myna-fake-backend_*_amd64.snap' -printf '%T@ %p\n' | sort -nr | sed -n '1s/^[^ ]* //p')}
 push_fake_snap() { lxc file push --uid 1000 --gid 1000 "$FAKE_SNAP" "$VM/home/ubuntu/myna-fake-backend.snap"; }
-if [ -n "$FAKE_SNAP" ]; then
-    stage dictation '
+# The rig's packages and PipeWire microphone need nothing from the tree, so
+# they sit before the fake backend and ship in the published image.
+stage rig '
     sudo apt-get update -qq
     sudo apt-get install -y gir1.2-gtk-4.0
     # A null sink whose monitor, through a loopback, is a source of the class
@@ -155,7 +160,10 @@ CONF
     # nothing, so its graph often ran SCHED_OTHER and dropped audio. The
     # group makes it realtime through the rlimits PipeWire ships instead.
     sudo usermod -aG pipewire ubuntu
-    systemctl --user restart pipewire pipewire-pulse wireplumber
+    systemctl --user restart pipewire pipewire-pulse wireplumber'
+
+if [ -n "$FAKE_SNAP" ]; then
+    stage dictation '
     sudo snap install --dangerous myna-fake-backend.snap
     rm myna-fake-backend.snap
     sudo snap disconnect myna:backend
