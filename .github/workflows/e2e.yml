@@ -153,6 +153,18 @@ jobs:
       - uses: canonical/setup-lxd@v1
         with:
           channel: 6/stable
+      # setup-lxd's pool is `dir`, where each suite's snapshot copy is a full
+      # 20 GB disk copy; btrfs makes it copy-on-write.
+      - run: lxc storage create e2e btrfs size=60GiB
+      # The VM up to the dictation rig, provisioned by the E2E images workflow,
+      # imported in the background while the workshop launches.
+      - name: Start importing the provisioned VM
+        run: |
+          (dev/timed.sh e2e-tests/vm/image.sh pull --release ${{ matrix.release }} --desktop ${{ matrix.desktop }}; echo $? > "$RUNNER_TEMP/pull.rc") \
+            > "$RUNNER_TEMP/pull.log" 2>&1 < /dev/null &
+        env:
+          E2E_POOL: e2e
+          GITHUB_TOKEN: ${{ github.token }}
       - uses: ./.github/actions/apt-cache
         with:
           workshop: myna-noble
@@ -164,16 +176,12 @@ jobs:
       # Where the launch's time went, task by task (the action prints none).
       - if: always()
         run: workshop tasks || true
-      # setup-lxd's pool is `dir`, where each suite's snapshot copy is a full
-      # 20 GB disk copy; btrfs makes it copy-on-write.
-      - run: lxc storage create e2e btrfs size=60GiB
-      # The VM up to the dictation rig, provisioned by the E2E images workflow;
-      # without one for this hash, `make e2e` provisions as before.
-      - name: Import the provisioned VM
-        run: dev/timed.sh e2e-tests/vm/image.sh pull --release ${{ matrix.release }} --desktop ${{ matrix.desktop }} || true
-        env:
-          E2E_POOL: e2e
-          GITHUB_TOKEN: ${{ github.token }}
+      # Waits for the import started above, which runs beside the workshop's
+      # launch; a miss is not an error, `make e2e` then provisions.
+      - name: Wait for the provisioned VM
+        run: |
+          until [ -e "$RUNNER_TEMP/pull.rc" ]; do sleep 2; done
+          cat "$RUNNER_TEMP/pull.log"
       - run: |
           E2E_MYNA_SNAP=$(ls "$PWD"/myna-snap/myna_*_amd64.snap) \
             make e2e E2E_RELEASE=${{ matrix.release }} E2E_DESKTOP=${{ matrix.desktop }} \
