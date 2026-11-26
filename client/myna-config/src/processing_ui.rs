@@ -200,6 +200,29 @@ fn link_row(title: &str, subtitle: &str) -> adw::ActionRow {
 }
 
 impl StepsPage {
+    /// A signal handler that runs `f` on the page with the chain the widget
+    /// was built for, if the page is still alive: a widget outlives it. It
+    /// runs nothing while the page writes the control itself.
+    fn on<T>(
+        self: &Rc<Self>,
+        id: &str,
+        f: impl Fn(&Rc<Self>, &str, &T) + 'static,
+    ) -> impl Fn(&T) + 'static {
+        let page = Rc::downgrade(self);
+        let id = id.to_owned();
+        move |widget: &T| {
+            let Some(page) = page.upgrade() else { return };
+            if !page.updating.get() {
+                f(&page, &id, widget);
+            }
+        }
+    }
+
+    /// A signal handler with no chain, for the page's own rows.
+    fn act<T>(self: &Rc<Self>, f: impl Fn(&Rc<Self>) + 'static) -> impl Fn(&T) + 'static {
+        self.on::<T>("", move |page, _, _| f(page))
+    }
+
     /// Fill the slots and keep them current for as long as the chains group
     /// lives: the group owns the page, the page only watches the groups.
     pub fn attach(deps: Deps, slots: &Slots) -> Rc<Self> {
@@ -267,22 +290,9 @@ impl StepsPage {
                     page.render();
                 }
             })));
-        page.new_row.connect_activated({
-            let page = Rc::downgrade(&page);
-            move |_| {
-                if let Some(page) = page.upgrade() {
-                    page.new_chain();
-                }
-            }
-        });
-        more_row.connect_activated({
-            let page = Rc::downgrade(&page);
-            move |_| {
-                if let Some(page) = page.upgrade() {
-                    page.open_catalog(None);
-                }
-            }
-        });
+        page.new_row
+            .connect_activated(page.act(|page| page.new_chain()));
+        more_row.connect_activated(page.act(|page| page.open_catalog(None)));
         page.connect_language_page();
         page.render();
         // SAFETY: the key is private to this module and always holds a page.
@@ -477,43 +487,18 @@ impl StepsPage {
         row.add_suffix(&switch);
         row.add_suffix(&delete);
         row.add_suffix(&gtk::Image::from_icon_name("go-next-symbolic"));
-        switch.connect_active_notify({
-            let page = Rc::downgrade(self);
-            let id = id.to_owned();
-            move |switch| {
-                if let Some(page) = page.upgrade() {
-                    if page.updating.get() {
-                        return;
-                    }
-                    let on = switch.is_active();
-                    page.edit(|p| {
-                        if on {
-                            p.activate(Some(&id));
-                        } else if p.active.as_deref() == Some(id.as_str()) {
-                            p.activate(None);
-                        }
-                    });
+        switch.connect_active_notify(self.on(id, |page, id, switch: &gtk::Switch| {
+            let on = switch.is_active();
+            page.edit(|p| {
+                if on {
+                    p.activate(Some(id));
+                } else if p.active.as_deref() == Some(id) {
+                    p.activate(None);
                 }
-            }
-        });
-        row.connect_activated({
-            let page = Rc::downgrade(self);
-            let id = id.to_owned();
-            move |_| {
-                if let Some(page) = page.upgrade() {
-                    page.open_editor(&id);
-                }
-            }
-        });
-        delete.connect_clicked({
-            let page = Rc::downgrade(self);
-            let id = id.to_owned();
-            move |_| {
-                if let Some(page) = page.upgrade() {
-                    page.delete_chain(&id);
-                }
-            }
-        });
+            });
+        }));
+        row.connect_activated(self.on(id, |page, id, _: &adw::ActionRow| page.open_editor(id)));
+        delete.connect_clicked(self.on(id, |page, id, _: &gtk::Button| page.delete_chain(id)));
         ChainRow {
             row,
             switch,
@@ -616,64 +601,32 @@ impl StepsPage {
             name.set_text(&chain.name);
             page.set_title(&chain.name);
         }
-        name.connect_apply({
-            let page = Rc::downgrade(self);
-            let id = id.to_owned();
-            move |entry| {
-                if let Some(page) = page.upgrade() {
-                    let text = entry.text().trim().to_owned();
-                    if !text.is_empty() {
-                        page.edit(|p| {
-                            p.rename(&id, &text);
-                        });
-                    }
-                }
+        name.connect_apply(self.on(id, |page, id, entry: &adw::EntryRow| {
+            let text = entry.text().trim().to_owned();
+            if !text.is_empty() {
+                page.edit(|p| {
+                    p.rename(id, &text);
+                });
             }
-        });
-        add_row.connect_activated({
-            let page = Rc::downgrade(self);
-            let id = id.to_owned();
-            move |_| {
-                if let Some(page) = page.upgrade() {
-                    page.open_catalog(Some(&id));
-                }
+        }));
+        add_row.connect_activated(self.on(id, |page, id, _: &adw::ActionRow| {
+            page.open_catalog(Some(id));
+        }));
+        use_button.connect_clicked(self.on(id, |page, id, _: &gtk::Button| {
+            page.edit(|p| {
+                let using = p.active.as_deref() == Some(id);
+                p.activate((!using).then_some(id));
+            });
+        }));
+        delete.connect_clicked(self.on(id, |page, id, _: &gtk::Button| page.delete_chain(id)));
+        page.connect_hidden(self.on(id, |page, id, _: &adw::NavigationPage| {
+            let open = page.editor.borrow().as_ref().map(|e| e.id.clone());
+            if open.as_deref() == Some(id)
+                && page.deps.nav.visible_page().as_ref() != Some(&page.catalog_page)
+            {
+                page.editor.replace(None);
             }
-        });
-        use_button.connect_clicked({
-            let page = Rc::downgrade(self);
-            let id = id.to_owned();
-            move |_| {
-                if let Some(page) = page.upgrade() {
-                    page.edit(|p| {
-                        let using = p.active.as_deref() == Some(id.as_str());
-                        p.activate((!using).then_some(id.as_str()));
-                    });
-                }
-            }
-        });
-        delete.connect_clicked({
-            let page = Rc::downgrade(self);
-            let id = id.to_owned();
-            move |_| {
-                if let Some(page) = page.upgrade() {
-                    page.delete_chain(&id);
-                }
-            }
-        });
-        page.connect_hidden({
-            let page = Rc::downgrade(self);
-            let id = id.to_owned();
-            move |_| {
-                if let Some(page) = page.upgrade() {
-                    let open = page.editor.borrow().as_ref().map(|e| e.id.clone());
-                    if open.as_deref() == Some(id.as_str())
-                        && page.deps.nav.visible_page().as_ref() != Some(&page.catalog_page)
-                    {
-                        page.editor.replace(None);
-                    }
-                }
-            }
-        });
+        }));
         self.editor.replace(Some(editor));
         self.deps.nav.push(&page);
         self.render();
@@ -699,24 +652,18 @@ impl StepsPage {
             ))
             .button_label(gettextrs::gettext("Undo"))
             .build();
-        toast.connect_button_clicked({
-            let page = Rc::downgrade(self);
-            move |_| {
-                if let Some(page) = page.upgrade() {
-                    let chain = chain.clone();
-                    page.edit(|p| {
-                        let at = at.min(p.chains.len());
-                        if p.chain(&chain.id).is_none() {
-                            let id = chain.id.clone();
-                            p.chains.insert(at, chain);
-                            if was_active {
-                                p.activate(Some(&id));
-                            }
-                        }
-                    });
+        toast.connect_button_clicked(self.act(move |page| {
+            let chain = chain.clone();
+            page.edit(|p| {
+                let at = at.min(p.chains.len());
+                if p.chain(&chain.id).is_none() {
+                    p.chains.insert(at, chain.clone());
+                    if was_active {
+                        p.activate(Some(&chain.id));
+                    }
                 }
-            }
-        });
+            });
+        }));
         self.deps.overlay.add_toast(toast);
     }
 
