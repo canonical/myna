@@ -80,8 +80,11 @@ if [ -z "$BINARY" ]; then
         'export CARGO_TARGET_DIR=$HOME/target; cd /project/client && cargo build --release -q -p myna-config --bin myna-config --bin myna-hud-host')
     BINARY=$RUN_DIR/myna-config
     mkdir -p "$RUN_DIR"
+    # Through a temporary name: another desktop's run on this host may be
+    # pushing the file this one replaces.
     for bin in myna-config myna-hud-host; do
-        (cd "$REPO" && workshop exec myna-noble -- cat /home/workshop/target/release/$bin) > "$RUN_DIR/$bin"
+        (cd "$REPO" && workshop exec myna-noble -- cat /home/workshop/target/release/$bin) > "$RUN_DIR/$bin.$$"
+        mv "$RUN_DIR/$bin.$$" "$RUN_DIR/$bin"
     done
 fi
 
