@@ -709,6 +709,7 @@ impl StepsPage {
 
     pub(crate) fn rebuild_lines(self: &Rc<Self>, editor: &Rc<Editor>, count: usize) {
         for widgets in editor.lines.take() {
+            editor.steps.remove(&widgets.inserted);
             editor.steps.remove(&widgets.row);
             editor.steps.remove(&widgets.detail);
         }
@@ -718,6 +719,7 @@ impl StepsPage {
         let mut built = Vec::new();
         for index in 0..count {
             let widgets = self.line_widgets(&editor.id, index);
+            editor.steps.add(&widgets.inserted);
             editor.steps.add(&widgets.row);
             editor.steps.add(&widgets.detail);
             built.push(widgets);

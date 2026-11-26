@@ -19,6 +19,9 @@ use super::processing_ui::{describe, name, Focus, StepsPage};
 
 /// One step in the editor.
 pub(crate) struct LineWidgets {
+    /// What the solver runs before the step, such as "Writes Traditional
+    /// first": dimmed, with nothing to change.
+    pub(crate) inserted: adw::ActionRow,
     pub(crate) row: adw::ActionRow,
     /// "Skipped", shown while the text at the step's place does not suit it.
     pub(crate) skipped: gtk::Label,
@@ -145,6 +148,12 @@ pub(crate) fn show_line(
 pub(crate) fn show_step(widgets: &LineWidgets, line: &Row, total: usize, narrow: bool) {
     let place = line.place.index + 1;
     widgets.number.set_label(&place.to_string());
+    widgets
+        .inserted
+        .set_title(&escape_markup(&line.place.inserted));
+    widgets
+        .inserted
+        .set_visible(!line.place.inserted.is_empty());
     widgets.row.set_title(&escape_markup(&line.title));
     widgets.row.set_subtitle(&escape_markup(&line.subtitle));
     // TRANSLATORS: a step's place in its chain, read by screen readers: "Step 2 of 3".
@@ -380,7 +389,14 @@ impl LineWidgets {
             ],
         );
         let (detail, control, fix) = line_detail(&picker);
+        let inserted = adw::ActionRow::builder()
+            .css_classes(["skipped-step"])
+            .activatable(false)
+            .selectable(false)
+            .visible(false)
+            .build();
         Self {
+            inserted,
             row,
             skipped,
             detail,

@@ -11,6 +11,7 @@
 #   3. moved after Translate it is skipped and dimmed; Move above puts it back
 #   4. a step's own switch pauses only that step
 #   5. the step's input badge and picker, and the picker under it at 360 px
+#   6. a translation of Chinese shows the converter the solver puts first
 set -uo pipefail
 # shellcheck source=e2e-tests/suites/lib.sh
 source "$(dirname "$0")/lib.sh"
@@ -66,6 +67,13 @@ shot waitfor:General tab:Processing "click:$CHAIN" "waitfor:EN → FR" \
     "sh:xdotool search --onlyvisible --name 'Myna Settings' windowsize 360 760" \
     "waitfor:Translate to" shot:shots/processing-editor/05-360px.png \
     || { echo "narrow editor failed" >&2; FAILED=1; }
+
+step 6 "a translation of Chinese shows the converter the solver puts first"
+assert_on "a chain translating to English is saved, for Chinese dictation" \
+    "snap run myna.config set chains \"[('zh', 'Chinese to English', [('translate', true, {'to': 'en'})])]\" && snap run myna.config set language zh"
+shot waitfor:General tab:Processing "click:Chinese to English" \
+    "waitfor:Writes Traditional first" shot:shots/processing-editor/06-inserted.png \
+    || { echo "inserted converter failed" >&2; FAILED=1; }
 
 evidence editor
 suite_status
