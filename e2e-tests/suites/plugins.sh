@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# snapshot: chains
+# snapshot: ready
 # A text plugin from install to a typed dictation and back out, through the
 # real Myna Settings (AT-SPI), the real daemon, the real snapd and the store,
 # with the fake speech backend and a virtual microphone:

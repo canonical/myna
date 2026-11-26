@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# snapshot: installed
+# snapshot: ready
 # Choosing a model snapd is still installing (issue #51): its slot lists
 # before its model has arrived, and a switch to it used to disconnect
 # Parakeet, then fail the connect on snapd's "changes in progress", leaving

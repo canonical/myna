@@ -4,7 +4,7 @@
 # Usage: dev/try-desktop.sh --desktop xubuntu|gnome|kde --release noble|resolute|stonking ACTION
 #   (or: make try-desktop DESKTOP=xubuntu RELEASE=noble ACTION=up)
 #
-#   up       create myna-try-<desktop>-<release> from the e2e VM's `installed`
+#   up       create myna-try-<desktop>-<release> from the e2e VM's `ready`
 #            snapshot (provisioned first when missing), install the myna snap
 #            and the myna-config deb built from HEAD, snapshot `fresh`, start
 #   update   rebuild what HEAD changed, install it over the running VM, restart
@@ -18,7 +18,7 @@
 #   delete   remove the VM, keeping the e2e VMs and the build caches
 #   status   state, installed versions
 #
-# `installed` rather than `dictation`: it has the real parakeet backend and no
+# `ready` rather than `bare`: it has the real parakeet backend and no
 # virtual microphone to hide the real one. The VM is a copy, so the e2e VMs
 # are never touched. Artifacts come from HEAD, not the working tree: the snap
 # from a clean clone (e2e-tests/.run/try/src; the first build is a full
@@ -280,14 +280,14 @@ do_up() {
         start_vm; report; return
     fi
     guard
-    snapshots "$BASE" 2>/dev/null | grep -qx installed || {
-        echo "== $BASE has no installed snapshot: provisioning it first"
+    snapshots "$BASE" 2>/dev/null | grep -qx ready || {
+        echo "== $BASE has no ready snapshot: provisioning it first"
         "$REPO/e2e-tests/vm/provision.sh" --release "$REL" --desktop "$DESK"
     }
     build_snap
     build_deb
-    echo "== creating $TRY from $BASE/installed"
-    lxc copy "$BASE/installed" "$TRY" -c limits.memory="$MEMORY" -c limits.cpu="$CPU"
+    echo "== creating $TRY from $BASE/ready"
+    lxc copy "$BASE/ready" "$TRY" -c limits.memory="$MEMORY" -c limits.cpu="$CPU"
     start_vm
     audio_setup
     install_artifacts

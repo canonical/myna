@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# snapshot: dictation
+# snapshot: ready
 # requires: E2E_PLUGIN_BLOBS
 # What the user waits for after they stop, and what they get when the text
 # model is broken, on the real GNOME session: the real daemon, IBus and

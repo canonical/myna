@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# snapshot: localized
+# snapshot: ready
 # Myna Settings reads a set-up machine as set up whatever the desktop
 # language, though snap translates its own output there, and recommends the
 # model for the desktop's language: FunASR, not yet installed, for Chinese.

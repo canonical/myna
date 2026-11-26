@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# snapshot: chains
+# snapshot: ready
 # Chains on the Processing tab, driven like a user: the real Myna Settings
 # (xdotool clicks through tools/shot-driver.py, AT-SPI to find the widgets),
 # the real daemon (the tree's snap, E2E_MYNA_SNAP), the real snapd and store,
