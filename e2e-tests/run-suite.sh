@@ -157,6 +157,12 @@ attempt() {
         echo "== $SUITE: AppArmor denials"
         src=1
     fi
+    # A GTK or libadwaita critical is a bug in Settings even when every
+    # widget it asserts ends up right.
+    if grep -- '-CRITICAL \*\*' "$ARTIFACTS/out/app.log" 2>/dev/null; then
+        echo "== $SUITE: Settings logged a critical"
+        src=1
+    fi
 }
 
 # One suite, start to end; its status is the subshell's.
