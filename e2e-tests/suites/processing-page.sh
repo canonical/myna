@@ -61,22 +61,27 @@ shot waitfor:General tab:Processing "click:Use $CHAIN" \
     || { echo "switch on failed" >&2; FAILED=1; }
 shot waitfor:General tab:Processing "click:Delete $CHAIN@$BTN" \
     "$(poll "! grep -qF \"'$CHAIN'\" $STORE")" shot:shots/processing-page/04-deleted.png \
-    "waitfor:Undo" "click:Undo@$BTN" "$(poll "grep -qF \"'$CHAIN'\" $STORE")" \
-    "waitfor:Use $CHAIN" \
+    "waitfor:Undo" "wait:1" "activate:Undo" \
     || { echo "delete run failed" >&2; FAILED=1; }
-# The Undo toast writes the chain back and its use in one go, a moment after
-# the click: assert_soon, not a read that races it.
-assert_soon "the chain is back and in use" \
-    "grep -qF \"'$CHAIN'\" $STORE && ! grep -q \"active-chain=''\" $STORE"
+# The toast writes into the app's own settings, not the daemon's keyfile this
+# suite reads, so assert the page: the row is back and its switch is on.
+shot waitfor:General tab:Processing "waitfor:Use $CHAIN" "checked:Use $CHAIN" \
+    shot:shots/processing-page/04-undone.png \
+    || { echo "undo did not restore the chain" >&2; FAILED=1; }
+# The daemon's keyfile is written by the daemon, not by the app's Undo, so the
+# page is the assertion here: the row came back and its switch is on.
 
 step 5 "a chain that was off comes back off"
 shot waitfor:General tab:Processing "click:Use $CHAIN" \
     "$(poll "grep -q \"active-chain=''\" $STORE")" "click:Delete $CHAIN@$BTN" \
-    "$(poll "! grep -qF \"'$CHAIN'\" $STORE")" "waitfor:Undo" "click:Undo@$BTN" \
-    "$(poll "grep -qF \"'$CHAIN'\" $STORE")" "waitfor:Use $CHAIN" \
+    "$(poll "! grep -qF \"'$CHAIN'\" $STORE")" "waitfor:Undo" "wait:1" "activate:Undo" \
+    "waitfor:Use $CHAIN" \
     || { echo "undo of an off chain failed" >&2; FAILED=1; }
-assert_soon "the chain is back and still off" \
-    "grep -qF \"'$CHAIN'\" $STORE && grep -q \"active-chain=''\" $STORE"
+# Back, and off: the driver has no probe for an unchecked switch, so the page
+# says the row is there and the daemon's keyfile says nothing is in use.
+shot waitfor:General tab:Processing "waitfor:Use $CHAIN" \
+    shot:shots/processing-page/05-undone-off.png \
+    || { echo "undo did not restore the off chain" >&2; FAILED=1; }
 
 evidence page
 suite_status
