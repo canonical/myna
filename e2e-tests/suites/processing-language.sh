@@ -60,6 +60,10 @@ assert_dict "snapd installed the English to French model" \
     'wait_until 300 component_installed myna-translation model-translate-en-fr'
 
 step 5 "installed translation models offers Remove"
+# The group lists what the daemon offers, so wait for its own answer first.
+if offered text; then echo "PASS: the daemon offers the translation model"; else
+    echo "FAIL: the daemon does not offer the translation model"; FAILED=1
+fi
 shot --polkit allow waitfor:General tab:Processing "click:$CHAIN" "click:Add step…" \
     "click:Translate" "waitfor:Search languages" "waitfor:English to Français" \
     shot:shots/processing-language/05-installed.png \

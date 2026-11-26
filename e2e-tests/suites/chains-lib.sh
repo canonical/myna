@@ -50,6 +50,18 @@ dictate() {
 
 now() { on 'date +%s'; }
 
+# offered WHAT: wait for the daemon to publish a model it bound at startup in
+# `InstalledSteps`. Until it does, Settings lists a model it has installed as
+# one to install, which is the difference between Add and Install on a row.
+offered() { # WHAT, in the daemon's own words
+    local i
+    for i in $(seq 60); do
+        dict "$OFFERS | grep -q $1" && return 0
+        sleep 1
+    done
+    return 1
+}
+
 # slowpoll: poll for up to 5 minutes, for a store download and a restart.
 # shellcheck disable=SC2016 # expands in the VM
 slowpoll() { printf 'sh:for _ in $(seq 1500); do { %s; } >/dev/null 2>&1 && exit 0; sleep 0.2; done; exit 1' "$1"; }
@@ -72,8 +84,16 @@ rig() { # seeded|ready
     assert_dict "the field is focused" 'field_focus plain'
     assert_dict "the dictation language is English" 'snap run myna.config set language en'
     case $1 in
-        seeded) assert_dict "the text models are installed" \
-                    'component_installed myna-translation model-translate-en-fr && component_installed myna-text model-disfluency-en' ;;
+        seeded)
+            assert_dict "the text models are installed" \
+                'component_installed myna-translation model-translate-en-fr && component_installed myna-text model-disfluency-en'
+            # A fresh copy's daemon binds the installed models at startup.
+            if offered disfluency; then
+                echo "PASS: the daemon offers the seeded models"
+            else
+                echo "FAIL: the daemon does not offer the seeded models"; FAILED=1
+            fi
+            ;;
         ready)  assert_dict "no text model is installed" \
                     '! component_installed myna-translation model-translate-en-fr && ! component_installed myna-text model-disfluency-en' ;;
     esac
