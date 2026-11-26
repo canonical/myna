@@ -39,6 +39,9 @@ pub struct Found<'a> {
 
 struct ModelRow {
     id: String,
+    /// The group it was added to: removing it from the other one is a
+    /// libadwaita critical.
+    group: adw::PreferencesGroup,
     row: adw::ActionRow,
     remove: Option<gtk::Button>,
     spinner: gtk::Spinner,
@@ -203,8 +206,7 @@ impl ModelsSection {
 
     fn rebuild(self: &Rc<Self>, models: &Models) {
         for model in self.rows.take() {
-            self.speech_group.remove(&model.row);
-            self.text_group.remove(&model.row);
+            model.group.remove(&model.row);
         }
         self.speech_group.remove(&self.add_speech);
         self.text_group.remove(&self.add_text);
@@ -219,7 +221,7 @@ impl ModelsSection {
             (&self.text_group, &models.text),
         ] {
             for model in list {
-                let built = self.model_row(model);
+                let built = self.model_row(model, group);
                 group.add(&built.row);
                 rows.push(built);
             }
@@ -229,7 +231,7 @@ impl ModelsSection {
         self.rows.replace(rows);
     }
 
-    fn model_row(self: &Rc<Self>, model: &Model) -> ModelRow {
+    fn model_row(self: &Rc<Self>, model: &Model, group: &adw::PreferencesGroup) -> ModelRow {
         // TRANSLATORS: {kind} says what a model is, such as "Translation" or "Speech recognition", and {size} its size on disk, such as "729 MB". The spaces around the dot are no-break spaces.
         let frame = gettextrs::gettext("{kind}\u{a0}·\u{a0}{size}");
         let subtitle = frame
@@ -278,6 +280,7 @@ impl ModelsSection {
         };
         ModelRow {
             id: model.id.clone(),
+            group: group.clone(),
             row,
             remove,
             spinner,
