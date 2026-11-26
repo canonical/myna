@@ -8,7 +8,6 @@ use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use myna_core::history::Skip;
-use myna_core::ChineseScript;
 
 pub use super::check::Check;
 use super::graph::{Graph, Op};
@@ -73,8 +72,6 @@ pub struct Pipeline {
     started: Option<Graph>,
     models: Box<dyn Models>,
     written: Live<Vec<String>>,
-    /// How Chinese is written once the graph is done; none to change.
-    script: Live<ChineseScript>,
     /// `written` compiled, until it changes.
     vocabulary: (Vec<String>, Vocabulary),
     trace: Trace,
@@ -87,7 +84,6 @@ impl Pipeline {
             started: None,
             models: Box::new(models),
             written: Live::new(Vec::new()),
-            script: Live::new(ChineseScript::AsRecognised),
             vocabulary: (Vec::new(), Vocabulary::default()),
             trace: Trace::default(),
         }
@@ -98,14 +94,6 @@ impl Pipeline {
     #[must_use]
     pub fn written(mut self, words: Live<Vec<String>>) -> Self {
         self.written = words;
-        self
-    }
-
-    /// The script Chinese is written in, applied to what the graph makes
-    /// whichever graph it is, a piece at a time.
-    #[must_use]
-    pub fn scripted(mut self, script: Live<ChineseScript>) -> Self {
-        self.script = script;
         self
     }
 
@@ -123,17 +111,28 @@ impl Pipeline {
         self.trace.clone()
     }
 
-    /// One model step: its answer if usable, else `text` as it came.
-    async fn ask(
+    /// One operation's answer if usable. A chain gives one only when every
+    /// operation does.
+    async fn run(
         &mut self,
-        request: &Request,
-        check: Check,
-        text: String,
+        op: &Op,
+        text: &str,
         trace: &mut Vec<myna_core::history::Step>,
-    ) -> String {
-        self.try_ask(request, check, &text, trace)
-            .await
-            .unwrap_or(text)
+    ) -> Option<String> {
+        let ops = match op {
+            Op::Chain(ops) => ops.as_slice(),
+            one => std::slice::from_ref(one),
+        };
+        let mut text = text.to_owned();
+        for op in ops {
+            text = match op {
+                Op::Rule { rule } => rule.apply_with(&text, &self.vocabulary.1),
+                Op::Convert(script) => script::convert(&text, *script),
+                Op::Ask { request, check } => self.try_ask(request, *check, &text, trace).await?,
+                Op::Chain(_) => return None,
+            };
+        }
+        Some(text)
     }
 
     /// One model step: its answer if usable.
@@ -209,24 +208,10 @@ impl Processor for Pipeline {
         let mut trace = Vec::new();
         let mut text = text;
         for op in graph.ops() {
-            text = match op {
-                Op::Rule { rule } => rule.apply_with(&text, &self.vocabulary.1),
-                Op::Ask { request, check } => self.ask(request, *check, text, &mut trace).await,
-                Op::Pivot {
-                    first,
-                    second,
-                    check,
-                } => match self.try_ask(first, *check, &text, &mut trace).await {
-                    Some(mid) => self
-                        .try_ask(second, *check, &mid, &mut trace)
-                        .await
-                        .unwrap_or(text),
-                    None => text,
-                },
-            };
+            text = self.run(op, &text, &mut trace).await.unwrap_or(text);
         }
         *self.trace.lock().unwrap_or_else(|p| p.into_inner()) = trace;
-        script::convert(&text, self.script.get())
+        text
     }
 }
 
@@ -330,16 +315,21 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn chinese_is_written_in_the_chosen_script_in_any_graph() {
-        let script = Live::new(ChineseScript::AsRecognised);
-        let mut pipeline =
-            Pipeline::new(Graph::passthrough(), Scripted::Fails).scripted(script.clone());
-        assert_eq!(pipeline.process("头发 NASA".into()).await, "头发 NASA");
-        script.set(ChineseScript::Traditional);
-        assert_eq!(pipeline.process("头发 NASA".into()).await, "頭髮 NASA");
-        let mut tidy = Pipeline::new(graph_of(ProcessingChain::TIDY), Scripted::Says("我们出发"))
-            .scripted(script);
-        assert_eq!(tidy.process("我们出发".into()).await, "我們出發");
+    async fn a_chain_types_nothing_unless_every_operation_passes() {
+        let convert = Op::Convert(myna_core::ChineseScript::Traditional);
+        let chain = Graph::of(vec![Op::Chain(vec![
+            convert.clone(),
+            Op::Ask {
+                request: Request::translate("zh-Hant", "en"),
+                check: Check::Usable,
+            },
+        ])]);
+        let mut works = Pipeline::new(chain.clone(), Scripted::Says("We left."));
+        assert_eq!(works.process("我们出发".into()).await, "We left.");
+        let mut fails = Pipeline::new(chain, Scripted::Fails);
+        assert_eq!(fails.process("我们出发".into()).await, "我们出发");
+        let mut alone = Pipeline::new(Graph::of(vec![convert]), Scripted::Fails);
+        assert_eq!(alone.process("头发 NASA".into()).await, "頭髮 NASA");
     }
 
     /// The graph is read as a dictation starts: a chain switched while it

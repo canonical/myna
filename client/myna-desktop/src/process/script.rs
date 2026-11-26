@@ -22,11 +22,6 @@ pub fn warm() -> std::thread::JoinHandle<()> {
     })
 }
 
-/// Whether `script` is to be applied to dictation in `language`.
-pub fn applies(script: ChineseScript, language: Option<&str>) -> bool {
-    script != ChineseScript::AsRecognised && myna_core::chains::may_be_chinese(language)
-}
-
 fn is_han(c: char) -> bool {
     matches!(c, '\u{3400}'..='\u{4DBF}' | '\u{4E00}'..='\u{9FFF}' | '\u{F900}'..='\u{FAFF}'
         | '\u{20000}'..='\u{2FA1F}')
@@ -79,17 +74,5 @@ mod tests {
     fn a_character_with_two_readings_follows_its_word() {
         assert_eq!(convert("我的头发", Traditional), "我的頭髮");
         assert_eq!(convert("我们出发", Traditional), "我們出發");
-    }
-
-    #[test]
-    fn it_applies_to_chinese_or_an_unknown_language_only() {
-        assert!(!applies(AsRecognised, None));
-        assert!(applies(Traditional, None));
-        for l in ["zh", "zh-TW", "zh_CN", "yue", "ZH"] {
-            assert!(applies(Simplified, Some(l)), "{l}");
-        }
-        for l in ["en", "ja", "zhx", "fr"] {
-            assert!(!applies(Simplified, Some(l)), "{l}");
-        }
     }
 }

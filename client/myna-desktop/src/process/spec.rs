@@ -133,22 +133,3 @@ pub struct StepReport {
     pub id: String,
     pub state: StepState,
 }
-
-/// Why `kind` does not apply to text in `lang`, if it does not, in words
-/// for the log and the bus; the judgement is `myna_core::chains::misfit`,
-/// which Settings shares.
-pub(super) fn misfit(kind: Kind, step: &StepSpec, lang: Option<&str>) -> Option<&'static str> {
-    use myna_core::chains::Misfit;
-    let params: myna_core::chains::StepParams = step
-        .params
-        .iter()
-        .filter_map(|(k, v)| Some((k.clone(), v.as_str()?.to_owned())))
-        .collect();
-    Some(match myna_core::chains::misfit(kind.id(), &params, lang)? {
-        Misfit::NotEnglish => "Applies when the text is English",
-        Misfit::NoTarget => "Needs a language to translate to",
-        Misfit::AlreadyInTarget => "The text is already in that language",
-        Misfit::NotChinese => "Applies when the text is Chinese",
-        Misfit::NoScript => "Needs a script to write",
-    })
-}

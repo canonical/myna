@@ -193,8 +193,6 @@ struct Binding {
     /// Derives from the graph: a chain that changes text is held to a
     /// sentence, one that does not streams.
     commit: Live<CommitPolicy>,
-    /// The script the compiled chain converts to, worn by the pipeline.
-    script: Live<myna_core::ChineseScript>,
     steps: Live<Vec<StepSpec>>,
     language: Live<Option<String>>,
     chain: Live<Option<(String, String)>>,
@@ -205,7 +203,6 @@ fn spawn_binder(resolver: Resolver, live: Binding, wake: Arc<tokio::sync::Notify
     let Binding {
         graph,
         commit,
-        script,
         steps,
         language,
         chain,
@@ -213,26 +210,23 @@ fn spawn_binder(resolver: Resolver, live: Binding, wake: Arc<tokio::sync::Notify
     } = live;
     // The graph the steps compile to given the models installed now: a
     // translation with no direct model pivots through English. This is the
-    // only writer of the graph, the commit policy and the script.
+    // only writer of the graph and the commit policy.
     let refresh: Arc<dyn Fn() -> bool + Send + Sync> = {
         let resolver = resolver.clone();
-        let (graph, commit, script) = (graph.clone(), commit.clone(), script.clone());
+        let (graph, commit) = (graph.clone(), commit.clone());
         Arc::new(move || {
             let language = language.get();
             let compiled = resolver.compile(&steps.get(), language.as_deref());
             let moved = graph.get() != compiled.graph;
-            let policy = CommitPolicy::for_chain(compiled.holds(language.as_deref()));
+            let policy = CommitPolicy::for_chain(compiled.graph.touches());
             if moved {
+                if compiled.graph.converts() {
+                    myna_desktop::process::script::warm();
+                }
                 graph.set(compiled.graph);
             }
             if commit.get() != policy {
                 commit.set(policy);
-            }
-            if script.get() != compiled.script {
-                if compiled.script != myna_core::ChineseScript::AsRecognised {
-                    myna_desktop::process::script::warm();
-                }
-                script.set(compiled.script);
             }
             resolver.set_steps(compiled.report);
             resolver.set_chains(
@@ -333,8 +327,6 @@ struct LiveSettings {
     speech_model: Live<Option<String>>,
     /// What the chosen chain compiles to, written by the binder alone.
     graph: Live<Graph>,
-    /// How Chinese is written, read for each piece of text; the binder's.
-    script: Live<myna_core::ChineseScript>,
     /// The saved chain in use, read at each press for the record.
     chain: Live<Option<(String, String)>>,
     /// Every saved chain, read by the binder for the bus.
@@ -363,7 +355,6 @@ impl LiveSettings {
             // Until the binder's first refresh, which runs before the
             // controller exists.
             graph: Live::new(Graph::passthrough()),
-            script: Live::new(myna_core::ChineseScript::AsRecognised),
             chain: Live::new(resolved.chain.clone()),
             chains: Live::new(resolved.chains.clone()),
             graph_changed: Arc::default(),
@@ -894,7 +885,6 @@ async fn run_controller(
                 Binding {
                     graph: live.graph.clone(),
                     commit: live.commit.clone(),
-                    script: live.script.clone(),
                     steps: live.steps.clone(),
                     language: live.language.clone(),
                     chain: live.chain.clone(),
@@ -902,9 +892,8 @@ async fn run_controller(
                 },
                 live.graph_changed.clone(),
             );
-            let pipeline = Pipeline::new(live.graph.clone(), resolver)
-                .written(live.vocabulary.clone())
-                .scripted(live.script.clone());
+            let pipeline =
+                Pipeline::new(live.graph.clone(), resolver).written(live.vocabulary.clone());
             let context = Context {
                 steps: live.steps.clone(),
                 chain: live.chain.clone(),
@@ -1940,16 +1929,8 @@ mod tests {
 
     #[test]
     fn a_chain_holds_the_dictation_as_far_as_its_nodes_need() {
-        use myna_core::ChineseScript::AsRecognised;
         use myna_core::ProcessingChain;
-        let hold = |chain| {
-            myna_desktop::process::steps::Compiled {
-                graph: myna_desktop::process::steps::preset_graph(chain),
-                script: AsRecognised,
-                report: Vec::new(),
-            }
-            .holds(None)
-        };
+        let hold = |chain| myna_desktop::process::steps::preset_graph(chain).touches();
         assert_eq!(
             CommitPolicy::for_chain(hold(ProcessingChain::EXACT)),
             CommitPolicy::Streaming
@@ -1991,29 +1972,6 @@ mod tests {
         live.apply(&resolved(&a, &future), "test");
         assert_eq!(live.steps.get().len(), 2);
         assert_eq!(live.graph.get(), Graph::passthrough(), "the binder's cell");
-    }
-
-    /// A script holds exact dictation to a sentence, never the whole of it,
-    /// and only where the language may be Chinese.
-    #[test]
-    fn a_chinese_script_streams_by_sentence_and_only_for_chinese() {
-        use myna_core::ChineseScript::{AsRecognised, Traditional};
-        let compiled = |script| myna_desktop::process::steps::Compiled {
-            graph: Graph::passthrough(),
-            script,
-            report: Vec::new(),
-        };
-        let policy = |script, language| CommitPolicy::for_chain(compiled(script).holds(language));
-        assert_eq!(
-            policy(Traditional, None),
-            CommitPolicy::Horizon { sentences: 1 }
-        );
-        assert_eq!(
-            policy(Traditional, Some("zh")),
-            CommitPolicy::Horizon { sentences: 1 }
-        );
-        assert_eq!(policy(Traditional, Some("en")), CommitPolicy::Streaming);
-        assert_eq!(policy(AsRecognised, None), CommitPolicy::Streaming);
     }
 
     #[test]

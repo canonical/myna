@@ -257,7 +257,7 @@ impl Resolver {
 
     /// `steps` compiled for dictation in `language` against what is
     /// installed and bound now: a translation no installed model covers
-    /// directly pivots through English when its legs are installed.
+    /// directly goes through English or another script when that is installed.
     pub fn compile(&self, steps: &[StepSpec], language: Option<&str>) -> Compiled {
         let status = self.0.status.borrow().clone();
         let models = self.0.catalog.borrow().models.clone();
@@ -265,8 +265,8 @@ impl Resolver {
             steps,
             &Context {
                 language,
+                models: &models,
                 unavailable: &|request| status.lacks(request),
-                uncovered: &|request| rank(request, models.clone()).is_empty(),
             },
         )
     }
@@ -280,8 +280,8 @@ impl Resolver {
             steps,
             &Context {
                 language,
+                models: &models,
                 unavailable: &uncovered,
-                uncovered: &uncovered,
             },
         );
         let mut missing = Vec::new();
