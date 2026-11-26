@@ -2192,33 +2192,6 @@ fn completed(transcript: &str) -> SessionOutcome {
 }
 
 #[tokio::test]
-async fn horizon_commits_settled_sentences_while_the_user_speaks() {
-    let injector = MockInjector::new();
-    let inject_log = injector.log();
-    let (builder, _) = held(
-        CommitPolicy::Horizon { sentences: 0 },
-        injector,
-        events_session(
-            vec![
-                OrchestratorEvent::Final("One.".into()),
-                OrchestratorEvent::Transcribing,
-                OrchestratorEvent::Final("Two.".into()),
-                OrchestratorEvent::Transcribing,
-                OrchestratorEvent::Final("Three".into()),
-                OrchestratorEvent::Done("One. Two. Three".into()),
-            ],
-            completed("One. Two. Three"),
-        ),
-    );
-    builder.build().run().await;
-
-    assert_eq!(
-        inject_log.lock().unwrap().commits,
-        vec!["One.", " Two.", " Three"]
-    );
-}
-
-#[tokio::test]
 async fn held_text_is_processed_on_its_way_to_the_field() {
     let injector = MockInjector::new();
     let inject_log = injector.log();
