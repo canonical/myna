@@ -352,20 +352,7 @@ impl ModelsSection {
         // TRANSLATORS: {model} names a model, such as "Whisper" or "English to Italiano".
         let frame = gettextrs::gettext("Removing {model} failed");
         let heading = frame.replace("{model}", title);
-        let summary = crate::backend_ui::system_failure_summary(error);
-        let details = crate::backend_ui::system_error_details(error);
-        let toast = adw::Toast::builder()
-            .title(escape_markup(&heading))
-            .button_label(gettextrs::gettext("Details"))
-            .build();
-        toast.connect_button_clicked({
-            let overlay = self.deps.overlay.clone();
-            move |_| {
-                crate::ui::OperationErrorDialog::new(&heading, &summary, &details)
-                    .present(Some(overlay.upcast_ref::<gtk::Widget>()));
-            }
-        });
-        self.deps.overlay.add_toast(toast);
+        crate::backend_ui::failure_toast(&self.deps.overlay, &heading, error);
     }
 }
 

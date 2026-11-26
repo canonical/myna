@@ -25,7 +25,7 @@ use crate::plugin_install::{self, Failure, SnapState};
 use crate::ports::{
     BackendRepository, ClientSettingsSubscription, DictationDaemon, SystemConfigurator,
 };
-use crate::processing_steps::{size, Offered, Row, Standing, SCRIPT, TRANSLATE};
+use crate::processing_steps::{size, Moves, Offered, Row, Standing, SCRIPT, TRANSLATE};
 use crate::step_catalog::{self, Language, LanguageState};
 use crate::ui::InstallControl;
 
@@ -87,14 +87,148 @@ struct LineWidgets {
     control: InstallControl,
     fix: gtk::Button,
     switch: gtk::Switch,
+    /// The ▸/▾ buttons beside the row, which hide below the breakpoint.
     up: gtk::Button,
     down: gtk::Button,
-    move_up: gtk::Button,
-    move_down: gtk::Button,
-    to_top: gtk::Button,
-    to_bottom: gtk::Button,
-    menu: gtk::MenuButton,
+    /// The row menu: the moves it offers, and what it removes.
+    moves: Vec<(Move, gtk::Button)>,
+    remove: gtk::Button,
     remove_model: gtk::Button,
+    menu: gtk::MenuButton,
+    popover: gtk::Popover,
+}
+
+/// The ▸/▾ buttons beside a step and the menu at its end.
+struct RowMenu {
+    up: gtk::Button,
+    down: gtk::Button,
+    popover: gtk::Popover,
+    menu: gtk::MenuButton,
+    /// The menu's moves, in the order it shows them.
+    moves: Vec<(Move, gtk::Button)>,
+    remove: gtk::Button,
+    remove_model: gtk::Button,
+}
+
+impl RowMenu {
+    fn new() -> Self {
+        let menu_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        let popover = gtk::Popover::builder().child(&menu_box).build();
+        let menu = gtk::MenuButton::builder()
+            .icon_name("view-more-symbolic")
+            .css_classes(["flat"])
+            .valign(gtk::Align::Center)
+            .popover(&popover)
+            .build();
+        let moves: Vec<(Move, gtk::Button)> = Move::MENU
+            .iter()
+            .map(|&mv| (mv, menu_item(&mv.label())))
+            .collect();
+        let remove = menu_item(&gettextrs::gettext("Remove step"));
+        let remove_model = menu_item(&gettextrs::gettext("Remove model"));
+        for button in moves.iter().map(|(_, button)| button) {
+            menu_box.append(button);
+        }
+        menu_box.append(&remove);
+        menu_box.append(&remove_model);
+        Self {
+            up: icon_button("go-up-symbolic", &gettextrs::gettext("Move up")),
+            down: icon_button("go-down-symbolic", &gettextrs::gettext("Move down")),
+            popover,
+            menu,
+            moves,
+            remove,
+            remove_model,
+        }
+    }
+}
+
+impl LineWidgets {
+    /// A step's row and the row under it, before anything is wired. Below the
+    /// editor's breakpoint the picker moves under the step, so the title keeps
+    /// its room beside the badge, the switch and the menu.
+    fn new(narrow: bool) -> Self {
+        let row = adw::ActionRow::builder().subtitle_lines(0).build();
+        let number = dim_label(&["dim-label", "numeric"]);
+        number.set_width_chars(2);
+        row.add_prefix(&number);
+        let badge = dim_label(&["dim-label", "caption", "monospace"]);
+        let skipped = gtk::Label::builder()
+            // TRANSLATORS: marks a step of a chain that does not run where it stands.
+            .label(gettextrs::gettext("Skipped"))
+            .css_classes(["caption", "skipped-marker"])
+            .valign(gtk::Align::Center)
+            .visible(false)
+            .build();
+        let picker = gtk::DropDown::builder()
+            .valign(gtk::Align::Center)
+            .visible(false)
+            .build();
+        let switch = gtk::Switch::builder().valign(gtk::Align::Center).build();
+        let RowMenu {
+            up,
+            down,
+            popover,
+            menu,
+            moves,
+            remove,
+            remove_model,
+        } = RowMenu::new();
+        add_suffixes(
+            &row,
+            &[
+                Some(skipped.upcast_ref()),
+                Some(badge.upcast_ref()),
+                (!narrow).then_some(picker.upcast_ref()),
+            ],
+        );
+        add_suffixes(
+            &row,
+            &[
+                Some(switch.upcast_ref()),
+                Some(up.upcast_ref()),
+                Some(down.upcast_ref()),
+                Some(menu.upcast_ref()),
+            ],
+        );
+        let control = InstallControl::new();
+        control.set_visible(false);
+        let fix = gtk::Button::builder()
+            .valign(gtk::Align::Center)
+            .visible(false)
+            .build();
+        let detail = adw::ActionRow::builder()
+            .css_classes(["property"])
+            .visible(false)
+            .build();
+        add_suffixes(
+            &detail,
+            &[
+                Some(fix.upcast_ref()),
+                narrow.then_some(picker.upcast_ref()),
+                Some(control.upcast_ref()),
+            ],
+        );
+        Self {
+            row,
+            skipped,
+            detail,
+            number,
+            badge,
+            picker,
+            listed: RefCell::new(Vec::new()),
+            control,
+            fix,
+            switch,
+            up,
+            down,
+            moves,
+            remove,
+            remove_model,
+            menu,
+            popover,
+        }
+    }
 }
 
 /// The open editor of one chain.
@@ -186,6 +320,53 @@ impl Drop for StepsPage {
     fn drop(&mut self) {
         self.cancellation.cancel();
     }
+}
+
+/// Name a widget for assistive technology, which reads this instead of the
+/// pixels.
+fn name<W: IsA<gtk::Accessible>>(widget: &W, text: &str) {
+    widget.update_property(&[gtk::accessible::Property::Label(text)]);
+}
+
+/// Describe one the same way, where the name alone says too little.
+fn describe<W: IsA<gtk::Accessible>>(widget: &W, text: &str) {
+    widget.update_property(&[gtk::accessible::Property::Description(text)]);
+}
+
+/// A flat icon button, named the same for assistive technology as for the
+/// pointer.
+fn icon_button(icon: &str, label: &str) -> gtk::Button {
+    let button = gtk::Button::builder()
+        .icon_name(icon)
+        .css_classes(["flat"])
+        .valign(gtk::Align::Center)
+        .tooltip_text(label)
+        .build();
+    name(&button, label);
+    button
+}
+
+/// A dimmed, vertically centred label, the shape of a row's own text.
+fn dim_label(classes: &[&str]) -> gtk::Label {
+    gtk::Label::builder()
+        .css_classes(classes)
+        .valign(gtk::Align::Center)
+        .build()
+}
+
+/// Add every widget that is there as a suffix of `row`.
+fn add_suffixes(row: &adw::ActionRow, widgets: &[Option<&gtk::Widget>]) {
+    for widget in widgets.iter().flatten() {
+        row.add_suffix(*widget);
+    }
+}
+
+/// A flat button of a row menu.
+fn menu_item(label: &str) -> gtk::Button {
+    gtk::Button::builder()
+        .label(label)
+        .css_classes(["flat"])
+        .build()
 }
 
 fn link_row(title: &str, subtitle: &str) -> adw::ActionRow {
@@ -456,14 +637,10 @@ impl StepsPage {
             chain.switch.set_active(card.active);
             // TRANSLATORS: the accessible name of a chain's on/off switch; {name} is the chain's name.
             let use_it = gettextrs::gettext("Use {name}").replace("{name}", &card.name);
-            chain
-                .switch
-                .update_property(&[gtk::accessible::Property::Label(&use_it)]);
+            name(&chain.switch, &use_it);
             // TRANSLATORS: the accessible name of a chain's delete button; {name} is the chain's name.
             let delete = gettextrs::gettext("Delete {name}").replace("{name}", &card.name);
-            chain
-                .delete
-                .update_property(&[gtk::accessible::Property::Label(&delete)]);
+            name(&chain.delete, &delete);
             chain.delete.set_tooltip_text(Some(&delete));
         }
         self.empty_row.set_visible(cards.is_empty());
@@ -739,6 +916,20 @@ impl StepsPage {
         editor.lines.replace(built);
     }
 
+    /// Move step `from` of chain `id` one of `mv`, say so, and keep the focus
+    /// on the step that moved.
+    fn move_by(self: &Rc<Self>, id: &str, from: usize, mv: Move, focus: Focus) {
+        let len = self
+            .deps
+            .store
+            .processing()
+            .chain(id)
+            .map_or(0, |c| c.steps.len());
+        if let Some(to) = mv.target(from, len) {
+            self.move_step(id, from, to, focus);
+        }
+    }
+
     /// Move step `from` of chain `id` to `to`, say so, and keep the focus on
     /// the step that moved.
     fn move_step(self: &Rc<Self>, id: &str, from: usize, to: usize, focus: Focus) {
@@ -761,253 +952,58 @@ impl StepsPage {
         };
         let lines = editor.lines.borrow();
         let shown = editor.shown.borrow();
-        if let (Some(widgets), Some(line)) = (lines.get(to), shown.get(to)) {
-            // TRANSLATORS: said after a step moved; {step} is its name, {n} and {total} its new place.
-            let said = gettextrs::gettext("{step} moved to step {n} of {total}")
-                .replace("{step}", &line.title)
-                .replace("{n}", &(to + 1).to_string())
-                .replace("{total}", &len.to_string());
-            widgets
-                .row
-                .announce(&said, gtk::AccessibleAnnouncementPriority::Medium);
-            let target: gtk::Widget = match focus {
-                Focus::Up if widgets.up.is_sensitive() => widgets.up.clone().upcast(),
-                Focus::Down if widgets.down.is_sensitive() => widgets.down.clone().upcast(),
-                _ => widgets.row.clone().upcast(),
-            };
-            target.grab_focus();
-        }
+        let (Some(widgets), Some(line)) = (lines.get(to), shown.get(to)) else {
+            return;
+        };
+        // TRANSLATORS: said after a step moved; {step} is its name, {n} and {total} its new place.
+        let said = gettextrs::gettext("{step} moved to step {n} of {total}")
+            .replace("{step}", &line.title)
+            .replace("{n}", &(to + 1).to_string())
+            .replace("{total}", &len.to_string());
+        widgets
+            .row
+            .announce(&said, gtk::AccessibleAnnouncementPriority::Medium);
+        let target: gtk::Widget = match focus {
+            Focus::Up if widgets.up.is_sensitive() => widgets.up.clone().upcast(),
+            Focus::Down if widgets.down.is_sensitive() => widgets.down.clone().upcast(),
+            _ => widgets.row.clone().upcast(),
+        };
+        target.grab_focus();
     }
 
+    /// A step in the editor: its row, the row under it, and what they do.
     fn line_widgets(self: &Rc<Self>, id: &str, index: usize, narrow: bool) -> LineWidgets {
-        let row = adw::ActionRow::builder().subtitle_lines(0).build();
-        let number = gtk::Label::builder()
-            .css_classes(["dim-label", "numeric"])
-            .valign(gtk::Align::Center)
-            .width_chars(2)
-            .build();
-        row.add_prefix(&number);
-        let badge = gtk::Label::builder()
-            .css_classes(["dim-label", "caption", "monospace"])
-            .valign(gtk::Align::Center)
-            .build();
-        let skipped = gtk::Label::builder()
-            // TRANSLATORS: marks a step of a chain that does not run where it stands.
-            .label(gettextrs::gettext("Skipped"))
-            .css_classes(["caption", "skipped-marker"])
-            .valign(gtk::Align::Center)
-            .visible(false)
-            .build();
-        let picker = gtk::DropDown::builder()
-            .valign(gtk::Align::Center)
-            .visible(false)
-            .build();
-        let control = InstallControl::new();
-        control.set_visible(false);
-        let fix = gtk::Button::builder()
-            .valign(gtk::Align::Center)
-            .visible(false)
-            .build();
-        let switch = gtk::Switch::builder().valign(gtk::Align::Center).build();
-        let up = gtk::Button::builder()
-            .icon_name("go-up-symbolic")
-            .css_classes(["flat"])
-            .valign(gtk::Align::Center)
-            .tooltip_text(gettextrs::gettext("Move up"))
-            .build();
-        up.update_property(&[gtk::accessible::Property::Label(&gettextrs::gettext(
-            "Move up",
-        ))]);
-        let down = gtk::Button::builder()
-            .icon_name("go-down-symbolic")
-            .css_classes(["flat"])
-            .valign(gtk::Align::Center)
-            .tooltip_text(gettextrs::gettext("Move down"))
-            .build();
-        down.update_property(&[gtk::accessible::Property::Label(&gettextrs::gettext(
-            "Move down",
-        ))]);
-        let menu_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
-        let item = |label: &str| {
-            let button = gtk::Button::builder()
-                .label(label)
-                .css_classes(["flat"])
-                .build();
-            menu_box.append(&button);
-            button
-        };
-        let move_up = item(&gettextrs::gettext("Move up"));
-        let move_down = item(&gettextrs::gettext("Move down"));
-        let to_top = item(&gettextrs::gettext("Move to top"));
-        let to_bottom = item(&gettextrs::gettext("Move to bottom"));
-        let remove = item(&gettextrs::gettext("Remove step"));
-        let remove_model = item(&gettextrs::gettext("Remove model"));
-        let popover = gtk::Popover::builder().child(&menu_box).build();
-        let menu = gtk::MenuButton::builder()
-            .icon_name("view-more-symbolic")
-            .css_classes(["flat"])
-            .valign(gtk::Align::Center)
-            .popover(&popover)
-            .build();
-        // The picker sits beside the input it reads, unless the window is
-        // too narrow for it and the title both (see `NARROW_EDITOR`).
-        let on_row = (!narrow).then_some(picker.upcast_ref::<gtk::Widget>());
-        for widget in [
-            Some(skipped.upcast_ref::<gtk::Widget>()),
-            Some(badge.upcast_ref()),
-            on_row,
-            Some(switch.upcast_ref()),
-            Some(up.upcast_ref()),
-            Some(down.upcast_ref()),
-            Some(menu.upcast_ref()),
-        ]
-        .into_iter()
-        .flatten()
-        {
-            row.add_suffix(widget);
-        }
-        let detail = adw::ActionRow::builder()
-            .css_classes(["property"])
-            .visible(false)
-            .build();
-        let under = narrow.then_some(picker.upcast_ref::<gtk::Widget>());
-        for widget in [
-            Some(fix.upcast_ref::<gtk::Widget>()),
-            under,
-            Some(control.upcast_ref()),
-        ]
-        .into_iter()
-        .flatten()
-        {
-            detail.add_suffix(widget);
-        }
-        let weak = Rc::downgrade(self);
-        let chain = id.to_owned();
-        let on_page = move |f: PageAction| {
-            let weak = weak.clone();
-            let chain = chain.clone();
-            move || {
-                if let Some(page) = weak.upgrade() {
-                    f(&page, &chain);
-                }
-            }
-        };
-        switch.connect_active_notify({
-            let weak = Rc::downgrade(self);
-            let chain = id.to_owned();
-            move |switch| {
-                if let Some(page) = weak.upgrade() {
-                    if !page.updating.get() {
-                        let on = switch.is_active();
-                        page.edit_steps(&chain, |steps| {
-                            if let Some(step) = steps.get_mut(index) {
-                                step.on = on;
-                            }
-                        });
-                    }
-                }
-            }
-        });
-        up.connect_clicked({
-            let act = on_page(Box::new(move |page, chain| {
-                page.move_step(chain, index, index.saturating_sub(1), Focus::Up)
-            }));
-            move |_| act()
-        });
-        down.connect_clicked({
-            let act = on_page(Box::new(move |page, chain| {
-                page.move_step(chain, index, index + 1, Focus::Down)
-            }));
-            move |_| act()
-        });
-        let popdown = |popover: &gtk::Popover| {
-            let popover = popover.downgrade();
-            move || {
-                if let Some(popover) = popover.upgrade() {
-                    popover.popdown();
-                }
-            }
-        };
-        move_up.connect_clicked({
-            let close = popdown(&popover);
-            let act = on_page(Box::new(move |page, chain| {
-                page.move_step(chain, index, index.saturating_sub(1), Focus::Row)
-            }));
-            move |_| {
-                close();
-                act()
-            }
-        });
-        move_down.connect_clicked({
-            let close = popdown(&popover);
-            let act = on_page(Box::new(move |page, chain| {
-                page.move_step(chain, index, index + 1, Focus::Row)
-            }));
-            move |_| {
-                close();
-                act()
-            }
-        });
-        to_top.connect_clicked({
-            let close = popdown(&popover);
-            let act = on_page(Box::new(move |page, chain| {
-                page.move_step(chain, index, 0, Focus::Row)
-            }));
-            move |_| {
-                close();
-                act()
-            }
-        });
-        to_bottom.connect_clicked({
-            let close = popdown(&popover);
-            let act = on_page(Box::new(move |page, chain| {
-                let last = page
-                    .deps
-                    .store
-                    .processing()
-                    .chain(chain)
-                    .map_or(0, |c| c.steps.len().saturating_sub(1));
-                page.move_step(chain, index, last, Focus::Row)
-            }));
-            move |_| {
-                close();
-                act()
-            }
-        });
-        remove.connect_clicked({
-            let close = popdown(&popover);
-            let act = on_page(Box::new(move |page, chain| {
-                page.edit_steps(chain, |steps| {
-                    if index < steps.len() {
-                        steps.remove(index);
+        let widgets = LineWidgets::new(narrow);
+        self.wire_line(&widgets, id, index);
+        widgets
+    }
+
+    /// Give step `index`'s controls what they do.
+    fn wire_line(self: &Rc<Self>, widgets: &LineWidgets, id: &str, index: usize) {
+        widgets
+            .switch
+            .connect_active_notify(self.on(id, move |page, id, switch: &gtk::Switch| {
+                let on = switch.is_active();
+                page.edit_steps(id, |steps| {
+                    if let Some(step) = steps.get_mut(index) {
+                        step.on = on;
                     }
                 });
             }));
-            move |_| {
-                close();
-                act()
-            }
-        });
-        remove_model.connect_clicked({
-            let close = popdown(&popover);
-            let act = on_page(Box::new(move |page, chain| {
-                let step = page
-                    .deps
-                    .store
-                    .processing()
-                    .chain(chain)
-                    .and_then(|c| c.steps.get(index).map(|s| s.step.clone()));
-                if let Some(step) = step {
-                    page.remove_step_model(&step);
-                }
+        widgets
+            .up
+            .connect_clicked(self.on(id, move |page, id, _: &gtk::Button| {
+                page.move_by(id, index, Move::Up, Focus::Up);
             }));
-            move |_| {
-                close();
-                act()
-            }
-        });
-        fix.connect_clicked({
-            let act = on_page(Box::new(move |page, chain| {
+        widgets
+            .down
+            .connect_clicked(self.on(id, move |page, id, _: &gtk::Button| {
+                page.move_by(id, index, Move::Down, Focus::Down);
+            }));
+        self.wire_menu(widgets, id, index);
+        widgets
+            .fix
+            .connect_clicked(self.on(id, move |page, id, _: &gtk::Button| {
                 let above = page.editor.borrow().as_ref().and_then(|e| {
                     e.shown
                         .borrow()
@@ -1015,68 +1011,79 @@ impl StepsPage {
                         .and_then(|l| l.place.fix.clone())
                 });
                 if let Some((above, _)) = above {
-                    page.move_step(chain, index, above, Focus::Row);
+                    page.move_step(id, index, above, Focus::Row);
                 }
             }));
-            move |_| act()
+        widgets
+            .control
+            .button()
+            .connect_clicked(self.on(id, move |page, id, _: &gtk::Button| {
+                page.install_line(id, index);
+            }));
+        widgets.picker.connect_selected_notify(
+            self.on(id, move |page, id, picker: &gtk::DropDown| {
+                page.choose(id, index, picker.selected())
+            }),
+        );
+        let up = self.on(id, move |page, id, _: &gtk::EventControllerKey| {
+            page.move_by(id, index, Move::Up, Focus::Row);
         });
-        control.button().connect_clicked({
-            let act = on_page(Box::new(move |page, chain| page.install_line(chain, index)));
-            move |_| act()
-        });
-        picker.connect_selected_notify({
-            let weak = Rc::downgrade(self);
-            let chain = id.to_owned();
-            move |picker| {
-                if let Some(page) = weak.upgrade() {
-                    if !page.updating.get() {
-                        page.choose(&chain, index, picker.selected());
-                    }
-                }
-            }
+        let down = self.on(id, move |page, id, _: &gtk::EventControllerKey| {
+            page.move_by(id, index, Move::Down, Focus::Row);
         });
         let keys = gtk::EventControllerKey::new();
         keys.set_propagation_phase(gtk::PropagationPhase::Capture);
-        keys.connect_key_pressed({
-            let act_up = on_page(Box::new(move |page, chain| {
-                page.move_step(chain, index, index.saturating_sub(1), Focus::Row)
-            }));
-            let act_down = on_page(Box::new(move |page, chain| {
-                page.move_step(chain, index, index + 1, Focus::Row)
-            }));
-            move |_, key, _, modifiers| {
-                if !modifiers.contains(gtk::gdk::ModifierType::ALT_MASK) {
-                    return glib::Propagation::Proceed;
-                }
-                match key {
-                    gtk::gdk::Key::Up => act_up(),
-                    gtk::gdk::Key::Down => act_down(),
-                    _ => return glib::Propagation::Proceed,
-                }
-                glib::Propagation::Stop
+        keys.connect_key_pressed(move |keys, key, _, modifiers| {
+            if !modifiers.contains(gtk::gdk::ModifierType::ALT_MASK) {
+                return glib::Propagation::Proceed;
             }
+            match key {
+                gtk::gdk::Key::Up => up(keys),
+                gtk::gdk::Key::Down => down(keys),
+                _ => return glib::Propagation::Proceed,
+            }
+            glib::Propagation::Stop
         });
-        row.add_controller(keys);
-        LineWidgets {
-            row,
-            skipped,
-            detail,
-            number,
-            badge,
-            picker,
-            listed: RefCell::new(Vec::new()),
-            control,
-            fix,
-            switch,
-            up,
-            down,
-            move_up,
-            move_down,
-            to_top,
-            to_bottom,
-            menu,
-            remove_model,
+        widgets.row.add_controller(keys);
+    }
+
+    /// What a step's row menu does: the moves, the step's removal and its
+    /// model's.
+    fn wire_menu(self: &Rc<Self>, widgets: &LineWidgets, id: &str, index: usize) {
+        for (mv, button) in &widgets.moves {
+            let mv = *mv;
+            let popover = widgets.popover.clone();
+            button.connect_clicked(self.on(id, move |page, id, _: &gtk::Button| {
+                popover.popdown();
+                page.move_by(id, index, mv, Focus::Row);
+            }));
         }
+        let popover = widgets.popover.clone();
+        widgets
+            .remove
+            .connect_clicked(self.on(id, move |page, id, _: &gtk::Button| {
+                popover.popdown();
+                page.edit_steps(id, |steps| {
+                    if index < steps.len() {
+                        steps.remove(index);
+                    }
+                });
+            }));
+        let popover = widgets.popover.clone();
+        widgets
+            .remove_model
+            .connect_clicked(self.on(id, move |page, id, _: &gtk::Button| {
+                popover.popdown();
+                let step = page
+                    .deps
+                    .store
+                    .processing()
+                    .chain(id)
+                    .and_then(|c| c.steps.get(index).map(|s| s.step.clone()));
+                if let Some(step) = step {
+                    page.remove_step_model(&step);
+                }
+            }));
     }
 
     /// The picker of step `index` chose its entry `choice`: a translation's
@@ -1170,22 +1177,10 @@ impl StepsPage {
             let outcome = run_install(&page, &id, requests).await;
             let Some(page) = page.upgrade() else { return };
             page.installing.borrow_mut().remove(&id);
-            match outcome {
-                Ok(()) => {
-                    page.preparing.borrow_mut().insert(id, Instant::now());
-                }
-                Err(Failure::Dismissed) => {}
-                Err(Failure::Dictating) => {
-                    page.deps
-                        .overlay
-                        .add_toast(adw::Toast::new(&gettextrs::gettext(
-                            "Finish dictating, then try again.",
-                        )));
-                }
-                Err(Failure::Failed(error)) => {
-                    page.toast_failure(&gettextrs::gettext("Installing the model failed"), &error);
-                }
+            if outcome.is_ok() {
+                page.preparing.borrow_mut().insert(id, Instant::now());
             }
+            page.report_outcome(&outcome, &gettextrs::gettext("Installing the model failed"));
             page.refresh().await;
         });
     }
@@ -1434,10 +1429,11 @@ impl StepsPage {
                     .valign(gtk::Align::Center)
                     .build();
                 remove.reset_relation(gtk::AccessibleRelation::LabelledBy);
-                remove.update_property(&[gtk::accessible::Property::Label(
+                name(
+                    &remove,
                     // TRANSLATORS: {model} names a translation model, such as "English to Français".
                     &gettextrs::gettext("Remove {model}").replace("{model}", &title),
-                )]);
+                );
                 remove.connect_clicked({
                     let page = Rc::downgrade(self);
                     let entry = entry.clone();
@@ -1618,10 +1614,11 @@ impl StepsPage {
             .build();
         // A button is labelled by its label child, over any name set.
         add.reset_relation(gtk::AccessibleRelation::LabelledBy);
-        add.update_property(&[gtk::accessible::Property::Label(
+        name(
+            &add,
             // TRANSLATORS: {step} is a step's name, such as "Tidy up speech".
             &gettextrs::gettext("Add {step}").replace("{step}", &item.title),
-        )]);
+        );
         let added = gtk::Label::builder()
             .label(gettextrs::gettext("Added"))
             .css_classes(["dim-label"])
@@ -1658,10 +1655,11 @@ impl StepsPage {
             .valign(gtk::Align::Center)
             .build();
         remove.reset_relation(gtk::AccessibleRelation::LabelledBy);
-        remove.update_property(&[gtk::accessible::Property::Label(
+        name(
+            &remove,
             // TRANSLATORS: {step} is a step's name, such as "Tidy up speech".
             &gettextrs::gettext("Remove {step}").replace("{step}", &item.title),
-        )]);
+        );
         let remove_row = adw::ActionRow::builder()
             .title(gettextrs::gettext("Remove this model"))
             .subtitle(gettextrs::gettext(
@@ -1749,19 +1747,7 @@ impl StepsPage {
             let outcome = run_remove(&page, &entry).await;
             let Some(page) = page.upgrade() else { return };
             page.removing.borrow_mut().remove(&entry.id);
-            match outcome {
-                Ok(()) | Err(Failure::Dismissed) => {}
-                Err(Failure::Dictating) => {
-                    page.deps
-                        .overlay
-                        .add_toast(adw::Toast::new(&gettextrs::gettext(
-                            "Finish dictating, then try again.",
-                        )));
-                }
-                Err(Failure::Failed(error)) => {
-                    page.toast_failure(&gettextrs::gettext("Removing the model failed"), &error);
-                }
-            }
+            page.report_outcome(&outcome, &gettextrs::gettext("Removing the model failed"));
             page.refresh().await;
         });
     }
@@ -1779,22 +1765,22 @@ impl StepsPage {
         self.start_install(&row.id, &entries);
     }
 
-    fn toast_failure(&self, heading: &str, error: &crate::ports::SystemConfiguratorError) {
-        let heading = heading.to_owned();
-        let summary = crate::backend_ui::system_failure_summary(error);
-        let details = crate::backend_ui::system_error_details(error);
-        let toast = adw::Toast::builder()
-            .title(escape_markup(&heading))
-            .button_label(gettextrs::gettext("Details"))
-            .build();
-        toast.connect_button_clicked({
-            let overlay = self.deps.overlay.clone();
-            move |_| {
-                crate::ui::OperationErrorDialog::new(&heading, &summary, &details)
-                    .present(Some(overlay.upcast_ref::<gtk::Widget>()));
+    /// Say how an install or a removal went: a success and a dismissed
+    /// prompt say nothing.
+    fn report_outcome(&self, outcome: &Result<(), Failure>, failed: &str) {
+        match outcome {
+            Ok(()) | Err(Failure::Dismissed) => {}
+            Err(Failure::Dictating) => {
+                self.deps
+                    .overlay
+                    .add_toast(adw::Toast::new(&gettextrs::gettext(
+                        "Finish dictating, then try again.",
+                    )));
             }
-        });
-        self.deps.overlay.add_toast(toast);
+            Err(Failure::Failed(error)) => {
+                crate::backend_ui::failure_toast(&self.deps.overlay, failed, error);
+            }
+        }
     }
 
     async fn snap_state(&self, snap: &str) -> SnapState {
@@ -1896,9 +1882,7 @@ fn language_page() -> LanguagePage {
         .placeholder_text(gettextrs::gettext("Search languages"))
         .hexpand(true)
         .build();
-    search.update_property(&[gtk::accessible::Property::Label(&gettextrs::gettext(
-        "Search languages",
-    ))]);
+    name(&search, &gettextrs::gettext("Search languages"));
     let list = adw::PreferencesGroup::new();
     let empty = adw::ActionRow::builder()
         .title(gettextrs::gettext("No language matches"))
@@ -1975,9 +1959,7 @@ fn show_language(widgets: &LanguageWidgets, language: &Language, blocked: bool) 
         Some(english) => format!("{english}. {state}"),
         None => state,
     };
-    widgets
-        .row
-        .update_property(&[gtk::accessible::Property::Description(&description)]);
+    describe(&widgets.row, &description);
 }
 
 fn show_item(widgets: &CatalogWidgets, row: &Row, blocked: bool, removing: bool) {
@@ -2046,9 +2028,6 @@ fn show_standing(control: &InstallControl, standing: &Standing) {
     }
 }
 
-/// Something a step's widget does to the page, given the chain's id.
-type PageAction = Box<dyn Fn(&Rc<StepsPage>, &str)>;
-
 /// Where the focus goes after a step moved.
 #[derive(Clone, Copy)]
 enum Focus {
@@ -2057,6 +2036,52 @@ enum Focus {
     Row,
 }
 
+/// A move of a step, from its row menu or its ▸/▾ buttons.
+#[derive(Clone, Copy)]
+enum Move {
+    Up,
+    Down,
+    Top,
+    Bottom,
+}
+
+impl Move {
+    /// The row menu's entries, in the order it shows them.
+    const MENU: [Self; 4] = [Self::Up, Self::Down, Self::Top, Self::Bottom];
+
+    /// What its menu entry says.
+    fn label(self) -> String {
+        match self {
+            Self::Up => gettextrs::gettext("Move up"),
+            Self::Down => gettextrs::gettext("Move down"),
+            Self::Top => gettextrs::gettext("Move to top"),
+            Self::Bottom => gettextrs::gettext("Move to bottom"),
+        }
+    }
+
+    /// Whether it keeps every translation of the chain doable.
+    fn allowed(self, moves: Moves) -> bool {
+        match self {
+            Self::Up => moves.up,
+            Self::Down => moves.down,
+            Self::Top => moves.top,
+            Self::Bottom => moves.bottom,
+        }
+    }
+
+    /// Where the step at `from` of `len` goes, if it goes anywhere.
+    fn target(self, from: usize, len: usize) -> Option<usize> {
+        let to = match self {
+            Self::Up => from.checked_sub(1)?,
+            Self::Down => from + 1,
+            Self::Top => 0,
+            Self::Bottom => len.checked_sub(1)?,
+        };
+        (to != from && to < len).then_some(to)
+    }
+}
+
+/// Paint a step's row and the row under it.
 fn show_line(
     widgets: &LineWidgets,
     line: &Row,
@@ -2065,19 +2090,23 @@ fn show_line(
     narrow: bool,
     items: &[Row],
 ) {
-    widgets
-        .number
-        .set_label(&(line.place.index + 1).to_string());
+    show_step(widgets, line, total, narrow);
+    let listed = show_parameter(widgets, line);
+    show_offers(widgets, line, blocked, narrow, items, listed);
+}
+
+/// What the step is and where it stands: its place, its title, its input, the
+/// switch that pauses it and the ways to move it.
+fn show_step(widgets: &LineWidgets, line: &Row, total: usize, narrow: bool) {
+    let place = line.place.index + 1;
+    widgets.number.set_label(&place.to_string());
     widgets.row.set_title(&escape_markup(&line.title));
     widgets.row.set_subtitle(&escape_markup(&line.subtitle));
     // TRANSLATORS: a step's place in its chain, read by screen readers: "Step 2 of 3".
     let place = gettextrs::gettext("Step {n} of {total}")
-        .replace("{n}", &(line.place.index + 1).to_string())
+        .replace("{n}", &place.to_string())
         .replace("{total}", &total.to_string());
-    let description = format!("{place}. {}", line.subtitle);
-    widgets
-        .row
-        .update_property(&[gtk::accessible::Property::Description(&description)]);
+    describe(&widgets.row, &format!("{place}. {}", line.subtitle));
     // A skipped step looks inactive, not only says so: dimmed and marked.
     if line.place.skipped {
         widgets.row.add_css_class("skipped-step");
@@ -2088,30 +2117,38 @@ fn show_line(
     widgets.badge.set_label(&line.place.badge);
     widgets.badge.set_visible(!line.place.badge.is_empty());
     widgets.switch.set_active(line.on);
-    widgets
-        .switch
-        .update_property(&[gtk::accessible::Property::Label(
-            // TRANSLATORS: {step} is a step's name, such as "Tidy up speech".
-            &gettextrs::gettext("Use {step}").replace("{step}", &line.title),
-        )]);
+    name(
+        &widgets.switch,
+        // TRANSLATORS: {step} is a step's name, such as "Tidy up speech".
+        &gettextrs::gettext("Use {step}").replace("{step}", &line.title),
+    );
     widgets.up.set_sensitive(line.place.moves.up);
     widgets.down.set_sensitive(line.place.moves.down);
     widgets.up.set_visible(!narrow);
     widgets.down.set_visible(!narrow);
-    widgets.move_up.set_sensitive(line.place.moves.up);
-    widgets.move_down.set_sensitive(line.place.moves.down);
-    widgets.to_top.set_sensitive(line.place.moves.top);
-    widgets.to_bottom.set_sensitive(line.place.moves.bottom);
+    for (mv, button) in &widgets.moves {
+        button.set_sensitive(mv.allowed(line.place.moves));
+    }
+    name(
+        &widgets.menu,
+        // TRANSLATORS: {step} is a step's name, such as "Tidy up speech".
+        &gettextrs::gettext("More actions for {step}").replace("{step}", &line.title),
+    );
     match &line.place.fix {
         Some((_, above)) => {
             // TRANSLATORS: a button that moves a skipped step above the step named by {step}.
-            widgets
-                .fix
-                .set_label(&gettextrs::gettext("Move above {step}").replace("{step}", above));
+            let above = gettextrs::gettext("Move above {step}").replace("{step}", above);
+            widgets.fix.set_label(&above);
             widgets.fix.set_visible(true);
         }
         None => widgets.fix.set_visible(false),
     }
+}
+
+/// What the step's parameter picks: a translation's target or the Chinese
+/// script, listed under the name the picker reads out. Returns whether it
+/// lists anything, which the row under the step needs.
+fn show_parameter(widgets: &LineWidgets, line: &Row) -> bool {
     let names: Vec<String> = if let Some(translate) = &line.translate {
         translate
             .targets
@@ -2154,26 +2191,34 @@ fn show_line(
     widgets
         .picker
         .reset_relation(gtk::AccessibleRelation::LabelledBy);
-    widgets.picker.update_property(
-        &[gtk::accessible::Property::Label(&if line.id == TRANSLATE {
+    name(
+        &widgets.picker,
+        &if line.id == TRANSLATE {
             gettextrs::gettext("Translate to")
         } else if line.id == SCRIPT {
             gettextrs::gettext("Write Chinese as")
         } else {
             line.title.clone()
-        })],
+        },
     );
+    !names.is_empty()
+}
+
+/// What the step offers besides itself: its install, its model's removal, and
+/// the row under it that holds what the narrow layout has no room for.
+fn show_offers(
+    widgets: &LineWidgets,
+    line: &Row,
+    blocked: bool,
+    narrow: bool,
+    items: &[Row],
+    listed: bool,
+) {
     let removable = items
         .iter()
         .any(|row| row.id == line.id && row.removable.is_some());
     widgets.remove_model.set_visible(removable);
     widgets.remove_model.set_sensitive(!blocked);
-    widgets
-        .menu
-        .update_property(&[gtk::accessible::Property::Label(
-            // TRANSLATORS: {step} is a step's name, such as "Tidy up speech".
-            &gettextrs::gettext("More actions for {step}").replace("{step}", &line.title),
-        )]);
     let installs = line.on
         && !line.place.skipped
         && matches!(
@@ -2188,7 +2233,7 @@ fn show_line(
     }
     // From the line and the layout, not the widgets: `is_visible` is false
     // for anything in a hidden row.
-    let picker_under = narrow && !names.is_empty();
+    let picker_under = narrow && listed;
     let title = if line.place.fix.is_some() {
         gettextrs::gettext("To make it run")
     } else if picker_under && line.id == TRANSLATE {
@@ -2541,6 +2586,15 @@ mod tests {
         rig.page.editor.borrow().clone().expect("an open editor")
     }
 
+    fn move_button(widgets: &LineWidgets, mv: Move) -> gtk::Button {
+        widgets
+            .moves
+            .iter()
+            .find(|(m, _)| std::mem::discriminant(m) == std::mem::discriminant(&mv))
+            .map(|(_, button)| button.clone())
+            .expect("the row menu has the move")
+    }
+
     fn line_titles(rig: &Rig) -> Vec<String> {
         editor(rig)
             .lines
@@ -2823,7 +2877,7 @@ mod tests {
             );
             assert!(translate.detail.is_visible());
             assert!(!translate.up.is_visible() && !translate.down.is_visible());
-            assert!(translate.move_down.is_sensitive());
+            assert!(move_button(translate, Move::Down).is_sensitive());
             let title = all::<gtk::Label>(translate.row.upcast_ref())
                 .into_iter()
                 .find(|label| label.has_css_class("title"))

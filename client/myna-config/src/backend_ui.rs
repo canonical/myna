@@ -2605,6 +2605,30 @@ fn privileged_failure_details(details: &crate::backend_apply::PrivilegedFailure)
     failure_details(Some(details.step()), details.message())
 }
 
+/// A toast naming what failed, whose Details button opens the report. A
+/// success says nothing, and every page that uses this keeps it that way.
+pub(crate) fn failure_toast(
+    overlay: &adw::ToastOverlay,
+    heading: &str,
+    error: &crate::ports::SystemConfiguratorError,
+) {
+    let summary = system_failure_summary(error);
+    let details = system_error_details(error);
+    let toast = adw::Toast::builder()
+        .title(crate::markup::escape_markup(heading))
+        .button_label(gettextrs::gettext("Details"))
+        .build();
+    toast.connect_button_clicked({
+        let overlay = overlay.clone();
+        let heading = heading.to_owned();
+        move |_| {
+            crate::ui::OperationErrorDialog::new(&heading, &summary, &details)
+                .present(Some(overlay.upcast_ref::<gtk::Widget>()));
+        }
+    });
+    overlay.add_toast(toast);
+}
+
 pub(crate) fn system_error_details(error: &crate::ports::SystemConfiguratorError) -> String {
     let message = match error {
         crate::ports::SystemConfiguratorError::Cancelled => {
