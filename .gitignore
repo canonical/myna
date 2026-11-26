@@ -97,3 +97,6 @@ server/mutants/
 # (.github/actions/apt-cache).
 .workshop/pins/apt-proxy
 *-snap/catalog/
+
+# e2e-tests/tree-stamp.sh of the source the e2e snaps were built from.
+.e2e-stamp

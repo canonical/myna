@@ -502,24 +502,27 @@ bench-keywords: ## Keyword recall and false hits, sent vs not, against an in-tre
 E2E_RELEASE ?= noble
 E2E_DESKTOP ?= gnome
 SUITES ?=
-# The snap a run drives must be this tree's: the store's edge revision does not
-# carry the settings HEAD writes, and a suite that tested it would pass or fail
-# for the wrong reason. Named after `dev/version.sh`, which is HEAD's.
-# The newest snapshot is the one a run drives; it is rebuilt when the tree's
-# client code moved since the commit it was built at, never because a commit
-# touched only tests or docs.
+# The snaps a run drives must be this tree's: the store's edge revision does
+# not carry the settings HEAD writes, and a suite that tested it would pass or
+# fail for the wrong reason. Each is rebuilt when the source it is built from
+# changed since its last build (e2e-tests/tree-stamp.sh, uncommitted changes
+# included), never because a commit touched only tests or docs. The newest
+# file is the one a run drives.
 E2E_MYNA_SNAP_FILE := $(firstword $(shell ls -t myna-snap/myna_*_amd64.snap 2>/dev/null))
 E2E_FAKE_SNAP_FILE := $(firstword $(shell ls -t fake-snap/myna-fake-backend_*_amd64.snap 2>/dev/null))
+E2E_MYNA_SOURCE := client myna-snap ':!client/*/tests'
+E2E_FAKE_SOURCE := fake-snap server/src server/pyproject.toml
 
 .PHONY: e2e-snaps
-e2e-snaps: ## The snaps an e2e run drives, rebuilt only when the client code moved
-	@if [ -z "$(E2E_MYNA_SNAP_FILE)" ]; then $(MAKE) snap-myna; else \
-	    sha=$$(echo "$(E2E_MYNA_SNAP_FILE)" | sed -n 's/.*+git[0-9]*\.\([0-9a-f]\{7,\}\)_.*/\1/p'); \
-	    if [ -n "$$sha" ] && ! git diff --quiet "$$sha"..HEAD -- client/ myna-snap/; then \
-	        echo "== the myna snap predates HEAD's client code: rebuilding"; $(MAKE) snap-myna; \
-	    fi; \
+e2e-snaps: ## The snaps an e2e run drives, rebuilt only when their source moved
+	@stamp=$$(e2e-tests/tree-stamp.sh $(E2E_MYNA_SOURCE)); \
+	if [ -z "$(E2E_MYNA_SNAP_FILE)" ] || [ "$$(cat myna-snap/.e2e-stamp 2>/dev/null)" != "$$stamp" ]; then \
+	    echo "== the myna snap is not this tree's: building"; $(MAKE) snap-myna && echo "$$stamp" > myna-snap/.e2e-stamp; \
 	fi
-	@test -n "$(E2E_FAKE_SNAP_FILE)" || $(MAKE) snap-fake
+	@stamp=$$(e2e-tests/tree-stamp.sh $(E2E_FAKE_SOURCE)); \
+	if [ -z "$(E2E_FAKE_SNAP_FILE)" ] || [ "$$(cat fake-snap/.e2e-stamp 2>/dev/null)" != "$$stamp" ]; then \
+	    echo "== the fake backend snap is not this tree's: building"; $(MAKE) snap-fake && echo "$$stamp" > fake-snap/.e2e-stamp; \
+	fi
 
 .PHONY: e2e
 e2e: e2e-snaps ## Suite(s) in a desktop VM (E2E_RELEASE, E2E_DESKTOP, SUITES), building and provisioning what is missing
