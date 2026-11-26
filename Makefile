@@ -472,20 +472,35 @@ bench-keywords: ## Keyword recall and false hits, sent vs not, against an in-tre
 
 ##@ Desktop e2e and lab hardware (CI `e2e` and `testflinger` workflows)
 
-# Myna Settings driven through AT-SPI on a fresh GNOME or Xubuntu desktop LXD VM. The
-# first run provisions the VM (cloud image, desktop, edge snaps, snapshots);
-# later runs restore a snapshot per suite. See e2e-tests/AGENTS.md. The
-# dictation suite also needs the fake backend snap: `make snap-fake` first.
+# Myna Settings driven through AT-SPI on a GNOME, Xubuntu or Kubuntu desktop LXD
+# VM. One command, no variables to remember: `make e2e E2E_RELEASE=resolute
+# SUITES=chains` builds the snaps this tree needs if they are missing, uses the
+# provisioned base (or provisions it), and runs the suites. See
+# e2e-tests/AGENTS.md for the fleet: one base per release and desktop, two
+# snapshots, copies per run.
+#
 # E2E_VM_MEMORY (default 6GiB, what CI gives the guest) sizes the VM, e.g.
-# `make e2e E2E_VM_MEMORY=4GiB` on a laptop; E2E_MYNA_SNAP=PATH tests the
-# snap `make snap-myna` built instead of the store's edge one.
+# `make e2e E2E_VM_MEMORY=4GiB` on a laptop.
 E2E_RELEASE ?= noble
 E2E_DESKTOP ?= gnome
 SUITES ?=
+# The snap a run drives must be this tree's: the store's edge revision does not
+# carry the settings HEAD writes, and a suite that tested it would pass or fail
+# for the wrong reason. Named after `dev/version.sh`, which is HEAD's.
+E2E_VERSION := $(shell dev/version.sh 2>/dev/null)
+E2E_MYNA_SNAP_FILE := myna-snap/myna_$(E2E_VERSION)_amd64.snap
+E2E_FAKE_SNAP_FILE := $(lastword $(sort $(wildcard fake-snap/myna-fake-backend_*_amd64.snap)))
+
+.PHONY: e2e-snaps
+e2e-snaps: ## The snaps an e2e run drives, built only when this tree's are missing
+	@test -f "$(E2E_MYNA_SNAP_FILE)" || $(MAKE) snap-myna
+	@test -n "$(E2E_FAKE_SNAP_FILE)" || $(MAKE) snap-fake
 
 .PHONY: e2e
-e2e: ## Settings and dictation suites in an LXD desktop VM (E2E_RELEASE=noble, E2E_DESKTOP=gnome|xubuntu, SUITES=all, E2E_VM_MEMORY=6GiB)
+e2e: e2e-snaps ## Suite(s) in a desktop VM (E2E_RELEASE, E2E_DESKTOP, SUITES), building and provisioning what is missing
 	e2e-tests/vm/provision.sh --release $(E2E_RELEASE) --desktop $(E2E_DESKTOP)
+	E2E_MYNA_SNAP=$(CURDIR)/$(E2E_MYNA_SNAP_FILE) \
+	E2E_FAKE_SNAP=$(CURDIR)/$(E2E_FAKE_SNAP_FILE) \
 	e2e-tests/run-suite.sh --release $(E2E_RELEASE) --desktop $(E2E_DESKTOP) $(SUITES)
 
 # A copy of the e2e VM running this tree's snap and deb, to try by hand; the
