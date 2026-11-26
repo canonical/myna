@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # snapshot: seeded
 # tags: processing, chains, dictation
-# time: 280s
+# time: 320s
 # A chain at work: the chain switched on from its row types what it says it
 # does, in three languages, and switched off the dictation lands as heard.
 # The models are already installed (`seeded`), so nothing here waits on the
@@ -13,6 +13,11 @@
 #   4. dictating Chinese: Chinese script types Traditional, Taiwan
 #   5. dictating Farsi: Translate into Français through English
 #   6. dictating English: Translate into 简体中文 types Simplified Chinese
+#   7. a chain holds the sentence being said and the one before it: the
+#      first reaches the field while the dictation goes on, the rest at the
+#      stop
+#   8. focus lost while text is held: the held sentences are not typed
+#      anywhere, and Past dictations records the loss
 set -uo pipefail
 # shellcheck source=e2e-tests/suites/lib.sh
 source "$(dirname "$0")/lib.sh"
@@ -131,5 +136,46 @@ dictate
 assert_dict "Simplified Chinese is in the field, not the English" \
     "field_get plain | grep -q '狐狸' && ! field_get plain | grep -q '[a-zA-Z]'"
 evidence simplified
+
+# The fake hears three sentences a second apart. A chain holds the sentence
+# being said and the last finished one (either may still be revised), so the
+# first is typed once the third arrives and the other two at the stop.
+HELD="One fine morning we left.|Two hours later it rained.|Three of us got wet."
+use_tidy() {
+    assert_on "a Tidy chain is in use" \
+        "snap run myna.config set chains \"[('chain-1', '$CHAIN', [('tidy', true, {})])]\" && snap run myna.config set active-chain chain-1"
+    assert_dict "the daemon's chain status is ready" "$READY"
+}
+start_held() {
+    assert_dict "the field is cleared" 'field_clear'
+    assert_dict "the plain field is focused afresh" 'field_focus other && field_focus plain'
+    dict dictation_toggle
+    assert_dict "recording" 'wait_until 10 dictation_state_is recording'
+    assert_dict "the first sentence is typed while recording" \
+        'wait_until 15 field_has plain morning && dictation_state_is recording'
+    assert_dict "the second and third are held" '! field_has plain rained && ! field_has plain wet'
+}
+
+step 7 "a chain holds the last two sentences, and types them at the stop"
+fresh_chain en "$HELD"
+use_tidy
+start_held
+dict dictation_toggle
+assert_dict "idle after the stop" 'wait_until 20 dictation_state_is idle'
+assert_dict "the held sentences are typed at the stop" \
+    'wait_until 10 field_has plain wet && field_has plain rained'
+evidence held
+
+step 8 "focus lost while text is held: nothing more is typed, and it is recorded"
+assert_on "Past dictations keeps a record" "snap run myna.config set processing-history true"
+use_tidy
+start_held
+assert_dict "focus moves to the other field" 'field_focus other'
+assert_dict "the dictation ends on the focus loss" 'wait_until 10 dictation_state_is idle'
+assert_dict "the held sentences went nowhere" \
+    "sleep 2; ! field_has plain rained && ! field_has plain wet && field_is other ''"
+assert_dict "Past dictations records the focus loss" \
+    "tail -n 1 \$HOME/snap/myna/common/processing-history.jsonl | grep -q '\"outcome\":\"focus-lost\"'"
+evidence held-focus-lost
 
 suite_status

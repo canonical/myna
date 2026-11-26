@@ -34,6 +34,7 @@ evidence() { # NAME: what the run did, kept with the artifacts
         cp field.json \"field-$1.json\" 2>/dev/null
         daemon_status > \"status-$1.txt\" 2>&1
         grep -E '^(chains|active-chain)=' $STORE > \"keyfile-$1.txt\" 2>&1
+        cp \$HOME/snap/myna/common/processing-history.jsonl \"history-$1.jsonl\" 2>/dev/null
         journalctl --user -u snap.myna.myna.service --no-pager -o short-precise > daemon.log 2>&1
         true" >/dev/null 2>&1
     return 0

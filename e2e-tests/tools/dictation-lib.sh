@@ -370,6 +370,7 @@ field_action() { # NAME [FIELD]
 }
 field_get() { jq -r ".$1" "$FIELD_STATE"; }
 field_is() { [ "$(field_get "$1")" = "$2" ]; }
+field_has() { field_get "$1" | grep -q -- "$2"; }
 # Focus a field and wait until the toolkit confirms the window is the active
 # one and the field holds the focus.
 field_focus() {
