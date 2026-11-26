@@ -281,20 +281,6 @@ pub fn new_name(chains: &[Chain]) -> String {
         .expect("an unbounded range has a free name")
 }
 
-/// The step the catalog's `item` adds: its step id, the target of a
-/// translation model, the desktop's script for the Chinese script step.
-pub fn step_of(item: &crate::step_catalog::Item, locales: &[String]) -> ChainStep {
-    let step = ChainStep::new(&item.step);
-    if let Some(to) = &item.target {
-        return step.with("to", to);
-    }
-    if item.step == crate::processing_steps::SCRIPT {
-        let script = crate::processing_steps::default_script(locales);
-        return step.with("mode", script.nick());
-    }
-    step
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -26,7 +26,7 @@ use crate::ports::{
     BackendRepository, ClientSettingsSubscription, DictationDaemon, SystemConfigurator,
 };
 use crate::processing_steps::{size, Offered, Row, Standing, SCRIPT, TRANSLATE};
-use crate::step_catalog::{self, Item, Job, Language, LanguageState, Offer};
+use crate::step_catalog::{self, Language, LanguageState};
 use crate::ui::InstallControl;
 
 /// How long a finished install may wait for the daemon to offer its model
@@ -166,7 +166,7 @@ pub struct StepsPage {
     /// The chain the catalog adds to: the one being edited, else the
     /// active one.
     catalog_for: RefCell<Option<String>>,
-    items: RefCell<Vec<Item>>,
+    items: RefCell<Vec<Row>>,
     /// A dictation is running: installs wait.
     dictating: Cell<bool>,
     catalog: RefCell<Vec<Entry>>,
@@ -1258,20 +1258,10 @@ impl StepsPage {
         let installing = self.installing.borrow();
         let preparing = self.preparing_now();
         let removing = self.removing.borrow();
-        let rows = target
+        let chain_rows = target
             .as_ref()
             .map(|chain| self.view(|ctx| chains_view::lines(chain, ctx)))
             .unwrap_or_default();
-        let items = step_catalog::items(&step_catalog::Inputs {
-            catalog: &catalog,
-            translate_from: &translate_from,
-            daemon: offered.as_ref(),
-            installing: &installing,
-            preparing: &preparing,
-            removing: &removing,
-            locales: &self.deps.locales,
-            rows: &rows,
-        });
         let likely = self.likely_languages(processing);
         let steps = target.as_ref().map(|c| c.steps.clone()).unwrap_or_default();
         let at = myna_core::chains::insert_position(&steps, TRANSLATE);
@@ -1297,18 +1287,26 @@ impl StepsPage {
             strands: &strands,
             chosen: None,
         });
-        let jobs = step_catalog::jobs(&items, &translate_from, &languages);
-        let key = |job: &Job| match job {
-            Job::Step(item) => item.id.clone(),
-            Job::Translate(_) => TRANSLATE.to_owned(),
-        };
+        let items = step_catalog::rows(&step_catalog::Inputs {
+            catalog: &catalog,
+            rows: &chain_rows,
+            languages: &languages,
+            translate_from: &translate_from,
+            source: &source,
+            language_unset: self.deps.store.language().trim().is_empty(),
+            daemon: offered.as_ref(),
+            installing: &installing,
+            preparing: &preparing,
+            removing: &removing,
+            locales: &self.deps.locales,
+        });
         let same = {
             let widgets = self.catalog_widgets.borrow();
-            widgets.len() == jobs.len()
+            widgets.len() == items.len()
                 && widgets
                     .iter()
-                    .zip(&jobs)
-                    .all(|((id, _), job)| *id == key(job))
+                    .zip(&items)
+                    .all(|((id, _), row)| *id == row.id)
         };
         if !same {
             for (_, widgets) in self.catalog_widgets.take() {
@@ -1318,31 +1316,32 @@ impl StepsPage {
                 }
             }
             let mut built = Vec::new();
-            for job in &jobs {
-                match job {
-                    Job::Step(item) => {
-                        let widgets = self.catalog_item(item);
-                        self.catalog_group.add(&widgets.row);
-                        built.push((key(job), Some(widgets)));
-                    }
-                    Job::Translate(_) => {
-                        self.catalog_group.add(&self.translate_row);
-                        built.push((key(job), None));
-                    }
+            for row in &items {
+                if row.id == TRANSLATE {
+                    self.catalog_group.add(&self.translate_row);
+                    built.push((row.id.clone(), None));
+                } else {
+                    let widgets = self.catalog_item(row);
+                    self.catalog_group.add(&widgets.row);
+                    built.push((row.id.clone(), Some(widgets)));
                 }
             }
             self.catalog_widgets.replace(built);
         }
         let blocked = self.dictating.get() || !installing.is_empty() || !removing.is_empty();
-        for ((_, widgets), job) in self.catalog_widgets.borrow().iter().zip(&jobs) {
-            match (widgets, job) {
-                (Some(widgets), Job::Step(item)) => show_item(widgets, item, blocked),
-                (None, Job::Translate(translate)) => {
+        for ((_, widgets), row) in self.catalog_widgets.borrow().iter().zip(&items) {
+            let removing = row
+                .entry
+                .as_ref()
+                .is_some_and(|entry| removing.contains(&entry.id));
+            match widgets {
+                Some(widgets) => show_item(widgets, row, blocked, removing),
+                None => {
                     self.translate_row
-                        .set_subtitle(&escape_markup(&translate.subtitle));
-                    self.translate_row.set_sensitive(translate.open);
+                        .set_subtitle(&escape_markup(&row.subtitle));
+                    self.translate_row
+                        .set_sensitive(matches!(row.standing, Standing::Ready));
                 }
-                _ => {}
             }
         }
         let removable: Vec<Entry> = catalog
@@ -1628,11 +1627,11 @@ impl StepsPage {
     /// stage's place, and go back. With no chain to add to, a new one is
     /// made and used.
     fn add_item(self: &Rc<Self>, id: &str) {
-        let Some(item) = self.item(id) else { return };
-        if item.offer != Offer::Add {
+        let Some(row) = self.item(id) else { return };
+        if row.on || !matches!(row.standing, Standing::Ready) {
             return;
         }
-        let step = chains_view::step_of(&item, &self.deps.locales);
+        let step = step_catalog::step_of(&row, &self.deps.locales);
         let target = self
             .catalog_chain(&self.deps.store.processing())
             .map(|c| c.id);
@@ -1660,7 +1659,7 @@ impl StepsPage {
         self.deps.nav.pop();
     }
 
-    fn catalog_item(self: &Rc<Self>, item: &Item) -> CatalogWidgets {
+    fn catalog_item(self: &Rc<Self>, item: &Row) -> CatalogWidgets {
         let row = adw::ExpanderRow::builder()
             .title(escape_markup(&item.title))
             .subtitle_lines(0)
@@ -1693,7 +1692,7 @@ impl StepsPage {
         lines.extend(
             item.details
                 .iter()
-                .map(|d| (d.label.clone(), d.text.clone())),
+                .map(|(label, text)| (label.clone(), text.clone())),
         );
         for (label, text) in lines {
             row.add_row(
@@ -1764,17 +1763,13 @@ impl StepsPage {
     }
 
     fn remove_item(self: &Rc<Self>, id: &str) {
-        if let Some(entry) = self.item(id).and_then(|item| item.removable) {
+        if let Some(entry) = self.item(id).and_then(|row| row.removable) {
             self.start_remove(*entry);
         }
     }
 
-    fn item(&self, id: &str) -> Option<Item> {
-        self.items
-            .borrow()
-            .iter()
-            .find(|item| item.id == id)
-            .cloned()
+    fn item(&self, id: &str) -> Option<Row> {
+        self.items.borrow().iter().find(|row| row.id == id).cloned()
     }
 
     /// An install or a removal is running.
@@ -1787,8 +1782,8 @@ impl StepsPage {
             .items
             .borrow()
             .iter()
-            .find(|item| item.step == step && item.removable.is_some())
-            .and_then(|item| item.removable.clone());
+            .find(|row| row.id == step)
+            .and_then(|row| row.removable.clone());
         if let Some(entry) = entry {
             self.start_remove(*entry);
         }
@@ -1826,14 +1821,15 @@ impl StepsPage {
 
     /// The same install as the inline button, for one catalog entry.
     fn install_item(self: &Rc<Self>, id: &str) {
-        let Some(item) = self.item(id) else { return };
-        let Offer::Install(entry) = item.offer else {
+        let Some(row) = self.item(id) else { return };
+        let Standing::Missing(need) = &row.standing else {
             return;
         };
         if self.dictating.get() || self.busy() {
             return;
         }
-        self.start_install(id, std::slice::from_ref(&entry));
+        let entries = need.entries.clone();
+        self.start_install(&row.id, &entries);
     }
 
     fn toast_failure(&self, heading: &str, error: &crate::ports::SystemConfiguratorError) {
@@ -2037,48 +2033,46 @@ fn show_language(widgets: &LanguageWidgets, language: &Language, blocked: bool) 
         .update_property(&[gtk::accessible::Property::Description(&description)]);
 }
 
-fn show_item(widgets: &CatalogWidgets, item: &Item, blocked: bool) {
-    widgets.row.set_title(&escape_markup(&item.title));
-    let subtitle = match &item.offer {
-        Offer::NotApplicable(reason) => reason.clone(),
-        Offer::Unknown => gettextrs::gettext("Myna is not running"),
-        _ => item.description.clone(),
+fn show_item(widgets: &CatalogWidgets, row: &Row, blocked: bool, removing: bool) {
+    widgets.row.set_title(&escape_markup(&row.title));
+    let subtitle = match &row.standing {
+        Standing::NotApplicable(reason) => reason.clone(),
+        Standing::Unknown => gettextrs::gettext("Myna is not running"),
+        _ => row.description.clone(),
     };
     widgets.row.set_subtitle(&escape_markup(&subtitle));
+    // Added once its model is there and the step is on; the Add button only
+    // while the step is off, insensitive when the text here does not suit it.
+    let installed = matches!(
+        row.standing,
+        Standing::Ready | Standing::NotApplicable(_) | Standing::Unknown
+    );
+    let added = row.on && installed;
+    let add = !row.on && matches!(row.standing, Standing::Ready);
     widgets
         .add
-        .set_visible(matches!(item.offer, Offer::Add | Offer::NotApplicable(_)));
-    widgets.add.set_sensitive(matches!(item.offer, Offer::Add));
-    widgets.added.set_visible(item.offer == Offer::Added);
-    widgets.remove_row.set_visible(item.removable.is_some());
+        .set_visible(add || matches!(row.standing, Standing::NotApplicable(_)));
+    widgets.add.set_sensitive(add);
+    widgets.added.set_visible(added);
+    widgets.remove_row.set_visible(row.removable.is_some());
     widgets.remove.set_sensitive(!blocked);
     let control = &widgets.control;
     control.set_visible(true);
-    match &item.offer {
-        Offer::Install(_) => {
-            control.show_offer(
-                &gettextrs::gettext("Install"),
-                // TRANSLATORS: {step} is a step's name, such as "Translate English to French".
-                &gettextrs::gettext("Install {step}").replace("{step}", &item.title),
-            );
-            control.button().set_sensitive(!blocked);
-        }
-        Offer::Installing(percent) => control.show_installing(*percent),
-        Offer::Preparing => {
-            control.show_installing(None);
-            control
-                .progress()
-                .label
-                .set_label(&gettextrs::gettext("Preparing…"));
-        }
-        Offer::Removing => {
-            control.show_installing(None);
-            control
-                .progress()
-                .label
-                .set_label(&gettextrs::gettext("Removing…"));
-        }
-        _ => control.set_visible(false),
+    if removing {
+        control.show_installing(None);
+        control
+            .progress()
+            .label
+            .set_label(&gettextrs::gettext("Removing…"));
+    } else if matches!(row.standing, Standing::Missing(_)) {
+        control.show_offer(
+            &gettextrs::gettext("Install"),
+            // TRANSLATORS: {step} is a step's name, such as "Translate English to French".
+            &gettextrs::gettext("Install {step}").replace("{step}", &row.title),
+        );
+        control.button().set_sensitive(!blocked);
+    } else {
+        show_standing(control, &row.standing);
     }
 }
 
@@ -2122,7 +2116,7 @@ fn show_line(
     total: usize,
     blocked: bool,
     narrow: bool,
-    items: &[Item],
+    items: &[Row],
 ) {
     widgets
         .number
@@ -2224,7 +2218,7 @@ fn show_line(
     );
     let removable = items
         .iter()
-        .any(|item| item.step == line.id && item.removable.is_some());
+        .any(|row| row.id == line.id && row.removable.is_some());
     widgets.remove_model.set_visible(removable);
     widgets.remove_model.set_sensitive(!blocked);
     widgets

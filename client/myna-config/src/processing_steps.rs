@@ -115,6 +115,8 @@ pub enum Standing {
     Installing(Option<u8>),
     /// Installed; the daemon has not bound it yet.
     Preparing,
+    /// No daemon answers: nothing is known about what it has.
+    Unknown,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -139,6 +141,14 @@ pub struct Row {
     pub script: Option<ScriptRow>,
     /// Where it sits in the chain being edited; empty elsewhere.
     pub place: Place,
+    /// The catalog entry this row adds or installs, when it stands for one.
+    pub entry: Option<Box<Entry>>,
+    /// A worked example, for the catalog's expanded row.
+    pub example: Option<String>,
+    /// Size, quality and licence as `(label, text)` pairs.
+    pub details: Vec<(String, String)>,
+    /// The installed entry the user may take away from here.
+    pub removable: Option<Box<Entry>>,
 }
 
 /// How the Chinese script step writes Chinese: the modes it offers and the
@@ -230,7 +240,7 @@ pub fn row(step: &ChainStep, source: &Source, inputs: &Inputs) -> Row {
         Standing::Installing(_) | Standing::Preparing => {
             gettextrs::gettext("Getting the model ready")
         }
-        Standing::Ready => description.clone(),
+        Standing::Ready | Standing::Unknown => description.clone(),
     };
     Row {
         id: step.step.clone(),
@@ -242,6 +252,10 @@ pub fn row(step: &ChainStep, source: &Source, inputs: &Inputs) -> Row {
         translate,
         script,
         place: Place::default(),
+        entry: None,
+        example: None,
+        details: Vec::new(),
+        removable: None,
     }
 }
 
@@ -401,9 +415,6 @@ fn standing(
             }
         }
     }
-    if !step.on {
-        return Standing::Ready;
-    }
     if let Some(percent) = inputs.installing.get(id) {
         return Standing::Installing(*percent);
     }
@@ -419,6 +430,9 @@ fn standing(
                     .replace("{to}", &target.name),
             );
         }
+    }
+    if inputs.daemon.is_none() {
+        return Standing::Unknown;
     }
     let Some(need) = need(step, translate, &own, source, inputs) else {
         return Standing::Ready;

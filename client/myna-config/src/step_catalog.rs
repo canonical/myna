@@ -3,92 +3,80 @@
 //! costs and what can be done with it. Entries come from the catalog schema
 //! only; nothing here knows a plugin by name.
 
-use crate::plugin_catalog::{self, Entry};
-use std::collections::{BTreeMap, BTreeSet};
+use myna_core::chains::ChainStep;
 
 use crate::languages::{exonym, language_name, Source};
-use crate::processing_steps::{size, Offered, Row, Standing, SCRIPT, TRANSLATE};
+use crate::plugin_catalog::{self, Entry};
+use crate::processing_steps::{self as steps, size, Offered, Row, Standing, SCRIPT, TRANSLATE};
+use std::collections::{BTreeMap, BTreeSet};
 
 /// The languages the Chinese script step is useful for.
 const CHINESE: [&str; 3] = ["zh", "yue", "cmn"];
 
-/// What the page offers to do with one item.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Offer {
-    /// Already one of the steps, switched on.
-    Added,
-    /// Installed (or built in): add it to the steps.
-    Add,
-    /// Installed, but it cannot act on this dictation; the reason shows.
-    NotApplicable(String),
-    /// Its model is not installed; this entry provides it.
-    Install(Box<Entry>),
-    /// Its model is being installed, with snapd's percentage when known.
-    Installing(Option<u8>),
-    /// Installed; the daemon has not offered the model yet.
-    Preparing,
-    /// No daemon answers, so nothing is known about the models.
-    Unknown,
-    /// Its model is being removed.
-    Removing,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Detail {
-    pub label: String,
-    pub text: String,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Item {
-    /// The entry's id, or the built-in step's id.
-    pub id: String,
-    /// The step that is switched on when the item is added.
-    pub step: String,
-    /// The `translate.to` the add sets, for a translation model.
-    pub target: Option<String>,
-    pub title: String,
-    pub description: String,
-    pub example: Option<String>,
-    pub details: Vec<Detail>,
-    pub offer: Offer,
-    /// The entry whose model is installed and can be removed.
-    pub removable: Option<Box<Entry>>,
-}
-
+/// What the page needs to judge each step: the chain it adds to, and what
+/// the daemon offers now.
 pub struct Inputs<'a> {
     pub catalog: &'a [Entry],
+    /// The chain's steps, as the editor judges them.
+    pub rows: &'a [Row],
+    /// The languages the text can be translated into from where a
+    /// translation would go, as the language page lists them.
+    pub languages: &'a [Language],
     /// The language of the text where an added translation would go in the
     /// chain: the dictation language, or what an earlier Translate made it.
     pub translate_from: &'a Source,
+    /// The dictation language, which a step the chain does not hold reads.
+    pub source: &'a Source,
+    /// The `language` setting is empty: the model decides.
+    pub language_unset: bool,
     pub daemon: Option<&'a Offered>,
-    /// Installs running now, by item id, with snapd's percentage.
-    pub installing: &'a std::collections::BTreeMap<String, Option<u8>>,
-    /// Item ids installed whose models the daemon has not offered yet.
-    pub preparing: &'a std::collections::BTreeSet<String>,
-    /// Item ids whose models are being removed.
-    pub removing: &'a std::collections::BTreeSet<String>,
+    /// Installs running now, by step id, with snapd's percentage.
+    pub installing: &'a BTreeMap<String, Option<u8>>,
+    /// Step ids installed whose models the daemon has not offered yet.
+    pub preparing: &'a BTreeSet<String>,
+    /// Entry ids whose models are being removed.
+    pub removing: &'a BTreeSet<String>,
     pub locales: &'a [String],
-    /// The chain the page adds to, as the editor judges its steps: what is
-    /// already on, and what cannot apply where it stands.
-    pub rows: &'a [Row],
 }
 
-/// The items in the order the page lists them: what suits the user's
-/// locales first, then stage order.
-pub fn items(inputs: &Inputs) -> Vec<Item> {
+/// The page's rows, in the order it lists them: what suits the user's
+/// locales first, then stage order. One row per step, the model furthest
+/// along where several do it, and one Translate row that opens the
+/// language page.
+pub fn rows(inputs: &Inputs) -> Vec<Row> {
     // Fitting to the field is a switch on the Processing page, not a step.
-    let mut found: Vec<(usize, usize, Item)> = vec![(
+    let mut ranked: Vec<(usize, usize, Row)> = vec![(
         plugin_catalog::relevance(&CHINESE.map(str::to_owned), "", inputs.locales),
         stage_of(SCRIPT),
-        built_in(SCRIPT, inputs),
+        script_row(inputs),
     )];
-    for entry in inputs.catalog {
+    for entry in inputs.catalog.iter().filter(|e| e.step.id != TRANSLATE) {
         let rank = plugin_catalog::relevance(&entry.locales, &entry.in_lang, inputs.locales);
-        found.push((rank, stage_of(&entry.step.stage), from_entry(entry, inputs)));
+        ranked.push((rank, stage_of(&entry.step.stage), entry_row(entry, inputs)));
     }
-    found.sort_by(|a, b| (a.0, a.1, &a.2.id).cmp(&(b.0, b.1, &b.2.id)));
-    found.into_iter().map(|(_, _, item)| item).collect()
+    let translations: Vec<&Entry> = inputs
+        .catalog
+        .iter()
+        .filter(|e| e.step.id == TRANSLATE)
+        .collect();
+    if !translations.is_empty() {
+        let rank = translations
+            .iter()
+            .map(|e| plugin_catalog::relevance(&e.locales, &e.in_lang, inputs.locales))
+            .min()
+            .unwrap_or(0);
+        ranked.push((rank, stage_of(TRANSLATE), translate_row(inputs)));
+    }
+    ranked.sort_by(|a, b| (a.0, a.1, &a.2.id).cmp(&(b.0, b.1, &b.2.id)));
+    let mut out: Vec<Row> = Vec::new();
+    for (_, _, row) in ranked {
+        match out.iter().position(|have| have.id == row.id) {
+            None => out.push(row),
+            Some(at) if rank(&row) < rank(&out[at]) => out[at] = row,
+            Some(_) => {}
+        }
+    }
+    out
 }
 
 fn stage_of(stage: &str) -> usize {
@@ -99,100 +87,152 @@ fn stage_of(stage: &str) -> usize {
     }
 }
 
-/// The chain's row for `step`, when it holds it.
-fn row_of<'a>(inputs: &'a Inputs, step: &str) -> Option<&'a Row> {
-    inputs.rows.iter().find(|row| row.id == step)
+/// How far along a row is, so a step several models do shows the one to
+/// act on: added, addable, installing, installable, then what cannot run.
+fn rank(row: &Row) -> u8 {
+    match &row.standing {
+        Standing::Ready | Standing::NotApplicable(_) if row.on => 0,
+        Standing::Ready | Standing::NotApplicable(_) => 1,
+        Standing::Installing(_) => 2,
+        Standing::Preparing => 3,
+        Standing::Missing(_) => 4,
+        Standing::Unavailable(_) => 5,
+        Standing::Unknown => 6,
+    }
 }
 
-fn is_on(inputs: &Inputs, step: &str) -> bool {
-    row_of(inputs, step).is_some_and(|row| row.on)
-}
-
-fn standing<'a>(inputs: &'a Inputs, step: &str) -> Option<&'a Standing> {
-    inputs
-        .rows
-        .iter()
-        .find(|row| row.id == step)
-        .map(|row| &row.standing)
-}
-
-fn built_in(id: &str, inputs: &Inputs) -> Item {
-    let (title, description, example, license) = (
-        gettextrs::gettext("Chinese script"),
-        gettextrs::gettext("Types Chinese in the characters you choose. Other text is left alone."),
-        Some(("\u{8f6f}\u{4ef6}".to_owned(), "\u{8edf}\u{9ad4}".to_owned())),
-        // TRANSLATORS: credits the libraries and word lists behind Chinese script conversion.
-        gettextrs::gettext("opencc-jieba-rs (MIT); OpenCC conversion lists (Apache-2.0)"),
-    );
-    let mut details = vec![Detail {
-        label: gettextrs::gettext("Size"),
-        text: gettextrs::gettext("Built in, nothing to install"),
-    }];
+/// The Chinese script step: built in, so it has nothing to download.
+fn script_row(inputs: &Inputs) -> Row {
+    let mut row = judge(SCRIPT, inputs);
+    row.title = gettextrs::gettext("Chinese script");
+    row.description =
+        gettextrs::gettext("Types Chinese in the characters you choose. Other text is left alone.");
+    row.example = Some(arrow("\u{8f6f}\u{4ef6}", "\u{8edf}\u{9ad4}"));
+    row.details = vec![(
+        gettextrs::gettext("Size"),
+        gettextrs::gettext("Built in, nothing to install"),
+    )];
+    // TRANSLATORS: credits the libraries and word lists behind Chinese script conversion.
+    let license = gettextrs::gettext("opencc-jieba-rs (MIT); OpenCC conversion lists (Apache-2.0)");
     if !license.is_empty() {
-        details.push(Detail {
-            label: gettextrs::gettext("License"),
-            text: license,
-        });
+        row.details.push((gettextrs::gettext("License"), license));
     }
-    let offer = if is_on(inputs, id) {
-        Offer::Added
-    } else {
-        match standing(inputs, id) {
-            Some(Standing::NotApplicable(reason)) => Offer::NotApplicable(reason.clone()),
-            _ => Offer::Add,
-        }
+    row
+}
+
+/// One catalog entry's row, with what a person weighing the step wants.
+fn entry_row(entry: &Entry, inputs: &Inputs) -> Row {
+    let mut row = judge(&entry.step.id, inputs);
+    row.title =
+        plugin_catalog::label(&entry.step.label_key).unwrap_or_else(|| entry.step.id.clone());
+    row.description = plugin_catalog::label(&entry.step.description_key).unwrap_or_default();
+    row.example = example(entry);
+    row.details = details(entry);
+    let installed = inputs
+        .daemon
+        .is_some_and(|daemon| daemon.offers(&entry.model));
+    let going = inputs.removing.contains(&entry.id) || inputs.installing.contains_key(&row.id);
+    row.removable = (installed && !going).then(|| Box::new(entry.clone()));
+    row.entry = Some(Box::new(entry.clone()));
+    row
+}
+
+/// The row of step `id` as the page judges it: the chain's own row when the
+/// chain holds it, else one read where the step would go.
+fn judge(id: &str, inputs: &Inputs) -> Row {
+    if let Some(row) = inputs.rows.iter().find(|row| row.id == id) {
+        return row.clone();
+    }
+    let step = ChainStep::new(id);
+    let mut row = steps::row(&step, inputs.source, &judging(inputs));
+    // A step the chain does not hold is not switched on.
+    row.on = false;
+    row
+}
+
+/// The row builder's view of what the page knows.
+fn judging<'a>(inputs: &'a Inputs<'a>) -> steps::Inputs<'a> {
+    steps::Inputs {
+        language_unset: inputs.language_unset,
+        source: inputs.source,
+        catalog: inputs.catalog,
+        daemon: inputs.daemon,
+        installing: inputs.installing,
+        preparing: inputs.preparing,
+        locales: inputs.locales,
+    }
+}
+
+/// The one Translate row: the page it opens lists the languages, so the row
+/// says how many the text can reach from where it is.
+fn translate_row(inputs: &Inputs) -> Row {
+    let (subtitle, open) = translate_subtitle(inputs);
+    let installed = |entry: &&Entry| {
+        inputs
+            .daemon
+            .is_some_and(|daemon| daemon.offers(&entry.model))
+            && !inputs.removing.contains(&entry.id)
+            && !inputs.installing.contains_key(TRANSLATE)
     };
-    Item {
-        id: id.to_owned(),
-        step: id.to_owned(),
-        target: None,
-        title,
-        description,
-        example: example.map(|(heard, typed)| arrow(&heard, &typed)),
-        details,
-        offer,
-        removable: None,
+    let removable = inputs
+        .catalog
+        .iter()
+        .filter(|entry| entry.step.id == TRANSLATE)
+        .find(installed)
+        .map(|entry| Box::new(entry.clone()));
+    Row {
+        id: TRANSLATE.to_owned(),
+        title: gettextrs::gettext("Translate"),
+        description: String::new(),
+        standing: if open {
+            Standing::Ready
+        } else {
+            Standing::NotApplicable(subtitle.clone())
+        },
+        subtitle,
+        on: inputs.rows.iter().any(|row| row.id == TRANSLATE && row.on),
+        translate: None,
+        script: None,
+        place: steps::Place::default(),
+        entry: None,
+        example: None,
+        details: Vec::new(),
+        removable,
     }
+}
+
+/// What the Translate row says, and whether the language page has anything
+/// to offer.
+fn translate_subtitle(inputs: &Inputs) -> (String, bool) {
+    let Source::One(from) = inputs.translate_from else {
+        return (
+            gettextrs::gettext("Needs a single dictation language"),
+            false,
+        );
+    };
+    let name = language_name(from);
+    if inputs.languages.is_empty() {
+        // TRANSLATORS: {language} is a language name, such as "فارسی".
+        let frame = gettextrs::gettext("No model translates {language} yet");
+        return (frame.replace("{language}", &name), false);
+    }
+    let count = u32::try_from(inputs.languages.len()).unwrap_or(u32::MAX);
+    let frame = gettextrs::ngettext(
+        // TRANSLATORS: {language} is the language the text is in, such as "English"; {count} how many languages it can be translated into.
+        "From {language} into {count} language",
+        "From {language} into {count} languages",
+        count,
+    );
+    (
+        frame
+            .replace("{language}", &name)
+            .replace("{count}", &count.to_string()),
+        true,
+    )
 }
 
 fn arrow(heard: &str, typed: &str) -> String {
     format!("\u{201c}{heard}\u{201d} \u{2192} \u{201c}{typed}\u{201d}")
-}
-
-fn from_entry(entry: &Entry, inputs: &Inputs) -> Item {
-    let translating = entry.step.id == TRANSLATE;
-    let title = if translating {
-        // TRANSLATORS: {from} and {to} are language names, such as "English" and "Français".
-        let frame = gettextrs::gettext("Translate {from} to {to}");
-        frame
-            .replace("{from}", &language_name(&entry.in_lang))
-            .replace("{to}", &language_name(&entry.out_lang))
-    } else {
-        plugin_catalog::label(&entry.step.label_key).unwrap_or_else(|| entry.step.id.clone())
-    };
-    let description = plugin_catalog::label(&entry.step.description_key).unwrap_or_default();
-    let example = example(entry);
-    let target = (translating
-        && matches!(inputs.translate_from, Source::One(from) if *from != entry.out_lang))
-    .then(|| entry.out_lang.clone());
-    Item {
-        id: entry.id.clone(),
-        step: entry.step.id.clone(),
-        target,
-        title,
-        description,
-        example,
-        details: details(entry),
-        offer: offer(entry, inputs),
-        removable: removable(entry, inputs),
-    }
-}
-
-/// An installed model the user may take away; never while it is going.
-fn removable(entry: &Entry, inputs: &Inputs) -> Option<Box<Entry>> {
-    let offered = inputs.daemon.is_some_and(|d| d.offers(&entry.model));
-    (offered && !inputs.removing.contains(&entry.id) && !inputs.installing.contains_key(&entry.id))
-        .then(|| Box::new(entry.clone()))
 }
 
 fn example(entry: &Entry) -> Option<String> {
@@ -210,16 +250,10 @@ fn example(entry: &Entry) -> Option<String> {
 }
 
 /// What a person weighing the step wants to know: size, how good, whose.
-fn details(entry: &Entry) -> Vec<Detail> {
-    let mut details = vec![Detail {
-        label: gettextrs::gettext("Download"),
-        text: size(entry.download_bytes),
-    }];
+fn details(entry: &Entry) -> Vec<(String, String)> {
+    let mut details = vec![(gettextrs::gettext("Download"), size(entry.download_bytes))];
     if let Some(quality) = &entry.quality {
-        details.push(Detail {
-            label: gettextrs::gettext("Quality"),
-            text: quality_note(&quality.source),
-        });
+        details.push((gettextrs::gettext("Quality"), quality_note(&quality.source)));
     }
     if !entry.license.is_empty() {
         let mut text = entry.license.clone();
@@ -229,10 +263,7 @@ fn details(entry: &Entry) -> Vec<Detail> {
         if !entry.source.is_empty() {
             text = format!("{text}\n{}", entry.source);
         }
-        details.push(Detail {
-            label: gettextrs::gettext("License"),
-            text,
-        });
+        details.push((gettextrs::gettext("License"), text));
     }
     details
 }
@@ -246,164 +277,14 @@ pub fn quality_note(source: &str) -> String {
     }
 }
 
-fn offer(entry: &Entry, inputs: &Inputs) -> Offer {
-    let step = &entry.step.id;
-    if inputs.removing.contains(&entry.id) {
-        return Offer::Removing;
-    }
-    if let Some(percent) = inputs.installing.get(&entry.id) {
-        return Offer::Installing(*percent);
-    }
-    let added = added(entry, inputs);
-    let Some(daemon) = inputs.daemon else {
-        return if added { Offer::Added } else { Offer::Unknown };
-    };
-    // A step switched on whose model is gone offers the same install again.
-    if !daemon.offers(&entry.model) {
-        return if inputs.preparing.contains(&entry.id) {
-            Offer::Preparing
-        } else {
-            Offer::Install(Box::new(entry.clone()))
-        };
-    }
-    if added {
-        return Offer::Added;
-    }
-    if let Some(Standing::NotApplicable(reason)) = standing(inputs, step) {
-        return Offer::NotApplicable(reason.clone());
-    }
-    if step == TRANSLATE {
-        if let Some(reason) = translate_mismatch(entry, inputs) {
-            return Offer::NotApplicable(reason);
-        }
-    }
-    Offer::Add
-}
-
-fn added(entry: &Entry, inputs: &Inputs) -> bool {
-    let Some(row) = row_of(inputs, &entry.step.id).filter(|row| row.on) else {
-        return false;
-    };
-    if entry.step.id != TRANSLATE {
-        return true;
-    }
-    row.translate
-        .as_ref()
-        .and_then(|translate| translate.selected.and_then(|at| translate.targets.get(at)))
-        .is_some_and(|target| target.code == entry.out_lang)
-}
-
-/// Why a translation model cannot act on the text where it would go: neither
-/// it nor a pivot through English reaches its target from there.
-fn translate_mismatch(entry: &Entry, inputs: &Inputs) -> Option<String> {
-    let Source::One(from) = inputs.translate_from else {
-        return None;
-    };
-    if *from == entry.in_lang {
-        return None;
-    }
-    let reachable = plugin_catalog::translation_legs(inputs.catalog, from, &entry.out_lang)
-        .is_some_and(|legs| legs.iter().any(|leg| leg.id == entry.id));
-    if reachable {
-        return None;
-    }
-    // TRANSLATORS: {language} is a language name, such as "English".
-    let frame = gettextrs::gettext("Applies when the text is {language}");
-    Some(frame.replace("{language}", &language_name(&entry.in_lang)))
-}
-
-/// One row of the Add step page: a job, however many models can do it.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Job {
-    /// A job one model or the client does: the row is that item.
-    Step(Item),
-    /// Translate, whose row opens the language page.
-    Translate(TranslateJob),
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct TranslateJob {
-    pub title: String,
-    /// From which language, and how many it reaches; else why none.
-    pub subtitle: String,
-    /// Whether the language page has a language to offer.
-    pub open: bool,
-}
-
-/// The page's rows, in `items`' order: each step once, at the place of its
-/// first item, with every translation model folded into one Translate row.
-/// A step several models do shows the item furthest along (added, then
-/// addable, then installing, then installable).
-pub fn jobs(items: &[Item], from: &Source, languages: &[Language]) -> Vec<Job> {
-    let rank = |offer: &Offer| match offer {
-        Offer::Added => 0,
-        Offer::Add => 1,
-        Offer::Installing(_) => 2,
-        Offer::Preparing => 3,
-        Offer::Install(_) => 4,
-        Offer::Removing => 5,
-        Offer::NotApplicable(_) => 6,
-        Offer::Unknown => 7,
-    };
-    let mut order: Vec<&str> = Vec::new();
-    let mut best: BTreeMap<&str, &Item> = BTreeMap::new();
-    for item in items {
-        let step = item.step.as_str();
-        match best.get(step) {
-            None => {
-                order.push(step);
-                best.insert(step, item);
-            }
-            Some(kept) if rank(&item.offer) < rank(&kept.offer) => {
-                best.insert(step, item);
-            }
-            Some(_) => {}
-        }
-    }
-    order
-        .into_iter()
-        .map(|step| {
-            if step == TRANSLATE {
-                Job::Translate(translate_job(from, languages))
-            } else {
-                Job::Step(best[step].clone())
-            }
-        })
-        .collect()
-}
-
-fn translate_job(from: &Source, languages: &[Language]) -> TranslateJob {
-    let title = gettextrs::gettext("Translate");
-    let Source::One(from) = from else {
-        return TranslateJob {
-            title,
-            subtitle: gettextrs::gettext("Needs a single dictation language"),
-            open: false,
-        };
-    };
-    let name = language_name(from);
-    if languages.is_empty() {
-        // TRANSLATORS: {language} is a language name, such as "فارسی".
-        let frame = gettextrs::gettext("No model translates {language} yet");
-        return TranslateJob {
-            title,
-            subtitle: frame.replace("{language}", &name),
-            open: false,
-        };
-    }
-    let count = u32::try_from(languages.len()).unwrap_or(u32::MAX);
-    let frame = gettextrs::ngettext(
-        // TRANSLATORS: {language} is the language the text is in, such as "English"; {count} how many languages it can be translated into.
-        "From {language} into {count} language",
-        "From {language} into {count} languages",
-        count,
-    );
-    TranslateJob {
-        title,
-        subtitle: frame
-            .replace("{language}", &name)
-            .replace("{count}", &count.to_string()),
-        open: true,
+/// The step a catalog row adds: its step id, the target of a translation
+/// model, the desktop's script for the Chinese script step.
+pub fn step_of(row: &Row, locales: &[String]) -> ChainStep {
+    let step = ChainStep::new(&row.id);
+    match &row.entry {
+        Some(entry) if entry.step.id == TRANSLATE => step.with("to", &entry.out_lang),
+        _ if row.id == SCRIPT => step.with("mode", steps::default_script(locales).nick()),
+        _ => step,
     }
 }
 
