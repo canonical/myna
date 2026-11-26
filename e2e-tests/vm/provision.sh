@@ -215,7 +215,14 @@ else
     wait_snapd_idle "$VM"
     on_vm "$VM" 'set -e
 sudo snap install --edge myna-text+model-disfluency-en
-sudo snap install --edge myna-translation+model-translate-en-fr+model-translate-fr-en+model-translate-fa-en'
+sudo snap install --edge myna-translation+model-translate-en-fr+model-translate-fr-en+model-translate-fa-en
+# The components are installed, not connected: Settings connects a text snap
+# when it installs one, and the daemon only binds a provider it is connected
+# to. The speech plug takes several slots, so the fake backend stays.
+sudo snap connect myna:backend myna-text:provider 2>/dev/null || true
+sudo snap connect myna:backend myna-translation:provider 2>/dev/null || true
+systemctl --user restart snap.myna.myna.service
+systemctl --user is-active snap.myna.myna.service'
     wait_snapd_idle "$VM"
     snapd_cache_save "$VM"
     stop_vm "$VM"
