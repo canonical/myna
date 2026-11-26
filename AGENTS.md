@@ -4,6 +4,15 @@ Use this file for repository-wide orientation. Before changing a subsystem, read
 
 Read the top-level `.kb/agents.md` file before continuing below.
 
+# Commands
+
+`make help` lists every target; `.kb/verification.md` defines the merge bar and the rules behind it.
+
+- `make check` - every static gate over the whole tree: fmt, clippy, py-lint, i18n, packaging lints.
+- `make test-client`, `make test-server`, `make test-extension` - one component's suites. `make preflight` is `check` + `test` + `coverage-gate`, the merge bar.
+- `make test-client-gated` and `make test-client-ui` - the service-backed suites, and the GTK suites headless.
+- A component's own commands (its fast loop, how to run one GTK suite, how to launch its binary for review) are in that component's `AGENTS.md` under `# Commands`. Read that section instead of reconstructing a command.
+
 # Overview
 
 Myna is an offline speech-to-text system for Ubuntu Desktop. A Rust client captures microphone audio, drives dictation sessions, and injects committed text into the focused application. Inference backends run in strictly confined snaps and receive audio over a Unix socket.

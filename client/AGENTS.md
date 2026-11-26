@@ -4,6 +4,15 @@ Read this file before changing the Rust workspace, including capture, session or
 
 Read the top-level `.kb/agents.md` file before continuing below.
 
+# Commands
+
+From `client/` unless a line says otherwise.
+
+- Loop: `cargo fmt --check`, `cargo clippy --workspace --all-targets`, `cargo test --workspace --lib` (hermetic: the env-gated suites skip).
+- Service-backed suites (PipeWire, IBus, D-Bus): `dev/gated-tests.sh cargo test -p <crate>`. GTK suites: `GIO_USE_VFS=local MYNA_CONFIG_GTK_TESTS=1 MYNA_HUD_GTK_TESTS=1 dbus-run-session -- xvfb-run -a -s "-screen 0 800x600x24" cargo test -p <crate>`. Never either one against the live session.
+- Whole gates, from the root: `make test-client` (hermetic + gated + ui-check).
+- Settings' own commands, including how to launch it for review, are in `myna-config/AGENTS.md` under `# Commands`.
+
 # Overview
 
 The client is a Rust workspace that turns activation events into bounded microphone capture, drives a backend session, and injects committed text into the previously focused application. The orchestrator stays independent of concrete transports and desktop services.
