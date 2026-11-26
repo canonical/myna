@@ -19,6 +19,8 @@ src/processing_steps.rs
 src/chains_view.rs
 src/step_catalog.rs
 src/processing_ui.rs
+src/processing_step_ui.rs
+src/processing_catalog_ui.rs
 src/plugin_catalog.rs
 src/active_backend.rs
 src/backend_ui.rs
