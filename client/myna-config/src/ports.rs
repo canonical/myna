@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use thiserror::Error;
 
 use async_trait::async_trait;
@@ -196,6 +198,9 @@ pub trait DictationDaemon {
     }
     /// `RescanModels`: read every text share again.
     async fn rescan(&self) -> Result<(), String>;
+    /// Call `on_change` whenever the daemon publishes a property Settings
+    /// follows, so the pages follow it by signal instead of polling.
+    async fn watch(&self, _on_change: Rc<dyn Fn()>) {}
 }
 
 /// A first install of components of a text snap: `snap install --edge

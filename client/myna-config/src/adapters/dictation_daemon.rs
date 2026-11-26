@@ -2,7 +2,8 @@
 //! and `RescanModels` on `com.canonical.Myna.Dictation`.
 
 use async_trait::async_trait;
-use gio::glib::{self, variant::ToVariant, VariantDict};
+use gio::glib::{self, variant::ToVariant};
+use std::rc::Rc;
 
 use crate::ports::DictationDaemon;
 
@@ -77,22 +78,25 @@ async fn call(
     }
 }
 
+/// One property, by `Get`: `GetAll` would hand Settings the dictated text the
+/// daemon publishes beside it, which it must never read.
 async fn property(daemon: &SessionBusDaemon, name: &str) -> Result<Option<String>, String> {
-    let Some(all) = call(
+    let Some(reply) = call(
         daemon,
         "org.freedesktop.DBus.Properties",
-        "GetAll",
-        (BUS,).to_variant(),
+        "Get",
+        (BUS, name).to_variant(),
     )
     .await?
     else {
         return Ok(None);
     };
-    let dict = VariantDict::new(Some(&all.child_value(0)));
+    // `Get` answers with the value boxed in a variant.
     Ok(Some(
-        dict.lookup::<String>(name)
-            .ok()
-            .flatten()
+        reply
+            .child_value(0)
+            .as_variant()
+            .and_then(|value| value.get::<String>())
             .unwrap_or_default(),
     ))
 }
@@ -133,6 +137,28 @@ impl DictationDaemon for SessionBusDaemon {
         call(self, BUS, "RescanModels", ().to_variant())
             .await
             .map(|_| ())
+    }
+
+    async fn watch(&self, on_change: Rc<dyn Fn()>) {
+        let Ok(connection) = self.connection().await else {
+            return;
+        };
+        // The deprecated form keeps the subscription until the connection
+        // goes, which is what a page that outlives this call wants.
+        #[allow(deprecated)]
+        connection.signal_subscribe(
+            Some(BUS),
+            Some(BUS),
+            Some("PropertiesChanged"),
+            Some(PATH),
+            None,
+            gio::DBusSignalFlags::NONE,
+            move |_, _, _, _, _, params| {
+                if crate::machine::followed_change(params) {
+                    on_change();
+                }
+            },
+        );
     }
 }
 

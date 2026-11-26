@@ -321,26 +321,99 @@ pub fn daemon_report() -> Option<DaemonReport> {
     use gio::glib::variant::ToVariant;
 
     let connection = gio::bus_get_sync(gio::BusType::Session, gio::Cancellable::NONE).ok()?;
-    let reply = connection
-        .call_sync(
-            Some(DICTATION_BUS),
-            DICTATION_PATH,
-            "org.freedesktop.DBus.Properties",
-            "GetAll",
-            Some(&(DICTATION_BUS,).to_variant()),
+    let call = |bus: &str, path: &str, interface: &str, method: &str, parameters| {
+        connection.call_sync(
+            Some(bus),
+            path,
+            interface,
+            method,
+            Some(&parameters),
             None,
             gio::DBusCallFlags::NONE,
             1_000,
             gio::Cancellable::NONE,
         )
-        .ok()?;
-    let mut report = parse_daemon_report(&reply.child_value(0));
+    };
+    // One cheap question first: with no owner the property reads would each
+    // fail on their own.
+    let owner = call(
+        "org.freedesktop.DBus",
+        "/org/freedesktop/DBus",
+        "org.freedesktop.DBus",
+        "NameHasOwner",
+        (DICTATION_BUS,).to_variant(),
+    )
+    .ok()?;
+    if !owner.get::<bool>().unwrap_or(false) {
+        return None;
+    }
+    // `GetAll` would deliver the dictated text the daemon publishes beside
+    // these properties, which Settings must never read.
+    let get = |name: &str| {
+        call(
+            DICTATION_BUS,
+            DICTATION_PATH,
+            "org.freedesktop.DBus.Properties",
+            "Get",
+            (DICTATION_BUS, name).to_variant(),
+        )
+        .ok()
+        .and_then(|reply| reply.child_value(0).as_variant())
+    };
+    let mut report = parse_daemon_report(&get);
     let settings = myna_core::Settings::load();
     report.steps = steps_line(&settings);
     report.chain = report
         .chain
         .map(|state| state.as_asked(&translations(&settings)));
     Some(report)
+}
+
+/// The properties Settings follows live: a dictation's `DraftText` changes
+/// must not wake it.
+const FOLLOWED: [&str; 11] = [
+    "State",
+    "InstalledSteps",
+    "Chains",
+    "ActiveChain",
+    "ChainStatus",
+    "ChainMissing",
+    "ChainMissingRequests",
+    "LastError",
+    "LastErrorTime",
+    "LastErrorDetail",
+    "AudioDroppedNotActive",
+];
+
+/// Whether a `PropertiesChanged` signal carries a property Settings follows.
+pub(crate) fn followed_change(params: &gio::glib::Variant) -> bool {
+    let changed = gio::glib::VariantDict::new(Some(&params.child_value(1)));
+    FOLLOWED
+        .iter()
+        .any(|name| changed.lookup::<String>(name).ok().flatten().is_some())
+}
+
+/// Call `on_change` whenever the daemon publishes one of [`FOLLOWED`], for as
+/// long as the session bus lives: the Processing banner and Diagnostics follow
+/// the daemon by signal, not by polling.
+pub fn watch_daemon(on_change: impl Fn() + 'static) {
+    let Ok(connection) = gio::bus_get_sync(gio::BusType::Session, gio::Cancellable::NONE) else {
+        return;
+    };
+    #[allow(deprecated)]
+    connection.signal_subscribe(
+        Some(DICTATION_BUS),
+        Some(DICTATION_BUS),
+        Some("PropertiesChanged"),
+        Some(DICTATION_PATH),
+        None,
+        gio::DBusSignalFlags::NONE,
+        move |_, _, _, _, _, params| {
+            if followed_change(params) {
+                on_change();
+            }
+        },
+    );
 }
 
 /// The active chain's translations that run, as (from, to), judged the way
@@ -370,17 +443,15 @@ fn translations(settings: &myna_core::Settings) -> Vec<(String, String)> {
         .collect()
 }
 
-/// Read a `GetAll` reply's `a{sv}`. A property this daemon does not publish is
-/// absent, never an error: a Settings app newer than the daemon is normal.
-fn parse_daemon_report(all: &gio::glib::Variant) -> DaemonReport {
-    let properties = gio::glib::VariantDict::new(Some(all));
-    // VariantDict lookup unboxes the value from GetAll's a{sv} reply.
-    let drops = properties
-        .lookup::<u64>("AudioDroppedNotActive")
-        .ok()
-        .flatten()
+/// Read the properties a report needs. A property this daemon does not
+/// publish is absent, never an error: a Settings app newer than the daemon is
+/// normal.
+fn parse_daemon_report(get: &dyn Fn(&str) -> Option<gio::glib::Variant>) -> DaemonReport {
+    let read = |name: &str| get(name);
+    let drops = read("AudioDroppedNotActive")
+        .and_then(|value| value.get::<u64>())
         .map(|not_active| AudioDrops { not_active });
-    let level = |name: &str| properties.lookup::<f64>(name).ok().flatten();
+    let level = |name: &str| read(name).and_then(|value| value.get::<f64>());
     let input = match (
         level("InputOffset"),
         level("InputNoiseFloor"),
@@ -402,8 +473,8 @@ fn parse_daemon_report(all: &gio::glib::Variant) -> DaemonReport {
         }
         _ => None,
     };
-    let text = |name: &str| properties.lookup::<String>(name).ok().flatten();
-    let time = properties.lookup::<i64>("LastErrorTime").ok().flatten();
+    let text = |name: &str| read(name).and_then(|value| value.get::<String>());
+    let time = read("LastErrorTime").and_then(|value| value.get::<i64>());
     let last_error = match (text("LastError"), time) {
         (Some(headline), Some(usec)) if !headline.is_empty() && usec > 0 => Some(LastError {
             headline,
@@ -481,12 +552,19 @@ mod tests {
         );
     }
 
-    fn reply(properties: &[(&str, gio::glib::Variant)]) -> gio::glib::Variant {
-        let dict = gio::glib::VariantDict::new(None);
-        for (name, value) in properties {
-            dict.insert_value(name, value);
+    fn reply(
+        properties: &[(&str, gio::glib::Variant)],
+    ) -> impl Fn(&str) -> Option<gio::glib::Variant> {
+        let properties: Vec<(String, gio::glib::Variant)> = properties
+            .iter()
+            .map(|(name, value)| ((*name).to_owned(), value.clone()))
+            .collect();
+        move |name| {
+            properties
+                .iter()
+                .find(|(have, _)| have == name)
+                .map(|(_, value)| value.clone())
         }
-        dict.end()
     }
 
     /// A daemon that predates the properties reads as "nothing to report",

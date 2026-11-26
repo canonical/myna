@@ -129,7 +129,7 @@ fn build_settings_window(application: &adw::Application) {
     window
         .processing_nav()
         .replace(&[processing_page(&processing, &window.processing_nav())]);
-    watch_chain_status(&processing.notice, daemon_chain_status, CHAIN_STATUS_POLL);
+    watch_chain_status(&processing.notice, daemon_chain_status);
     let steps = attach_steps(&processing, &overlay, &window.processing_nav());
     let models = models_section(&overlay, &view_stack, steps);
 
@@ -377,7 +377,6 @@ fn attach_steps(
         overlay: overlay.clone(),
         nav: nav.clone(),
         follow_interval: Duration::from_secs(1),
-        refresh_every: crate::processing_ui::Deps::refresh_default(),
     };
     Some(crate::processing_ui::StepsPage::attach(
         deps,
@@ -458,31 +457,33 @@ fn show_chain_notice(banner: &adw::Banner, state: Option<&crate::chain_notice::C
 }
 
 /// Follow the daemon's chain status for as long as the banner lives. The
-/// daemon rebinds every few seconds while a model is missing, so a model
-/// connected meanwhile clears the notice without reopening Settings.
+/// daemon rebinds whenever a model is connected or removed, so a change
+/// clears or raises the notice without reopening Settings; the daemon
+/// publishes it, so there is nothing to poll.
 fn watch_chain_status(
     banner: &adw::Banner,
     read: impl Fn() -> Option<crate::chain_notice::ChainState> + Clone + Send + 'static,
-    every: Duration,
 ) {
-    let banner = banner.downgrade();
-    glib::spawn_future_local(async move {
-        while let Some(shown) = banner.upgrade() {
-            let read = read.clone();
+    let shown = banner.downgrade();
+    let update: std::rc::Rc<dyn Fn()> = std::rc::Rc::new(move || {
+        let Some(banner) = shown.upgrade() else {
+            return;
+        };
+        let read = read.clone();
+        glib::spawn_future_local(async move {
             let state = gio::spawn_blocking(read).await.ok().flatten();
-            show_chain_notice(&shown, state.as_ref());
-            drop(shown);
-            glib::timeout_future(every).await;
-        }
+            show_chain_notice(&banner, state.as_ref());
+        });
     });
+    update();
+    let again = update.clone();
+    crate::machine::watch_daemon(move || again());
 }
 
 /// The daemon's chain status, `None` when it is not running or too old.
 fn daemon_chain_status() -> Option<crate::chain_notice::ChainState> {
     crate::machine::daemon_report().and_then(|report| report.chain)
 }
-
-const CHAIN_STATUS_POLL: Duration = Duration::from_secs(5);
 
 fn status_page(title: &str, description: &str, icon: &str) -> adw::NavigationPage {
     let page = ui::StatusPage::new();

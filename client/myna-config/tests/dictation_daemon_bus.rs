@@ -1,6 +1,7 @@
 //! The daemon adapter over a real (private) D-Bus: `State` and
-//! `InstalledSteps` read through `GetAll`, `RescanModels` called, and a
-//! missing daemon answered as not running.
+//! `InstalledSteps` read with a per-property `Get` (never `GetAll`, which
+//! would carry the dictated text), `RescanModels` called, and a missing
+//! daemon answered as not running.
 
 use std::cell::{Cell, RefCell};
 use std::io::{BufRead, BufReader};

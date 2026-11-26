@@ -42,9 +42,6 @@ const PREPARING_FOR: Duration = Duration::from_secs(30);
 
 const PAGE_KEY: &str = "myna-steps-page";
 
-/// How often the daemon is asked what it offers.
-const REFRESH_EVERY: Duration = Duration::from_secs(5);
-
 pub struct Deps {
     pub store: Rc<GioClientSettings>,
     pub daemon: Rc<dyn DictationDaemon>,
@@ -57,14 +54,6 @@ pub struct Deps {
     pub nav: adw::NavigationView,
     /// How often an install's change is read for its progress.
     pub follow_interval: Duration,
-    /// How often the daemon is asked what it offers.
-    pub refresh_every: Duration,
-}
-
-impl Deps {
-    pub fn refresh_default() -> Duration {
-        REFRESH_EVERY
-    }
 }
 
 /// The groups of the Processing tab the page fills.
@@ -300,21 +289,42 @@ impl StepsPage {
         page.render();
         // SAFETY: the key is private to this module and always holds a page.
         unsafe { slots.chains.set_data(PAGE_KEY, page.clone()) };
-        let weak = Rc::downgrade(&page);
-        let every = page.deps.refresh_every;
-        glib::spawn_future_local(async move {
-            loop {
-                let Some(page) = weak.upgrade() else { return };
-                page.refresh().await;
-                drop(page);
-                glib::timeout_future(every).await;
-            }
-        });
+        page.follow();
         page
     }
 
-    /// Read what the daemon offers and the catalogs again, and redraw.
+    /// Follow the daemon's own property changes, and read everything once: the
+    /// catalogs on opening the page, the daemon on every change it publishes.
+    fn follow(self: &Rc<Self>) {
+        let weak = Rc::downgrade(self);
+        let on_change: Rc<dyn Fn()> = Rc::new(move || {
+            let Some(page) = weak.upgrade() else { return };
+            glib::spawn_future_local(async move {
+                page.read_daemon().await;
+                page.render();
+            });
+        });
+        let daemon = self.deps.daemon.clone();
+        glib::spawn_future_local(async move {
+            daemon.watch(on_change).await;
+        });
+        let weak = Rc::downgrade(self);
+        glib::spawn_future_local(async move {
+            let Some(page) = weak.upgrade() else { return };
+            page.refresh().await;
+        });
+    }
+
+    /// Read the daemon and the catalogs, and redraw: on opening the page and
+    /// after an install, never on a timer.
     pub async fn refresh(self: &Rc<Self>) {
+        self.read_daemon().await;
+        self.catalog.replace((self.deps.catalog)());
+        self.render();
+    }
+
+    /// What the daemon offers and whether it dictates.
+    async fn read_daemon(self: &Rc<Self>) {
         let offered = match self.deps.daemon.installed_steps().await {
             Ok(Some(json)) => Offered::parse(&json),
             _ => None,
@@ -325,8 +335,6 @@ impl StepsPage {
             _ => false,
         };
         self.dictating.set(busy);
-        self.catalog.replace((self.deps.catalog)());
-        self.render();
     }
 
     /// Change the stored chains in one write; a failure is a toast.
@@ -2556,7 +2564,6 @@ mod tests {
                 locales: vec!["fr_FR.UTF-8".into()],
                 overlay: adw::ToastOverlay::new(),
                 follow_interval: Duration::from_millis(20),
-                refresh_every: Duration::from_millis(60),
                 nav: nav.clone(),
             },
             &Slots {
