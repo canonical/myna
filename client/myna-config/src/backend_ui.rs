@@ -1578,10 +1578,6 @@ impl BackendUi {
         }
     }
 
-    pub(crate) fn operation_coordinator(&self) -> &OperationCoordinator {
-        &self.operation_coordinator
-    }
-
     pub fn controller(&self) -> Rc<BackendController> {
         Rc::clone(&self.controller)
     }
