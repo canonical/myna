@@ -188,10 +188,9 @@ impl Compiler<'_> {
     }
 
     fn translate(&mut self, index: usize, step: &StepSpec) -> StepState {
-        let to = step
-            .text("to")
-            .map(myna_core::chains::primary_language)
-            .expect("misfit checked it");
+        // The target as the models name it: a Chinese pair is `zh-Hans` or
+        // `zh-Hant`, though the language after the step is the bare `zh`.
+        let to = step.text("to").expect("misfit checked it").to_owned();
         let from = self.lang.clone().unwrap_or_else(|| "en".into());
         let check = Check::Usable;
         let state = match pivot_legs(&from, &to, self.ctx) {
@@ -211,7 +210,7 @@ impl Compiler<'_> {
             }
             None => self.ask(Request::translate(&from, &to), check),
         };
-        self.changed = Some((index, self.lang.replace(to)));
+        self.changed = Some((index, self.lang.replace(myna_core::chains::primary_language(&to))));
         state
     }
 

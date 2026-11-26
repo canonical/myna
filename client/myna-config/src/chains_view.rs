@@ -61,9 +61,14 @@ fn stranded(steps: &[ChainStep], ctx: &Context) -> usize {
         .iter()
         .zip(fits(steps, ctx.language))
         .filter(|(step, fit)| {
+            // The pair `fit` deduces is the language after the step, which
+            // is the bare `zh` for Chinese; the models name those pairs
+            // `zh-Hans` and `zh-Hant`, so the step's own target is what the
+            // catalog is asked about.
+            let target = step.params.get("to").map(String::as_str);
             step.step == TRANSLATE
-                && matches!(fit, Fit::Runs { input: Some(from), output: Some(to) }
-                    if !steps::routable(ctx.catalog, ctx.daemon, from, to))
+                && matches!(fit, Fit::Runs { input: Some(from), .. }
+                    if !target.is_some_and(|to| steps::routable(ctx.catalog, ctx.daemon, from, to)))
         })
         .count()
 }
@@ -95,6 +100,21 @@ fn retargeted(steps: &[ChainStep], index: usize, to: &str) -> Vec<ChainStep> {
     let mut steps = steps.to_vec();
     steps[index].params.insert("to".into(), to.to_owned());
     steps
+}
+
+/// The badge beside a step: the language it reads, and for a translation the
+/// one it writes. The picker that names the target is the row under the step,
+/// so the arrow says where it goes: "EN \u{2192} ZH-HANS", not a dangling "EN \u{2192}".
+fn written(step: &ChainStep, input: Option<&str>, output: Option<&str>) -> String {
+    let to = (step.step == TRANSLATE)
+        .then(|| step.params.get("to").map(String::as_str))
+        .flatten();
+    match (input, to) {
+        (Some(read), Some(to)) if read != to => {
+            format!("{} \u{2192} {}", read.to_uppercase(), to.to_uppercase())
+        }
+        _ => badge(input, output),
+    }
 }
 
 /// The language a step reads, read-only: the graph deduces it. A step that
@@ -143,10 +163,10 @@ pub fn lines(chain: &Chain, ctx: &Context) -> Vec<Row> {
         .zip(fitted)
         .zip(rows)
         .enumerate()
-        .map(|(index, ((_step, fit), mut row))| {
+        .map(|(index, ((step, fit), mut row))| {
             let (badge, skipped, subtitle, fix) = match &fit {
                 Fit::Runs { input, output } => (
-                    badge(input.as_deref(), output.as_deref()),
+                    written(step, input.as_deref(), output.as_deref()),
                     false,
                     row.subtitle.clone(),
                     None,
