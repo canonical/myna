@@ -15,6 +15,8 @@
 # E2E_MYNA_SNAP=PATH installs that myna snap (`make snap-myna`) over the
 # store's edge one in each run, keeping its connections (not on a machine
 # that has none yet, nor for a suite headed `# myna: store`).
+# E2E_FAKE_SNAP=PATH does the same for the fake backend (`make snap-fake`)
+# wherever the snapshot has one.
 # A suite headed `# requires: VAR` is skipped unless VAR is set.
 # Suites live in suites/; none given runs them all. The build also yields
 # myna-hud-host (the Xfce HUD supervisor, which the dictation suite starts the
@@ -112,6 +114,13 @@ attempt() {
     echo "the HUD did not stop" >&2; exit 1'
         lxc exec "$RUN" -- snap install --dangerous /root/myna.snap
         on_vm "$RUN" 'systemctl --user start snap.myna.myna.service'
+    fi
+    # The fake backend is this tree's too, when given: a suite's script (a
+    # transcript in segments) is only as new as the snap that plays it. Over
+    # the provisioned one, so its connection stays.
+    if [ -n "${E2E_FAKE_SNAP:-}" ] && lxc exec "$RUN" -- snap list myna-fake-backend >/dev/null 2>&1; then
+        lxc file push "$E2E_FAKE_SNAP" "$RUN/root/myna-fake-backend.snap"
+        lxc exec "$RUN" -- snap install --dangerous /root/myna-fake-backend.snap
     fi
 
     on_vm "$RUN" 'mkdir -p myna-shot/schemas'
