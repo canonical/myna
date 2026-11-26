@@ -98,6 +98,33 @@ struct LineWidgets {
     popover: gtk::Popover,
 }
 
+/// The row under a step: its fix, its picker when the window is narrow, and
+/// its install.
+fn line_detail(
+    narrow: bool,
+    picker: &gtk::DropDown,
+) -> (adw::ActionRow, InstallControl, gtk::Button) {
+    let control = InstallControl::new();
+    control.set_visible(false);
+    let fix = gtk::Button::builder()
+        .valign(gtk::Align::Center)
+        .visible(false)
+        .build();
+    let detail = adw::ActionRow::builder()
+        .css_classes(["property"])
+        .visible(false)
+        .build();
+    add_suffixes(
+        &detail,
+        &[
+            Some(fix.upcast_ref()),
+            narrow.then_some(picker.upcast_ref()),
+            Some(control.upcast_ref()),
+        ],
+    );
+    (detail, control, fix)
+}
+
 /// The ▸/▾ buttons beside a step and the menu at its end.
 struct RowMenu {
     up: gtk::Button,
@@ -191,24 +218,7 @@ impl LineWidgets {
                 Some(menu.upcast_ref()),
             ],
         );
-        let control = InstallControl::new();
-        control.set_visible(false);
-        let fix = gtk::Button::builder()
-            .valign(gtk::Align::Center)
-            .visible(false)
-            .build();
-        let detail = adw::ActionRow::builder()
-            .css_classes(["property"])
-            .visible(false)
-            .build();
-        add_suffixes(
-            &detail,
-            &[
-                Some(fix.upcast_ref()),
-                narrow.then_some(picker.upcast_ref()),
-                Some(control.upcast_ref()),
-            ],
-        );
+        let (detail, control, fix) = line_detail(narrow, &picker);
         Self {
             row,
             skipped,
@@ -239,12 +249,114 @@ struct Editor {
     steps: adw::PreferencesGroup,
     add_row: adw::ActionRow,
     use_button: gtk::Button,
+    delete: gtk::Button,
     lines: RefCell<Vec<LineWidgets>>,
     shown: RefCell<Vec<Row>>,
     /// Below the editor's breakpoint: the ▴/▾ buttons hide (the row menu's
     /// Move up/down remain) and a step's parameter picker moves to the row
     /// under it, so the title keeps its room.
     narrow: Rc<Cell<bool>>,
+}
+
+/// A chain's editor before anything is wired: its name, its steps, and the
+/// two buttons under them, in the page its breakpoint watches.
+fn editor_page(id: &str) -> (adw::NavigationPage, Rc<Editor>, adw::Breakpoint) {
+    let name = adw::EntryRow::builder()
+        .title(gettextrs::gettext("Name"))
+        .show_apply_button(true)
+        .build();
+    let name_group = adw::PreferencesGroup::new();
+    name_group.add(&name);
+    let steps = adw::PreferencesGroup::builder()
+        .title(gettextrs::gettext("Steps"))
+        .description(gettextrs::gettext(
+            "They run top to bottom. Changes are saved as you make them.",
+        ))
+        .build();
+    let add_row = adw::ActionRow::builder()
+        .title(gettextrs::gettext("Add step…"))
+        .activatable(true)
+        .build();
+    add_row.add_prefix(&gtk::Image::from_icon_name("list-add-symbolic"));
+    let use_button = gtk::Button::builder()
+        .label(gettextrs::gettext("Use this chain"))
+        .css_classes(["suggested-action", "pill"])
+        .halign(gtk::Align::Center)
+        .build();
+    let delete = gtk::Button::builder()
+        .label(gettextrs::gettext("Delete chain"))
+        .css_classes(["destructive-action", "pill"])
+        .halign(gtk::Align::Center)
+        .build();
+    let actions = gtk::Box::builder()
+        .orientation(gtk::Orientation::Horizontal)
+        .spacing(12)
+        .halign(gtk::Align::Center)
+        .build();
+    actions.append(&use_button);
+    actions.append(&delete);
+    let actions_group = adw::PreferencesGroup::new();
+    actions_group.add(&actions);
+    let preferences = adw::PreferencesPage::new();
+    for group in [&name_group, &steps, &actions_group] {
+        preferences.add(group);
+    }
+    let bin = adw::BreakpointBin::builder()
+        .width_request(300)
+        .height_request(200)
+        .child(&preferences)
+        .build();
+    let breakpoint = adw::Breakpoint::new(
+        adw::BreakpointCondition::parse(NARROW_EDITOR).expect("a valid breakpoint condition"),
+    );
+    bin.add_breakpoint(breakpoint.clone());
+    let page = crate::subpage::subpage(&gettextrs::gettext("Chain"), &bin);
+    let editor = Rc::new(Editor {
+        id: id.to_owned(),
+        page: page.clone(),
+        name,
+        steps,
+        add_row,
+        use_button,
+        delete,
+        lines: RefCell::new(Vec::new()),
+        shown: RefCell::new(Vec::new()),
+        narrow: Rc::new(Cell::new(false)),
+    });
+    (page, editor, breakpoint)
+}
+
+/// The expanded rows under a catalog item: its example, its size, its
+/// quality and its licence, as the catalog schema has them.
+fn catalog_details(row: &adw::ExpanderRow, item: &Row) {
+    let example = item
+        .example
+        .iter()
+        .map(|example| (gettextrs::gettext("For example"), example.clone()));
+    for (label, text) in example.chain(item.details.clone()) {
+        row.add_row(
+            &adw::ActionRow::builder()
+                .title(escape_markup(&label))
+                .subtitle(escape_markup(&text))
+                .subtitle_lines(0)
+                .subtitle_selectable(true)
+                .css_classes(["property"])
+                .build(),
+        );
+    }
+}
+
+/// What the catalog page shows, and whether a change may start from it.
+struct CatalogView {
+    items: Vec<Row>,
+    languages: Vec<Language>,
+    /// The language the text is in where the Translate step would go.
+    from: Source,
+    /// The installed translation models the user may take away.
+    removable: Vec<Entry>,
+    /// The removals in flight, so a row whose model is going shows it.
+    removing: BTreeSet<String>,
+    blocked: bool,
 }
 
 /// The page Translate opens: a search over the languages the text can be
@@ -695,77 +807,28 @@ impl StepsPage {
     }
 
     fn open_editor(self: &Rc<Self>, id: &str) {
-        let name = adw::EntryRow::builder()
-            .title(gettextrs::gettext("Name"))
-            .show_apply_button(true)
-            .build();
-        let name_group = adw::PreferencesGroup::new();
-        name_group.add(&name);
-        let steps = adw::PreferencesGroup::builder()
-            .title(gettextrs::gettext("Steps"))
-            .description(gettextrs::gettext(
-                "They run top to bottom. Changes are saved as you make them.",
-            ))
-            .build();
-        let add_row = adw::ActionRow::builder()
-            .title(gettextrs::gettext("Add step…"))
-            .activatable(true)
-            .build();
-        add_row.add_prefix(&gtk::Image::from_icon_name("list-add-symbolic"));
-        let use_button = gtk::Button::builder()
-            .label(gettextrs::gettext("Use this chain"))
-            .css_classes(["suggested-action", "pill"])
-            .halign(gtk::Align::Center)
-            .build();
-        let delete = gtk::Button::builder()
-            .label(gettextrs::gettext("Delete chain"))
-            .css_classes(["destructive-action", "pill"])
-            .halign(gtk::Align::Center)
-            .build();
-        let actions = gtk::Box::builder()
-            .orientation(gtk::Orientation::Horizontal)
-            .spacing(12)
-            .halign(gtk::Align::Center)
-            .build();
-        actions.append(&use_button);
-        actions.append(&delete);
-        let actions_group = adw::PreferencesGroup::new();
-        actions_group.add(&actions);
-        let preferences = adw::PreferencesPage::new();
-        preferences.add(&name_group);
-        preferences.add(&steps);
-        preferences.add(&actions_group);
-        let bin = adw::BreakpointBin::builder()
-            .width_request(300)
-            .height_request(200)
-            .child(&preferences)
-            .build();
-        let breakpoint = adw::Breakpoint::new(
-            adw::BreakpointCondition::parse(NARROW_EDITOR).expect("a valid breakpoint condition"),
-        );
-        bin.add_breakpoint(breakpoint.clone());
-        let narrow = Rc::new(Cell::new(false));
-        let page = crate::subpage::subpage(&gettextrs::gettext("Chain"), &bin);
-        let editor = Rc::new(Editor {
-            id: id.to_owned(),
-            page: page.clone(),
-            name: name.clone(),
-            steps,
-            add_row: add_row.clone(),
-            use_button: use_button.clone(),
-            lines: RefCell::new(Vec::new()),
-            shown: RefCell::new(Vec::new()),
-            narrow: narrow.clone(),
-        });
+        let (page, editor, breakpoint) = editor_page(id);
+        self.wire_editor(id, &editor, &breakpoint);
+        if let Some(chain) = self.deps.store.processing().chain(id) {
+            editor.name.set_text(&chain.name);
+            page.set_title(&chain.name);
+        }
+        self.editor.replace(Some(editor));
+        self.deps.nav.push(&page);
+        self.render();
+    }
+
+    /// What the editor's own rows do: its name, Add step, its two buttons,
+    /// and the breakpoint that makes the steps build their pickers again.
+    fn wire_editor(self: &Rc<Self>, id: &str, editor: &Rc<Editor>, breakpoint: &adw::Breakpoint) {
         for (signal, value) in [("apply", true), ("unapply", false)] {
             let page = Rc::downgrade(self);
-            let narrow = narrow.clone();
+            let narrow = editor.narrow.clone();
             breakpoint.connect_local(signal, false, move |_| {
                 narrow.set(value);
                 if let Some(page) = page.upgrade() {
                     // The pickers change rows: build the steps again.
-                    let editor = page.editor.borrow().clone();
-                    if let Some(editor) = editor {
+                    if let Some(editor) = page.editor.borrow().clone() {
                         let count = editor.lines.borrow().len();
                         page.rebuild_lines(&editor, count);
                     }
@@ -774,28 +837,33 @@ impl StepsPage {
                 None
             });
         }
-        if let Some(chain) = self.deps.store.processing().chain(id) {
-            name.set_text(&chain.name);
-            page.set_title(&chain.name);
-        }
-        name.connect_apply(self.on(id, |page, id, entry: &adw::EntryRow| {
-            let text = entry.text().trim().to_owned();
-            if !text.is_empty() {
+        editor
+            .name
+            .connect_apply(self.on(id, |page, id, entry: &adw::EntryRow| {
+                let text = entry.text().trim().to_owned();
+                if !text.is_empty() {
+                    page.edit(|p| {
+                        p.rename(id, &text);
+                    });
+                }
+            }));
+        editor
+            .add_row
+            .connect_activated(self.on(id, |page, id, _: &adw::ActionRow| {
+                page.open_catalog(Some(id));
+            }));
+        editor
+            .use_button
+            .connect_clicked(self.on(id, |page, id, _: &gtk::Button| {
                 page.edit(|p| {
-                    p.rename(id, &text);
+                    let using = p.active.as_deref() == Some(id);
+                    p.activate((!using).then_some(id));
                 });
-            }
-        }));
-        add_row.connect_activated(self.on(id, |page, id, _: &adw::ActionRow| {
-            page.open_catalog(Some(id));
-        }));
-        use_button.connect_clicked(self.on(id, |page, id, _: &gtk::Button| {
-            page.edit(|p| {
-                let using = p.active.as_deref() == Some(id);
-                p.activate((!using).then_some(id));
-            });
-        }));
-        delete.connect_clicked(self.on(id, |page, id, _: &gtk::Button| page.delete_chain(id)));
+            }));
+        editor
+            .delete
+            .connect_clicked(self.on(id, |page, id, _: &gtk::Button| page.delete_chain(id)));
+        let page = editor.page.clone();
         page.connect_hidden(self.on(id, |page, id, _: &adw::NavigationPage| {
             let open = page.editor.borrow().as_ref().map(|e| e.id.clone());
             if open.as_deref() == Some(id)
@@ -804,9 +872,6 @@ impl StepsPage {
                 page.editor.replace(None);
             }
         }));
-        self.editor.replace(Some(editor));
-        self.deps.nav.push(&page);
-        self.render();
     }
 
     /// Delete chain `id` and go back; a toast offers it back.
@@ -1186,10 +1251,25 @@ impl StepsPage {
     }
 
     fn render_catalog(self: &Rc<Self>, processing: &Processing) {
+        let view = self.catalog_view(processing);
+        self.paint_catalog(&view);
+        let (blocked, from, languages, removable) = (
+            view.blocked,
+            view.from.clone(),
+            view.languages.clone(),
+            view.removable.clone(),
+        );
+        self.items.replace(view.items);
+        self.render_languages(&from, languages, &removable, blocked);
+    }
+
+    /// What the catalog page lists now, decided by `step_catalog` from what
+    /// the daemon offers, what is installed and the chain it adds to.
+    fn catalog_view(&self, processing: &Processing) -> CatalogView {
         let target = self.catalog_chain(processing);
         let offered = self.offered.borrow().clone();
         let source = Source::of_setting(&self.deps.store.language());
-        let translate_from = target.as_ref().map_or_else(
+        let from = target.as_ref().map_or_else(
             || source.clone(),
             |chain| {
                 let at = myna_core::chains::insert_position(&chain.steps, TRANSLATE);
@@ -1198,7 +1278,6 @@ impl StepsPage {
         );
         let catalog = self.catalog.borrow();
         let installing = self.installing.borrow();
-        let preparing = self.preparing_now();
         let removing = self.removing.borrow();
         let chain_rows = target
             .as_ref()
@@ -1222,7 +1301,7 @@ impl StepsPage {
         let languages = step_catalog::languages(&step_catalog::LanguageInputs {
             catalog: &catalog,
             daemon: offered.as_ref(),
-            from: &translate_from,
+            from: &from,
             installing: &language_installs,
             preparing: &BTreeSet::new(),
             likely: &likely,
@@ -1233,21 +1312,40 @@ impl StepsPage {
             catalog: &catalog,
             rows: &chain_rows,
             languages: &languages,
-            translate_from: &translate_from,
+            translate_from: &from,
             source: &source,
             language_unset: self.deps.store.language().trim().is_empty(),
             daemon: offered.as_ref(),
             installing: &installing,
-            preparing: &preparing,
+            preparing: &self.preparing_now(),
             removing: &removing,
             locales: &self.deps.locales,
         });
+        let removable: Vec<Entry> = catalog
+            .iter()
+            .filter(|e| e.step.id == TRANSLATE)
+            .filter(|e| offered.as_ref().is_some_and(|d| d.offers(&e.model)))
+            .cloned()
+            .collect();
+        CatalogView {
+            blocked: self.dictating.get() || !installing.is_empty() || !removing.is_empty(),
+            items,
+            languages,
+            from,
+            removable,
+            removing: removing.clone(),
+        }
+    }
+
+    /// Build the catalog's rows when the list changed, then paint them.
+    fn paint_catalog(self: &Rc<Self>, view: &CatalogView) {
+        let items = &view.items;
         let same = {
             let widgets = self.catalog_widgets.borrow();
             widgets.len() == items.len()
                 && widgets
                     .iter()
-                    .zip(&items)
+                    .zip(items)
                     .all(|((id, _), row)| *id == row.id)
         };
         if !same {
@@ -1258,7 +1356,7 @@ impl StepsPage {
                 }
             }
             let mut built = Vec::new();
-            for row in &items {
+            for row in items {
                 if row.id == TRANSLATE {
                     self.catalog_group.add(&self.translate_row);
                     built.push((row.id.clone(), None));
@@ -1270,14 +1368,13 @@ impl StepsPage {
             }
             self.catalog_widgets.replace(built);
         }
-        let blocked = self.dictating.get() || !installing.is_empty() || !removing.is_empty();
-        for ((_, widgets), row) in self.catalog_widgets.borrow().iter().zip(&items) {
+        for ((_, widgets), row) in self.catalog_widgets.borrow().iter().zip(items) {
             let removing = row
                 .entry
                 .as_ref()
-                .is_some_and(|entry| removing.contains(&entry.id));
+                .is_some_and(|entry| view.removing.contains(&entry.id));
             match widgets {
-                Some(widgets) => show_item(widgets, row, blocked, removing),
+                Some(widgets) => show_item(widgets, row, view.blocked, removing),
                 None => {
                     self.translate_row
                         .set_subtitle(&escape_markup(&row.subtitle));
@@ -1286,17 +1383,6 @@ impl StepsPage {
                 }
             }
         }
-        let removable: Vec<Entry> = catalog
-            .iter()
-            .filter(|e| e.step.id == TRANSLATE)
-            .filter(|e| offered.as_ref().is_some_and(|d| d.offers(&e.model)))
-            .cloned()
-            .collect();
-        drop(installing);
-        drop(removing);
-        drop(catalog);
-        self.items.replace(items);
-        self.render_languages(&translate_from, languages, &removable, blocked);
     }
 
     /// The user's own languages, most likely first: the desktop locales,
@@ -1403,6 +1489,13 @@ impl StepsPage {
         }
         self.shown_languages.replace(languages);
         self.filter_languages(false);
+        self.render_installed(removable, blocked);
+    }
+
+    /// The installed translation models, each with the Remove that takes it
+    /// away. A step that uses one stays and says what it needs.
+    fn render_installed(self: &Rc<Self>, removable: &[Entry], blocked: bool) {
+        let lp = &self.languages;
         let keys: Vec<String> = removable.iter().map(|e| e.id.clone()).collect();
         let same = {
             let rows = lp.installed_rows.borrow();
@@ -1514,32 +1607,12 @@ impl StepsPage {
         {
             return;
         }
-        let target = self
-            .catalog_chain(&self.deps.store.processing())
-            .map(|c| c.id);
-        if target.is_none() && self.catalog_for.borrow().is_some() {
+        let step = ChainStep::new(TRANSLATE).with("to", code);
+        let Some((chain, at)) = self.insert_step(step) else {
             self.leave_catalog();
             return;
-        }
-        let step = ChainStep::new(TRANSLATE).with("to", code);
-        let mut placed: Option<(String, usize)> = None;
-        self.edit(|p| {
-            let id = match target {
-                Some(id) => id,
-                None => {
-                    let name = chains_view::new_name(&p.chains);
-                    let id = p.add(&name, Vec::new());
-                    p.activate(Some(&id));
-                    id
-                }
-            };
-            if let Some(chain) = p.chains.iter_mut().find(|c| c.id == id) {
-                let at = myna_core::chains::insert_position(&chain.steps, TRANSLATE);
-                chain.steps.insert(at, step);
-                placed = Some((id, at));
-            }
-        });
-        if let (Some((chain, at)), LanguageState::Download { .. }) = (placed, &language.state) {
+        };
+        if matches!(language.state, LanguageState::Download { .. }) {
             self.installing_language.replace(Some(code.to_owned()));
             self.install_line(&chain, at);
         }
@@ -1575,30 +1648,10 @@ impl StepsPage {
             return;
         }
         let step = step_catalog::step_of(&row, &self.deps.locales);
-        let target = self
-            .catalog_chain(&self.deps.store.processing())
-            .map(|c| c.id);
-        // Opened for a chain that is gone since: add to nothing rather than
-        // to a chain the user never made.
-        if target.is_none() && self.catalog_for.borrow().is_some() {
+        if self.insert_step(step).is_none() {
             self.leave_catalog();
             return;
         }
-        self.edit(|p| {
-            let id = match target {
-                Some(id) => id,
-                None => {
-                    let name = chains_view::new_name(&p.chains);
-                    let id = p.add(&name, Vec::new());
-                    p.activate(Some(&id));
-                    id
-                }
-            };
-            if let Some(chain) = p.chains.iter_mut().find(|c| c.id == id) {
-                let at = myna_core::chains::insert_position(&chain.steps, &step.step);
-                chain.steps.insert(at, step);
-            }
-        });
         self.deps.nav.pop();
     }
 
@@ -1629,26 +1682,7 @@ impl StepsPage {
         suffix.append(&add);
         suffix.append(&added);
         row.add_suffix(&suffix);
-        let mut lines: Vec<(String, String)> = Vec::new();
-        if let Some(example) = &item.example {
-            lines.push((gettextrs::gettext("For example"), example.clone()));
-        }
-        lines.extend(
-            item.details
-                .iter()
-                .map(|(label, text)| (label.clone(), text.clone())),
-        );
-        for (label, text) in lines {
-            row.add_row(
-                &adw::ActionRow::builder()
-                    .title(escape_markup(&label))
-                    .subtitle(escape_markup(&text))
-                    .subtitle_lines(0)
-                    .subtitle_selectable(true)
-                    .css_classes(["property"])
-                    .build(),
-            );
-        }
+        catalog_details(&row, item);
         let remove = gtk::Button::builder()
             .label(gettextrs::gettext("Remove"))
             .css_classes(["flat"])
@@ -1670,33 +1704,17 @@ impl StepsPage {
             .build();
         remove_row.add_suffix(&remove);
         row.add_row(&remove_row);
-        remove.connect_clicked({
-            let page = Rc::downgrade(self);
-            let id = item.id.clone();
-            move |_| {
-                if let Some(page) = page.upgrade() {
-                    page.remove_item(&id);
-                }
-            }
-        });
-        add.connect_clicked({
-            let page = Rc::downgrade(self);
-            let id = item.id.clone();
-            move |_| {
-                if let Some(page) = page.upgrade() {
-                    page.add_item(&id);
-                }
-            }
-        });
-        control.button().connect_clicked({
-            let page = Rc::downgrade(self);
-            let id = item.id.clone();
-            move |_| {
-                if let Some(page) = page.upgrade() {
-                    page.install_item(&id);
-                }
-            }
-        });
+        remove.connect_clicked(self.on(&item.id, |page, id, _: &gtk::Button| {
+            page.remove_item(id);
+        }));
+        add.connect_clicked(self.on(&item.id, |page, id, _: &gtk::Button| {
+            page.add_item(id);
+        }));
+        control
+            .button()
+            .connect_clicked(self.on(&item.id, |page, id, _: &gtk::Button| {
+                page.install_item(id);
+            }));
         CatalogWidgets {
             row,
             control,
@@ -1750,6 +1768,36 @@ impl StepsPage {
             page.report_outcome(&outcome, &gettextrs::gettext("Removing the model failed"));
             page.refresh().await;
         });
+    }
+
+    /// Put `step` at its stage's place in the catalog's chain, making and
+    /// using one when none is. `None` when it was opened for a chain that is
+    /// gone since: adding to a chain the user never made would be a surprise.
+    fn insert_step(self: &Rc<Self>, step: ChainStep) -> Option<(String, usize)> {
+        let target = self
+            .catalog_chain(&self.deps.store.processing())
+            .map(|c| c.id);
+        if target.is_none() && self.catalog_for.borrow().is_some() {
+            return None;
+        }
+        let mut placed = None;
+        self.edit(|p| {
+            let id = match target {
+                Some(id) => id,
+                None => {
+                    let name = chains_view::new_name(&p.chains);
+                    let id = p.add(&name, Vec::new());
+                    p.activate(Some(&id));
+                    id
+                }
+            };
+            if let Some(chain) = p.chains.iter_mut().find(|c| c.id == id) {
+                let at = myna_core::chains::insert_position(&chain.steps, &step.step);
+                chain.steps.insert(at, step.clone());
+                placed = Some((id, at));
+            }
+        });
+        placed
     }
 
     /// The same install as the inline button, for one catalog entry.
