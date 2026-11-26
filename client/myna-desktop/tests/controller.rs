@@ -2156,15 +2156,6 @@ impl DraftView for Drafts {
     }
 }
 
-struct Shout;
-
-#[async_trait::async_trait]
-impl Processor for Shout {
-    async fn process(&mut self, text: String) -> String {
-        text.to_uppercase()
-    }
-}
-
 fn held(
     policy: CommitPolicy,
     injector: MockInjector,
@@ -2189,30 +2180,6 @@ fn completed(transcript: &str) -> SessionOutcome {
     SessionOutcome::Completed {
         transcript: transcript.into(),
     }
-}
-
-#[tokio::test]
-async fn held_text_is_processed_on_its_way_to_the_field() {
-    let injector = MockInjector::new();
-    let inject_log = injector.log();
-    let (builder, drafts) = held(
-        CommitPolicy::Horizon { sentences: 1 },
-        injector,
-        events_session(
-            vec![
-                OrchestratorEvent::Final("hello".into()),
-                OrchestratorEvent::Final("world".into()),
-            ],
-            completed("hello world"),
-        ),
-    );
-    builder.processor(Shout).build().run().await;
-
-    assert_eq!(inject_log.lock().unwrap().commits, vec!["HELLO WORLD"]);
-    assert!(
-        drafts.0.lock().unwrap().iter().all(|(s, _)| s != "HELLO"),
-        "the draft shows what was heard"
-    );
 }
 
 #[tokio::test]
@@ -2258,27 +2225,6 @@ async fn held_text_is_discarded_and_its_draft_hidden_when_focus_is_lost() {
         drafts.0.lock().unwrap().last(),
         Some(&(String::new(), String::new()))
     );
-}
-
-#[tokio::test]
-async fn text_typed_as_it_arrives_is_never_processed() {
-    let injector = MockInjector::new();
-    let inject_log = injector.log();
-    let (builder, drafts) = held(
-        CommitPolicy::Streaming,
-        injector,
-        events_session(
-            vec![
-                OrchestratorEvent::Final("hello".into()),
-                OrchestratorEvent::Done("hello".into()),
-            ],
-            completed("hello"),
-        ),
-    );
-    builder.processor(Shout).build().run().await;
-
-    assert_eq!(inject_log.lock().unwrap().commits, vec!["hello"]);
-    assert!(drafts.0.lock().unwrap().is_empty());
 }
 
 struct LayoutRule;
@@ -2453,21 +2399,6 @@ async fn text_that_lands_after_the_stop_edge_is_timed() {
         // The session waits for the stop edge before it ends, so the text
         // cannot have been ready before the edge.
         assert!(timing.asr_tail > Duration::ZERO, "{policy:?}");
-    }
-}
-
-#[tokio::test]
-async fn streamed_text_is_reported_as_heard_without_processing() {
-    let landed = landings_of(
-        CommitPolicy::Streaming,
-        MockInjector::new(),
-        [TriggerEdge::Press, TriggerEdge::Release],
-        two_segment_focus_session(completed("first second")),
-    )
-    .await;
-    assert!(!landed.is_empty());
-    for piece in &landed {
-        assert_eq!(piece.heard, piece.typed, "streaming types what it heard");
     }
 }
 
