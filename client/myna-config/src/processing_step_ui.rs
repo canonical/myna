@@ -204,7 +204,12 @@ pub(crate) fn show_parameter(widgets: &LineWidgets, line: &Row) -> bool {
                     // TRANSLATORS: {language} is a language name; no model translates into it from the text's language.
                     gettextrs::gettext("{language} (no model)").replace("{language}", &target.name)
                 }
-                _ => {
+                LanguageState::Installing(_) | LanguageState::Preparing => {
+                    // TRANSLATORS: {language} is a language name; its model is being installed.
+                    gettextrs::gettext("{language} (installing)")
+                        .replace("{language}", &target.name)
+                }
+                LanguageState::Download { .. } | LanguageState::Unknown => {
                     // TRANSLATORS: {language} is a language name; its model is not installed yet.
                     gettextrs::gettext("{language} (not installed)")
                         .replace("{language}", &target.name)
@@ -278,7 +283,7 @@ pub(crate) fn show_offers(
     // From the line and the layout, not the widgets: `is_visible` is false
     // for anything in a hidden row.
     // The picker is always the row under the step, never a suffix: a target
-    // like "Chinese (Simplified) (not installed)" is wider than the whole row
+    // like "Português (not installed)" is wider than the whole row
     // it would share, and beside it the step's own title came out one
     // character to a line.
     let picker_under = listed;
