@@ -39,7 +39,7 @@ shot waitfor:General tab:Processing "click:$CHAIN" "click:Add step…" "click:Tr
     || { echo "exonym search failed" >&2; FAILED=1; }
 shot waitfor:General tab:Processing "click:$CHAIN" "click:Add step…" "click:Translate" \
     "waitfor:Search languages" "click:Search languages" "type:fa" \
-    "waitfor:Français" shot:shots/processing-language/02-code.png \
+    "waitfor:فارسی" "gone:Français" shot:shots/processing-language/02-code.png \
     || { echo "code search failed" >&2; FAILED=1; }
 # The interface's own name for a language finds the row titled in that
 # language, which is the whole point of the exonym table behind it.
