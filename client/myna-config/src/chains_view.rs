@@ -10,10 +10,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use myna_core::chains::{fits, Chain, ChainStep, Fit, Misfit};
-use myna_core::processing::{param_key, Params};
 
 use crate::plugin_catalog::Entry;
-use crate::processing_steps::{routable, rows, Inputs, Offered, Row, Source, Standing, TRANSLATE};
+use crate::processing_steps::{
+    self as steps, Moves, Offered, Place, Row, Source, Standing, TRANSLATE,
+};
 
 /// What every step judgement needs besides the chain.
 pub struct Context<'a> {
@@ -24,6 +25,21 @@ pub struct Context<'a> {
     pub installing: &'a BTreeMap<String, Option<u8>>,
     pub preparing: &'a BTreeSet<String>,
     pub locales: &'a [String],
+}
+
+impl Context<'_> {
+    /// The row builder's view of this context, for text in `source`.
+    fn inputs<'a>(&'a self, source: &'a Source) -> steps::Inputs<'a> {
+        steps::Inputs {
+            language_unset: self.language.is_none(),
+            source,
+            catalog: self.catalog,
+            daemon: self.daemon,
+            installing: self.installing,
+            preparing: self.preparing,
+            locales: self.locales,
+        }
+    }
 }
 
 /// One saved chain on the Processing page.
@@ -38,37 +54,6 @@ pub struct Card {
     pub needs: Option<String>,
 }
 
-/// One step of the chain being edited.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Line {
-    pub index: usize,
-    pub id: String,
-    pub title: String,
-    /// The language read and left: "EN → FR", "EN", or empty.
-    pub badge: String,
-    pub on: bool,
-    /// What is wrong, else what the step does.
-    pub subtitle: String,
-    /// The step to move this one above to make it run, and its title.
-    pub fix: Option<(usize, String)>,
-    /// What the step needs, its install's progress, or ready.
-    pub standing: Standing,
-    /// The Translate target picker and the script picker.
-    pub row: Row,
-    pub skipped: bool,
-    /// Which moves keep every translation of the chain doable.
-    pub moves: Moves,
-}
-
-/// The moves of a step that leave no translation without a model.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct Moves {
-    pub up: bool,
-    pub down: bool,
-    pub top: bool,
-    pub bottom: bool,
-}
-
 /// How many translations of `steps` that run no model can do, installed
 /// or offered: the text reaches them in a language nothing translates from
 /// into their target.
@@ -79,7 +64,7 @@ fn stranded(steps: &[ChainStep], ctx: &Context) -> usize {
         .filter(|(step, fit)| {
             step.step == TRANSLATE
                 && matches!(fit, Fit::Runs { input: Some(from), output: Some(to) }
-                    if !routable(ctx.catalog, ctx.daemon, from, to))
+                    if !steps::routable(ctx.catalog, ctx.daemon, from, to))
         })
         .count()
 }
@@ -113,43 +98,6 @@ fn retargeted(steps: &[ChainStep], index: usize, to: &str) -> Vec<ChainStep> {
     steps
 }
 
-/// A step's parameters in the `<step>.<param>` form `processing_steps` reads.
-fn flat(step: &ChainStep) -> Params {
-    step.params
-        .iter()
-        .map(|(name, value)| (param_key(&step.step, name), value.clone()))
-        .collect()
-}
-
-/// `processing_steps`' row for `step`, judged with the text in `input`.
-fn row_of(step: &ChainStep, input: Option<&str>, ctx: &Context) -> Row {
-    let source = input.map_or(Source::Unknown, |l| Source::One(l.to_owned()));
-    let params = flat(step);
-    let enabled = [step.step.clone()];
-    rows(&Inputs {
-        language_unset: ctx.language.is_none(),
-        enabled: &enabled,
-        params: &params,
-        source: &source,
-        catalog: ctx.catalog,
-        daemon: ctx.daemon,
-        installing: ctx.installing,
-        preparing: ctx.preparing,
-        locales: ctx.locales,
-    })
-    .into_iter()
-    .find(|row| row.id == step.step)
-    .unwrap_or_else(|| Row {
-        id: step.step.clone(),
-        title: step.step.clone(),
-        description: String::new(),
-        enabled: step.on,
-        standing: Standing::Ready,
-        translate: None,
-        script: None,
-    })
-}
-
 /// The language a step reads, read-only: the graph deduces it. A step that
 /// changes the language ends in an arrow, its target being the picker
 /// beside it ("EN →" then "Italiano").
@@ -172,8 +120,9 @@ pub fn misfit_text(why: Misfit) -> String {
     }
 }
 
-/// The editor's list for `chain`, in its order.
-pub fn lines(chain: &Chain, ctx: &Context) -> Vec<Line> {
+/// The editor's list for `chain`, in its order: each step as `processing_steps`
+/// judges it where it stands, with what the editor adds about its place.
+pub fn lines(chain: &Chain, ctx: &Context) -> Vec<Row> {
     let fitted = fits(&chain.steps, ctx.language);
     let rows: Vec<Row> = chain
         .steps
@@ -184,21 +133,23 @@ pub fn lines(chain: &Chain, ctx: &Context) -> Vec<Line> {
                 Fit::Runs { input, .. } | Fit::Skipped { input, .. } => input.as_deref(),
                 Fit::Off | Fit::Unknown => ctx.language,
             };
-            row_of(step, input, ctx)
+            let source = input.map_or(Source::Unknown, |l| Source::One(l.to_owned()));
+            steps::row(step, &source, &ctx.inputs(&source))
         })
         .collect();
+    let titles: Vec<String> = rows.iter().map(|row| row.title.clone()).collect();
     chain
         .steps
         .iter()
         .zip(fitted)
-        .zip(&rows)
+        .zip(rows)
         .enumerate()
-        .map(|(index, ((step, fit), row))| {
+        .map(|(index, ((_step, fit), mut row))| {
             let (badge, skipped, subtitle, fix) = match &fit {
                 Fit::Runs { input, output } => (
                     badge(input.as_deref(), output.as_deref()),
                     false,
-                    row.subtitle(),
+                    row.subtitle.clone(),
                     None,
                 ),
                 Fit::Skipped {
@@ -208,7 +159,7 @@ pub fn lines(chain: &Chain, ctx: &Context) -> Vec<Line> {
                 } => {
                     // TRANSLATORS: why a step of a chain does not run where it is, such as "Skipped here: Applies when the text is English".
                     let frame = gettextrs::gettext("Skipped here: {why}");
-                    let fix = move_above.map(|at| (at, rows[at].title.clone()));
+                    let fix = move_above.map(|at| (at, titles[at].clone()));
                     (
                         badge(input.as_deref(), input.as_deref()),
                         true,
@@ -235,7 +186,6 @@ pub fn lines(chain: &Chain, ctx: &Context) -> Vec<Line> {
                 bottom: index < last && keeps(last),
             };
             let fix = fix.filter(|(at, _)| keeps(*at));
-            let mut row = row.clone();
             if let Some(translate) = row.translate.as_mut() {
                 let chosen = translate
                     .selected
@@ -251,19 +201,15 @@ pub fn lines(chain: &Chain, ctx: &Context) -> Vec<Line> {
                 translate.selected =
                     chosen.and_then(|code| translate.targets.iter().position(|t| t.code == code));
             }
-            Line {
+            row.place = Place {
                 index,
-                id: step.step.clone(),
-                title: row.title.clone(),
                 badge,
-                on: step.on,
-                subtitle,
                 fix,
-                standing: row.standing.clone(),
-                row,
                 skipped,
                 moves,
-            }
+            };
+            row.subtitle = subtitle;
+            row
         })
         .collect()
 }
@@ -278,7 +224,7 @@ pub fn cards(chains: &[Chain], active: Option<&str>, ctx: &Context) -> Vec<Card>
                 .iter()
                 .filter(|line| line.on)
                 .map(|line| {
-                    if line.skipped {
+                    if line.place.skipped {
                         // TRANSLATORS: a step of a chain that does not run where it stands.
                         gettextrs::gettext("{step} (skipped)").replace("{step}", &line.title)
                     } else {
@@ -293,7 +239,7 @@ pub fn cards(chains: &[Chain], active: Option<&str>, ctx: &Context) -> Vec<Card>
             };
             let needs = lines
                 .iter()
-                .filter(|line| line.on && !line.skipped)
+                .filter(|line| line.on && !line.place.skipped)
                 .find_map(|line| match &line.standing {
                     // TRANSLATORS: {what} names a model to install, such as "the French model".
                     Standing::Missing(need) => {

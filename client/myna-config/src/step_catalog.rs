@@ -3,13 +3,11 @@
 //! costs and what can be done with it. Entries come from the catalog schema
 //! only; nothing here knows a plugin by name.
 
-use myna_core::processing::{param_key, Params};
-
 use crate::plugin_catalog::{self, Entry};
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::processing_steps::{
-    exonym, language_name, size, Offered, Row, Source, Standing, SCRIPT, TRANSLATE, TRANSLATE_TO,
+    exonym, language_name, size, Offered, Row, Source, Standing, SCRIPT, TRANSLATE,
 };
 
 /// The languages the Chinese script step is useful for.
@@ -61,9 +59,6 @@ pub struct Item {
 
 pub struct Inputs<'a> {
     pub catalog: &'a [Entry],
-    pub enabled: &'a [String],
-    pub params: &'a Params,
-    pub source: &'a Source,
     /// The language of the text where an added translation would go in the
     /// chain: the dictation language, or what an earlier Translate made it.
     pub translate_from: &'a Source,
@@ -75,7 +70,8 @@ pub struct Inputs<'a> {
     /// Item ids whose models are being removed.
     pub removing: &'a std::collections::BTreeSet<String>,
     pub locales: &'a [String],
-    /// The Steps rows as the page shows them, for what cannot apply.
+    /// The chain the page adds to, as the editor judges its steps: what is
+    /// already on, and what cannot apply where it stands.
     pub rows: &'a [Row],
 }
 
@@ -104,8 +100,13 @@ fn stage_of(stage: &str) -> usize {
     }
 }
 
+/// The chain's row for `step`, when it holds it.
+fn row_of<'a>(inputs: &'a Inputs, step: &str) -> Option<&'a Row> {
+    inputs.rows.iter().find(|row| row.id == step)
+}
+
 fn is_on(inputs: &Inputs, step: &str) -> bool {
-    inputs.enabled.iter().any(|on| on == step)
+    row_of(inputs, step).is_some_and(|row| row.on)
 }
 
 fn standing<'a>(inputs: &'a Inputs, step: &str) -> Option<&'a Standing> {
@@ -281,13 +282,16 @@ fn offer(entry: &Entry, inputs: &Inputs) -> Offer {
 }
 
 fn added(entry: &Entry, inputs: &Inputs) -> bool {
-    if !is_on(inputs, &entry.step.id) {
+    let Some(row) = row_of(inputs, &entry.step.id).filter(|row| row.on) else {
         return false;
-    }
+    };
     if entry.step.id != TRANSLATE {
         return true;
     }
-    inputs.params.get(&param_key(TRANSLATE, TRANSLATE_TO)) == Some(&entry.out_lang)
+    row.translate
+        .as_ref()
+        .and_then(|translate| translate.selected.and_then(|at| translate.targets.get(at)))
+        .is_some_and(|target| target.code == entry.out_lang)
 }
 
 /// Why a translation model cannot act on the text where it would go: neither
@@ -589,27 +593,6 @@ fn fold(text: &str) -> String {
         })
         .flat_map(char::to_lowercase)
         .collect()
-}
-
-/// The stored steps and parameters after `item` is added: its step on, and a
-/// translation's target set.
-pub fn with_added(
-    ids: &[String],
-    params: &Params,
-    item: &Item,
-    locales: &[String],
-) -> (Vec<String>, Params) {
-    let mut params = params.clone();
-    if item.step == SCRIPT {
-        params = crate::processing_steps::with_script_on(&params, locales);
-    }
-    if let Some(to) = &item.target {
-        params = crate::processing_steps::with_target(&params, Some(to));
-    }
-    (
-        crate::processing_steps::with_enabled(ids, &item.step, true),
-        params,
-    )
 }
 
 #[cfg(test)]

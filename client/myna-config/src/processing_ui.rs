@@ -16,7 +16,7 @@ use libadwaita as adw;
 use myna_core::chains::{Chain, ChainStep, Processing};
 
 use crate::adapters::client_settings::GioClientSettings;
-use crate::chains_view::{self, Card, Line};
+use crate::chains_view::{self, Card};
 use crate::command::CancellationToken;
 use crate::markup::escape_markup;
 use crate::plugin_catalog::{self, Entry};
@@ -25,11 +25,10 @@ use crate::ports::{
     BackendRepository, ClientSettingsSubscription, DictationDaemon, SystemConfigurator,
 };
 use crate::processing_steps::{
-    language_name, rows, size, Inputs, Offered, Source, Standing, SCRIPT, TRANSLATE,
+    language_name, size, Offered, Row, Source, Standing, SCRIPT, TRANSLATE,
 };
 use crate::step_catalog::{self, Item, Job, Language, LanguageState, Offer};
 use crate::ui::InstallControl;
-use myna_core::processing::Params;
 
 /// How long a finished install may wait for the daemon to offer its model
 /// before the row offers it again.
@@ -108,7 +107,7 @@ struct Editor {
     add_row: adw::ActionRow,
     use_button: gtk::Button,
     lines: RefCell<Vec<LineWidgets>>,
-    shown: RefCell<Vec<Line>>,
+    shown: RefCell<Vec<Row>>,
     /// Below the editor's breakpoint: the ▴/▾ buttons hide (the row menu's
     /// Move up/down remain) and a step's parameter picker moves to the row
     /// under it, so the title keeps its room.
@@ -1063,11 +1062,12 @@ impl StepsPage {
         });
         fix.connect_clicked({
             let act = on_page(Box::new(move |page, chain| {
-                let above = page
-                    .editor
-                    .borrow()
-                    .as_ref()
-                    .and_then(|e| e.shown.borrow().get(index).and_then(|l| l.fix.clone()));
+                let above = page.editor.borrow().as_ref().and_then(|e| {
+                    e.shown
+                        .borrow()
+                        .get(index)
+                        .and_then(|l| l.place.fix.clone())
+                });
                 if let Some((above, _)) = above {
                     page.move_step(chain, index, above, Focus::Row);
                 }
@@ -1142,7 +1142,7 @@ impl StepsPage {
             .as_ref()
             .and_then(|e| e.shown.borrow().get(index).cloned());
         let Some(line) = line else { return };
-        if let Some(translate) = &line.row.translate {
+        if let Some(translate) = &line.translate {
             let Some(target) = translate.targets.get(choice as usize).cloned() else {
                 return;
             };
@@ -1163,7 +1163,7 @@ impl StepsPage {
             if matches!(target.state, LanguageState::Download { .. }) {
                 self.install_line(id, index);
             }
-        } else if let Some(script) = &line.row.script {
+        } else if let Some(script) = &line.script {
             let Some((nick, _)) = script.modes.get(choice as usize).cloned() else {
                 return;
             };
@@ -1208,34 +1208,6 @@ impl StepsPage {
         }
     }
 
-    /// The chain's steps as the flat id list and `<step>.<param>` map the row
-    /// builders take: the ones that are on, once each, and every step's
-    /// parameters, so a choice outlives its switch.
-    fn flat(chain: Option<&Chain>) -> (Vec<String>, Params) {
-        let steps: Vec<&ChainStep> = chain.into_iter().flat_map(|c| &c.steps).collect();
-        let ids = steps
-            .iter()
-            .filter(|step| step.on)
-            .map(|step| step.step.clone())
-            .fold(Vec::new(), |mut ids, id| {
-                if !ids.contains(&id) {
-                    ids.push(id);
-                }
-                ids
-            });
-        let mut params = Params::new();
-        let (on, off): (Vec<&ChainStep>, Vec<&ChainStep>) =
-            steps.iter().copied().partition(|step| step.on);
-        for step in on.into_iter().chain(off) {
-            for (name, value) in &step.params {
-                params
-                    .entry(myna_core::processing::param_key(&step.step, name))
-                    .or_insert_with(|| value.clone());
-            }
-        }
-        (ids, params)
-    }
-
     /// Install `entries` as one operation, shown under `id`.
     fn start_install(self: &Rc<Self>, id: &str, entries: &[Entry]) {
         if self.installing.borrow().contains_key(id) || !self.removing.borrow().is_empty() {
@@ -1274,7 +1246,6 @@ impl StepsPage {
 
     fn render_catalog(self: &Rc<Self>, processing: &Processing) {
         let target = self.catalog_chain(processing);
-        let (ids, params) = Self::flat(target.as_ref());
         let offered = self.offered.borrow().clone();
         let source = Source::of_setting(&self.deps.store.language());
         let translate_from = target.as_ref().map_or_else(
@@ -1288,29 +1259,19 @@ impl StepsPage {
         let installing = self.installing.borrow();
         let preparing = self.preparing_now();
         let removing = self.removing.borrow();
-        let step_rows = rows(&Inputs {
-            language_unset: self.deps.store.language().trim().is_empty(),
-            enabled: &ids,
-            params: &params,
-            source: &source,
-            catalog: &catalog,
-            daemon: offered.as_ref(),
-            installing: &installing,
-            preparing: &preparing,
-            locales: &self.deps.locales,
-        });
+        let rows = target
+            .as_ref()
+            .map(|chain| self.view(|ctx| chains_view::lines(chain, ctx)))
+            .unwrap_or_default();
         let items = step_catalog::items(&step_catalog::Inputs {
             catalog: &catalog,
-            enabled: &ids,
-            params: &params,
-            source: &source,
             translate_from: &translate_from,
             daemon: offered.as_ref(),
             installing: &installing,
             preparing: &preparing,
             removing: &removing,
             locales: &self.deps.locales,
-            rows: &step_rows,
+            rows: &rows,
         });
         let likely = self.likely_languages(processing);
         let steps = target.as_ref().map(|c| c.steps.clone()).unwrap_or_default();
@@ -2158,32 +2119,34 @@ enum Focus {
 
 fn show_line(
     widgets: &LineWidgets,
-    line: &Line,
+    line: &Row,
     total: usize,
     blocked: bool,
     narrow: bool,
     items: &[Item],
 ) {
-    widgets.number.set_label(&(line.index + 1).to_string());
+    widgets
+        .number
+        .set_label(&(line.place.index + 1).to_string());
     widgets.row.set_title(&escape_markup(&line.title));
     widgets.row.set_subtitle(&escape_markup(&line.subtitle));
     // TRANSLATORS: a step's place in its chain, read by screen readers: "Step 2 of 3".
     let place = gettextrs::gettext("Step {n} of {total}")
-        .replace("{n}", &(line.index + 1).to_string())
+        .replace("{n}", &(line.place.index + 1).to_string())
         .replace("{total}", &total.to_string());
     let description = format!("{place}. {}", line.subtitle);
     widgets
         .row
         .update_property(&[gtk::accessible::Property::Description(&description)]);
     // A skipped step looks inactive, not only says so: dimmed and marked.
-    if line.skipped {
+    if line.place.skipped {
         widgets.row.add_css_class("skipped-step");
     } else {
         widgets.row.remove_css_class("skipped-step");
     }
-    widgets.skipped.set_visible(line.skipped);
-    widgets.badge.set_label(&line.badge);
-    widgets.badge.set_visible(!line.badge.is_empty());
+    widgets.skipped.set_visible(line.place.skipped);
+    widgets.badge.set_label(&line.place.badge);
+    widgets.badge.set_visible(!line.place.badge.is_empty());
     widgets.switch.set_active(line.on);
     widgets
         .switch
@@ -2191,15 +2154,15 @@ fn show_line(
             // TRANSLATORS: {step} is a step's name, such as "Tidy up speech".
             &gettextrs::gettext("Use {step}").replace("{step}", &line.title),
         )]);
-    widgets.up.set_sensitive(line.moves.up);
-    widgets.down.set_sensitive(line.moves.down);
+    widgets.up.set_sensitive(line.place.moves.up);
+    widgets.down.set_sensitive(line.place.moves.down);
     widgets.up.set_visible(!narrow);
     widgets.down.set_visible(!narrow);
-    widgets.move_up.set_sensitive(line.moves.up);
-    widgets.move_down.set_sensitive(line.moves.down);
-    widgets.to_top.set_sensitive(line.moves.top);
-    widgets.to_bottom.set_sensitive(line.moves.bottom);
-    match &line.fix {
+    widgets.move_up.set_sensitive(line.place.moves.up);
+    widgets.move_down.set_sensitive(line.place.moves.down);
+    widgets.to_top.set_sensitive(line.place.moves.top);
+    widgets.to_bottom.set_sensitive(line.place.moves.bottom);
+    match &line.place.fix {
         Some((_, above)) => {
             // TRANSLATORS: a button that moves a skipped step above the step named by {step}.
             widgets
@@ -2209,7 +2172,7 @@ fn show_line(
         }
         None => widgets.fix.set_visible(false),
     }
-    let names: Vec<String> = if let Some(translate) = &line.row.translate {
+    let names: Vec<String> = if let Some(translate) = &line.translate {
         translate
             .targets
             .iter()
@@ -2226,7 +2189,7 @@ fn show_line(
                 }
             })
             .collect()
-    } else if let Some(script) = &line.row.script {
+    } else if let Some(script) = &line.script {
         script.modes.iter().map(|(_, name)| name.clone()).collect()
     } else {
         Vec::new()
@@ -2238,11 +2201,10 @@ fn show_line(
     }
     widgets.picker.set_visible(!names.is_empty());
     let selected = line
-        .row
         .translate
         .as_ref()
         .map(|t| t.selected)
-        .or_else(|| line.row.script.as_ref().map(|s| Some(s.selected)))
+        .or_else(|| line.script.as_ref().map(|s| Some(s.selected)))
         .flatten();
     widgets
         .picker
@@ -2273,7 +2235,7 @@ fn show_line(
             &gettextrs::gettext("More actions for {step}").replace("{step}", &line.title),
         )]);
     let installs = line.on
-        && !line.skipped
+        && !line.place.skipped
         && matches!(
             line.standing,
             Standing::Missing(_) | Standing::Installing(_) | Standing::Preparing
@@ -2287,7 +2249,7 @@ fn show_line(
     // From the line and the layout, not the widgets: `is_visible` is false
     // for anything in a hidden row.
     let picker_under = narrow && !names.is_empty();
-    let title = if line.fix.is_some() {
+    let title = if line.place.fix.is_some() {
         gettextrs::gettext("To make it run")
     } else if picker_under && line.id == TRANSLATE {
         gettextrs::gettext("Translate to")
@@ -2299,7 +2261,7 @@ fn show_line(
     widgets.detail.set_title(&escape_markup(&title));
     widgets
         .detail
-        .set_visible(line.fix.is_some() || installs || picker_under);
+        .set_visible(line.place.fix.is_some() || installs || picker_under);
 }
 
 #[cfg(test)]

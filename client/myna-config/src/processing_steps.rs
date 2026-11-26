@@ -5,7 +5,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use myna_core::processing::{in_stage_order, param_key, script_of, ChineseScript, Params};
+use myna_core::chains::ChainStep;
+use myna_core::processing::ChineseScript;
 
 use crate::plugin_catalog::{self, Entry};
 // The Translate picker and the catalog's language page list the same
@@ -246,15 +247,22 @@ pub struct TranslateRow {
     pub selected: Option<usize>,
 }
 
+/// One step as the Processing page shows it, wherever it shows it: the
+/// editor's rows, the catalog's, and the picker's. Built from the step as
+/// the chain holds it, and the text it would read there.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Row {
     pub id: String,
     pub title: String,
     pub description: String,
-    pub enabled: bool,
+    /// The line under the title: what is wrong, else what the step does.
+    pub subtitle: String,
+    pub on: bool,
     pub standing: Standing,
     pub translate: Option<TranslateRow>,
     pub script: Option<ScriptRow>,
+    /// Where it sits in the chain being edited; empty elsewhere.
+    pub place: Place,
 }
 
 /// How the Chinese script step writes Chinese: the modes it offers and the
@@ -266,37 +274,26 @@ pub struct ScriptRow {
     pub selected: usize,
 }
 
-impl Row {
-    /// Whether the switch can be turned: not while the step cannot apply.
-    pub fn switchable(&self) -> bool {
-        !matches!(self.standing, Standing::NotApplicable(_))
-    }
+/// What the editor knows about a step's place that no other view does.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Place {
+    pub index: usize,
+    /// The language read and left: "EN \u{2192} FR", "EN", or empty.
+    pub badge: String,
+    /// The step to move this one above to make it run, and its title.
+    pub fix: Option<(usize, String)>,
+    pub skipped: bool,
+    /// Which moves keep every translation of the chain doable.
+    pub moves: Moves,
+}
 
-    /// The line under the title: what is wrong, else what the step does.
-    pub fn subtitle(&self) -> String {
-        match &self.standing {
-            Standing::NotApplicable(reason) => reason.clone(),
-            Standing::Missing(need) => {
-                // TRANSLATORS: {what} names a model to install, such as "the French model"; {size} is its download size.
-                let frame = gettextrs::gettext("Needs {what} ({size})");
-                frame
-                    .replace("{what}", &need.what)
-                    .replace("{size}", &size(need.bytes))
-            }
-            Standing::Unavailable(reason) => reason.clone(),
-            Standing::Installing(_) => self.description_or("Getting the model ready"),
-            Standing::Preparing => gettextrs::gettext("Getting the model ready"),
-            Standing::Ready => self.description.clone(),
-        }
-    }
-
-    fn description_or(&self, fallback: &str) -> String {
-        if self.description.is_empty() {
-            gettextrs::gettext(fallback)
-        } else {
-            self.description.clone()
-        }
-    }
+/// The moves of a step that leave no translation without a model.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Moves {
+    pub up: bool,
+    pub down: bool,
+    pub top: bool,
+    pub bottom: bool,
 }
 
 /// A download size in words.
@@ -306,11 +303,11 @@ pub fn size(bytes: u64) -> String {
     frame.replace("{n}", &bytes.div_ceil(1_000_000).max(1).to_string())
 }
 
+/// What a row needs besides the step it shows and the text it would read.
 pub struct Inputs<'a> {
     /// The `language` setting is empty: the model decides.
     pub language_unset: bool,
-    pub enabled: &'a [String],
-    pub params: &'a Params,
+    /// The text the step would read.
     pub source: &'a Source,
     pub catalog: &'a [Entry],
     /// `None` when no daemon runs: nothing is known about the models.
@@ -322,33 +319,10 @@ pub struct Inputs<'a> {
     pub locales: &'a [String],
 }
 
-/// The step ids the rows show: the ones this build knows, in the order the
-/// daemon runs them, then any id only a catalog has, by name.
-fn step_ids(catalog: &[Entry]) -> Vec<String> {
-    let known = |id: &str| {
-        myna_core::chains::KNOWN_STEPS
-            .iter()
-            .position(|have| *have == id)
-            .unwrap_or(myna_core::chains::KNOWN_STEPS.len())
-    };
-    let mut ids: Vec<String> = catalog
-        .iter()
-        .map(|entry| entry.step.id.clone())
-        .chain([SCRIPT.to_owned()])
-        .collect();
-    ids.sort_by(|a, b| (known(a), a).cmp(&(known(b), b)));
-    ids.dedup();
-    ids
-}
-
-pub fn rows(inputs: &Inputs) -> Vec<Row> {
-    step_ids(inputs.catalog)
-        .into_iter()
-        .map(|id| row(&id, inputs))
-        .collect()
-}
-
-fn row(id: &str, inputs: &Inputs) -> Row {
+/// The row for `step` as a chain holds it, read with the text in `source`:
+/// what it is, whether its switch is on and what that switch would need.
+pub fn row(step: &ChainStep, source: &Source, inputs: &Inputs) -> Row {
+    let id = step.step.as_str();
     let own = inputs.catalog.iter().find(|e| e.step.id == id);
     let title = own
         .and_then(|e| plugin_catalog::label(&e.step.label_key))
@@ -364,18 +338,34 @@ fn row(id: &str, inputs: &Inputs) -> Row {
             })
         })
         .unwrap_or_default();
-    let enabled = inputs.enabled.iter().any(|on| on == id);
-    let translate = (id == TRANSLATE).then(|| translate_row(inputs));
-    let script = (id == SCRIPT).then(|| script_row(inputs));
-    let standing = standing(id, enabled, translate.as_ref(), inputs);
+    let translate = (id == TRANSLATE).then(|| translate_row(step, source, inputs));
+    let script = (id == SCRIPT).then(|| script_row(step, inputs));
+    let standing = standing(step, translate.as_ref(), source, inputs);
+    let subtitle = match &standing {
+        Standing::NotApplicable(reason) | Standing::Unavailable(reason) => reason.clone(),
+        Standing::Missing(need) => {
+            // TRANSLATORS: {what} names a model to install, such as "the French model"; {size} is its download size.
+            let frame = gettextrs::gettext("Needs {what} ({size})");
+            frame
+                .replace("{what}", &need.what)
+                .replace("{size}", &size(need.bytes))
+        }
+        Standing::Installing(_) if !description.is_empty() => description.clone(),
+        Standing::Installing(_) | Standing::Preparing => {
+            gettextrs::gettext("Getting the model ready")
+        }
+        Standing::Ready => description.clone(),
+    };
     Row {
-        id: id.to_owned(),
+        id: step.step.clone(),
         title,
         description,
-        enabled,
+        subtitle,
+        on: step.on,
         standing,
         translate,
         script,
+        place: Place::default(),
     }
 }
 
@@ -408,12 +398,11 @@ pub fn default_script(locales: &[String]) -> ChineseScript {
     }
 }
 
-fn script_row(inputs: &Inputs) -> ScriptRow {
-    let stored = script_of(&[SCRIPT.to_owned()], inputs.params);
-    let chosen = SCRIPT_MODES
-        .iter()
-        .position(|mode| *mode == stored)
-        .filter(|_| inputs.params.contains_key(&param_key(SCRIPT, SCRIPT_MODE)));
+fn script_row(step: &ChainStep, inputs: &Inputs) -> ScriptRow {
+    let chosen = step
+        .params
+        .get(SCRIPT_MODE)
+        .and_then(|nick| SCRIPT_MODES.iter().position(|mode| mode.nick() == nick));
     let selected = chosen.unwrap_or_else(|| {
         let default = default_script(inputs.locales);
         SCRIPT_MODES.iter().position(|m| *m == default).unwrap_or(0)
@@ -435,18 +424,8 @@ fn script_row(inputs: &Inputs) -> ScriptRow {
 /// Whether the text at the script step's position is Chinese, as far as
 /// Settings can tell: the translation target when one runs, else the
 /// dictation language, which an unset one leaves to the desktop's.
-fn text_is_chinese(inputs: &Inputs) -> bool {
-    let translated = inputs
-        .enabled
-        .iter()
-        .any(|id| id == TRANSLATE)
-        .then(|| target_of(inputs.params))
-        .flatten()
-        .filter(|to| matches!(inputs.source, Source::One(from) if from != to));
-    if let Some(to) = translated {
-        return myna_core::chains::may_be_chinese(Some(to));
-    }
-    match inputs.source {
+fn text_is_chinese(source: &Source, inputs: &Inputs) -> bool {
+    match source {
         Source::Unknown => true,
         Source::One(_) if inputs.language_unset => inputs
             .locales
@@ -456,9 +435,10 @@ fn text_is_chinese(inputs: &Inputs) -> bool {
     }
 }
 
-fn target_of(params: &Params) -> Option<&str> {
-    params
-        .get(&param_key(TRANSLATE, TRANSLATE_TO))
+/// The language `step` translates into, when it holds one.
+fn target_of(step: &ChainStep) -> Option<&str> {
+    step.params
+        .get(TRANSLATE_TO)
         .map(String::as_str)
         .filter(|to| !to.is_empty())
 }
@@ -470,8 +450,8 @@ pub fn routable(catalog: &[Entry], daemon: Option<&Offered>, from: &str, to: &st
         || daemon.is_some_and(|d| d.translations.iter().any(|(f, t)| f == from && t == to))
 }
 
-fn translate_row(inputs: &Inputs) -> TranslateRow {
-    let Source::One(from) = inputs.source else {
+fn translate_row(step: &ChainStep, source: &Source, inputs: &Inputs) -> TranslateRow {
+    let Source::One(from) = source else {
         return TranslateRow {
             targets: Vec::new(),
             selected: None,
@@ -482,11 +462,11 @@ fn translate_row(inputs: &Inputs) -> TranslateRow {
         .iter()
         .map(|locale| catalog_code(locale))
         .collect();
-    let chosen = target_of(inputs.params).filter(|to| *to != from);
+    let chosen = target_of(step).filter(|to| *to != from);
     let targets = languages(&LanguageInputs {
         catalog: inputs.catalog,
         daemon: inputs.daemon,
-        from: inputs.source,
+        from: source,
         // A step's install is the row's standing, not the target's.
         installing: &BTreeMap::new(),
         preparing: &BTreeSet::new(),
@@ -501,29 +481,30 @@ fn translate_row(inputs: &Inputs) -> TranslateRow {
 }
 
 fn standing(
-    id: &str,
-    enabled: bool,
+    step: &ChainStep,
     translate: Option<&TranslateRow>,
+    source: &Source,
     inputs: &Inputs,
 ) -> Standing {
-    let source = match inputs.source {
+    let id = step.step.as_str();
+    let language = match source {
         Source::One(from) => Some(from.as_str()),
         Source::Unknown => None,
     };
     let own: Vec<&Entry> = inputs.catalog.iter().filter(|e| e.step.id == id).collect();
     if id == SCRIPT {
-        if !text_is_chinese(inputs) {
+        if !text_is_chinese(source, inputs) {
             return Standing::NotApplicable(gettextrs::gettext("Applies when the text is Chinese"));
         }
         return Standing::Ready;
     }
     if id == TRANSLATE {
-        let Some(from) = source else {
+        let Some(from) = language else {
             return Standing::NotApplicable(gettextrs::gettext(
                 "Needs a single dictation language",
             ));
         };
-        if enabled && target_of(inputs.params) == Some(from) {
+        if step.on && target_of(step) == Some(from) {
             return Standing::NotApplicable(gettextrs::gettext(
                 "The text is already in that language",
             ));
@@ -533,7 +514,7 @@ fn standing(
             .iter()
             .all(|e| !e.in_lang.is_empty() && e.in_lang != "any")
     {
-        if let Some(from) = source {
+        if let Some(from) = language {
             if own.iter().all(|e| e.in_lang != from) {
                 // TRANSLATORS: {language} is a language name, such as "English".
                 let frame = gettextrs::gettext("Applies when the text is {language}");
@@ -544,16 +525,15 @@ fn standing(
             }
         }
     }
-    if !enabled {
+    if !step.on {
         return Standing::Ready;
     }
     if let Some(percent) = inputs.installing.get(id) {
         return Standing::Installing(*percent);
     }
-    if let (Some(target), Source::One(from)) = (
-        translate.and_then(|t| t.targets.get(t.selected?)),
-        inputs.source,
-    ) {
+    if let (Some(target), Source::One(from)) =
+        (translate.and_then(|t| t.targets.get(t.selected?)), source)
+    {
         if matches!(target.state, LanguageState::NoModel) {
             // TRANSLATORS: {from} and {to} are language names, such as "فارسی" and "Français".
             let frame = gettextrs::gettext("No model translates {from} to {to} yet");
@@ -564,7 +544,7 @@ fn standing(
             );
         }
     }
-    let Some(need) = need(id, translate, &own, inputs) else {
+    let Some(need) = need(step, translate, &own, source, inputs) else {
         return Standing::Ready;
     };
     if inputs.preparing.contains(id) {
@@ -576,21 +556,23 @@ fn standing(
 
 /// What an enabled step lacks, when the daemon runs and says it lacks it.
 fn need(
-    id: &str,
+    step: &ChainStep,
     translate: Option<&TranslateRow>,
     own: &[&Entry],
+    source: &Source,
     inputs: &Inputs,
 ) -> Option<Need> {
+    let id = step.step.as_str();
     let daemon = inputs.daemon?;
     if id == TRANSLATE {
         let target = translate?
             .targets
             .iter()
-            .find(|t| Some(t.code.as_str()) == target_of(inputs.params))?;
+            .find(|t| Some(t.code.as_str()) == target_of(step))?;
         if matches!(target.state, LanguageState::Ready) {
             return None;
         }
-        let Source::One(from) = inputs.source else {
+        let Source::One(from) = source else {
             return None;
         };
         let legs = plugin_catalog::translation_legs(inputs.catalog, from, &target.code)?;
@@ -625,47 +607,6 @@ fn need(
         bytes: entry.download_bytes,
         entries: vec![entry],
     })
-}
-
-/// The stored steps and parameters after the switch of `id` is set.
-pub fn with_enabled(ids: &[String], id: &str, on: bool) -> Vec<String> {
-    let mut next: Vec<String> = ids.iter().filter(|have| *have != id).cloned().collect();
-    if on {
-        next.push(id.to_owned());
-    }
-    in_stage_order(&next)
-}
-
-/// The parameters after the Chinese script step is switched on: a mode it
-/// can run with, the one chosen before or else the locale's.
-pub fn with_script_on(params: &Params, locales: &[String]) -> Params {
-    let key = param_key(SCRIPT, SCRIPT_MODE);
-    let mut next = params.clone();
-    if !params
-        .get(&key)
-        .is_some_and(|nick| SCRIPT_MODES.iter().any(|mode| mode.nick() == nick))
-    {
-        next.insert(key, default_script(locales).nick().to_owned());
-    }
-    next
-}
-
-/// The parameters after a Chinese script mode is chosen.
-pub fn with_script_mode(params: &Params, nick: &str) -> Params {
-    let mut next = params.clone();
-    next.insert(param_key(SCRIPT, SCRIPT_MODE), nick.to_owned());
-    next
-}
-
-/// The parameters after `translate.to` is set, or cleared.
-pub fn with_target(params: &Params, to: Option<&str>) -> Params {
-    let mut next = params.clone();
-    let key = param_key(TRANSLATE, TRANSLATE_TO);
-    match to {
-        Some(to) => next.insert(key, to.to_owned()),
-        None => next.remove(&key),
-    };
-    next
 }
 
 #[cfg(test)]
