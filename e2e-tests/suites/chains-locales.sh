@@ -98,11 +98,12 @@ else
 fi
 # The Processing page's own strings are not in the catalog yet (the .po files
 # are behind the template), so the tabs are the CJK it has: two characters,
-# no spaces. The search is by code, which is what narrows the list there - and
-# it is Japanese that narrows it, not Chinese: the language page offers no
-# Chinese target at all (see this suite's note at the end of step 2).
+# no spaces. The search is by code, which is what narrows the list there, and
+# Chinese is the row that has to be there: its models are named zh-Hans and
+# zh-Hant while the language after the step is the bare zh, and the page used
+# to drop both because it asked the catalog for `zh`.
 if shot_locale zh_CN.UTF-8 "waitfor:常规" "waitfor:诊断" "gone:General" "${WIRE[@]}" \
-    "type:ja" "waitfor:日本語" "gone:Deutsch" \
+    "type:zh" "waitfor:Chinese (Simplified)" "gone:Deutsch" \
     shot:shots/chains-locales/02-zh-search.png; then
     echo "PASS: the Chinese tabs are CJK with no spaces, and a code search narrows"
 else
@@ -117,14 +118,4 @@ if shot_locale fa_IR.UTF-8 "waitfor:General" "${WIRE[@]}" \
 else
     echo "FAIL: Farsi fallback or search"; FAILED=1
 fi
-# Not asserted, because it cannot hold today: the language page offers no
-# Chinese target from English. `chains_view::stranded` judges the step it would
-# insert by `fits`'s deduced output, which reduces zh-Hans to the bare `zh`,
-# and no catalog entry covers `zh`, so both Chinese rows are filtered out
-# although `step_catalog::languages` lists them and the editor's target picker
-# (which passes `strands: &|_| false`) offers them. Whether the page should
-# offer them is a product call - a translate step into Chinese has to name the
-# script the Chinese script step writes - so it is in the task Handoff rather
-# than guessed at here.
-
 suite_status
