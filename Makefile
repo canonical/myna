@@ -77,10 +77,15 @@ coverage: cov-client cov-server cov-extension exercise deadcode cov-patch ## Cov
 # What CI runs: the measured suites and the gate, none of the reports read
 # only by a person, who runs `coverage` locally for those.
 .PHONY: coverage-gate
-coverage-gate: ## The patch gate alone over the measured suites (CI `coverage` job)
+coverage-gate: coverage-measure cov-patch ## The patch gate alone over the measured suites
+
+# CI splits the gate: `coverage` measures, `patch-coverage` grades once the
+# e2e matrix has added what the suites executed (e2e-tests/coverage-export.sh).
+.PHONY: coverage-measure
+coverage-measure: ## The suites and the exercise instrumented, merged exports only (CI `coverage` job)
 	$(WS) cov --no-reports
 	$(WS) py-cov
-	$(MAKE) exercise cov-patch
+	$(MAKE) exercise
 
 .PHONY: spread
 spread: spread-build ## Confined e2e suite in a local KVM VM (CI `spread` job; needs prebuilt snaps)
@@ -226,6 +231,13 @@ COV_BASE ?= origin/main
 .PHONY: cov-patch
 cov-patch: ## Patch-coverage gate on the lines this branch changes (COV_BASE=origin/main)
 	$(WS) patch-cov --base $(COV_BASE)
+
+# The same gate outside the workshop, over exports already on disk: CI's
+# `patch-coverage` job, and a worktree, whose gitdir the workshop cannot see.
+# Needs diff-cover on PATH.
+.PHONY: cov-patch-host
+cov-patch-host: ## The patch gate on the host, over the exports on disk (CI `patch-coverage` job)
+	python3 dev/patch_cov.py --base $(COV_BASE)
 
 # Mutation testing is scoped on purpose: a whole-workspace run is hours, a
 # crate or a module is minutes. Use it to grade a suite you have just written

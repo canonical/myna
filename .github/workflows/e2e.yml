@@ -4,7 +4,8 @@
 # (e2e-tests/), against the myna snap built from this tree and the store's
 # latest/edge backends. Provisioned from scratch every run, so a regression in
 # the edge snaps shows here too.
-# Blocking, on pull requests and nightly: GNOME on every supported release
+# Blocking, on pull requests (ci.yml calls this workflow, so its
+# `patch-coverage` job can count what the suites executed) and nightly: GNOME on every supported release
 # (noble, resolute and the devel series stonking), Xubuntu on noble and
 # Kubuntu on resolute. Nobody daily-drives Xfce or Plasma here, so this is
 # what catches their regressions. Kubuntu on stonking runs nightly only.
@@ -17,7 +18,8 @@
 name: E2E
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.head.ref || github.ref }}-${{ inputs.upgrade_channel }}
+  # Literal, not github.workflow: called from ci.yml, that names the caller.
+  group: e2e-${{ github.event.pull_request.head.ref || github.ref }}-${{ inputs.upgrade_channel }}
   cancel-in-progress: true
 
 on:
@@ -29,7 +31,11 @@ on:
         description: Run only the upgrade suite, refreshing to this channel (e.g. latest/edge/rc1)
         type: string
         default: ""
-  pull_request:
+  workflow_call:
+    inputs:
+      upgrade_channel:
+        type: string
+        default: ""
 
 jobs:
   # Whether this pull request touches what the suites test: every crate the
@@ -164,6 +170,8 @@ jobs:
       - run: lxc storage create e2e btrfs size=60GiB
       # The chains suite compiles Settings' French and Chinese catalogs.
       - run: sudo DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends gettext
+      # Settings built instrumented: what the suites execute is exported to
+      # client/target/coverage/ for ci.yml's patch gate.
       - run: |
           E2E_MYNA_SNAP=$(ls "$PWD"/myna-snap/myna_*_amd64.snap) \
             make e2e E2E_RELEASE=${{ matrix.release }} E2E_DESKTOP=${{ matrix.desktop }} \
@@ -171,6 +179,14 @@ jobs:
         env:
           E2E_POOL: e2e
           E2E_UPGRADE_CHANNEL: ${{ inputs.upgrade_channel }}
+          E2E_COVERAGE: ${{ !inputs.upgrade_channel && '1' || '' }}
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ format('e2e-coverage-{0}-{1}', matrix.desktop, matrix.release) }}
+          retention-days: 7
+          if-no-files-found: ignore
+          path: client/target/coverage/e2e-*.cobertura.xml
       - if: always()
         uses: actions/upload-artifact@v7
         with:
@@ -210,7 +226,7 @@ jobs:
   # dispatched run on main that kept its screenshots; re-baselining is
   # dispatching E2E on main. Nothing is asserted here: the page is for a human.
   contact-sheet:
-    if: ${{ !cancelled() && github.event_name != 'pull_request' && !inputs.upgrade_channel }}
+    if: ${{ !cancelled() && github.workflow == 'E2E' && github.event_name != 'pull_request' && !inputs.upgrade_channel }}
     needs: e2e
     strategy:
       fail-fast: false

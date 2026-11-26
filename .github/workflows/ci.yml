@@ -104,7 +104,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 75
     steps:
-      # fetch-depth: 0 — patch-cov needs the merge base.
+      # fetch-depth: 0 - dev/version.sh describes from the last tag.
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
@@ -139,14 +139,60 @@ jobs:
           workshop tasks || true
           tail -n 40 "$RUNNER_TEMP"/apt-cacher-ng/log/apt-cacher.{err,log} || true
 
-      # The `myna` workshop's half of `make test` runs here instrumented, then
-      # the blocking patch gate (FR-008: 80% of changed coverable lines, 5-line
-      # floor, deletion-only and excluded paths cannot false-fail; exit 2 =
-      # fail) against the PR's base. The project-level reports are left to
-      # `make coverage` locally; nobody read them here.
-      - name: Patch coverage gate
-        run: make coverage-gate COV_BASE="origin/${{ github.base_ref || 'main' }}"
+      # The `myna` workshop's half of `make test` runs here instrumented. The
+      # project-level reports are left to `make coverage` locally; nobody read
+      # them here. The merged exports go to `patch-coverage`, which grades
+      # them with the e2e matrix's.
+      - name: Instrumented suites
+        run: make coverage-measure
+      - uses: actions/upload-artifact@v7
+        with:
+          name: coverage-exports
+          retention-days: 7
+          path: |
+            client/target/coverage/rust-merged.cobertura.xml
+            server/coverage-merged.cobertura.xml
 
+  # The Settings, dictation and processing suites on every desktop. On push
+  # to main the nightly run in e2e.yml stands in for it.
+  e2e:
+    if: github.event_name != 'push'
+    uses: ./.github/workflows/e2e.yml
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
+
+  # The blocking patch gate (FR-008: 80% of changed coverable lines, 5-line
+  # floor, deletion-only and excluded paths cannot false-fail; exit 2 = fail)
+  # against the PR's base, over the instrumented suites and what the e2e
+  # suites executed: the Settings GTK binders are reached only there. A
+  # pull request the e2e matrix skips (nothing it tests changed) is graded on
+  # the suites alone.
+  patch-coverage:
+    if: ${{ !cancelled() && needs.coverage.result == 'success' }}
+    needs: [coverage, e2e]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # fetch-depth: 0 - patch-cov needs the merge base.
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v8
+        with:
+          name: coverage-exports
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: e2e-coverage-*
+          path: client/target/coverage
+          merge-multiple: true
+      # The exports name the workshop's paths; diff-cover's report resolves them.
+      - run: |
+          sudo ln -s "$PWD" /project
+          pipx install diff-cover==10.5.0
+      - name: Patch coverage gate
+        run: make cov-patch-host COV_BASE="origin/${{ github.base_ref || 'main' }}"
       # Which changed lines missed, wanted most when the gate fails.
       - name: Upload the patch coverage report
         if: always()
