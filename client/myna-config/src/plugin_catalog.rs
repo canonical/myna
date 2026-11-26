@@ -244,23 +244,6 @@ pub fn not_offered<'a>(entries: &'a [Entry], offered: &[String]) -> Vec<&'a Entr
         .collect()
 }
 
-/// The entries that translate `from` to `to`: the pair itself, else its two
-/// legs through English. `None` when the catalog cannot.
-pub fn translation_legs<'a>(entries: &'a [Entry], from: &str, to: &str) -> Option<Vec<&'a Entry>> {
-    let leg = |from: &str, to: &str| {
-        entries
-            .iter()
-            .find(|e| e.step.id == "translate" && e.in_lang == from && e.out_lang == to)
-    };
-    if from == to {
-        return None;
-    }
-    if let Some(direct) = leg(from, to) {
-        return Some(vec![direct]);
-    }
-    Some(vec![leg(from, "en")?, leg("en", to)?])
-}
-
 /// How far down the user's locales a thing useful for `useful_for` (bare
 /// language codes, else `fallback`) comes; `locales.len()` when not at all.
 pub fn relevance(useful_for: &[String], fallback: &str, locales: &[String]) -> usize {
@@ -652,36 +635,6 @@ mod tests {
         let left = not_offered(&entries, &["m-translate-en-fr".to_owned()]);
         assert_eq!(left.len(), 1);
         assert_eq!(left[0].out_lang, "de");
-    }
-
-    #[test]
-    fn a_pair_is_installable_directly_or_through_english() {
-        let entries = loaded(&[
-            pair("de", "en", "myna-translation", 1),
-            pair("en", "fr", "myna-translation", 1),
-            pair("en", "es", "myna-translation", 1),
-        ]);
-        let legs = |from, to| {
-            translation_legs(&entries, from, to)
-                .map(|l| l.iter().map(|e| e.id.clone()).collect::<Vec<_>>())
-        };
-        assert_eq!(legs("en", "fr").unwrap(), ["translate-en-fr"]);
-        assert_eq!(
-            legs("de", "fr").unwrap(),
-            ["translate-de-en", "translate-en-fr"]
-        );
-        assert_eq!(legs("fr", "en"), None, "no fr-en leg");
-        assert_eq!(legs("de", "es").unwrap().len(), 2);
-        assert_eq!(legs("de", "it"), None, "no en-it leg");
-        assert_eq!(legs("en", "it"), None);
-        assert_eq!(legs("en", "en"), None);
-        assert_eq!(legs("fr", "fr"), None);
-    }
-
-    #[test]
-    fn a_missing_pivot_leg_makes_the_pair_not_installable() {
-        let entries = loaded(&[pair("de", "en", "myna-translation", 1)]);
-        assert_eq!(translation_legs(&entries, "de", "fr"), None);
     }
 
     #[test]

@@ -4,7 +4,9 @@
 //! only; nothing here knows a plugin by name.
 
 use myna_core::chains::ChainStep;
+use myna_core::graph::Tongue;
 
+use crate::chain_solve::{tongue_of, World};
 use crate::languages::{exonym, language_in_text, language_name, Source};
 use crate::plugin_catalog::{self, Entry};
 use crate::processing_steps::{self as steps, size, Offered, Row, Standing, SCRIPT, TRANSLATE};
@@ -357,6 +359,7 @@ pub fn languages(inputs: &LanguageInputs) -> Vec<Language> {
     let Source::One(from) = inputs.from else {
         return Vec::new();
     };
+    let world = World::new(inputs.catalog, inputs.daemon);
     let chosen = inputs
         .chosen
         .filter(|code| !code.is_empty() && *code != from);
@@ -380,14 +383,15 @@ pub fn languages(inputs: &LanguageInputs) -> Vec<Language> {
         .filter(|code| !code.is_empty() && code != from)
         .filter(|code| {
             Some(code.as_str()) == chosen
-                || crate::processing_steps::routable(inputs.catalog, inputs.daemon, from, code)
+                || (Tongue::parse(code).language != tongue_of(from).language
+                    && world.route(from, code).is_some())
         })
         .filter(|code| Some(code.as_str()) == chosen || !(inputs.strands)(code))
         .map(|code| {
             let name = language_name(&code);
             let english = exonym(&code).filter(|english| *english != name);
             Language {
-                state: language_state(inputs, from, &code),
+                state: language_state(inputs, &world, from, &code),
                 likely: inputs.likely.contains(&code),
                 code,
                 name,
@@ -412,10 +416,10 @@ pub fn languages(inputs: &LanguageInputs) -> Vec<Language> {
     found
 }
 
-fn language_state(inputs: &LanguageInputs, from: &str, to: &str) -> LanguageState {
-    if !crate::processing_steps::routable(inputs.catalog, inputs.daemon, from, to) {
+fn language_state(inputs: &LanguageInputs, world: &World, from: &str, to: &str) -> LanguageState {
+    let Some(legs) = world.route(from, to) else {
         return LanguageState::NoModel;
-    }
+    };
     let key = language_key(to);
     if let Some(percent) = inputs.installing.get(&key) {
         return LanguageState::Installing(*percent);
@@ -423,14 +427,6 @@ fn language_state(inputs: &LanguageInputs, from: &str, to: &str) -> LanguageStat
     let Some(daemon) = inputs.daemon else {
         return LanguageState::Unknown;
     };
-    if daemon
-        .translations
-        .iter()
-        .any(|(f, t)| f == from && t == to)
-    {
-        return LanguageState::Ready;
-    }
-    let legs = plugin_catalog::translation_legs(inputs.catalog, from, to).unwrap_or_default();
     let entries: Vec<Entry> = legs
         .into_iter()
         .filter(|leg| !daemon.offers(&leg.model))

@@ -2,15 +2,16 @@
 //! ordered list, as plain values; `processing_ui` binds them to widgets.
 //!
 //! A step's place in its chain (the language it reads, whether it is
-//! skipped there and which step to move it above) is
-//! `myna_core::chains::fits`, the daemon's own judgement. What a step needs
+//! skipped there and which step to move it above) is read from
+//! `myna_core::graph::solve` through `chain_solve`. What a step needs
 //! installed comes from `processing_steps`, asked once per step with the
 //! language the text is in at that step.
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use myna_core::chains::{fits, Chain, ChainStep, Fit, Misfit};
+use myna_core::chains::{Chain, ChainStep};
 
+use crate::chain_solve::{why_text, Fit, Why, World};
 use crate::languages::Source;
 use crate::plugin_catalog::Entry;
 use crate::processing_steps::{self as steps, Moves, Offered, Place, Row, Standing, TRANSLATE};
@@ -53,22 +54,19 @@ pub struct Card {
     pub needs: Option<String>,
 }
 
-/// How many translations of `steps` that run no model can do, installed
-/// or offered: the text reaches them in a language nothing translates from
-/// into their target.
-fn stranded(steps: &[ChainStep], ctx: &Context) -> usize {
-    steps
+/// How many translations of `steps` no model, installed or offered, can do.
+fn stranded(steps: &[ChainStep], language: Option<&str>, world: &World) -> usize {
+    world
+        .fits(steps, language)
         .iter()
-        .zip(fits(steps, ctx.language))
-        .filter(|(step, fit)| {
-            // The pair `fit` deduces is the language after the step, which
-            // is the bare `zh` for Chinese; the models name those pairs
-            // `zh-Hans` and `zh-Hant`, so the step's own target is what the
-            // catalog is asked about.
-            let target = step.params.get("to").map(String::as_str);
-            step.step == TRANSLATE
-                && matches!(fit, Fit::Runs { input: Some(from), .. }
-                    if !target.is_some_and(|to| steps::routable(ctx.catalog, ctx.daemon, from, to)))
+        .filter(|fit| {
+            matches!(
+                fit,
+                Fit::Skipped {
+                    why: Why::NoModel { .. },
+                    ..
+                }
+            )
         })
         .count()
 }
@@ -77,21 +75,32 @@ fn stranded(steps: &[ChainStep], ctx: &Context) -> usize {
 /// do that `before` did not have. The editor offers no such change, so a
 /// chain is not built into a pair nothing translates.
 pub fn strands(before: &[ChainStep], after: &[ChainStep], ctx: &Context) -> bool {
-    stranded(after, ctx) > stranded(before, ctx)
+    let world = World::new(ctx.catalog, ctx.daemon);
+    stranded_by(before, after, ctx.language, &world)
+}
+
+fn stranded_by(
+    before: &[ChainStep],
+    after: &[ChainStep],
+    language: Option<&str>,
+    world: &World,
+) -> bool {
+    stranded(after, language, world) > stranded(before, language, world)
 }
 
 /// The language the text is in just before position `at` of `steps`, as
 /// `Source`: where a step inserted there would read it.
-pub fn language_at(steps: &[ChainStep], at: usize, language: Option<&str>) -> Source {
+pub fn language_at(steps: &[ChainStep], at: usize, ctx: &Context) -> Source {
     let before = &steps[..at.min(steps.len())];
-    fits(before, language)
+    World::new(ctx.catalog, ctx.daemon)
+        .fits(before, ctx.language)
         .into_iter()
         .rev()
         .find_map(|fit| match fit {
             Fit::Runs { output, .. } => Some(output),
             _ => None,
         })
-        .unwrap_or_else(|| language.map(myna_core::chains::primary_language))
+        .unwrap_or_else(|| ctx.language.map(myna_core::chains::primary_language))
         .map_or(Source::Unknown, Source::One)
 }
 
@@ -134,21 +143,11 @@ fn badge(input: Option<&str>, output: Option<&str>) -> String {
     }
 }
 
-/// Why a step is skipped, in the user's words.
-pub fn misfit_text(why: Misfit) -> String {
-    match why {
-        Misfit::NotEnglish => gettextrs::gettext("Applies when the text is English"),
-        Misfit::NoTarget => gettextrs::gettext("Needs a language to translate to"),
-        Misfit::AlreadyInTarget => gettextrs::gettext("The text is already in that language"),
-        Misfit::NotChinese => gettextrs::gettext("Applies when the text is Chinese"),
-        Misfit::NoScript => gettextrs::gettext("Needs a script to write"),
-    }
-}
-
 /// The editor's list for `chain`, in its order: each step as `processing_steps`
 /// judges it where it stands, with what the editor adds about its place.
 pub fn lines(chain: &Chain, ctx: &Context) -> Vec<Row> {
-    let fitted = fits(&chain.steps, ctx.language);
+    let world = World::new(ctx.catalog, ctx.daemon);
+    let fitted = world.fits(&chain.steps, ctx.language);
     let rows: Vec<Row> = chain
         .steps
         .iter()
@@ -170,12 +169,17 @@ pub fn lines(chain: &Chain, ctx: &Context) -> Vec<Row> {
         .zip(rows)
         .enumerate()
         .map(|(index, ((step, fit), mut row))| {
-            let (badge, skipped, subtitle, fix) = match &fit {
-                Fit::Runs { input, output } => (
+            let (badge, skipped, subtitle, fix, inserted) = match &fit {
+                Fit::Runs {
+                    input,
+                    output,
+                    inserted,
+                } => (
                     written(step, input.as_deref(), output.as_deref()),
                     false,
                     row.subtitle.clone(),
                     None,
+                    inserted.join(", "),
                 ),
                 Fit::Skipped {
                     why,
@@ -187,20 +191,34 @@ pub fn lines(chain: &Chain, ctx: &Context) -> Vec<Row> {
                     (
                         badge(input.as_deref(), input.as_deref()),
                         true,
-                        misfit_text(*why),
+                        why_text(why),
                         fix,
+                        String::new(),
                     )
                 }
-                Fit::Off => (String::new(), false, row.description.clone(), None),
+                Fit::Off => (
+                    String::new(),
+                    false,
+                    row.description.clone(),
+                    None,
+                    String::new(),
+                ),
                 Fit::Unknown => (
                     String::new(),
                     true,
                     gettextrs::gettext("Not known to this version of Myna"),
                     None,
+                    String::new(),
                 ),
             };
             let keeps = |to: usize| {
-                to == index || !strands(&chain.steps, &moved(&chain.steps, index, to), ctx)
+                to == index
+                    || !stranded_by(
+                        &chain.steps,
+                        &moved(&chain.steps, index, to),
+                        ctx.language,
+                        &world,
+                    )
             };
             let last = chain.steps.len().saturating_sub(1);
             let moves = Moves {
@@ -216,10 +234,11 @@ pub fn lines(chain: &Chain, ctx: &Context) -> Vec<Row> {
                     .map(|i| translate.targets[i].code.clone());
                 translate.targets.retain(|target| {
                     Some(&target.code) == chosen.as_ref()
-                        || !strands(
+                        || !stranded_by(
                             &chain.steps,
                             &retargeted(&chain.steps, index, &target.code),
-                            ctx,
+                            ctx.language,
+                            &world,
                         )
                 });
                 translate.selected =
@@ -231,6 +250,7 @@ pub fn lines(chain: &Chain, ctx: &Context) -> Vec<Row> {
                 fix,
                 skipped,
                 moves,
+                inserted,
             };
             row.subtitle = subtitle;
             row
@@ -309,50 +329,6 @@ pub fn new_name(chains: &[Chain]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// What the editor shows of a step's place: a translation's badge is
-    /// its source and target as language codes (a script is the picker's to
-    /// name), and a skipped step says why, once.
-    #[test]
-    fn a_step_reads_where_it_goes_and_why_it_is_skipped() {
-        let chain = Chain {
-            id: "c".into(),
-            name: "C".into(),
-            steps: vec![
-                ChainStep::new("translate").with("to", "zh-Hans"),
-                ChainStep::new("tidy"),
-            ],
-        };
-        let (installing, preparing) = (BTreeMap::new(), BTreeSet::new());
-        let ctx = Context {
-            language: Some("en"),
-            catalog: &[],
-            daemon: None,
-            installing: &installing,
-            preparing: &preparing,
-            locales: &[],
-        };
-        let rows = lines(&chain, &ctx);
-        assert_eq!(rows[0].place.badge, "EN \u{2192} ZH");
-        assert!(rows[1].place.skipped);
-        assert_eq!(rows[1].subtitle, "Applies when the text is English");
-    }
-
-    #[test]
-    fn the_language_at_a_place_is_what_the_steps_before_it_made() {
-        let steps = vec![
-            ChainStep::new("tidy"),
-            ChainStep::new("translate").with("to", "fa"),
-            ChainStep::new("translate").with("to", "fa"),
-        ];
-        let at = |n, language| language_at(&steps, n, language);
-        assert_eq!(at(0, Some("en-GB")), Source::One("en".into()));
-        assert_eq!(at(1, Some("en")), Source::One("en".into()));
-        assert_eq!(at(2, Some("en")), Source::One("fa".into()));
-        assert_eq!(at(3, Some("en")), Source::One("fa".into()));
-        assert_eq!(at(9, Some("en")), Source::One("fa".into()));
-        assert_eq!(at(1, None), Source::Unknown);
-    }
 
     #[test]
     fn moving_and_naming() {

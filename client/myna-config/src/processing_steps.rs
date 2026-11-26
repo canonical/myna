@@ -8,6 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use myna_core::chains::ChainStep;
 use myna_core::processing::ChineseScript;
 
+use crate::chain_solve::{why_text, Why, World};
 use crate::languages::{catalog_code, language_in_text, Source};
 
 use crate::plugin_catalog::{self, Entry};
@@ -171,6 +172,8 @@ pub struct Place {
     pub skipped: bool,
     /// Which moves keep every translation of the chain doable.
     pub moves: Moves,
+    /// What the solver runs first for this step, such as "Writes Traditional first".
+    pub inserted: String,
 }
 
 /// The moves of a step that leave no translation without a model.
@@ -311,33 +314,12 @@ fn script_row(step: &ChainStep, inputs: &Inputs) -> ScriptRow {
     }
 }
 
-/// Whether the text at the script step's position is Chinese, as far as
-/// Settings can tell: the translation target when one runs, else the
-/// dictation language, which an unset one leaves to the desktop's.
-fn text_is_chinese(source: &Source, inputs: &Inputs) -> bool {
-    match source {
-        Source::Unknown => true,
-        Source::One(_) if inputs.language_unset => inputs
-            .locales
-            .first()
-            .is_some_and(|locale| myna_core::chains::may_be_chinese(Some(locale))),
-        Source::One(from) => myna_core::chains::may_be_chinese(Some(from)),
-    }
-}
-
 /// The language `step` translates into, when it holds one.
 fn target_of(step: &ChainStep) -> Option<&str> {
     step.params
         .get(TRANSLATE_TO)
         .map(String::as_str)
         .filter(|to| !to.is_empty())
-}
-
-/// Whether some model, installed or offered by the catalogs, translates
-/// `from` to `to`, directly or through English.
-pub fn routable(catalog: &[Entry], daemon: Option<&Offered>, from: &str, to: &str) -> bool {
-    plugin_catalog::translation_legs(catalog, from, to).is_some()
-        || daemon.is_some_and(|d| d.translations.iter().any(|(f, t)| f == from && t == to))
 }
 
 fn translate_row(step: &ChainStep, source: &Source, inputs: &Inputs) -> TranslateRow {
@@ -382,38 +364,19 @@ fn standing(
         Source::Unknown => None,
     };
     let own: Vec<&Entry> = inputs.catalog.iter().filter(|e| e.step.id == id).collect();
-    if id == SCRIPT {
-        if !text_is_chinese(source, inputs) {
-            return Standing::NotApplicable(gettextrs::gettext("Applies when the text is Chinese"));
-        }
-        return Standing::Ready;
+    if id == TRANSLATE && language.is_none() {
+        return Standing::NotApplicable(gettextrs::gettext("Needs a single dictation language"));
     }
-    if id == TRANSLATE {
-        let Some(from) = language else {
-            return Standing::NotApplicable(gettextrs::gettext(
-                "Needs a single dictation language",
-            ));
-        };
-        if step.on && target_of(step) == Some(from) {
-            return Standing::NotApplicable(gettextrs::gettext(
-                "The text is already in that language",
-            ));
+    if let Some(from) = language {
+        let world = World::new(inputs.catalog, inputs.daemon);
+        match world.skip(step, from) {
+            Some(Why::AlreadyInTarget) if !step.on => {}
+            Some(Why::NoTarget | Why::NoScript | Why::NoModel { .. }) | None => {}
+            Some(why) => return Standing::NotApplicable(why_text(&why)),
         }
-    } else if !own.is_empty()
-        && own
-            .iter()
-            .all(|e| !e.in_lang.is_empty() && e.in_lang != "any")
-    {
-        if let Some(from) = language {
-            if own.iter().all(|e| e.in_lang != from) {
-                // TRANSLATORS: {language} is a language name, such as "English".
-                let frame = gettextrs::gettext("Applies when the text is {language}");
-                let wanted = own[0].in_lang.as_str();
-                return Standing::NotApplicable(
-                    frame.replace("{language}", &language_in_text(wanted)),
-                );
-            }
-        }
+    }
+    if id == SCRIPT {
+        return Standing::Ready;
     }
     if let Some(percent) = inputs.installing.get(id) {
         return Standing::Installing(*percent);
@@ -465,7 +428,7 @@ fn need(
         let Source::One(from) = source else {
             return None;
         };
-        let legs = plugin_catalog::translation_legs(inputs.catalog, from, &target.code)?;
+        let legs = World::new(inputs.catalog, inputs.daemon).route(from, &target.code)?;
         let entries: Vec<Entry> = legs
             .into_iter()
             .filter(|leg| !daemon.offers(&leg.model))

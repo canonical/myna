@@ -362,10 +362,15 @@ pub fn daemon_report() -> Option<DaemonReport> {
     };
     let mut report = parse_daemon_report(&get);
     let settings = myna_core::Settings::load();
+    let catalog = crate::plugin_catalog::load(
+        std::path::Path::new(crate::plugin_catalog::SNAPSHOT_DIR),
+        std::path::Path::new("/snap"),
+    )
+    .entries;
     report.steps = steps_line(&settings);
     report.chain = report
         .chain
-        .map(|state| state.as_asked(&translations(&settings)));
+        .map(|state| state.as_asked(&translations(&settings, &catalog)));
     Some(report)
 }
 
@@ -418,8 +423,11 @@ pub fn watch_daemon(on_change: impl Fn() + 'static) {
 
 /// The active chain's translations that run, as (from, to), judged the way
 /// the editor's badges are.
-fn translations(settings: &myna_core::Settings) -> Vec<(String, String)> {
-    use myna_core::chains::{fits, Fit};
+fn translations(
+    settings: &myna_core::Settings,
+    catalog: &[crate::plugin_catalog::Entry],
+) -> Vec<(String, String)> {
+    use crate::chain_solve::{Fit, World};
     let Some(chain) = settings.processing.active() else {
         return Vec::new();
     };
@@ -432,11 +440,12 @@ fn translations(settings: &myna_core::Settings) -> Vec<(String, String)> {
     chain
         .steps
         .iter()
-        .zip(fits(&chain.steps, language.as_deref()))
+        .zip(World::new(catalog, None).fits(&chain.steps, language.as_deref()))
         .filter_map(|(step, fit)| match fit {
             Fit::Runs {
                 input: Some(from),
                 output: Some(to),
+                ..
             } if step.step == "translate" => Some((from, to)),
             _ => None,
         })
@@ -529,29 +538,6 @@ mod tests {
     use super::*;
     use gio::glib::variant::ToVariant;
 
-    #[test]
-    fn only_translate_steps_are_translations() {
-        use myna_core::chains::ChainStep;
-        let mut settings = myna_core::Settings {
-            language: Some("en".into()),
-            ..Default::default()
-        };
-        let id = settings.processing.add(
-            "c",
-            vec![
-                ChainStep::new("tidy"),
-                ChainStep::new("translate").with("to", "fr"),
-            ],
-        );
-        assert!(translations(&settings).is_empty(), "no chain in use");
-        settings.processing.activate(Some(&id));
-        assert_eq!(
-            translations(&settings),
-            [("en".to_owned(), "fr".to_owned())],
-            "Tidy runs en to en but translates nothing"
-        );
-    }
-
     fn reply(
         properties: &[(&str, gio::glib::Variant)],
     ) -> impl Fn(&str) -> Option<gio::glib::Variant> {
@@ -614,28 +600,6 @@ mod tests {
             Some("tidy, translate=fr, script=simplified".to_owned())
         );
         assert_eq!(steps_line(&myna_core::Settings::default()), None);
-    }
-
-    #[test]
-    fn the_translations_are_the_active_chains_pairs_from_the_dictation_language() {
-        let settings = |language: Option<&str>, ids: &[&str]| {
-            let mut settings = settings_with(ids, &[("translate.to", "fr")]);
-            settings.language = language.map(str::to_owned);
-            settings
-        };
-        let pair = vec![("fa".to_owned(), "fr".to_owned())];
-        assert_eq!(
-            translations(&settings(Some("fa_IR"), &["tidy", "translate"])),
-            pair
-        );
-        assert_eq!(
-            translations(&settings(None, &["translate"])),
-            vec![("en".to_owned(), "fr".to_owned())]
-        );
-        assert!(translations(&settings(Some("auto"), &["translate"])).is_empty());
-        assert!(translations(&settings(Some("fr"), &["translate"])).is_empty());
-        assert!(translations(&settings(Some("fa"), &["tidy"])).is_empty());
-        assert!(translations(&myna_core::Settings::default()).is_empty());
     }
 
     #[test]

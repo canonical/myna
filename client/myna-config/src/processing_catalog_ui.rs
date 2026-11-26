@@ -349,7 +349,7 @@ impl StepsPage {
             || source.clone(),
             |chain| {
                 let at = myna_core::chains::insert_position(&chain.steps, TRANSLATE);
-                chains_view::language_at(&chain.steps, at, self.dictation_language().as_deref())
+                self.view(|ctx| chains_view::language_at(&chain.steps, at, ctx))
             },
         );
         let catalog = self.catalog.borrow();
