@@ -62,6 +62,18 @@ offered() { # WHAT, in the daemon's own words
     return 1
 }
 
+# unoffered WHAT: the other way round - wait for the daemon to stop listing a
+# model it bound, after one was removed. Until it does, the step that needed
+# it still reads as installed and offers no Install.
+unoffered() { # WHAT, in the daemon's own words
+    local i
+    for i in $(seq 120); do
+        dict "$OFFERS | grep -q $1" || return 0
+        sleep 1
+    done
+    return 1
+}
+
 # slowpoll: poll for up to 5 minutes, for a store download and a restart.
 # shellcheck disable=SC2016 # expands in the VM
 slowpoll() { printf 'sh:for _ in $(seq 1500); do { %s; } >/dev/null 2>&1 && exit 0; sleep 0.2; done; exit 1' "$1"; }

@@ -48,14 +48,25 @@ shot waitfor:General tab:Diagnostics "waitfor:Speech models" "waitfor:Text model
     || { echo "diagnostics failed" >&2; FAILED=1; }
 
 step 4 "Remove takes the component away and the step stays, offering Install"
+# Settings asks the daemon to rescan once snapd is done and waits for the
+# model to go from `InstalledSteps`; a shot that closes first drops the
+# request, and the daemon then offers the removed model for as long as it
+# runs, so the step never offers Install. The shot stays open for the
+# daemon's own answer, which is also what the step after it waits for.
 shot --polkit allow waitfor:General tab:Processing "click:$CHAIN" \
     "waitfor:More actions for tidy" "click:More actions for tidy" "activate:Remove model" \
     "$(slowpoll "! snap components myna-text 2>/dev/null | grep -q 'model-disfluency-en *installed'")" \
+    "$(slowpoll "! $OFFERS | grep -q disfluency")" \
     shot:shots/processing-catalog/04-removed.png \
     || { echo "remove failed" >&2; FAILED=1; }
 assert_dict "snapd removed the component, not the snap" \
     '! component_installed myna-text model-disfluency-en && snap list myna-text'
 assert_on "the chain keeps its step" "grep -qF \"('tidy', true, {})\" $STORE"
+if unoffered disfluency; then
+    echo "PASS: the daemon stops offering the removed model"
+else
+    echo "FAIL: the daemon still offers the removed model"; FAILED=1
+fi
 shot waitfor:General tab:Processing "click:$CHAIN" "waitfor:Install" \
     shot:shots/processing-catalog/04-step-needs.png \
     || { echo "step needs failed" >&2; FAILED=1; }
