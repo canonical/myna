@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-26 09:24+0000\n"
+"POT-Creation-Date: 2026-11-26 10:53+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -46,7 +46,7 @@ msgstr ""
 msgid "No audio, transcript, or filesystem path is ever included."
 msgstr ""
 
-#: data/diagnostics-page.blp:49 src/backend_ui.rs:3355 src/backend_ui.rs:3679
+#: data/diagnostics-page.blp:49 src/backend_ui.rs:3379 src/backend_ui.rs:3703
 msgid "Refresh"
 msgstr ""
 
@@ -81,7 +81,7 @@ msgid "Read-only privacy-safe diagnostic text."
 msgstr ""
 
 #: data/install-control.blp:54 data/onboarding-components.blp:60
-#: src/processing_ui.rs:2003
+#: src/processing_ui.rs:1982
 msgid "Installed"
 msgstr ""
 
@@ -99,12 +99,12 @@ msgstr ""
 msgid "Main Menu"
 msgstr ""
 
-#: data/main-window.blp:32 src/backend_ui.rs:3028
+#: data/main-window.blp:32 src/backend_ui.rs:3052
 msgid "General"
 msgstr ""
 
 #: data/main-window.blp:39 data/myna-page.blp:71 src/app.rs:142
-#: src/processing_ui.rs:2252 src/backend_apply.rs:384 src/diagnostics.rs:677
+#: src/processing_ui.rs:2292 src/backend_apply.rs:384 src/diagnostics.rs:677
 #: src/presentation.rs:157
 msgid "Model"
 msgstr ""
@@ -166,7 +166,7 @@ msgstr ""
 msgid "Install all components"
 msgstr ""
 
-#: data/onboarding-components.blp:52 src/processing_ui.rs:2019
+#: data/onboarding-components.blp:52 src/processing_ui.rs:1998
 #: src/ui/install_control.rs:134
 msgid "Installing…"
 msgstr ""
@@ -654,7 +654,7 @@ msgid "Applies when the text is Chinese"
 msgstr ""
 
 #: src/processing_steps.rs:394 src/step_catalog.rs:209
-#: src/processing_ui.rs:1437
+#: src/processing_ui.rs:1465
 msgid "Needs a single dictation language"
 msgstr ""
 
@@ -737,7 +737,7 @@ msgstr ""
 msgid "License"
 msgstr ""
 
-#: src/step_catalog.rs:185 src/processing_ui.rs:231 src/plugin_catalog.rs:294
+#: src/step_catalog.rs:185 src/processing_ui.rs:547 src/plugin_catalog.rs:294
 msgid "Translate"
 msgstr ""
 
@@ -777,310 +777,306 @@ msgstr ""
 msgid "Not measured on a benchmark yet"
 msgstr ""
 
-#: src/processing_ui.rs:207
+#: src/processing_ui.rs:154
+msgid "Remove step"
+msgstr ""
+
+#: src/processing_ui.rs:155
+msgid "Remove model"
+msgstr ""
+
+#: src/processing_ui.rs:162 src/processing_ui.rs:2103
+msgid "Move up"
+msgstr ""
+
+#: src/processing_ui.rs:163 src/processing_ui.rs:2104
+msgid "Move down"
+msgstr ""
+
+#. TRANSLATORS: marks a step of a chain that does not run where it stands.
+#: src/processing_ui.rs:185
+msgid "Skipped"
+msgstr ""
+
+#: src/processing_ui.rs:265
+msgid "Name"
+msgstr ""
+
+#: src/processing_ui.rs:271
+msgid "Steps"
+msgstr ""
+
+#: src/processing_ui.rs:273
+msgid "They run top to bottom. Changes are saved as you make them."
+msgstr ""
+
+#: src/processing_ui.rs:277
+msgid "Add step…"
+msgstr ""
+
+#: src/processing_ui.rs:282 src/processing_ui.rs:936
+msgid "Use this chain"
+msgstr ""
+
+#: src/processing_ui.rs:287
+msgid "Delete chain"
+msgstr ""
+
+#: src/processing_ui.rs:313 src/myna_settings.rs:265
+msgid "Chain"
+msgstr ""
+
+#: src/processing_ui.rs:335
+msgid "For example"
+msgstr ""
+
+#: src/processing_ui.rs:523
 msgid "No chains yet"
 msgstr ""
 
-#: src/processing_ui.rs:209
+#: src/processing_ui.rs:525
 msgid "Myna types exactly what you say. Make a chain to change that."
 msgstr ""
 
-#: src/processing_ui.rs:214
+#: src/processing_ui.rs:530
 msgid "New chain…"
 msgstr ""
 
-#: src/processing_ui.rs:219
+#: src/processing_ui.rs:535
 msgid "Get more steps"
 msgstr ""
 
-#: src/processing_ui.rs:220
+#: src/processing_ui.rs:536
 msgid "Translation languages, clean-up, scripts"
 msgstr ""
 
-#: src/processing_ui.rs:225
+#: src/processing_ui.rs:541
 msgid ""
 "Steps your catalogs offer. Add one to put it in the chain; one that is not "
 "installed downloads first."
 msgstr ""
 
-#: src/processing_ui.rs:230
+#: src/processing_ui.rs:546
 msgid "Add step"
 msgstr ""
 
-#: src/processing_ui.rs:347
+#: src/processing_ui.rs:650
 msgid "The change could not be saved."
 msgstr ""
 
 #. TRANSLATORS: the accessible name of a chain's on/off switch; {name} is the chain's name.
-#: src/processing_ui.rs:448
+#: src/processing_ui.rs:751
 msgid "Use {name}"
 msgstr ""
 
 #. TRANSLATORS: the accessible name of a chain's delete button; {name} is the chain's name.
-#: src/processing_ui.rs:453
+#: src/processing_ui.rs:754
 msgid "Delete {name}"
 msgstr ""
 
-#: src/processing_ui.rs:537
-msgid "Name"
-msgstr ""
-
-#: src/processing_ui.rs:543
-msgid "Steps"
-msgstr ""
-
-#: src/processing_ui.rs:545
-msgid "They run top to bottom. Changes are saved as you make them."
-msgstr ""
-
-#: src/processing_ui.rs:549
-msgid "Add step…"
-msgstr ""
-
-#: src/processing_ui.rs:554 src/processing_ui.rs:747
-msgid "Use this chain"
-msgstr ""
-
-#: src/processing_ui.rs:559
-msgid "Delete chain"
-msgstr ""
-
-#: src/processing_ui.rs:586 src/myna_settings.rs:265
-msgid "Chain"
-msgstr ""
-
-#: src/processing_ui.rs:698
+#: src/processing_ui.rs:893
 msgid "{name} deleted"
 msgstr ""
 
-#: src/processing_ui.rs:700
+#: src/processing_ui.rs:895
 msgid "Undo"
 msgstr ""
 
-#: src/processing_ui.rs:742
+#: src/processing_ui.rs:931
 msgid "Stop using"
 msgstr ""
 
 #. TRANSLATORS: said after a step moved; {step} is its name, {n} and {total} its new place.
-#: src/processing_ui.rs:819
+#: src/processing_ui.rs:1024
 msgid "{step} moved to step {n} of {total}"
 msgstr ""
 
-#. TRANSLATORS: marks a step of a chain that does not run where it stands.
-#: src/processing_ui.rs:849
-msgid "Skipped"
-msgstr ""
-
-#: src/processing_ui.rs:869 src/processing_ui.rs:872 src/processing_ui.rs:892
-msgid "Move up"
-msgstr ""
-
-#: src/processing_ui.rs:878 src/processing_ui.rs:881 src/processing_ui.rs:893
-msgid "Move down"
-msgstr ""
-
-#: src/processing_ui.rs:894
-msgid "Move to top"
-msgstr ""
-
-#: src/processing_ui.rs:895
-msgid "Move to bottom"
-msgstr ""
-
-#: src/processing_ui.rs:896
-msgid "Remove step"
-msgstr ""
-
-#: src/processing_ui.rs:897
-msgid "Remove model"
-msgstr ""
-
-#: src/processing_ui.rs:1235 src/processing_ui.rs:1811 src/models_ui.rs:337
-msgid "Finish dictating, then try again."
-msgstr ""
-
-#: src/processing_ui.rs:1239
+#: src/processing_ui.rs:1248
 msgid "Installing the model failed"
 msgstr ""
 
 #. TRANSLATORS: {language} is the language the text is in where the step goes, such as "English".
-#: src/processing_ui.rs:1433
+#: src/processing_ui.rs:1461
 msgid ""
 "From {language}. Choosing a language adds the step; one that is not "
 "installed downloads first."
 msgstr ""
 
 #. TRANSLATORS: {from} and {to} are language names, such as "English" and "Français".
-#: src/processing_ui.rs:1476 src/installed_models.rs:146
+#: src/processing_ui.rs:1511 src/installed_models.rs:146
 msgid "{from} to {to}"
 msgstr ""
 
-#: src/processing_ui.rs:1485 src/processing_ui.rs:1709
+#: src/processing_ui.rs:1520 src/processing_ui.rs:1687
 #: src/list_editor_ui.rs:143 src/models_ui.rs:258
 msgid "Remove"
 msgstr ""
 
 #. TRANSLATORS: {model} names a translation model, such as "English to Français".
 #. TRANSLATORS: {model} names a model, such as "Whisper" or "English to Italiano".
-#: src/processing_ui.rs:1492 src/models_ui.rs:265
+#: src/processing_ui.rs:1528 src/models_ui.rs:265
 msgid "Remove {model}"
 msgstr ""
 
 #. TRANSLATORS: read by screen readers as the language search narrows; {count} is a number.
-#: src/processing_ui.rs:1530 src/model_family.rs:246
+#: src/processing_ui.rs:1566 src/model_family.rs:246
 msgid "{count} language"
 msgid_plural "{count} languages"
 msgstr[0] ""
 msgstr[1] ""
 
-#: src/processing_ui.rs:1669 src/list_editor_ui.rs:72
+#: src/processing_ui.rs:1665 src/list_editor_ui.rs:72
 msgid "Add"
 msgstr ""
 
 #. TRANSLATORS: {step} is a step's name, such as "Tidy up speech".
-#: src/processing_ui.rs:1676
+#: src/processing_ui.rs:1673
 msgid "Add {step}"
 msgstr ""
 
-#: src/processing_ui.rs:1679
+#: src/processing_ui.rs:1676
 msgid "Added"
 msgstr ""
 
-#: src/processing_ui.rs:1690
-msgid "For example"
-msgstr ""
-
 #. TRANSLATORS: {step} is a step's name, such as "Tidy up speech".
-#: src/processing_ui.rs:1716
+#: src/processing_ui.rs:1695
 msgid "Remove {step}"
 msgstr ""
 
-#: src/processing_ui.rs:1719
+#: src/processing_ui.rs:1698
 msgid "Remove this model"
 msgstr ""
 
-#: src/processing_ui.rs:1721
+#: src/processing_ui.rs:1700
 msgid ""
 "The step stays switched on and shows what it needs, so it can be installed "
 "again."
 msgstr ""
 
-#: src/processing_ui.rs:1815
+#: src/processing_ui.rs:1768
 msgid "Removing the model failed"
 msgstr ""
 
-#: src/processing_ui.rs:1841 src/backend_ui.rs:1395 src/onboarding_ui.rs:622
-#: src/models_ui.rs:359 src/ui/status_page.rs:70
-msgid "Details"
+#: src/processing_ui.rs:1825 src/models_ui.rs:337
+msgid "Finish dictating, then try again."
 msgstr ""
 
-#: src/processing_ui.rs:1949 src/processing_ui.rs:1953
+#: src/processing_ui.rs:1930 src/processing_ui.rs:1933
 msgid "Search languages"
 msgstr ""
 
-#: src/processing_ui.rs:1957
+#: src/processing_ui.rs:1936
 msgid "No language matches"
 msgstr ""
 
-#: src/processing_ui.rs:1959
+#: src/processing_ui.rs:1938
 msgid "Only languages a model can translate into from here are listed."
 msgstr ""
 
-#: src/processing_ui.rs:1966
+#: src/processing_ui.rs:1945
 msgid "Installed translation models"
 msgstr ""
 
-#: src/processing_ui.rs:1968
+#: src/processing_ui.rs:1947
 msgid ""
 "A step that uses a removed model stays and shows what it needs, so it can be "
 "installed again."
 msgstr ""
 
-#: src/processing_ui.rs:1985 src/processing_ui.rs:2212
-#: src/processing_ui.rs:2248
+#: src/processing_ui.rs:1964 src/processing_ui.rs:2245
+#: src/processing_ui.rs:2288
 msgid "Translate to"
 msgstr ""
 
 #. TRANSLATORS: {size} is a download size, such as "66 MB"; two models make the translation, through English.
-#: src/processing_ui.rs:2007
+#: src/processing_ui.rs:1986
 msgid "Downloads {size}, through English"
 msgstr ""
 
 #. TRANSLATORS: {size} is a download size, such as "33 MB".
-#: src/processing_ui.rs:2010
+#: src/processing_ui.rs:1989
 msgid "Downloads {size}"
 msgstr ""
 
 #. TRANSLATORS: {percent} is a number from 0 to 100.
-#: src/processing_ui.rs:2016
+#: src/processing_ui.rs:1995
 msgid "Installing, {percent}%"
 msgstr ""
 
-#: src/processing_ui.rs:2020 src/processing_ui.rs:2096
+#: src/processing_ui.rs:1999 src/processing_ui.rs:2073
 msgid "Preparing…"
 msgstr ""
 
-#: src/processing_ui.rs:2021 src/processing_ui.rs:2040 src/shortcut_ui.rs:691
+#: src/processing_ui.rs:2000 src/processing_ui.rs:2017 src/shortcut_ui.rs:691
 #: src/sound_preview.rs:66
 msgid "Myna is not running"
 msgstr ""
 
-#: src/processing_ui.rs:2023 src/backend_ui.rs:2336 src/diagnostics.rs:444
+#: src/processing_ui.rs:2002 src/backend_ui.rs:2336 src/diagnostics.rs:444
 msgid "No model installed"
 msgstr ""
 
-#: src/processing_ui.rs:2066
+#: src/processing_ui.rs:2043
 msgid "Removing…"
 msgstr ""
 
-#: src/processing_ui.rs:2069 src/processing_ui.rs:2086 src/backend_ui.rs:1180
+#: src/processing_ui.rs:2046 src/processing_ui.rs:2063 src/backend_ui.rs:1180
 msgid "Install"
 msgstr ""
 
 #. TRANSLATORS: {step} is a step's name, such as "Translate English to French".
-#: src/processing_ui.rs:2071
+#: src/processing_ui.rs:2048
 msgid "Install {step}"
 msgstr ""
 
 #. TRANSLATORS: {what} names a model, such as "the French model".
-#: src/processing_ui.rs:2084
+#: src/processing_ui.rs:2061
 msgid "Install {what}"
 msgstr ""
 
+#: src/processing_ui.rs:2105
+msgid "Move to top"
+msgstr ""
+
+#: src/processing_ui.rs:2106
+msgid "Move to bottom"
+msgstr ""
+
 #. TRANSLATORS: a step's place in its chain, read by screen readers: "Step 2 of 3".
-#: src/processing_ui.rs:2127
+#: src/processing_ui.rs:2154
 msgid "Step {n} of {total}"
 msgstr ""
 
 #. TRANSLATORS: {step} is a step's name, such as "Tidy up speech".
-#: src/processing_ui.rs:2148
+#: src/processing_ui.rs:2171
 msgid "Use {step}"
 msgstr ""
 
-#: src/processing_ui.rs:2163
+#. TRANSLATORS: {step} is a step's name, such as "Tidy up speech".
+#: src/processing_ui.rs:2183
+msgid "More actions for {step}"
+msgstr ""
+
+#. TRANSLATORS: a button that moves a skipped step above the step named by {step}.
+#: src/processing_ui.rs:2188
 msgid "Move above {step}"
 msgstr ""
 
 #. TRANSLATORS: {language} is a language name; no model translates into it from the text's language.
-#: src/processing_ui.rs:2176
+#: src/processing_ui.rs:2208
 msgid "{language} (no model)"
 msgstr ""
 
 #. TRANSLATORS: {language} is a language name; its model is not installed yet.
-#: src/processing_ui.rs:2180
+#: src/processing_ui.rs:2212
 msgid "{language} (not installed)"
 msgstr ""
 
-#: src/processing_ui.rs:2214 src/processing_ui.rs:2250
+#: src/processing_ui.rs:2247 src/processing_ui.rs:2290
 msgid "Write Chinese as"
 msgstr ""
 
-#. TRANSLATORS: {step} is a step's name, such as "Tidy up speech".
-#: src/processing_ui.rs:2228
-msgid "More actions for {step}"
-msgstr ""
-
-#: src/processing_ui.rs:2246
+#: src/processing_ui.rs:2286
 msgid "To make it run"
 msgstr ""
 
@@ -1173,6 +1169,11 @@ msgstr ""
 msgid "Installing {model} failed"
 msgstr ""
 
+#: src/backend_ui.rs:1395 src/backend_ui.rs:2619 src/onboarding_ui.rs:622
+#: src/ui/status_page.rs:70
+msgid "Details"
+msgstr ""
+
 #: src/backend_ui.rs:1492 src/backend_ui.rs:1636
 msgid "Wait for the current change to finish."
 msgstr ""
@@ -1259,7 +1260,7 @@ msgstr ""
 msgid "The model rejected the value."
 msgstr ""
 
-#: src/backend_ui.rs:2580 src/backend_ui.rs:2599 src/backend_ui.rs:3438
+#: src/backend_ui.rs:2580 src/backend_ui.rs:2599 src/backend_ui.rs:3462
 msgid "The change could not be made."
 msgstr ""
 
@@ -1267,343 +1268,343 @@ msgstr ""
 msgid "The change was interrupted after it started."
 msgstr ""
 
-#: src/backend_ui.rs:2632
+#: src/backend_ui.rs:2656
 msgid "Executable:"
 msgstr ""
 
-#: src/backend_ui.rs:2636
+#: src/backend_ui.rs:2660
 msgid "Arguments:"
 msgstr ""
 
-#: src/backend_ui.rs:2645 src/backend_ui.rs:2723 src/backend_ui.rs:3516
+#: src/backend_ui.rs:2669 src/backend_ui.rs:2747 src/backend_ui.rs:3540
 msgid "Exit status:"
 msgstr ""
 
-#: src/backend_ui.rs:2653 src/backend_ui.rs:2732 src/backend_ui.rs:3525
+#: src/backend_ui.rs:2677 src/backend_ui.rs:2756 src/backend_ui.rs:3549
 msgid "Standard error:"
 msgstr ""
 
-#: src/backend_ui.rs:2663
+#: src/backend_ui.rs:2687
 msgid "Request:"
 msgstr ""
 
-#: src/backend_ui.rs:2669
+#: src/backend_ui.rs:2693
 msgid "HTTP status:"
 msgstr ""
 
-#: src/backend_ui.rs:2676
+#: src/backend_ui.rs:2700
 msgid "D-Bus call:"
 msgstr ""
 
-#: src/backend_ui.rs:2682
+#: src/backend_ui.rs:2706
 msgid "Setting:"
 msgstr ""
 
-#: src/backend_ui.rs:2690
+#: src/backend_ui.rs:2714
 msgid "Message:"
 msgstr ""
 
-#: src/backend_ui.rs:2707
+#: src/backend_ui.rs:2731
 msgid "Some operations completed before the apply failed.\n"
 msgstr ""
 
-#: src/backend_ui.rs:2711
+#: src/backend_ui.rs:2735
 msgid "No privileged operations completed.\n"
 msgstr ""
 
-#: src/backend_ui.rs:2713
+#: src/backend_ui.rs:2737
 msgid "Completed operations:\n"
 msgstr ""
 
-#: src/backend_ui.rs:2739
+#: src/backend_ui.rs:2763
 msgid "Failure:\n"
 msgstr ""
 
-#: src/backend_ui.rs:2743
+#: src/backend_ui.rs:2767
 msgid "Reconciliation read-back:\n"
 msgstr ""
 
-#: src/backend_ui.rs:2755
+#: src/backend_ui.rs:2779
 msgid "Model:"
 msgstr ""
 
-#: src/backend_ui.rs:2761
+#: src/backend_ui.rs:2785
 msgid "Services: none"
 msgstr ""
 
-#: src/backend_ui.rs:2763
+#: src/backend_ui.rs:2787
 msgid "Services:"
 msgstr ""
 
-#: src/backend_ui.rs:2775
+#: src/backend_ui.rs:2799
 msgid "Status: unavailable"
 msgstr ""
 
-#: src/backend_ui.rs:2782
+#: src/backend_ui.rs:2806
 msgid "Post-failure surface errors:"
 msgstr ""
 
-#: src/backend_ui.rs:2813
+#: src/backend_ui.rs:2837
 msgid "Language"
 msgstr ""
 
-#: src/backend_ui.rs:2815
+#: src/backend_ui.rs:2839
 msgid "A code such as en, fr or zh. Leave it empty to detect the language."
 msgstr ""
 
-#: src/backend_ui.rs:2868
+#: src/backend_ui.rs:2892
 msgid "Overview"
 msgstr ""
 
-#: src/backend_ui.rs:2878
+#: src/backend_ui.rs:2902
 msgid "Connection"
 msgstr ""
 
-#: src/backend_ui.rs:2881
+#: src/backend_ui.rs:2905
 msgid "Active. Myna uses this model for dictation."
 msgstr ""
 
-#: src/backend_ui.rs:2884
+#: src/backend_ui.rs:2908
 msgid "Several models are connected. Only one should be active."
 msgstr ""
 
-#: src/backend_ui.rs:2886
+#: src/backend_ui.rs:2910
 msgid "Not connected to Myna."
 msgstr ""
 
-#: src/backend_ui.rs:2892
+#: src/backend_ui.rs:2916
 msgid "Active model"
 msgstr ""
 
-#: src/backend_ui.rs:2898
+#: src/backend_ui.rs:2922
 msgid "Active engine"
 msgstr ""
 
-#: src/backend_ui.rs:2901
+#: src/backend_ui.rs:2925
 msgid "None selected. Choose one below."
 msgstr ""
 
-#: src/backend_ui.rs:2918 src/diagnostics.rs:682
+#: src/backend_ui.rs:2942 src/diagnostics.rs:682
 msgid "Services"
 msgstr ""
 
-#: src/backend_ui.rs:2920
+#: src/backend_ui.rs:2944
 msgid "No service health reported"
 msgstr ""
 
-#: src/backend_ui.rs:2934
+#: src/backend_ui.rs:2958
 msgid "Loading"
 msgstr ""
 
-#: src/backend_ui.rs:2935
+#: src/backend_ui.rs:2959
 msgid "Reading this model's settings…"
 msgstr ""
 
-#: src/backend_ui.rs:2944
+#: src/backend_ui.rs:2968
 msgid "No configuration reported"
 msgstr ""
 
-#: src/backend_ui.rs:2946
+#: src/backend_ui.rs:2970
 msgid "The model answered but reported no settings to change."
 msgstr ""
 
-#: src/backend_ui.rs:2956
+#: src/backend_ui.rs:2980
 msgid "Some data is unavailable"
 msgstr ""
 
-#: src/backend_ui.rs:2958
+#: src/backend_ui.rs:2982
 msgid "Raw failure details are recorded on the Diagnostics page."
 msgstr ""
 
-#: src/backend_ui.rs:3001 src/backend_ui.rs:3353 src/backend_ui.rs:3675
+#: src/backend_ui.rs:3025 src/backend_ui.rs:3377 src/backend_ui.rs:3699
 msgid "Refreshing…"
 msgstr ""
 
-#: src/backend_ui.rs:3029
+#: src/backend_ui.rs:3053
 msgid "Runtime"
 msgstr ""
 
-#: src/backend_ui.rs:3030
+#: src/backend_ui.rs:3054
 msgid "Advanced"
 msgstr ""
 
-#: src/backend_ui.rs:3031
+#: src/backend_ui.rs:3055
 msgid "Sensitive"
 msgstr ""
 
-#: src/backend_ui.rs:3038
+#: src/backend_ui.rs:3062
 msgid "Common settings for this model."
 msgstr ""
 
-#: src/backend_ui.rs:3041
+#: src/backend_ui.rs:3065
 msgid "Runtime and performance related settings."
 msgstr ""
 
-#: src/backend_ui.rs:3044
+#: src/backend_ui.rs:3068
 msgid "Advanced settings."
 msgstr ""
 
-#: src/backend_ui.rs:3047
+#: src/backend_ui.rs:3071
 msgid "Internal and sensitive values are shown for diagnostics only."
 msgstr ""
 
-#: src/backend_ui.rs:3071
+#: src/backend_ui.rs:3095
 msgid "Sensitive value (redacted)"
 msgstr ""
 
 #. TRANSLATORS: {name} is the model part or snap being downloaded, such as "model-small"; {done} and {total} are sizes such as "210.0 MB".
-#: src/backend_ui.rs:3219
+#: src/backend_ui.rs:3243
 msgid "Downloading {name}: {done} of {total}"
 msgstr ""
 
-#: src/backend_ui.rs:3231
+#: src/backend_ui.rs:3255
 msgid "Active"
 msgstr ""
 
-#: src/backend_ui.rs:3232
+#: src/backend_ui.rs:3256
 msgid "Inactive"
 msgstr ""
 
-#: src/backend_ui.rs:3233
+#: src/backend_ui.rs:3257
 msgid "Failed"
 msgstr ""
 
-#: src/backend_ui.rs:3235
+#: src/backend_ui.rs:3259
 msgid "Unknown"
 msgstr ""
 
-#: src/backend_ui.rs:3328
+#: src/backend_ui.rs:3352
 msgid "Installed snaps"
 msgstr ""
 
-#: src/backend_ui.rs:3329
+#: src/backend_ui.rs:3353
 msgid "Model connections"
 msgstr ""
 
-#: src/backend_ui.rs:3330
+#: src/backend_ui.rs:3354
 msgid "Model control command"
 msgstr ""
 
-#: src/backend_ui.rs:3331
+#: src/backend_ui.rs:3355
 msgid "Model settings"
 msgstr ""
 
-#: src/backend_ui.rs:3332
+#: src/backend_ui.rs:3356
 msgid "Model status"
 msgstr ""
 
-#: src/backend_ui.rs:3333
+#: src/backend_ui.rs:3357
 msgid "Available models"
 msgstr ""
 
-#: src/backend_ui.rs:3334
+#: src/backend_ui.rs:3358
 msgid "Available engines"
 msgstr ""
 
-#: src/backend_ui.rs:3340
+#: src/backend_ui.rs:3364
 msgid "Persisted values could not be read."
 msgstr ""
 
-#: src/backend_ui.rs:3351 src/backend_ui.rs:3683
+#: src/backend_ui.rs:3375 src/backend_ui.rs:3707
 msgid "Applying changes…"
 msgstr ""
 
-#: src/backend_ui.rs:3374
+#: src/backend_ui.rs:3398
 msgid "missing"
 msgstr ""
 
 #. TRANSLATORS: {key} is a setting's key, such as "streaming"; {requested} and {actual} are its values.
-#: src/backend_ui.rs:3376
+#: src/backend_ui.rs:3400
 msgid "{key}: asked for {requested}, read back {actual}"
 msgstr ""
 
-#: src/backend_ui.rs:3427
+#: src/backend_ui.rs:3451
 msgid "Error:\n"
 msgstr ""
 
-#: src/backend_ui.rs:3431
+#: src/backend_ui.rs:3455
 msgid ""
 "\n"
 "Reconnecting the model in use before also failed:\n"
 msgstr ""
 
-#: src/backend_ui.rs:3435
+#: src/backend_ui.rs:3459
 msgid ""
 "The change could not be made, and no model is connected now. Choose one "
 "again."
 msgstr ""
 
-#: src/backend_ui.rs:3446
+#: src/backend_ui.rs:3470
 msgid "snapd is still working on:\n"
 msgstr ""
 
-#: src/backend_ui.rs:3449
+#: src/backend_ui.rs:3473
 msgid ""
 "The system is still installing or updating this model or Myna. Try again "
 "once it is done."
 msgstr ""
 
-#: src/backend_ui.rs:3458
+#: src/backend_ui.rs:3482
 msgid "The change ran, but the connections do not match it."
 msgstr ""
 
-#: src/backend_ui.rs:3462
+#: src/backend_ui.rs:3486
 msgid "The connections changed before the change could start. Try again."
 msgstr ""
 
-#: src/backend_ui.rs:3466
+#: src/backend_ui.rs:3490
 msgid "Discovery error:\n"
 msgstr ""
 
-#: src/backend_ui.rs:3468
+#: src/backend_ui.rs:3492
 msgid "The change ran, but the connections could not be read back."
 msgstr ""
 
-#: src/backend_ui.rs:3485
+#: src/backend_ui.rs:3509
 msgid "Final connections:"
 msgstr ""
 
-#: src/backend_ui.rs:3490
+#: src/backend_ui.rs:3514
 msgid "Final connections could not be verified:"
 msgstr ""
 
-#: src/backend_ui.rs:3494
+#: src/backend_ui.rs:3518
 msgid "Final connections could not be verified.\n"
 msgstr ""
 
-#: src/backend_ui.rs:3502
+#: src/backend_ui.rs:3526
 msgid "No snapd operations completed.\n"
 msgstr ""
 
-#: src/backend_ui.rs:3506
+#: src/backend_ui.rs:3530
 msgid "Completed snapd operations:\n"
 msgstr ""
 
-#: src/backend_ui.rs:3535
+#: src/backend_ui.rs:3559
 msgid "no model connected"
 msgstr ""
 
-#: src/backend_ui.rs:3539 src/diagnostics.rs:862
+#: src/backend_ui.rs:3563 src/diagnostics.rs:862
 msgid "connected"
 msgstr ""
 
-#: src/backend_ui.rs:3549
+#: src/backend_ui.rs:3573
 msgid "several models"
 msgstr ""
 
-#: src/backend_ui.rs:4360 src/model_family.rs:27
+#: src/backend_ui.rs:4384 src/model_family.rs:27
 msgid "Fastest and most accurate in its 25 languages"
 msgstr ""
 
-#: src/backend_ui.rs:4868 src/model_family.rs:31
+#: src/backend_ui.rs:4892 src/model_family.rs:31
 msgid "Most languages, with uneven accuracy"
 msgstr ""
 
-#: src/backend_ui.rs:4872 src/model_family.rs:35
+#: src/backend_ui.rs:4896 src/model_family.rs:35
 msgid "Best for Chinese, Japanese and Korean"
 msgstr ""
 
-#: src/backend_ui.rs:4876 src/model_family.rs:38
+#: src/backend_ui.rs:4900 src/model_family.rs:38
 msgid "Best for Hindi"
 msgstr ""
 
