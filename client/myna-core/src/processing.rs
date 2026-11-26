@@ -74,18 +74,6 @@ pub fn in_stage_order(ids: &[String]) -> Vec<String> {
     ordered
 }
 
-/// How Chinese is written under a stored list: as recognised unless the
-/// `script` step is enabled with a known `script.mode`.
-pub fn script_of(ids: &[String], params: &Params) -> ChineseScript {
-    if !ids.iter().any(|id| id == "script") {
-        return ChineseScript::AsRecognised;
-    }
-    params
-        .get(&param_key("script", "mode"))
-        .and_then(|nick| ChineseScript::from_nick(nick))
-        .unwrap_or_default()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -99,23 +87,6 @@ mod tests {
         assert_eq!(
             in_stage_order(&ids(&["script", "x", "translate", "translate", "tidy"])),
             ids(&["tidy", "translate", "script", "x"])
-        );
-    }
-
-    #[test]
-    fn the_script_reads_through_its_step() {
-        let params = |mode: &str| Params::from([(param_key("script", "mode"), mode.to_owned())]);
-        assert_eq!(
-            script_of(&ids(&["script"]), &params("traditional")),
-            ChineseScript::Traditional
-        );
-        assert_eq!(
-            script_of(&ids(&["tidy"]), &params("traditional")),
-            ChineseScript::AsRecognised
-        );
-        assert_eq!(
-            script_of(&ids(&["script"]), &Params::new()),
-            ChineseScript::AsRecognised
         );
     }
 
