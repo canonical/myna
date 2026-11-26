@@ -54,7 +54,7 @@ step 4 "Remove takes the component away and the step stays, offering Install"
 # runs, so the step never offers Install. The shot stays open for the
 # daemon's own answer, which is also what the step after it waits for.
 shot --polkit allow waitfor:General tab:Processing "click:$CHAIN" \
-    "waitfor:More actions for tidy" "click:More actions for tidy" "activate:Remove model" \
+    "waitfor:More actions for Tidy up speech" "click:More actions for Tidy up speech" "activate:Remove model" \
     "$(slowpoll "! snap components myna-text 2>/dev/null | grep -q 'model-disfluency-en *installed'")" \
     "$(slowpoll "! $OFFERS | grep -q disfluency")" \
     shot:shots/processing-catalog/04-removed.png \

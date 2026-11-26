@@ -141,7 +141,7 @@ evidence 4
 
 echo "-- 5. Past dictations lists the result"
 shot waitfor:General tab:Processing "waitfor:Past dictations" "click:Past dictations" \
-    "waitfor:$FULL" "waitfor:renard" shot:shots/plugins/05-past-dictations.png \
+    "waitfor:Heard: $FULL" "waitfor:~renard" shot:shots/plugins/05-past-dictations.png \
     || { echo "past dictations run failed" >&2; FAILED=1; }
 
 echo "-- 6. Remove takes the model away; the step says what it needs and the dictation fails open"
@@ -157,7 +157,7 @@ assert_dict "the Remove asked for one authorization" "[ \"\$(polkit_grants $T0)\
 assert_dict "the daemon names what the chain lacks" \
     'wait_until 60 status_has "missing .*text\.translate .*to=fr"'
 assert_on "the chain keeps its step" "grep -qF \"('translate', true, {'to': 'fr'})\" $STORE"
-shot waitfor:General tab:Processing "click:$CHAIN" "waitfor:Install" shot:shots/plugins/06-needs-model.png \
+shot waitfor:General tab:Processing "click:$CHAIN" "waitfor:Install the Français model" shot:shots/plugins/06-needs-model.png \
     || { echo "needs-model run failed" >&2; FAILED=1; }
 dictate
 assert_dict "the English the backend heard is in the field (fail open)" "wait_until 10 field_is plain '$FULL'"

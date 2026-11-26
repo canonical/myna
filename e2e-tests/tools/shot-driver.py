@@ -32,9 +32,12 @@ Runs inside the e2e VM under xvfb-run (DISPLAY set). Steps are argv words:
   refocus              give the app's window focus again, close the stand-in
   sh:<command>         run a shell command on the box (e.g. sudo snap ...)
 
-Names match exactly first, then as a case-insensitive substring. Any name
-may carry a role filter, "name@role" (e.g. "Backend@combo box"); `dump`
-prints the roles.
+Names match exactly. "~name" matches the first name containing it,
+ignoring case, for a name that carries a value the suite cannot know (a
+size, a count); a substring otherwise also finds "New chain 2" for "New
+chain". Any name may carry a role filter, "name@role" (e.g. "Backend@combo
+box"); `dump` prints the roles. A wait that times out lists the showing
+names that come closest.
 """
 
 import os
@@ -106,14 +109,20 @@ def find(name, roles=None):
                 return None
 
         nodes = [n for n in nodes if role_of(n) in roles]
-    for n in nodes:
-        if name_of(n) == name:
-            return n
-    low = name.lower()
-    for n in nodes:
-        if low in name_of(n).lower():
-            return n
-    return None
+    if name.startswith("~"):
+        low = name[1:].lower()
+        return next((n for n in nodes if low in name_of(n).lower()), None)
+    return next((n for n in nodes if name_of(n) == name), None)
+
+
+def near_misses(name):
+    """The showing names that share a word with `name`, for a timeout."""
+    root = app()
+    if root is None:
+        return []
+    words = {w for w in name.lstrip("~").lower().split() if len(w) > 2}
+    names = {name_of(n) for n, _ in walk(root) if showing(n)}
+    return sorted(n for n in names if words & set(n.lower().split()))[:10]
 
 
 def wait_for(name, timeout=30.0, roles=None):
@@ -126,7 +135,10 @@ def wait_for(name, timeout=30.0, roles=None):
         if node is not None:
             return node
         time.sleep(0.2)
-    sys.exit(f"shot-driver: no showing widget named {name!r} after {timeout}s")
+    sys.exit(
+        f"shot-driver: no showing widget named {name!r} after {timeout}s;"
+        f" showing: {near_misses(name)}"
+    )
 
 
 def text_of(node):

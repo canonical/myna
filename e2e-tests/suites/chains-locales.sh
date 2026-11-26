@@ -56,7 +56,7 @@ for spec in fr_FR.UTF-8:fr zh_CN.UTF-8:zh_CN fa_IR.UTF-8:fa; do
     loc=${spec%%:*} po=${spec#*:}
     t() { tr_po "$po" "$1"; }
     # One chain to open, made before the app starts so the page lists it. Its
-    # Translate step puts the editor's "EN →" badge - a left-to-right run -
+    # Translate step puts the editor's "EN → FR" badge - a left-to-right run -
     # on Farsi's right-to-left page.
     # shellcheck disable=SC2016 # expands in the VM
     assert_on "a chain to open" \
@@ -64,9 +64,9 @@ for spec in fr_FR.UTF-8:fr zh_CN.UTF-8:zh_CN fa_IR.UTF-8:fa; do
     if on "MYNA_CONFIG_LOCALEDIR=\$HOME/myna-shot/locale myna-shot/shot.sh --display $SHOT_DISPLAY --lang $loc $(printf '%q ' \
         "waitfor:$(t General)" "tab:$(t Processing)" "waitfor:$CHAIN" \
         shot:"shots/chains-locales/01-$po-page.png" \
-        "click:$CHAIN" "waitfor:$(t 'Add step…')" "waitfor:EN →" \
+        "click:$CHAIN" "waitfor:$(t 'Add step…')" "waitfor:EN → FR" \
         shot:"shots/chains-locales/01-$po-editor.png" \
-        "click:$(t 'Add step…')" "click:$(t Translate)" "waitfor:Français" \
+        "click:$(t 'Add step…')" "click:$(t Translate)" "waitfor:$(t 'Search languages')" \
         shot:"shots/chains-locales/01-$po-languages.png")"; then
         echo "PASS: Settings in $loc shows the page, the editor and the language page"
     else

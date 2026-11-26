@@ -287,7 +287,7 @@ STORE='$HOME/snap/myna/common/.config/glib-2.0/settings/keyfile'
 assert_on "a Tidy chain is saved, none in use" \
     "snap run myna.config set chains \"[('t', 'Tidy', [('tidy', true, {})])]\" && snap run myna.config set active-chain ''"
 shot waitfor:General tab:Processing "waitfor:Use Tidy" "click:Use Tidy" \
-    "$(poll "grep -q \"active-chain='t'\" $STORE")" "waitfor:Needs" \
+    "$(poll "grep -q \"active-chain='t'\" $STORE")" "waitfor:~Needs the Tidy up speech model" \
     shot:shots/dictation/12-processing.png \
     || { echo "processing run failed" >&2; FAILED=1; }
 assert_on "the switch is stored as the active chain" "grep -q \"active-chain='t'\" $STORE"

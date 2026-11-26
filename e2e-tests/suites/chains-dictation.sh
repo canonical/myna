@@ -60,7 +60,7 @@ shot waitfor:General tab:Processing "click:New chain…" "click:Add step…" \
     || { echo "translate to English failed" >&2; FAILED=1; }
 switch_on
 assert_dict "the daemon's chain status is ready" "$READY"
-shot waitfor:General tab:Processing "click:$CHAIN" "waitfor:FR →" \
+shot waitfor:General tab:Processing "click:$CHAIN" "waitfor:FR → EN" \
     shot:shots/chains-dictation/03-french.png \
     || { echo "french editor failed" >&2; FAILED=1; }
 dictate
@@ -103,7 +103,7 @@ assert_dict "both legs are installed" \
     'wait_until 60 component_installed myna-translation model-translate-fa-en && component_installed myna-translation model-translate-en-fr'
 switch_on
 assert_dict "the daemon's chain status is ready" "$READY"
-shot waitfor:General tab:Processing "click:$CHAIN" "waitfor:FA →" \
+shot waitfor:General tab:Processing "click:$CHAIN" "waitfor:FA → FR" \
     shot:shots/chains-dictation/05-farsi-pivot.png \
     || { echo "farsi editor failed" >&2; FAILED=1; }
 dictate
