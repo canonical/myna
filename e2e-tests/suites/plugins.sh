@@ -167,7 +167,7 @@ evidence 6
 
 echo "-- 7. Install from the chain's editor heals it"
 dict journal_mark
-shot --polkit allow waitfor:General tab:Processing "click:$CHAIN" "click:Install@$BTN" \
+shot --polkit allow waitfor:General tab:Processing "click:$CHAIN" "click:Install the Français model@$BTN" \
     "$(slowpoll "$(installed myna-translation model-translate-en-fr)")" \
     "$(slowpoll "$OFFERS | grep -q en-fr")" \
     || { echo "reinstall run failed" >&2; FAILED=1; }
