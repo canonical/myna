@@ -5,7 +5,7 @@
 
 use myna_core::chains::ChainStep;
 
-use crate::languages::{exonym, language_name, Source};
+use crate::languages::{exonym, language_in_text, language_name, Source};
 use crate::plugin_catalog::{self, Entry};
 use crate::processing_steps::{self as steps, size, Offered, Row, Standing, SCRIPT, TRANSLATE};
 use std::collections::{BTreeMap, BTreeSet};
@@ -210,7 +210,7 @@ fn translate_subtitle(inputs: &Inputs) -> (String, bool) {
             false,
         );
     };
-    let name = language_name(from);
+    let name = language_in_text(from);
     if inputs.languages.is_empty() {
         // TRANSLATORS: {language} is a language name, such as "فارسی".
         let frame = gettextrs::gettext("No model translates {language} yet");

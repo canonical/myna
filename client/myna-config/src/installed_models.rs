@@ -4,7 +4,7 @@
 //! remove it. GTK-free.
 
 use crate::diagnostics::InstalledSnap;
-use crate::languages::language_name;
+use crate::languages::{language_in_text, language_name};
 use crate::plugin_catalog::{self, ComponentRequest, Entry};
 
 /// What Diagnostics knows when it lists the models.
@@ -145,8 +145,8 @@ fn named(entry: &Entry) -> (String, String) {
         // TRANSLATORS: {from} and {to} are language names, such as "English" and "Français".
         let frame = gettextrs::gettext("{from} to {to}");
         let title = frame
-            .replace("{from}", &language_name(&entry.in_lang))
-            .replace("{to}", &language_name(&entry.out_lang));
+            .replace("{from}", &language_in_text(&entry.in_lang))
+            .replace("{to}", &language_in_text(&entry.out_lang));
         return (title, gettextrs::gettext("Translation"));
     }
     let title = plugin_catalog::label(&entry.step.label_key).unwrap_or_else(|| entry.model.clone());

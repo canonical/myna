@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use myna_core::chains::ChainStep;
 use myna_core::processing::ChineseScript;
 
-use crate::languages::{catalog_code, language_name, Source};
+use crate::languages::{catalog_code, language_in_text, Source};
 
 use crate::plugin_catalog::{self, Entry};
 // The Translate picker and the catalog's language page list the same
@@ -410,7 +410,7 @@ fn standing(
                 let frame = gettextrs::gettext("Applies when the text is {language}");
                 let wanted = own[0].in_lang.as_str();
                 return Standing::NotApplicable(
-                    frame.replace("{language}", &language_name(wanted)),
+                    frame.replace("{language}", &language_in_text(wanted)),
                 );
             }
         }
@@ -426,7 +426,7 @@ fn standing(
             let frame = gettextrs::gettext("No model translates {from} to {to} yet");
             return Standing::Unavailable(
                 frame
-                    .replace("{from}", &language_name(from))
+                    .replace("{from}", &language_in_text(from))
                     .replace("{to}", &target.name),
             );
         }

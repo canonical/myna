@@ -128,13 +128,13 @@ pub fn word(task: &str) -> String {
         // TRANSLATORS: {from} and {to} are language names, such as "English" and "Deutsch".
         let frame = gettextrs::gettext("translation from {from} to {to}");
         return frame
-            .replace("{from}", &crate::languages::language_name(from))
-            .replace("{to}", &crate::languages::language_name(to));
+            .replace("{from}", &crate::languages::language_in_text(from))
+            .replace("{to}", &crate::languages::language_in_text(to));
     }
     if let Some(to) = task.strip_prefix("text.translate>") {
         // TRANSLATORS: {language} is a language name, such as "Français".
         let frame = gettextrs::gettext("translation to {language}");
-        return frame.replace("{language}", &crate::languages::language_name(to));
+        return frame.replace("{language}", &crate::languages::language_in_text(to));
     }
     match task {
         "text.cleanup" => gettextrs::gettext("text cleanup"),

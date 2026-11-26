@@ -51,6 +51,21 @@ pub fn language_name(code: &str) -> String {
     }
 }
 
+/// A language's name to put inside a sentence ("فارسی to English"): a
+/// right-to-left name is isolated (U+2068 ... U+2069), or it would turn
+/// the whole sentence around it ("to English فارسی").
+pub fn language_in_text(code: &str) -> String {
+    let name = language_name(code);
+    let rtl = name.chars().any(|c| {
+        matches!(c, '\u{0590}'..='\u{08FF}' | '\u{FB1D}'..='\u{FDFF}' | '\u{FE70}'..='\u{FEFF}')
+    });
+    if rtl {
+        format!("\u{2068}{name}\u{2069}")
+    } else {
+        name
+    }
+}
+
 /// The English name of every language the catalog offers, by code, each a
 /// literal `gettext` call so the extractor sees it. Built once; [`exonym`]
 /// reads the names in the interface language, so a search for "German"
@@ -142,6 +157,8 @@ mod tests {
         assert_eq!(language_name("zh-Hans"), "简体中文");
         assert_eq!(exonym("zh-Hans").as_deref(), Some("Chinese (Simplified)"));
         assert_eq!(language_name("zh-Hant"), "繁體中文");
+        assert_eq!(language_in_text("fr"), "Français");
+        assert_eq!(language_in_text("fa"), "\u{2068}فارسی\u{2069}");
         assert_eq!(exonym("de").as_deref(), Some("German"));
         assert_eq!(exonym("ja").as_deref(), Some("Japanese"));
         assert_eq!(exonym("zz"), None);

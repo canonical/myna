@@ -15,7 +15,7 @@ use libadwaita as adw;
 use myna_core::chains::{Chain, ChainStep, Processing};
 
 use crate::chains_view;
-use crate::languages::{language_name, Source};
+use crate::languages::{language_in_text, Source};
 use crate::markup::escape_markup;
 use crate::plugin_catalog::{self, Entry};
 use crate::plugin_install::{self, Failure, SnapState};
@@ -536,7 +536,7 @@ impl StepsPage {
                     // TRANSLATORS: {language} is the language the text is in where the step goes, such as "English".
                     "From {language}. Choosing a language adds the step; one that is not installed downloads first.",
                 );
-                frame.replace("{language}", &language_name(code))
+                frame.replace("{language}", &language_in_text(code))
             }
             Source::Unknown => gettextrs::gettext("Needs a single dictation language"),
         };
@@ -586,8 +586,8 @@ impl StepsPage {
                 // TRANSLATORS: {from} and {to} are language names, such as "English" and "Français".
                 let frame = gettextrs::gettext("{from} to {to}");
                 let title = frame
-                    .replace("{from}", &language_name(&entry.in_lang))
-                    .replace("{to}", &language_name(&entry.out_lang));
+                    .replace("{from}", &language_in_text(&entry.in_lang))
+                    .replace("{to}", &language_in_text(&entry.out_lang));
                 let row = adw::ActionRow::builder()
                     .title(escape_markup(&title))
                     .subtitle(escape_markup(&size(entry.download_bytes)))
