@@ -96,9 +96,14 @@ def name_of(node):
 
 
 def find(name, roles=None):
+    return next(iter(find_all(name, roles)), None)
+
+
+def find_all(name, roles=None):
+    """Every showing widget `name` (exact, or "~substring") names."""
     root = app()
     if root is None:
-        return None
+        return []
     nodes = [n for n, _ in walk(root) if showing(n)]
     if roles:
         # A node can vanish mid-walk when the app rebuilds that part.
@@ -111,8 +116,23 @@ def find(name, roles=None):
         nodes = [n for n in nodes if role_of(n) in roles]
     if name.startswith("~"):
         low = name[1:].lower()
-        return next((n for n in nodes if low in name_of(n).lower()), None)
-    return next((n for n in nodes if name_of(n) == name), None)
+        return [n for n in nodes if low in name_of(n).lower()]
+    return [n for n in nodes if name_of(n) == name]
+
+
+def settled(spec, node):
+    """`node`, or the one match left once a page transition is over. While
+    a navigation view slides, the page going and the page coming both show:
+    the editor's Translate step and the catalog's Translate row, say. Two
+    names that stay alike after 2 s are a real pair; the first is it."""
+    name, _, role = spec.rpartition("@") if "@" in spec else (spec, "", "")
+    deadline = time.monotonic() + 2.0
+    while time.monotonic() < deadline:
+        found = find_all(name, (role,) if role else None)
+        if len(found) <= 1:
+            return found[0] if found else node
+        time.sleep(0.1)
+    return node
 
 
 def near_misses(name):
@@ -120,7 +140,7 @@ def near_misses(name):
     root = app()
     if root is None:
         return []
-    words = {w for w in name.lstrip("~").lower().split() if len(w) > 2}
+    words = {w for w in name.lstrip("~").lower().split() if len(w) > 1}
     names = {name_of(n) for n, _ in walk(root) if showing(n)}
     return sorted(n for n in names if words & set(n.lower().split()))[:10]
 
@@ -336,7 +356,7 @@ def main(steps):
             node = wait_for(arg, roles=("toggle button", "button", "page tab", "radio button"))
             x_click(node) or do_action(node)
         elif verb == "click":
-            node = wait_for(arg)
+            node = settled(arg, wait_for(arg))
             x_click(node) or do_action(node)
         elif verb == "scrollat":
             # scrollat:<x>,<y>[#clicks]: wheel down at root coordinates
