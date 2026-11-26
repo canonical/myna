@@ -13,10 +13,12 @@
 #   4. dictating Chinese: Chinese script types Traditional, Taiwan
 #   5. dictating Farsi: Translate into Français through English
 #   6. dictating English: Translate into 简体中文 types Simplified Chinese
-#   7. a chain holds the sentence being said and the one before it: the
+#   7. dictating Chinese: Translate into English converts the script first
+#      and types English
+#   8. a chain holds the sentence being said and the one before it: the
 #      first reaches the field while the dictation goes on, the rest at the
 #      stop
-#   8. focus lost while text is held: the held sentences are not typed
+#   9. focus lost while text is held: the held sentences are not typed
 #      anywhere, and Past dictations records the loss
 set -uo pipefail
 # shellcheck source=e2e-tests/suites/lib.sh
@@ -137,6 +139,27 @@ assert_dict "Simplified Chinese is in the field, not the English" \
     "field_get plain | grep -q '狐狸' && ! field_get plain | grep -q '[a-zA-Z]'"
 evidence simplified
 
+# The only model reads zh-Hant and the dictation is mixed-script zh, so the
+# solver inserts the conversion; the editor says so under the step.
+step 7 "dictating Chinese: Translate into English converts the script first"
+fresh_chain zh "$ZH_SAID"
+assert_dict "the Chinese to English model is installed" \
+    'wait_until 60 component_installed myna-translation model-translate-zh-hant-en'
+shot waitfor:General tab:Processing "click:New chain…" "click:Add step…" "click:Translate" \
+    "waitfor:Search languages" "click:Search languages" "type:engl" \
+    "gone:Español" "click:English" "waitfor:Add step…" \
+    "$(poll "grep -qF \"('translate', true, {'to': 'en'})\" $STORE")" \
+    || { echo "translate to English failed" >&2; FAILED=1; }
+switch_on
+assert_dict "the daemon's chain status is ready" "$READY"
+shot waitfor:General tab:Processing "click:$CHAIN" "waitfor:ZH → EN" \
+    "waitfor:Writes Traditional first" shot:shots/chains-dictation/07-chinese-english.png \
+    || { echo "chinese to english editor failed" >&2; FAILED=1; }
+dictate
+assert_dict "English is in the field, no Chinese" \
+    "field_get plain | grep -q '[a-zA-Z]' && ! field_get plain | grep -qP '\\p{Han}'"
+evidence chinese-english
+
 # The fake hears three sentences a second apart. A chain holds the sentence
 # being said and the last finished one (either may still be revised), so the
 # first is typed once the third arrives and the other two at the stop.
@@ -156,7 +179,7 @@ start_held() {
     assert_dict "the second and third are held" '! field_has plain rained && ! field_has plain wet'
 }
 
-step 7 "a chain holds the last two sentences, and types them at the stop"
+step 8 "a chain holds the last two sentences, and types them at the stop"
 fresh_chain en "$HELD"
 use_tidy
 start_held
@@ -166,7 +189,7 @@ assert_dict "the held sentences are typed at the stop" \
     'wait_until 10 field_has plain wet && field_has plain rained'
 evidence held
 
-step 8 "focus lost while text is held: nothing more is typed, and it is recorded"
+step 9 "focus lost while text is held: nothing more is typed, and it is recorded"
 assert_on "Past dictations keeps a record" "snap run myna.config set processing-history true"
 use_tidy
 start_held
