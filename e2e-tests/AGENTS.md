@@ -167,6 +167,19 @@ component (`slowpoll`): closing Settings first drops the request.
 `dev/try-desktop.sh` (`make try-desktop`) reuses the provisioning above for a
 manual-test VM; it only ever copies the `installed` snapshot of an e2e VM.
 
+## Coverage
+
+`E2E_COVERAGE=1` (CI sets it) builds myna-config and myna-hud-host with
+`-C instrument-coverage` and counter relocation, and `on_vm` hands every
+process `LLVM_PROFILE_FILE` with `%c`, so profiles are written as the app
+runs and a suite that kills Settings still counts. They land in
+`out/prof/`; after the run `coverage-export.sh` merges this run's suites in
+the myna-noble workshop (llvm-cov needs the build's own objects) into
+`client/target/coverage/e2e-<tag>.cobertura.xml`, stamped with the `client/`
+tree id, for the
+patch gate. The pkexec root executor drops the environment: what it runs is
+not counted.
+
 ## The fleet
 
 One provisioned VM per (release, desktop), named by `vm/lib.sh`'s `vm_name`:

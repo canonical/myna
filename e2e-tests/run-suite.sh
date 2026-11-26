@@ -17,6 +17,10 @@
 # that has none yet, nor for a suite headed `# myna: store`).
 # E2E_FAKE_SNAP=PATH does the same for the fake backend (`make snap-fake`)
 # wherever the snapshot has one.
+# E2E_COVERAGE=1 builds the binaries with coverage instrumentation, and
+# after the run writes what the suites executed to
+# client/target/coverage/e2e-<tag>.cobertura.xml for dev/patch_cov.py.
+# Not with --binary: the export needs the build's own objects.
 # A suite headed `# requires: VAR` is skipped unless VAR is set.
 # Suites live in suites/; none given runs them all. The build also yields
 # myna-hud-host (the Xfce HUD supervisor, which the dictation suite starts the
@@ -68,6 +72,10 @@ fi
 TAG=$REL; [ "$E2E_DESKTOP" = gnome ] || TAG=$E2E_DESKTOP-$REL
 REPO=$(git -C "$HERE" rev-parse --show-toplevel)
 
+if [ -n "${E2E_COVERAGE:-}" ] && [ -n "$BINARY" ]; then
+    echo "E2E_COVERAGE needs the binary run-suite builds, not --binary" >&2
+    exit 2
+fi
 if [ -z "$BINARY" ]; then
     # The binary is built once on the GTK 4.14/adw 1.5 floor and runs on every
     # series. A worktree's .git does not resolve inside the workshop, so the
@@ -75,15 +83,23 @@ if [ -z "$BINARY" ]; then
     echo "== building myna-config in myna-noble"
     "$REPO/dev/version.sh" > "$REPO/client/.version"
     trap 'rm -f "$REPO/client/.version"' EXIT
+    # Instrumented builds keep their own target dir. Counter relocation is
+    # what lets continuous mode (%c in LLVM_PROFILE_FILE, lib.sh) write
+    # profiles as the app runs: a suite that kills the app still counts.
+    TARGET=target ENV=''
+    if [ -n "${E2E_COVERAGE:-}" ]; then
+        TARGET=target-cov
+        ENV='RUSTFLAGS="-C instrument-coverage -C llvm-args=-runtime-counter-relocation"'
+    fi
     # shellcheck disable=SC2016 # expands in the workshop
     (cd "$REPO" && workshop exec myna-noble -- bash -c \
-        'export CARGO_TARGET_DIR=$HOME/target; cd /project/client && cargo build --release -q -p myna-config --bin myna-config --bin myna-hud-host')
+        "export CARGO_TARGET_DIR=\$HOME/$TARGET $ENV; cd /project/client && cargo build --release -q -p myna-config --bin myna-config --bin myna-hud-host")
     BINARY=$RUN_DIR/myna-config
     mkdir -p "$RUN_DIR"
     # Through a temporary name: another desktop's run on this host may be
     # pushing the file this one replaces.
     for bin in myna-config myna-hud-host; do
-        (cd "$REPO" && workshop exec myna-noble -- cat /home/workshop/target/release/$bin) > "$RUN_DIR/$bin.$$"
+        (cd "$REPO" && workshop exec myna-noble -- cat "/home/workshop/$TARGET/release/$bin") > "$RUN_DIR/$bin.$$"
         mv "$RUN_DIR/$bin.$$" "$RUN_DIR/$bin"
     done
 fi
@@ -247,5 +263,19 @@ for SUITE in "${RUNNABLE[@]}"; do
 done
 while [ ${#PIDS[@]} -gt 0 ]; do reap; done
 [ ${#FAILED[@]} = 0 ] || echo "== failed: ${FAILED[*]}"
+# This run's suites only: artifacts/ keeps earlier runs' too, from other
+# builds. A lost-audio first attempt ran the same build and counts.
+if [ -n "${E2E_COVERAGE:-}" ]; then
+    PROF=$REPO/client/target/e2e-prof-$TAG
+    rm -rf "$PROF"; mkdir -p "$PROF" "$REPO/client/target/coverage"
+    for SUITE in "${RUNNABLE[@]}"; do
+        for d in "$RUN_DIR/artifacts/$TAG-$SUITE" "$RUN_DIR/artifacts/$TAG-$SUITE-lost-audio"; do
+            if [ -d "$d/out/prof" ]; then cp "$d"/out/prof/*.profraw "$PROF/"; fi
+        done
+    done
+    (cd "$REPO" && workshop exec myna-noble -- /project/e2e-tests/coverage-export.sh \
+        "/project/client/target/e2e-prof-$TAG" "/project/client/target/coverage/e2e-$TAG.cobertura.xml" "$(git -C "$REPO" rev-parse HEAD:client)" \
+        /home/workshop/target-cov/release/myna-config /home/workshop/target-cov/release/myna-hud-host) || rc=1
+fi
 echo "== artifacts in $RUN_DIR/artifacts"
 exit $rc

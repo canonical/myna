@@ -77,8 +77,12 @@ on_vm() {
         xubuntu) display=(--env DISPLAY=:0 --env XAUTHORITY=/home/ubuntu/.Xauthority) ;;
         kde) display=(--env WAYLAND_DISPLAY=wayland-0 --env XDG_SESSION_TYPE=wayland --env XDG_CURRENT_DESKTOP=KDE) ;;
     esac
+    # An instrumented build (run-suite.sh, E2E_COVERAGE) writes its profiles
+    # into out/, which run-suite.sh pulls; %c writes them as the app runs.
+    local cov=()
+    [ -z "${E2E_COVERAGE:-}" ] || cov=(--env "LLVM_PROFILE_FILE=/home/ubuntu/myna-shot/out/prof/%c%p-%m.profraw")
     lxc exec "$vm" --user 1000 --group 1000 --cwd /home/ubuntu \
-        --env HOME=/home/ubuntu --env USER=ubuntu \
+        --env HOME=/home/ubuntu --env USER=ubuntu "${cov[@]}" \
         --env XDG_RUNTIME_DIR=/run/user/1000 \
         --env DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus \
         "${display[@]}" -- bash -c "$*"

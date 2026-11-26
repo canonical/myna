@@ -23,15 +23,34 @@ import re
 import subprocess
 import sys
 import tempfile
+import xml.etree.ElementTree as ET
 from collections import Counter
 from pathlib import Path
 
 from coverage_lib import REPO_ROOT, all_lines, covered_lines, parse_cobertura
 
-EXPORTS = [
+REQUIRED_EXPORTS = [
     REPO_ROOT / "client/target/coverage/rust-merged.cobertura.xml",
     REPO_ROOT / "server/coverage-merged.cobertura.xml",
 ]
+# What the e2e suites executed, one export per desktop and release
+# (e2e-tests/coverage-export.sh): counted when built from HEAD's client/ tree.
+E2E_EXPORTS = "client/target/coverage/e2e-*.cobertura.xml"
+
+
+def e2e_exports(tree: str) -> list[Path]:
+    """The e2e exports stamped with tree; any other is reported and skipped."""
+    fresh = []
+    for xml in sorted(REPO_ROOT.glob(E2E_EXPORTS)):
+        built = ET.parse(xml).getroot().get("client_tree", "")
+        if built == tree:
+            fresh.append(xml)
+        else:
+            print(
+                f"patch-cov: ignoring {xml.name}, built from another client/ ({built[:12] or '?'})"
+            )
+    return fresh
+
 
 # Exclusion patterns (repo-root-relative prefixes/globs): generated, vendored,
 # snapshots, non-code. One place, per the ci-gates contract.
@@ -83,13 +102,17 @@ def main() -> int:
     ap.add_argument("--fail-under", type=float, default=80.0)
     args = ap.parse_args()
 
-    missing = [str(p) for p in EXPORTS if not p.exists()]
+    missing = [str(p) for p in REQUIRED_EXPORTS if not p.exists()]
     if missing:
         print("patch-cov: missing coverage export(s):", file=sys.stderr)
         for m in missing:
             print(f"  - {m}", file=sys.stderr)
         print("run the cov/py-cov/exercise actions first", file=sys.stderr)
         return 1
+    tree = subprocess.run(
+        ["git", "rev-parse", "HEAD:client"], cwd=REPO_ROOT, capture_output=True, text=True
+    ).stdout.strip()
+    exports = REQUIRED_EXPORTS + e2e_exports(tree)
 
     try:
         changes = changed_lines(args.base)
@@ -97,10 +120,9 @@ def main() -> int:
         print(f"patch-cov: {e}", file=sys.stderr)
         return 1
 
-    # Coverable lines from both exports.
     universe: set[tuple[str, int]] = set()
     covered: set[tuple[str, int]] = set()
-    for xml in EXPORTS:
+    for xml in exports:
         hits = parse_cobertura(xml)
         universe |= all_lines(hits)
         covered |= covered_lines(hits)
@@ -142,7 +164,7 @@ def main() -> int:
         subprocess.run(
             [
                 str(diff_cover),
-                *(str(x) for x in EXPORTS),
+                *(str(x) for x in exports),
                 f"--diff-file={diff_path}",
                 f"--html-report={html}",
             ],
