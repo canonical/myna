@@ -74,7 +74,7 @@ fresh_chain zh "$ZH_SAID"
 shot waitfor:General tab:Processing "click:New chain…" "click:Add step…" \
     "click:Chinese script" "click:Add Chinese script@$BTN" "waitfor:Add step…" \
     "$(poll "grep -qF \"('script', true\" $STORE")" \
-    "click:Write Chinese as" "waitfor:Traditional, Taiwan (繁體)" \
+    "click:Write Chinese as@combo box" "waitfor:Traditional, Taiwan (繁體)" \
     "key:Down" "key:Down" "key:Return" \
     "$(poll "grep -qF \"('script', true, {'mode': 'traditional-taiwan'})\" $STORE")" \
     || { echo "script step failed" >&2; FAILED=1; }

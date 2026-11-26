@@ -314,7 +314,7 @@ shot waitfor:General tab:Processing "click:Script" "waitfor:Skipped here" \
     shot:shots/dictation/13-script-dimmed.png \
     || { echo "script dim run failed" >&2; FAILED=1; }
 assert_on "Chinese dictation makes the step run" "snap run myna.config set language zh"
-shot waitfor:General tab:Processing "click:Script" "click:Write Chinese as" \
+shot waitfor:General tab:Processing "click:Script" "click:Write Chinese as@combo box" \
     "waitfor:Traditional, Taiwan (繁體)" "key:Down" "key:Down" "key:Return" \
     "$(poll "grep -qF \"('script', true, {'mode': 'traditional-taiwan'})\" $STORE")" \
     shot:shots/dictation/13-script-taiwan.png \
