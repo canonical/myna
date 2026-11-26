@@ -50,6 +50,7 @@ fi
 # dir, as dev/nested-session.sh requires of anything that may start an
 # accessibility bus; that also keeps the compositor's socket off the host's.
 export GDK_BACKEND=wayland
+# shellcheck disable=SC2016 # the loop and "$@" expand inside, not here.
 exec "$HERE/nested-session.sh" bash -c '
     set -euo pipefail
     mutter --headless --wayland --no-x11 --wayland-display=wayland-gtk \
