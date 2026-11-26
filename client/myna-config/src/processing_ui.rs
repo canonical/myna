@@ -1152,7 +1152,7 @@ impl StepsPage {
                     step.params.insert("to".into(), target.code.clone());
                 }
             });
-            if !target.installed && target.routed {
+            if matches!(target.state, LanguageState::Download { .. }) {
                 self.install_line(id, index);
             }
         } else if let Some(script) = &line.row.script {
@@ -1327,6 +1327,7 @@ impl StepsPage {
             preparing: &BTreeSet::new(),
             likely: &likely,
             strands: &strands,
+            chosen: None,
         });
         let jobs = step_catalog::jobs(&items, &translate_from, &languages);
         let key = |job: &Job| match job {
@@ -2054,6 +2055,8 @@ fn show_language(widgets: &LanguageWidgets, language: &Language, blocked: bool) 
         LanguageState::Installing(None) => (gettextrs::gettext("Installing…"), false),
         LanguageState::Preparing => (gettextrs::gettext("Preparing…"), false),
         LanguageState::Unknown => (gettextrs::gettext("Myna is not running"), true),
+        // Only a language the editor already chose is listed this way.
+        LanguageState::NoModel => (gettextrs::gettext("No model installed"), false),
     };
     widgets.state.set_label(&state);
     widgets.row.set_sensitive(sensitive);
@@ -2202,13 +2205,13 @@ fn show_line(
         translate
             .targets
             .iter()
-            .map(|target| {
-                if target.installed {
-                    target.name.clone()
-                } else if !target.routed {
+            .map(|target| match target.state {
+                LanguageState::Ready => target.name.clone(),
+                LanguageState::NoModel => {
                     // TRANSLATORS: {language} is a language name; no model translates into it from the text's language.
                     gettextrs::gettext("{language} (no model)").replace("{language}", &target.name)
-                } else {
+                }
+                _ => {
                     // TRANSLATORS: {language} is a language name; its model is not installed yet.
                     gettextrs::gettext("{language} (not installed)")
                         .replace("{language}", &target.name)

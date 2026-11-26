@@ -404,7 +404,9 @@ fn translate_job(from: &Source, languages: &[Language]) -> TranslateJob {
     }
 }
 
-/// A language the text can be translated into at the catalog's place.
+/// A language the text can be translated into from where it is: one row of
+/// the catalog's language page, and one entry of the chain editor's Translate
+/// picker.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Language {
     pub code: String,
@@ -431,6 +433,9 @@ pub enum LanguageState {
     Preparing,
     /// No daemon answers, so what is installed is not known.
     Unknown,
+    /// Chosen in the editor, but no model installed or offered translates
+    /// into it: the picker lists it so the choice is not lost.
+    NoModel,
 }
 
 pub struct LanguageInputs<'a> {
@@ -447,6 +452,10 @@ pub struct LanguageInputs<'a> {
     /// Whether translating into a language here would leave a later step
     /// of the chain translating what no model can.
     pub strands: &'a dyn Fn(&str) -> bool,
+    /// The target a chain already translates into, listed even when no model
+    /// reaches it: the editor's picker shows what is chosen, the page offers
+    /// only what works.
+    pub chosen: Option<&'a str>,
 }
 
 /// The install key of the models a translation into `code` needs.
@@ -458,11 +467,15 @@ pub fn language_key(code: &str) -> String {
 /// model installed or in the catalogs, directly or through English: the
 /// likely ones first in their order, then the rest by name. A language no
 /// model reaches from here, or one that would strand a later step, is not
-/// listed: the page offers only what works.
+/// listed: the page offers only what works. The one a chain already chose is
+/// listed whatever it takes, so the editor's picker shows the choice it has.
 pub fn languages(inputs: &LanguageInputs) -> Vec<Language> {
     let Source::One(from) = inputs.from else {
         return Vec::new();
     };
+    let chosen = inputs
+        .chosen
+        .filter(|code| !code.is_empty() && *code != from);
     let mut codes: BTreeSet<String> = inputs
         .catalog
         .iter()
@@ -481,8 +494,11 @@ pub fn languages(inputs: &LanguageInputs) -> Vec<Language> {
     let mut found: Vec<Language> = codes
         .into_iter()
         .filter(|code| !code.is_empty() && code != from)
-        .filter(|code| crate::processing_steps::routable(inputs.catalog, inputs.daemon, from, code))
-        .filter(|code| !(inputs.strands)(code))
+        .filter(|code| {
+            Some(code.as_str()) == chosen
+                || crate::processing_steps::routable(inputs.catalog, inputs.daemon, from, code)
+        })
+        .filter(|code| Some(code.as_str()) == chosen || !(inputs.strands)(code))
         .map(|code| {
             let name = language_name(&code);
             let english = exonym(&code).filter(|english| *english != name);
@@ -513,6 +529,9 @@ pub fn languages(inputs: &LanguageInputs) -> Vec<Language> {
 }
 
 fn language_state(inputs: &LanguageInputs, from: &str, to: &str) -> LanguageState {
+    if !crate::processing_steps::routable(inputs.catalog, inputs.daemon, from, to) {
+        return LanguageState::NoModel;
+    }
     let key = language_key(to);
     if let Some(percent) = inputs.installing.get(&key) {
         return LanguageState::Installing(*percent);
@@ -773,6 +792,7 @@ mod tests {
             preparing: &case.preparing,
             likely: &likely,
             strands: &|_| false,
+            chosen: None,
         })
     }
 
@@ -812,6 +832,7 @@ mod tests {
             preparing: &case.preparing,
             likely: &[],
             strands: &|_| false,
+            chosen: None,
         });
         assert_eq!(codes(&languages), ["en", "de"], "English, then by name");
         let LanguageState::Download { entries, bytes } = &languages[1].state else {
@@ -844,6 +865,7 @@ mod tests {
                 preparing: &case.preparing,
                 likely,
                 strands,
+                chosen: None,
             })
         };
         let plain = list(&[], &|_| false);
@@ -891,6 +913,7 @@ mod tests {
             preparing: &case.preparing,
             likely: &[],
             strands: &|_| false,
+            chosen: None,
         });
         let hits = |query: &str| -> Vec<&str> {
             all.iter()

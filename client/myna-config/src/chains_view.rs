@@ -596,7 +596,10 @@ mod tests {
         let translate = lines[1].row.translate.as_ref().unwrap();
         let chosen = &translate.targets[translate.selected.unwrap()];
         assert_eq!(chosen.code, "fr");
-        assert!(!chosen.routed);
+        assert!(matches!(
+            chosen.state,
+            crate::step_catalog::LanguageState::NoModel
+        ));
         let cards = cards(&[chain], None, &ctx(&case));
         assert!(cards[0]
             .needs

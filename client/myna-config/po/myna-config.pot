@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-25 23:21+0000\n"
+"POT-Creation-Date: 2026-11-26 00:04+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -81,7 +81,7 @@ msgid "Read-only privacy-safe diagnostic text."
 msgstr ""
 
 #: data/install-control.blp:54 data/onboarding-components.blp:60
-#: src/app.rs:4495 src/processing_ui.rs:2038
+#: src/app.rs:4495 src/processing_ui.rs:2039
 msgid "Installed"
 msgstr ""
 
@@ -104,7 +104,7 @@ msgid "General"
 msgstr ""
 
 #: data/main-window.blp:39 data/myna-page.blp:71 src/app.rs:1463
-#: src/app.rs:3680 src/app.rs:4118 src/processing_ui.rs:2286
+#: src/app.rs:3680 src/app.rs:4118 src/processing_ui.rs:2289
 #: src/backend_apply.rs:384 src/diagnostics.rs:677 src/presentation.rs:157
 msgid "Model"
 msgstr ""
@@ -167,7 +167,7 @@ msgstr ""
 msgid "Install all components"
 msgstr ""
 
-#: data/onboarding-components.blp:52 src/app.rs:4512 src/processing_ui.rs:2054
+#: data/onboarding-components.blp:52 src/app.rs:4512 src/processing_ui.rs:2055
 #: src/ui/install_control.rs:134
 msgid "Installing…"
 msgstr ""
@@ -291,7 +291,7 @@ msgid "Changing to {model} failed"
 msgstr ""
 
 #: src/app.rs:4066 src/app.rs:4619 src/app.rs:4628 src/app.rs:5013
-#: src/app.rs:5826 src/app.rs:5832 src/processing_ui.rs:1876
+#: src/app.rs:5826 src/app.rs:5832 src/processing_ui.rs:1877
 #: src/backend_ui.rs:1395 src/onboarding_ui.rs:622 src/models_ui.rs:359
 #: src/ui/status_page.rs:70
 msgid "Details"
@@ -518,294 +518,294 @@ msgstr ""
 msgid "Show what Myna typed"
 msgstr ""
 
-#: src/processing_steps.rs:129
+#: src/processing_steps.rs:132
 msgid "Chinese (Simplified)"
 msgstr ""
 
-#: src/processing_steps.rs:130
+#: src/processing_steps.rs:133
 msgid "Chinese (Traditional)"
 msgstr ""
 
-#: src/processing_steps.rs:144
+#: src/processing_steps.rs:147
 msgid "Afrikaans"
 msgstr ""
 
-#: src/processing_steps.rs:145
+#: src/processing_steps.rs:148
 msgid "Arabic"
 msgstr ""
 
-#: src/processing_steps.rs:146
+#: src/processing_steps.rs:149
 msgid "Azerbaijani"
 msgstr ""
 
-#: src/processing_steps.rs:147
+#: src/processing_steps.rs:150
 msgid "Belarusian"
 msgstr ""
 
-#: src/processing_steps.rs:148
+#: src/processing_steps.rs:151
 msgid "Bulgarian"
 msgstr ""
 
-#: src/processing_steps.rs:149
+#: src/processing_steps.rs:152
 msgid "Bengali"
 msgstr ""
 
-#: src/processing_steps.rs:150
+#: src/processing_steps.rs:153
 msgid "Bosnian"
 msgstr ""
 
-#: src/processing_steps.rs:151
+#: src/processing_steps.rs:154
 msgid "Catalan"
 msgstr ""
 
-#: src/processing_steps.rs:152
+#: src/processing_steps.rs:155
 msgid "Czech"
 msgstr ""
 
-#: src/processing_steps.rs:153
+#: src/processing_steps.rs:156
 msgid "Danish"
 msgstr ""
 
-#: src/processing_steps.rs:154
+#: src/processing_steps.rs:157
 msgid "German"
 msgstr ""
 
-#: src/processing_steps.rs:155
+#: src/processing_steps.rs:158
 msgid "Greek"
 msgstr ""
 
-#: src/processing_steps.rs:156
+#: src/processing_steps.rs:159
 msgid "English"
 msgstr ""
 
-#: src/processing_steps.rs:157
+#: src/processing_steps.rs:160
 msgid "Spanish"
 msgstr ""
 
-#: src/processing_steps.rs:158
+#: src/processing_steps.rs:161
 msgid "Estonian"
 msgstr ""
 
-#: src/processing_steps.rs:159
+#: src/processing_steps.rs:162
 msgid "Basque"
 msgstr ""
 
-#: src/processing_steps.rs:160
+#: src/processing_steps.rs:163
 msgid "Persian"
 msgstr ""
 
-#: src/processing_steps.rs:161
+#: src/processing_steps.rs:164
 msgid "Finnish"
 msgstr ""
 
-#: src/processing_steps.rs:162
+#: src/processing_steps.rs:165
 msgid "French"
 msgstr ""
 
-#: src/processing_steps.rs:163
+#: src/processing_steps.rs:166
 msgid "Galician"
 msgstr ""
 
-#: src/processing_steps.rs:164
+#: src/processing_steps.rs:167
 msgid "Gujarati"
 msgstr ""
 
-#: src/processing_steps.rs:165
+#: src/processing_steps.rs:168
 msgid "Hebrew"
 msgstr ""
 
-#: src/processing_steps.rs:166
+#: src/processing_steps.rs:169
 msgid "Hindi"
 msgstr ""
 
-#: src/processing_steps.rs:167
+#: src/processing_steps.rs:170
 msgid "Croatian"
 msgstr ""
 
-#: src/processing_steps.rs:168
+#: src/processing_steps.rs:171
 msgid "Hungarian"
 msgstr ""
 
-#: src/processing_steps.rs:169
+#: src/processing_steps.rs:172
 msgid "Indonesian"
 msgstr ""
 
-#: src/processing_steps.rs:170
+#: src/processing_steps.rs:173
 msgid "Icelandic"
 msgstr ""
 
-#: src/processing_steps.rs:171
+#: src/processing_steps.rs:174
 msgid "Italian"
 msgstr ""
 
-#: src/processing_steps.rs:172
+#: src/processing_steps.rs:175
 msgid "Japanese"
 msgstr ""
 
-#: src/processing_steps.rs:173
+#: src/processing_steps.rs:176
 msgid "Kannada"
 msgstr ""
 
-#: src/processing_steps.rs:174
+#: src/processing_steps.rs:177
 msgid "Korean"
 msgstr ""
 
-#: src/processing_steps.rs:175
+#: src/processing_steps.rs:178
 msgid "Lithuanian"
 msgstr ""
 
-#: src/processing_steps.rs:176
+#: src/processing_steps.rs:179
 msgid "Latvian"
 msgstr ""
 
-#: src/processing_steps.rs:177
+#: src/processing_steps.rs:180
 msgid "Malayalam"
 msgstr ""
 
-#: src/processing_steps.rs:178
+#: src/processing_steps.rs:181
 msgid "Marathi"
 msgstr ""
 
-#: src/processing_steps.rs:179
+#: src/processing_steps.rs:182
 msgid "Malay"
 msgstr ""
 
-#: src/processing_steps.rs:180
+#: src/processing_steps.rs:183
 msgid "Norwegian Bokmål"
 msgstr ""
 
-#: src/processing_steps.rs:181
+#: src/processing_steps.rs:184
 msgid "Dutch"
 msgstr ""
 
-#: src/processing_steps.rs:182
+#: src/processing_steps.rs:185
 msgid "Polish"
 msgstr ""
 
-#: src/processing_steps.rs:183
+#: src/processing_steps.rs:186
 msgid "Portuguese"
 msgstr ""
 
-#: src/processing_steps.rs:184
+#: src/processing_steps.rs:187
 msgid "Romanian"
 msgstr ""
 
-#: src/processing_steps.rs:185
+#: src/processing_steps.rs:188
 msgid "Russian"
 msgstr ""
 
-#: src/processing_steps.rs:186
+#: src/processing_steps.rs:189
 msgid "Slovak"
 msgstr ""
 
-#: src/processing_steps.rs:187
+#: src/processing_steps.rs:190
 msgid "Slovenian"
 msgstr ""
 
-#: src/processing_steps.rs:188
+#: src/processing_steps.rs:191
 msgid "Albanian"
 msgstr ""
 
-#: src/processing_steps.rs:189
+#: src/processing_steps.rs:192
 msgid "Serbian"
 msgstr ""
 
-#: src/processing_steps.rs:190
+#: src/processing_steps.rs:193
 msgid "Swedish"
 msgstr ""
 
-#: src/processing_steps.rs:191
+#: src/processing_steps.rs:194
 msgid "Tamil"
 msgstr ""
 
-#: src/processing_steps.rs:192
+#: src/processing_steps.rs:195
 msgid "Telugu"
 msgstr ""
 
-#: src/processing_steps.rs:193
+#: src/processing_steps.rs:196
 msgid "Thai"
 msgstr ""
 
-#: src/processing_steps.rs:194
+#: src/processing_steps.rs:197
 msgid "Tagalog"
 msgstr ""
 
-#: src/processing_steps.rs:195
+#: src/processing_steps.rs:198
 msgid "Turkish"
 msgstr ""
 
-#: src/processing_steps.rs:196
+#: src/processing_steps.rs:199
 msgid "Uyghur"
 msgstr ""
 
-#: src/processing_steps.rs:197
+#: src/processing_steps.rs:200
 msgid "Ukrainian"
 msgstr ""
 
-#: src/processing_steps.rs:198
+#: src/processing_steps.rs:201
 msgid "Urdu"
 msgstr ""
 
-#: src/processing_steps.rs:199
+#: src/processing_steps.rs:202
 msgid "Vietnamese"
 msgstr ""
 
-#: src/processing_steps.rs:200
+#: src/processing_steps.rs:203
 msgid "Chinese"
 msgstr ""
 
 #. TRANSLATORS: {what} names a model to install, such as "the French model"; {size} is its download size.
-#: src/processing_steps.rs:292
+#: src/processing_steps.rs:281
 msgid "Needs {what} ({size})"
 msgstr ""
 
-#: src/processing_steps.rs:299
+#: src/processing_steps.rs:288
 msgid "Getting the model ready"
 msgstr ""
 
 #. TRANSLATORS: {n} is a size in megabytes, such as "24".
-#: src/processing_steps.rs:316
+#: src/processing_steps.rs:305
 msgid "{n} MB"
 msgstr ""
 
-#: src/processing_steps.rs:366 src/step_catalog.rs:121
+#: src/processing_steps.rs:355 src/step_catalog.rs:121
 msgid "Chinese script"
 msgstr ""
 
-#: src/processing_steps.rs:373 src/step_catalog.rs:122
+#: src/processing_steps.rs:362 src/step_catalog.rs:122
 msgid "Types Chinese in the characters you choose. Other text is left alone."
 msgstr ""
 
-#: src/processing_steps.rs:589 src/chains_view.rs:170
+#: src/processing_steps.rs:516 src/chains_view.rs:170
 msgid "Applies when the text is Chinese"
 msgstr ""
 
-#: src/processing_steps.rs:596 src/step_catalog.rs:377
-#: src/processing_ui.rs:1469
+#: src/processing_steps.rs:523 src/step_catalog.rs:377
+#: src/processing_ui.rs:1470
 msgid "Needs a single dictation language"
 msgstr ""
 
-#: src/processing_steps.rs:601 src/chains_view.rs:169
+#: src/processing_steps.rs:528 src/chains_view.rs:169
 msgid "The text is already in that language"
 msgstr ""
 
 #. TRANSLATORS: {language} is a language name, such as "English".
-#: src/processing_steps.rs:612 src/step_catalog.rs:308
+#: src/processing_steps.rs:539 src/step_catalog.rs:308
 msgid "Applies when the text is {language}"
 msgstr ""
 
 #. TRANSLATORS: {from} and {to} are language names, such as "فارسی" and "Français".
-#: src/processing_steps.rs:632
+#: src/processing_steps.rs:559
 msgid "No model translates {from} to {to} yet"
 msgstr ""
 
 #. TRANSLATORS: {language} is a language name; this completes "Needs the French model".
-#: src/processing_steps.rs:676
+#: src/processing_steps.rs:603
 msgid "the {language} model"
 msgstr ""
 
 #. TRANSLATORS: {step} is a step's name; this completes "Needs the Tidy up speech model".
-#: src/processing_steps.rs:695
+#: src/processing_steps.rs:622
 msgid "the {step} model"
 msgstr ""
 
@@ -1027,7 +1027,7 @@ msgstr ""
 msgid "Remove model"
 msgstr ""
 
-#: src/processing_ui.rs:1256 src/processing_ui.rs:1847 src/models_ui.rs:337
+#: src/processing_ui.rs:1256 src/processing_ui.rs:1848 src/models_ui.rs:337
 msgid "Finish dictating, then try again."
 msgstr ""
 
@@ -1036,175 +1036,179 @@ msgid "Installing the model failed"
 msgstr ""
 
 #. TRANSLATORS: {language} is the language the text is in where the step goes, such as "English".
-#: src/processing_ui.rs:1465
+#: src/processing_ui.rs:1466
 msgid ""
 "From {language}. Choosing a language adds the step; one that is not "
 "installed downloads first."
 msgstr ""
 
 #. TRANSLATORS: {from} and {to} are language names, such as "English" and "Français".
-#: src/processing_ui.rs:1508 src/installed_models.rs:146
+#: src/processing_ui.rs:1509 src/installed_models.rs:146
 msgid "{from} to {to}"
 msgstr ""
 
-#: src/processing_ui.rs:1517 src/processing_ui.rs:1741
+#: src/processing_ui.rs:1518 src/processing_ui.rs:1742
 #: src/list_editor_ui.rs:143 src/models_ui.rs:258
 msgid "Remove"
 msgstr ""
 
 #. TRANSLATORS: {model} names a translation model, such as "English to Français".
 #. TRANSLATORS: {model} names a model, such as "Whisper" or "English to Italiano".
-#: src/processing_ui.rs:1524 src/models_ui.rs:265
+#: src/processing_ui.rs:1525 src/models_ui.rs:265
 msgid "Remove {model}"
 msgstr ""
 
 #. TRANSLATORS: read by screen readers as the language search narrows; {count} is a number.
-#: src/processing_ui.rs:1562 src/model_family.rs:246
+#: src/processing_ui.rs:1563 src/model_family.rs:246
 msgid "{count} language"
 msgid_plural "{count} languages"
 msgstr[0] ""
 msgstr[1] ""
 
-#: src/processing_ui.rs:1701 src/list_editor_ui.rs:72
+#: src/processing_ui.rs:1702 src/list_editor_ui.rs:72
 msgid "Add"
 msgstr ""
 
 #. TRANSLATORS: {step} is a step's name, such as "Tidy up speech".
-#: src/processing_ui.rs:1708
+#: src/processing_ui.rs:1709
 msgid "Add {step}"
 msgstr ""
 
-#: src/processing_ui.rs:1711
+#: src/processing_ui.rs:1712
 msgid "Added"
 msgstr ""
 
-#: src/processing_ui.rs:1722
+#: src/processing_ui.rs:1723
 msgid "For example"
 msgstr ""
 
 #. TRANSLATORS: {step} is a step's name, such as "Tidy up speech".
-#: src/processing_ui.rs:1748
+#: src/processing_ui.rs:1749
 msgid "Remove {step}"
 msgstr ""
 
-#: src/processing_ui.rs:1751
+#: src/processing_ui.rs:1752
 msgid "Remove this model"
 msgstr ""
 
-#: src/processing_ui.rs:1753
+#: src/processing_ui.rs:1754
 msgid ""
 "The step stays switched on and shows what it needs, so it can be installed "
 "again."
 msgstr ""
 
-#: src/processing_ui.rs:1851
+#: src/processing_ui.rs:1852
 msgid "Removing the model failed"
 msgstr ""
 
-#: src/processing_ui.rs:1984 src/processing_ui.rs:1988
+#: src/processing_ui.rs:1985 src/processing_ui.rs:1989
 msgid "Search languages"
 msgstr ""
 
-#: src/processing_ui.rs:1992
+#: src/processing_ui.rs:1993
 msgid "No language matches"
 msgstr ""
 
-#: src/processing_ui.rs:1994
+#: src/processing_ui.rs:1995
 msgid "Only languages a model can translate into from here are listed."
 msgstr ""
 
-#: src/processing_ui.rs:2001
+#: src/processing_ui.rs:2002
 msgid "Installed translation models"
 msgstr ""
 
-#: src/processing_ui.rs:2003
+#: src/processing_ui.rs:2004
 msgid ""
 "A step that uses a removed model stays and shows what it needs, so it can be "
 "installed again."
 msgstr ""
 
-#: src/processing_ui.rs:2020 src/processing_ui.rs:2246
-#: src/processing_ui.rs:2282
+#: src/processing_ui.rs:2021 src/processing_ui.rs:2249
+#: src/processing_ui.rs:2285
 msgid "Translate to"
 msgstr ""
 
 #. TRANSLATORS: {size} is a download size, such as "66 MB"; two models make the translation, through English.
-#: src/processing_ui.rs:2042
+#: src/processing_ui.rs:2043
 msgid "Downloads {size}, through English"
 msgstr ""
 
 #. TRANSLATORS: {size} is a download size, such as "33 MB".
-#: src/processing_ui.rs:2045
+#: src/processing_ui.rs:2046
 msgid "Downloads {size}"
 msgstr ""
 
 #. TRANSLATORS: {percent} is a number from 0 to 100.
-#: src/processing_ui.rs:2051
+#: src/processing_ui.rs:2052
 msgid "Installing, {percent}%"
 msgstr ""
 
-#: src/processing_ui.rs:2055 src/processing_ui.rs:2101
-#: src/processing_ui.rs:2131
+#: src/processing_ui.rs:2056 src/processing_ui.rs:2104
+#: src/processing_ui.rs:2134
 msgid "Preparing…"
 msgstr ""
 
-#: src/processing_ui.rs:2056 src/processing_ui.rs:2073 src/shortcut_ui.rs:691
+#: src/processing_ui.rs:2057 src/processing_ui.rs:2076 src/shortcut_ui.rs:691
 #: src/sound_preview.rs:66
 msgid "Myna is not running"
 msgstr ""
 
-#: src/processing_ui.rs:2089 src/processing_ui.rs:2121 src/backend_ui.rs:1180
+#: src/processing_ui.rs:2059 src/backend_ui.rs:2340 src/diagnostics.rs:444
+msgid "No model installed"
+msgstr ""
+
+#: src/processing_ui.rs:2092 src/processing_ui.rs:2124 src/backend_ui.rs:1180
 msgid "Install"
 msgstr ""
 
 #. TRANSLATORS: {step} is a step's name, such as "Translate English to French".
-#: src/processing_ui.rs:2091
+#: src/processing_ui.rs:2094
 msgid "Install {step}"
 msgstr ""
 
-#: src/processing_ui.rs:2108
+#: src/processing_ui.rs:2111
 msgid "Removing…"
 msgstr ""
 
 #. TRANSLATORS: {what} names a model, such as "the French model".
-#: src/processing_ui.rs:2119
+#: src/processing_ui.rs:2122
 msgid "Install {what}"
 msgstr ""
 
 #. TRANSLATORS: a step's place in its chain, read by screen readers: "Step 2 of 3".
-#: src/processing_ui.rs:2160
+#: src/processing_ui.rs:2163
 msgid "Step {n} of {total}"
 msgstr ""
 
 #. TRANSLATORS: {step} is a step's name, such as "Tidy up speech".
-#: src/processing_ui.rs:2181
+#: src/processing_ui.rs:2184
 msgid "Use {step}"
 msgstr ""
 
-#: src/processing_ui.rs:2196
+#: src/processing_ui.rs:2199
 msgid "Move above {step}"
 msgstr ""
 
 #. TRANSLATORS: {language} is a language name; no model translates into it from the text's language.
-#: src/processing_ui.rs:2210
+#: src/processing_ui.rs:2212
 msgid "{language} (no model)"
 msgstr ""
 
 #. TRANSLATORS: {language} is a language name; its model is not installed yet.
-#: src/processing_ui.rs:2213
+#: src/processing_ui.rs:2216
 msgid "{language} (not installed)"
 msgstr ""
 
-#: src/processing_ui.rs:2248 src/processing_ui.rs:2284
+#: src/processing_ui.rs:2251 src/processing_ui.rs:2287
 msgid "Write Chinese as"
 msgstr ""
 
 #. TRANSLATORS: {step} is a step's name, such as "Tidy up speech".
-#: src/processing_ui.rs:2262
+#: src/processing_ui.rs:2265
 msgid "More actions for {step}"
 msgstr ""
 
-#: src/processing_ui.rs:2280
+#: src/processing_ui.rs:2283
 msgid "To make it run"
 msgstr ""
 
@@ -1344,10 +1348,6 @@ msgstr ""
 
 #: src/backend_ui.rs:2339 src/diagnostics.rs:443
 msgid "Dictation is not installed"
-msgstr ""
-
-#: src/backend_ui.rs:2340 src/diagnostics.rs:444
-msgid "No model installed"
 msgstr ""
 
 #: src/backend_ui.rs:2341 src/diagnostics.rs:446

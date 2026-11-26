@@ -8,6 +8,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use myna_core::processing::{in_stage_order, param_key, script_of, ChineseScript, Params};
 
 use crate::plugin_catalog::{self, Entry};
+// The Translate picker and the catalog's language page list the same
+// languages with the same standing, so the one computation lives there.
+use crate::step_catalog::{languages, Language, LanguageInputs, LanguageState};
 
 /// The one step with a parameter Settings renders itself.
 pub const TRANSLATE: &str = "translate";
@@ -238,23 +241,9 @@ pub enum Standing {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Target {
-    pub code: String,
-    pub name: String,
-    pub installed: bool,
-    pub bytes: u64,
-    /// Some installed model, or one the catalogs offer, translates into it
-    /// from the text's language, directly or through English. A chosen
-    /// target with no such model is still listed, so the picker shows it.
-    pub routed: bool,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TranslateRow {
-    pub targets: Vec<Target>,
+    pub targets: Vec<Language>,
     pub selected: Option<usize>,
-    /// The dictation language, named, when it is not English.
-    pub from: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -486,91 +475,29 @@ fn translate_row(inputs: &Inputs) -> TranslateRow {
         return TranslateRow {
             targets: Vec::new(),
             selected: None,
-            from: None,
         };
     };
-    let installed = |legs: &[&Entry]| {
-        inputs
-            .daemon
-            .is_some_and(|daemon| legs.iter().all(|leg| daemon.offers(&leg.model)))
-    };
-    let mut codes: BTreeSet<String> = inputs
-        .catalog
+    let likely: Vec<String> = inputs
+        .locales
         .iter()
-        .filter(|e| e.step.id == TRANSLATE)
-        .flat_map(|e| [e.in_lang.clone(), e.out_lang.clone()])
-        .filter(|code| !code.is_empty() && code != from)
+        .map(|locale| catalog_code(locale))
         .collect();
-    if let Some(daemon) = inputs.daemon {
-        codes.extend(
-            daemon
-                .translations
-                .iter()
-                .filter(|(f, _)| f == from)
-                .map(|(_, to)| to.clone()),
-        );
-    }
-    let mut targets: Vec<Target> = codes
-        .into_iter()
-        .filter_map(|code| {
-            let direct_installed = inputs
-                .daemon
-                .is_some_and(|d| d.translations.iter().any(|(f, t)| f == from && *t == code));
-            match plugin_catalog::translation_legs(inputs.catalog, from, &code) {
-                Some(legs) => {
-                    let done = direct_installed || installed(&legs);
-                    let bytes = if done {
-                        0
-                    } else {
-                        legs.iter()
-                            .filter(|leg| !inputs.daemon.is_some_and(|d| d.offers(&leg.model)))
-                            .map(|leg| leg.download_bytes)
-                            .sum()
-                    };
-                    Some(Target {
-                        name: language_name(&code),
-                        code,
-                        installed: done,
-                        bytes,
-                        routed: true,
-                    })
-                }
-                None => direct_installed.then(|| Target {
-                    name: language_name(&code),
-                    code,
-                    installed: true,
-                    bytes: 0,
-                    routed: true,
-                }),
-            }
-        })
-        .collect();
-    let order: Vec<String> = inputs.locales.to_vec();
-    let rank = |code: &str| {
-        order
-            .iter()
-            .position(|locale| catalog_code(locale) == code || locale.starts_with(code))
-            .unwrap_or(order.len())
-    };
-    targets.sort_by(|a, b| (rank(&a.code), &a.name).cmp(&(rank(&b.code), &b.name)));
-    if let Some(to) = target_of(inputs.params).filter(|to| *to != from) {
-        if !targets.iter().any(|t| t.code == to) {
-            targets.push(Target {
-                name: language_name(to),
-                code: to.to_owned(),
-                installed: false,
-                bytes: 0,
-                routed: false,
-            });
-        }
-    }
-    let selected =
-        target_of(inputs.params).and_then(|to| targets.iter().position(|t| t.code == to));
-    TranslateRow {
-        targets,
-        selected,
-        from: (from != "en").then(|| language_name(from)),
-    }
+    let chosen = target_of(inputs.params).filter(|to| *to != from);
+    let targets = languages(&LanguageInputs {
+        catalog: inputs.catalog,
+        daemon: inputs.daemon,
+        from: inputs.source,
+        // A step's install is the row's standing, not the target's.
+        installing: &BTreeMap::new(),
+        preparing: &BTreeSet::new(),
+        likely: &likely,
+        // The editor dims a target that would strand a later translation
+        // rather than leaving it out, so its picker keeps what it had.
+        strands: &|_| false,
+        chosen,
+    });
+    let selected = chosen.and_then(|to| targets.iter().position(|t| t.code == to));
+    TranslateRow { targets, selected }
 }
 
 fn standing(
@@ -627,7 +554,7 @@ fn standing(
         translate.and_then(|t| t.targets.get(t.selected?)),
         inputs.source,
     ) {
-        if !target.routed {
+        if matches!(target.state, LanguageState::NoModel) {
             // TRANSLATORS: {from} and {to} are language names, such as "فارسی" and "Français".
             let frame = gettextrs::gettext("No model translates {from} to {to} yet");
             return Standing::Unavailable(
@@ -660,7 +587,7 @@ fn need(
             .targets
             .iter()
             .find(|t| Some(t.code.as_str()) == target_of(inputs.params))?;
-        if target.installed {
+        if matches!(target.state, LanguageState::Ready) {
             return None;
         }
         let Source::One(from) = inputs.source else {
@@ -924,21 +851,6 @@ mod tests {
         // The locale's French first, then by name: Deutsch before فارسی.
         assert_eq!(codes, ["fr", "de", "fa"]);
         assert_eq!(translate.selected, None);
-        assert_eq!(translate.from, None);
-    }
-
-    #[test]
-    fn a_target_is_installed_when_the_daemon_offers_its_model_and_sized_when_not() {
-        let rig = Rig::new()
-            .on(&["translate"])
-            .to("fr")
-            .offering(&["m-en-fr"]);
-        let translate = rig.row("translate").translate.unwrap();
-        assert!(translate.targets[0].installed);
-        assert_eq!(translate.targets[0].bytes, 0);
-        assert!(!translate.targets[1].installed);
-        assert_eq!(translate.targets[1].bytes, 31_000_000);
-        assert_eq!(rig.row("translate").standing, Standing::Ready);
     }
 
     #[test]
@@ -954,13 +866,12 @@ mod tests {
 
     #[test]
     fn a_pivot_from_another_language_is_two_legs_and_only_the_missing_ones_count() {
-        let mut rig = Rig::new().on(&["translate"]).to("fr");
-        rig.source = Source::One("de".into());
-        let translate = rig.row("translate").translate.unwrap();
-        assert_eq!(translate.from.as_deref(), Some("Deutsch"));
-        let fr = translate.targets.iter().find(|t| t.code == "fr").unwrap();
-        assert_eq!(fr.bytes, 63_000_000);
-        let rig = rig.offering(&["m-de-en"]);
+        let rig = Rig::new().on(&["translate"]).to("fr");
+        let rig = Rig {
+            source: Source::One("de".into()),
+            ..rig
+        }
+        .offering(&["m-de-en"]);
         let Standing::Missing(need) = rig.row("translate").standing else {
             panic!("the second leg is missing");
         };
@@ -1011,7 +922,7 @@ mod tests {
         });
         let translate = rig.row("translate").translate.unwrap();
         let fa = translate.targets.iter().find(|t| t.code == "fa").unwrap();
-        assert!(fa.installed);
+        assert!(matches!(fa.state, LanguageState::Ready));
         assert_eq!(rig.row("translate").standing, Standing::Ready);
     }
 
@@ -1096,51 +1007,6 @@ mod tests {
     }
 
     #[test]
-    fn only_pairs_the_source_can_reach_are_listed_and_the_source_is_never_a_target() {
-        let rig = Rig::new().on(&["translate"]);
-        let codes: Vec<String> = rig
-            .row("translate")
-            .translate
-            .unwrap()
-            .targets
-            .into_iter()
-            .map(|t| t.code)
-            .collect();
-        assert!(!codes.contains(&"en".to_owned()));
-        let mut empty_lang = Rig::new().on(&["translate"]);
-        empty_lang
-            .catalog
-            .push(entry("x", "translate", "translate", "", "", 1));
-        let codes: Vec<String> = empty_lang
-            .row("translate")
-            .translate
-            .unwrap()
-            .targets
-            .into_iter()
-            .map(|t| t.code)
-            .collect();
-        assert!(!codes.contains(&String::new()));
-    }
-
-    #[test]
-    fn an_offered_pair_from_another_source_is_not_an_installed_target() {
-        let mut rig = Rig::new().on(&["translate"]);
-        rig.daemon = Some(Offered {
-            translations: vec![("de".into(), "fr".into())],
-            ..Offered::default()
-        });
-        let fr = rig
-            .row("translate")
-            .translate
-            .unwrap()
-            .targets
-            .into_iter()
-            .find(|t| t.code == "fr")
-            .unwrap();
-        assert!(!fr.installed);
-    }
-
-    #[test]
     fn the_users_language_comes_first_and_only_a_matching_one() {
         let rig = Rig::new().on(&["translate"]);
         let first = |locales: &[&str]| {
@@ -1167,7 +1033,9 @@ mod tests {
         };
         assert_eq!(first(&["de_DE.UTF-8"]), "de");
         assert_eq!(first(&["fr"]), "fr");
-        assert_eq!(first(&["xx"]), "de");
+        // The rest by the name the interface language gives them, as the
+        // catalog's language page lists them: French before German.
+        assert_eq!(first(&["xx"]), "fr");
     }
 
     #[test]
