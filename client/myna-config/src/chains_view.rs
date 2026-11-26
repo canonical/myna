@@ -106,10 +106,16 @@ fn retargeted(steps: &[ChainStep], index: usize, to: &str) -> Vec<ChainStep> {
 /// one it writes. The picker that names the target is the row under the step,
 /// so the arrow says where it goes: "EN \u{2192} ZH-HANS", not a dangling "EN \u{2192}".
 fn written(step: &ChainStep, input: Option<&str>, output: Option<&str>) -> String {
+    // A code, not a name: "ZH" for either Chinese script, which the picker
+    // beside it names.
     let to = (step.step == TRANSLATE)
-        .then(|| step.params.get("to").map(String::as_str))
+        .then(|| {
+            step.params
+                .get("to")
+                .map(|to| myna_core::chains::primary_language(to))
+        })
         .flatten();
-    match (input, to) {
+    match (input, to.as_deref()) {
         (Some(read), Some(to)) if read != to => {
             format!("{} \u{2192} {}", read.to_uppercase(), to.to_uppercase())
         }
