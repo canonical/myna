@@ -12,6 +12,8 @@ Runs inside the e2e VM under xvfb-run (DISPLAY set). Steps are argv words:
   gone:<name>          wait (<=60 s) until no showing widget has that name
   checked:<name>       wait (<=60 s) until the widget with that name is checked
                        (use "name@radio button": a list item shares the name)
+  unchecked:<name>     wait (<=60 s) until it is not; absent counts, so pair
+                       it with a waitfor of the row that holds it
   waittext:<name>=<s>  wait (<=60 s) until the widget ("name@text") has text
                        containing s (a value or report that settles later)
   wait:<seconds>       sleep
@@ -24,7 +26,8 @@ Runs inside the e2e VM under xvfb-run (DISPLAY set). Steps are argv words:
   burst:<prefix>:<interval>:<max_s>[:<name>]
                        screenshot <prefix>-NNN.png every <interval> s, for at
                        most <max_s> s or until a widget named <name> shows
-  dump                 print the showing accessible tree (name/role) to stdout
+  dump                 print the showing accessible tree (name/role/checked)
+                       to stdout
   blur                 open a stand-in window (xmessage) and give it focus
   refocus              give the app's window focus again, close the stand-in
   sh:<command>         run a shell command on the box (e.g. sudo snap ...)
@@ -149,12 +152,17 @@ def find_spec(spec):
     return find(name, (role,) if role else None)
 
 
-def is_checked(spec):
-    node = find_spec(spec)
+def checked(node):
+    """Whether AT-SPI reports CHECKED for the node (a switch, a radio, a
+    toggle button)."""
     try:
         return node is not None and node.get_state_set().contains(Atspi.StateType.CHECKED)
     except Exception:
         return False
+
+
+def is_checked(spec):
+    return checked(find_spec(spec))
 
 
 def window_content():
@@ -298,7 +306,8 @@ def dump():
     for n, depth in walk(root):
         description = n.get_description() or ""
         suffix = f" ({description!r})" if description else ""
-        print("  " * depth + f"[{n.get_role_name()}] {name_of(n)!r}{suffix}")
+        state = " checked" if checked(n) else ""
+        print("  " * depth + f"[{n.get_role_name()}] {name_of(n)!r}{suffix}{state}")
 
 
 def main(steps):
@@ -354,6 +363,8 @@ def main(steps):
                 time.sleep(0.2)
         elif verb == "checked":
             wait_until(f"{arg!r} checked", lambda arg=arg: is_checked(arg))
+        elif verb == "unchecked":
+            wait_until(f"{arg!r} unchecked", lambda arg=arg: not is_checked(arg))
         elif verb == "waittext":
             name, _, want = arg.partition("=")
             wait_until(
