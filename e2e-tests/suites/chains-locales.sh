@@ -103,7 +103,7 @@ fi
 # zh-Hant while the language after the step is the bare zh, and the page used
 # to drop both because it asked the catalog for `zh`.
 if shot_locale zh_CN.UTF-8 "waitfor:常规" "waitfor:诊断" "gone:General" "${WIRE[@]}" \
-    "type:zh" "waitfor:Chinese (Simplified)" "gone:Deutsch" \
+    "type:zh" "waitfor:简体中文" "gone:Deutsch" \
     shot:shots/chains-locales/02-zh-search.png; then
     echo "PASS: the Chinese tabs are CJK with no spaces, and a code search narrows"
 else

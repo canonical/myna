@@ -44,8 +44,8 @@ pub(crate) fn catalog_code(tag: &str) -> String {
 pub fn language_name(code: &str) -> String {
     let bare = code.split('-').next().unwrap_or(code);
     match (code, myna_core::language::endonym(bare)) {
-        ("zh-Hans", _) => gettextrs::gettext("Chinese (Simplified)"),
-        ("zh-Hant", _) => gettextrs::gettext("Chinese (Traditional)"),
+        ("zh-Hans", _) => "简体中文".to_owned(),
+        ("zh-Hant", _) => "繁體中文".to_owned(),
         (_, Some(name)) => name.to_owned(),
         _ => code.to_owned(),
     }
@@ -116,13 +116,14 @@ fn exonyms() -> &'static [(&'static str, String)] {
             ("ur", gettextrs::gettext("Urdu")),
             ("vi", gettextrs::gettext("Vietnamese")),
             ("zh", gettextrs::gettext("Chinese")),
+            ("zh-Hans", gettextrs::gettext("Chinese (Simplified)")),
+            ("zh-Hant", gettextrs::gettext("Chinese (Traditional)")),
         ]
     })
 }
 
 /// `code`'s name in the interface language. `None` for a language with no
-/// entry; the endonym alone then names it. Chinese scripts are already
-/// named so by [`language_name`].
+/// entry; the endonym alone then names it.
 pub fn exonym(code: &str) -> Option<String> {
     let (_, name) = exonyms().iter().find(|(have, _)| *have == code)?;
     Some(name.clone())
@@ -132,14 +133,15 @@ pub fn exonym(code: &str) -> Option<String> {
 mod tests {
     use super::*;
 
-    /// The contract of the two naming functions: a Chinese target carries
-    /// its script's name rather than its code, and a language is found by
-    /// the name it has in the interface language. Both are what the language
-    /// page shows and searches; no display and no catalog needed.
+    /// The contract of the two naming functions: a Chinese target is named
+    /// in its own script like every other language, and a language is found
+    /// by the name it has in the interface language. Both are what the
+    /// language page shows and searches; no display and no catalog needed.
     #[test]
     fn a_language_is_named_where_it_is_listed() {
-        assert_eq!(language_name("zh-Hans"), "Chinese (Simplified)");
-        assert_eq!(language_name("zh-Hant"), "Chinese (Traditional)");
+        assert_eq!(language_name("zh-Hans"), "简体中文");
+        assert_eq!(exonym("zh-Hans").as_deref(), Some("Chinese (Simplified)"));
+        assert_eq!(language_name("zh-Hant"), "繁體中文");
         assert_eq!(exonym("de").as_deref(), Some("German"));
         assert_eq!(exonym("ja").as_deref(), Some("Japanese"));
         assert_eq!(exonym("zz"), None);
