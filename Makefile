@@ -487,20 +487,27 @@ SUITES ?=
 # The snap a run drives must be this tree's: the store's edge revision does not
 # carry the settings HEAD writes, and a suite that tested it would pass or fail
 # for the wrong reason. Named after `dev/version.sh`, which is HEAD's.
-E2E_VERSION := $(shell dev/version.sh 2>/dev/null)
-E2E_MYNA_SNAP_FILE := myna-snap/myna_$(E2E_VERSION)_amd64.snap
-E2E_FAKE_SNAP_FILE := $(lastword $(sort $(wildcard fake-snap/myna-fake-backend_*_amd64.snap)))
+# The newest snapshot is the one a run drives; it is rebuilt when the tree's
+# client code moved since the commit it was built at, never because a commit
+# touched only tests or docs.
+E2E_MYNA_SNAP_FILE := $(firstword $(shell ls -t myna-snap/myna_*_amd64.snap 2>/dev/null))
+E2E_FAKE_SNAP_FILE := $(firstword $(shell ls -t fake-snap/myna-fake-backend_*_amd64.snap 2>/dev/null))
 
 .PHONY: e2e-snaps
-e2e-snaps: ## The snaps an e2e run drives, built only when this tree's are missing
-	@test -f "$(E2E_MYNA_SNAP_FILE)" || $(MAKE) snap-myna
+e2e-snaps: ## The snaps an e2e run drives, rebuilt only when the client code moved
+	@if [ -z "$(E2E_MYNA_SNAP_FILE)" ]; then $(MAKE) snap-myna; else \
+	    sha=$$(echo "$(E2E_MYNA_SNAP_FILE)" | sed -n 's/.*+git[0-9]*\.\([0-9a-f]\{7,\}\)_.*/\1/p'); \
+	    if [ -n "$$sha" ] && ! git diff --quiet "$$sha"..HEAD -- client/ myna-snap/; then \
+	        echo "== the myna snap predates HEAD's client code: rebuilding"; $(MAKE) snap-myna; \
+	    fi; \
+	fi
 	@test -n "$(E2E_FAKE_SNAP_FILE)" || $(MAKE) snap-fake
 
 .PHONY: e2e
 e2e: e2e-snaps ## Suite(s) in a desktop VM (E2E_RELEASE, E2E_DESKTOP, SUITES), building and provisioning what is missing
 	e2e-tests/vm/provision.sh --release $(E2E_RELEASE) --desktop $(E2E_DESKTOP)
-	E2E_MYNA_SNAP=$(CURDIR)/$(E2E_MYNA_SNAP_FILE) \
-	E2E_FAKE_SNAP=$(CURDIR)/$(E2E_FAKE_SNAP_FILE) \
+	E2E_MYNA_SNAP=$(CURDIR)/$$(ls -t myna-snap/myna_*_amd64.snap | head -1) \
+	E2E_FAKE_SNAP=$(CURDIR)/$$(ls -t fake-snap/myna-fake-backend_*_amd64.snap | head -1) \
 	e2e-tests/run-suite.sh --release $(E2E_RELEASE) --desktop $(E2E_DESKTOP) $(SUITES)
 
 # A copy of the e2e VM running this tree's snap and deb, to try by hand; the
