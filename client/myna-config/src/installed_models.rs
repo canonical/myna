@@ -4,8 +4,8 @@
 //! remove it. GTK-free.
 
 use crate::diagnostics::InstalledSnap;
+use crate::languages::language_name;
 use crate::plugin_catalog::{self, ComponentRequest, Entry};
-use crate::processing_steps::language_name;
 
 /// What Diagnostics knows when it lists the models.
 pub struct Inputs<'a> {

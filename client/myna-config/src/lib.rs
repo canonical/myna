@@ -17,6 +17,7 @@ pub mod diagnostics;
 pub mod domain;
 pub mod hud_host;
 pub mod installed_models;
+pub mod languages;
 pub mod list_editor_ui;
 pub mod machine;
 pub mod markup;

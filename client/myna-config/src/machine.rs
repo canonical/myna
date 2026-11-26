@@ -423,11 +423,11 @@ fn translations(settings: &myna_core::Settings) -> Vec<(String, String)> {
     let Some(chain) = settings.processing.active() else {
         return Vec::new();
     };
-    let language = match crate::processing_steps::Source::of_setting(
+    let language = match crate::languages::Source::of_setting(
         settings.language.as_deref().unwrap_or_default(),
     ) {
-        crate::processing_steps::Source::One(code) => Some(code),
-        crate::processing_steps::Source::Unknown => None,
+        crate::languages::Source::One(code) => Some(code),
+        crate::languages::Source::Unknown => None,
     };
     chain
         .steps

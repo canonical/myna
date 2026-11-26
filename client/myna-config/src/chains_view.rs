@@ -11,10 +11,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use myna_core::chains::{fits, Chain, ChainStep, Fit, Misfit};
 
+use crate::languages::Source;
 use crate::plugin_catalog::Entry;
-use crate::processing_steps::{
-    self as steps, Moves, Offered, Place, Row, Source, Standing, TRANSLATE,
-};
+use crate::processing_steps::{self as steps, Moves, Offered, Place, Row, Standing, TRANSLATE};
 
 /// What every step judgement needs besides the chain.
 pub struct Context<'a> {

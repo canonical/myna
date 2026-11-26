@@ -18,15 +18,14 @@ use myna_core::chains::{Chain, ChainStep, Processing};
 use crate::adapters::client_settings::GioClientSettings;
 use crate::chains_view::{self, Card};
 use crate::command::CancellationToken;
+use crate::languages::{language_name, Source};
 use crate::markup::escape_markup;
 use crate::plugin_catalog::{self, Entry};
 use crate::plugin_install::{self, Failure, SnapState};
 use crate::ports::{
     BackendRepository, ClientSettingsSubscription, DictationDaemon, SystemConfigurator,
 };
-use crate::processing_steps::{
-    language_name, size, Offered, Row, Source, Standing, SCRIPT, TRANSLATE,
-};
+use crate::processing_steps::{size, Offered, Row, Standing, SCRIPT, TRANSLATE};
 use crate::step_catalog::{self, Item, Job, Language, LanguageState, Offer};
 use crate::ui::InstallControl;
 

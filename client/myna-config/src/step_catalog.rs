@@ -6,9 +6,8 @@
 use crate::plugin_catalog::{self, Entry};
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::processing_steps::{
-    exonym, language_name, size, Offered, Row, Source, Standing, SCRIPT, TRANSLATE,
-};
+use crate::languages::{exonym, language_name, Source};
+use crate::processing_steps::{size, Offered, Row, Standing, SCRIPT, TRANSLATE};
 
 /// The languages the Chinese script step is useful for.
 const CHINESE: [&str; 3] = ["zh", "yue", "cmn"];
