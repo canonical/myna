@@ -13,6 +13,7 @@ data/operation-error-dialog.blp
 data/status-page.blp
 src/app.rs
 src/chain_notice.rs
+src/languages.rs
 src/past_dictations_ui.rs
 src/processing_steps.rs
 src/chains_view.rs
