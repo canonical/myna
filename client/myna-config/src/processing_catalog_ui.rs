@@ -737,9 +737,12 @@ impl StepsPage {
             .subtitle_lines(0)
             .build();
         let control = InstallControl::new();
+        // Styled and sized as the Install button beside it on other rows.
         let add = gtk::Button::builder()
             .label(gettextrs::gettext("Add"))
             .valign(gtk::Align::Center)
+            .width_request(120)
+            .css_classes(["outlined"])
             .build();
         // A button is labelled by its label child, over any name set.
         add.reset_relation(gtk::AccessibleRelation::LabelledBy);
