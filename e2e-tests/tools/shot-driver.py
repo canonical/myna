@@ -128,11 +128,29 @@ def settled(spec, node):
     name, _, role = spec.rpartition("@") if "@" in spec else (spec, "", "")
     deadline = time.monotonic() + 2.0
     while time.monotonic() < deadline:
-        found = find_all(name, (role,) if role else None)
+        found = outermost(find_all(name, (role,) if role else None))
         if len(found) <= 1:
             return found[0] if found else node
         time.sleep(0.1)
     return node
+
+
+def outermost(nodes):
+    """`nodes` less those inside another of them: a row and the title label
+    in it share a name, and are one place to click."""
+
+    def ancestors(node):
+        seen = []
+        try:
+            parent = node.get_parent()
+            while parent is not None:
+                seen.append(parent)
+                parent = parent.get_parent()
+        except Exception:
+            pass
+        return seen
+
+    return [n for n in nodes if not any(a in nodes for a in ancestors(n))]
 
 
 def near_misses(name):
