@@ -176,13 +176,12 @@ pub fn lines(chain: &Chain, ctx: &Context) -> Vec<Row> {
                     input,
                     move_above,
                 } => {
-                    // TRANSLATORS: why a step of a chain does not run where it is, such as "Skipped here: Applies when the text is English".
-                    let frame = gettextrs::gettext("Skipped here: {why}");
+                    // The row's "Skipped" badge says that it is; the subtitle says why.
                     let fix = move_above.map(|at| (at, titles[at].clone()));
                     (
                         badge(input.as_deref(), input.as_deref()),
                         true,
-                        frame.replace("{why}", &misfit_text(*why)),
+                        misfit_text(*why),
                         fix,
                     )
                 }

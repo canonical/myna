@@ -310,7 +310,7 @@ assert_on "off keeps the chain" "grep -qF \"('t', 'Tidy'\" $STORE"
 echo "-- 13. Chinese script is a step"
 assert_on "a Chinese script chain is saved and in use" \
     "snap run myna.config set chains \"[('z', 'Script', [('script', true, {'mode': 'simplified'})])]\" && snap run myna.config set active-chain z"
-shot waitfor:General tab:Processing "click:Script" "waitfor:Skipped here" \
+shot waitfor:General tab:Processing "click:Script" "waitfor:Skipped" \
     shot:shots/dictation/13-script-dimmed.png \
     || { echo "script dim run failed" >&2; FAILED=1; }
 assert_on "Chinese dictation makes the step run" "snap run myna.config set language zh"

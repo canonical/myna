@@ -42,11 +42,11 @@ assert_on "Tidy runs before Translate" \
     "grep -qF \"('tidy', true, {}), ('translate', true\" $STORE"
 
 step 3 "moved after Translate it is skipped and dimmed; Move above puts it back"
-shot waitfor:General tab:Processing "click:$CHAIN" "waitfor:More actions for tidy" \
-    "click:More actions for tidy" "activate:Move to bottom" \
+shot waitfor:General tab:Processing "click:$CHAIN" "waitfor:More actions for Tidy up speech" \
+    "click:More actions for Tidy up speech" "activate:Move to bottom" \
     "$(poll "grep -qF \"('translate', true, {'to': 'fr'}), ('tidy', true\" $STORE")" \
-    "waitfor:Skipped here" shot:shots/processing-editor/03-skipped.png \
-    "click:Move above translate@$BTN" \
+    "waitfor:Skipped" shot:shots/processing-editor/03-skipped.png \
+    "click:Move above Translate@$BTN" \
     "$(poll "grep -qF \"('tidy', true, {}), ('translate', true\" $STORE")" \
     || { echo "skipped and fixed failed" >&2; FAILED=1; }
 assert_on "Tidy runs before Translate again" \
@@ -61,7 +61,7 @@ assert_on "only that step was paused" \
     "grep -qF \"('tidy', false\" $STORE && grep -qF \"('translate', true\" $STORE"
 
 step 5 "the step's input badge and picker, and the picker under it at 360 px"
-shot waitfor:General tab:Processing "click:$CHAIN" "waitfor:EN →" \
+shot waitfor:General tab:Processing "click:$CHAIN" "waitfor:EN → FR" \
     shot:shots/processing-editor/05-wide.png \
     "sh:xdotool search --onlyvisible --name 'Myna Settings' windowsize 360 760" \
     "waitfor:Translate to" shot:shots/processing-editor/05-360px.png \
