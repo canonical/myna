@@ -34,6 +34,8 @@ pub mod plugin_catalog;
 pub mod plugin_install;
 pub mod ports;
 pub mod presentation;
+pub mod processing_catalog_ui;
+pub mod processing_step_ui;
 pub mod processing_steps;
 pub mod processing_ui;
 pub mod shortcut;
