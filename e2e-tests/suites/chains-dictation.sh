@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # snapshot: seeded
 # tags: processing, chains, dictation
-# time: 240s
+# time: 280s
 # A chain at work: the chain switched on from its row types what it says it
 # does, in three languages, and switched off the dictation lands as heard.
 # The models are already installed (`seeded`), so nothing here waits on the
@@ -12,6 +12,7 @@
 #   3. dictating French: a chain translates it to English
 #   4. dictating Chinese: Chinese script types Traditional, Taiwan
 #   5. dictating Farsi: Translate into Français through English
+#   6. dictating English: Translate into 简体中文 types Simplified Chinese
 set -uo pipefail
 # shellcheck source=e2e-tests/suites/lib.sh
 source "$(dirname "$0")/lib.sh"
@@ -110,5 +111,25 @@ dictate
 assert_dict "French is in the field, not the Farsi" \
     "field_get plain | grep -q '[a-zA-Z]' && ! field_is plain '$FA_SAID'"
 evidence farsi
+
+# The models name the target zh-Hans while the language after the step is the
+# bare zh: the page used to drop the row, and the daemon asked for en-zh.
+step 6 "dictating English: Translate into 简体中文 types Simplified Chinese"
+fresh_chain en "$FULL"
+shot waitfor:General tab:Processing "click:New chain…" "click:Add step…" "click:Translate" \
+    "waitfor:Search languages" "click:Search languages" "type:zh" \
+    "gone:Español" "click:简体中文" "waitfor:Add step…" \
+    "$(poll "grep -qF \"('translate', true, {'to': 'zh-Hans'})\" $STORE")" \
+    || { echo "translate to 简体中文 failed" >&2; FAILED=1; }
+switch_on
+assert_dict "the daemon's chain status is ready" "$READY"
+shot waitfor:General tab:Processing "click:$CHAIN" "waitfor:EN → ZH" \
+    shot:shots/chains-dictation/06-simplified.png \
+    || { echo "simplified editor failed" >&2; FAILED=1; }
+dictate
+# 狐狸 is fox; the field holds no Latin letter.
+assert_dict "Simplified Chinese is in the field, not the English" \
+    "field_get plain | grep -q '狐狸' && ! field_get plain | grep -q '[a-zA-Z]'"
+evidence simplified
 
 suite_status
