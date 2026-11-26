@@ -177,7 +177,12 @@ stage snapshots only while it runs, as a resume cache, and deletes them at the
 end unless `--keep-stages`: on a `dir` pool each is a full 20 GiB disk.
 
 Suites never run on a base. `run-suite.sh` copies it, runs, and deletes the
-copy, so a run costs one disk for its duration. The bases are the warm cache
+copy, so a run costs one disk for its duration. Each suite has its own copy
+(`<vm>-run-<suite>`), so `E2E_JOBS=N` runs N suites side by side, each
+logging to `.run/artifacts/<tag>-<suite>.run.log` with its lines prefixed
+on the terminal (on chug, `make e2e E2E_RELEASE=resolute E2E_JOBS=3` ran
+the fifteen in 13 minutes, a snap rebuild included). Every copy takes
+`E2E_VM_MEMORY`, so mind the host; CI keeps one at a time. The bases are the warm cache
 that makes a run reproducible without a 25-minute provision.
 
 A stage snapshot on `dir` is a copy of the whole disk, which is how three

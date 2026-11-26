@@ -498,6 +498,7 @@ bench-keywords: ## Keyword recall and false hits, sent vs not, against an in-tre
 #
 # E2E_VM_MEMORY (default 6GiB, what CI gives the guest) sizes the VM, e.g.
 # `make e2e E2E_VM_MEMORY=4GiB` on a laptop.
+# E2E_JOBS=N runs N suites at once, each in its own VM copy (default 1).
 E2E_RELEASE ?= noble
 E2E_DESKTOP ?= gnome
 SUITES ?=

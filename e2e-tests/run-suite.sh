@@ -9,6 +9,9 @@
 #                  myna-noble workshop
 # E2E_VM_MEMORY=4GiB sizes the guest (default 6GiB, what CI gives it);
 # E2E_VM_CPUS its vCPUs (default 3).
+# E2E_JOBS=N runs up to N suites at once, each in its own copy (default 1,
+# what CI runs; each copy takes E2E_VM_MEMORY). A parallel suite's output
+# goes to its artifacts' run.log, and its lines reach the terminal prefixed.
 # E2E_MYNA_SNAP=PATH installs that myna snap (`make snap-myna`) over the
 # store's edge one in each run, keeping its connections (not on a machine
 # that has none yet, nor for a suite headed `# myna: store`).
@@ -80,10 +83,11 @@ if [ -z "$BINARY" ]; then
     done
 fi
 
-# One run of $SUITE from $SNAP into $ARTIFACTS; sets src, and rc on denials.
+# One run of $SUITE from $SNAP into $ARTIFACTS; sets src.
 attempt() {
     echo "== $SUITE: from $VM/$SNAP"
-    RUN=$VM-run
+    # One copy per suite, so suites can run side by side.
+    RUN=$VM-run-$SUITE
     lxc delete --force "$RUN" 2>/dev/null || true
     lxc copy "$VM/$SNAP" "$RUN" -c limits.cpu="$E2E_VM_CPUS" -c limits.memory="$E2E_VM_MEMORY"
     lxc start "$RUN"
@@ -151,11 +155,36 @@ attempt() {
     # The copy booted for this suite, so its whole boot is the suite's window.
     if ! python3 -I "$REPO/tests/lib/apparmor_denials.py" "$ARTIFACTS/journal.log"; then
         echo "== $SUITE: AppArmor denials"
-        rc=1
+        src=1
     fi
 }
 
-rc=0
+# One suite, start to end; its status is the subshell's.
+run_one() {
+    FILE=$HERE/suites/$SUITE.sh
+    SNAP=$(sed -n 's/^# snapshot: //p' "$FILE")
+    ARTIFACTS=$RUN_DIR/artifacts/$TAG-$SUITE
+    rm -rf "$ARTIFACTS" "$RUN_DIR/artifacts/screenshots/$SUITE"; mkdir -p "$ARTIFACTS"
+    attempt
+    # A virtual runner's host stops the vCPUs for tens of milliseconds now
+    # and then, longer than a graph cycle, and capture loses audio and ends
+    # the dictation. That says nothing about the suite, so a failed suite
+    # whose daemon lost audio runs once more. No loss is lab hardware's to
+    # test (Testflinger), not a VM's.
+    if [ "$src" != 0 ] && grep -q '\] ctrl: capture lost' "$ARTIFACTS/journal.log"; then
+        echo "== $SUITE: capture lost audio, inconclusive; once more"
+        rm -rf "$ARTIFACTS-lost-audio" "$RUN_DIR/artifacts/screenshots/$SUITE"
+        mv "$ARTIFACTS" "$ARTIFACTS-lost-audio"; mkdir -p "$ARTIFACTS"
+        attempt
+    fi
+    if [ -s "$ARTIFACTS/suite.log" ]; then
+        python3 -I "$HERE"/tools/breakdown.py "$ARTIFACTS/suite.log" || true
+    fi
+    return "$src"
+}
+
+# Every suite is checked before any VM starts.
+RUNNABLE=()
 for SUITE in "${SUITES[@]}"; do
     FILE=$HERE/suites/$SUITE.sh
     SNAP=$(sed -n 's/^# snapshot: //p' "$FILE")
@@ -174,25 +203,31 @@ for SUITE in "${SUITES[@]}"; do
         echo "== $SUITE: needs E2E_MYNA_SNAP (the snap \`make snap-myna\` built); refusing to test the store's edge one" >&2
         exit 2
     fi
-    ARTIFACTS=$RUN_DIR/artifacts/$TAG-$SUITE
-    rm -rf "$ARTIFACTS" "$RUN_DIR/artifacts/screenshots/$SUITE"; mkdir -p "$ARTIFACTS"
-
-    attempt
-    # A virtual runner's host stops the vCPUs for tens of milliseconds now
-    # and then, longer than a graph cycle, and capture loses audio and ends
-    # the dictation. That says nothing about the suite, so a failed suite
-    # whose daemon lost audio runs once more. No loss is lab hardware's to
-    # test (Testflinger), not a VM's.
-    if [ "$src" != 0 ] && grep -q '\] ctrl: capture lost' "$ARTIFACTS/journal.log"; then
-        echo "== $SUITE: capture lost audio, inconclusive; once more"
-        rm -rf "$ARTIFACTS-lost-audio" "$RUN_DIR/artifacts/screenshots/$SUITE"
-        mv "$ARTIFACTS" "$ARTIFACTS-lost-audio"; mkdir -p "$ARTIFACTS"
-        attempt
-    fi
-    [ "$src" = 0 ] || rc=1
-    if [ -s "$ARTIFACTS/suite.log" ]; then
-        python3 -I "$HERE"/tools/breakdown.py "$ARTIFACTS/suite.log" || true
-    fi
+    RUNNABLE+=("$SUITE")
 done
+
+# Each suite runs as a job, which keeps `set -e` in force inside it (a
+# function called from `||` would run with it off). One job at a time writes
+# straight to the terminal; side by side, each keeps its own log.
+JOBS=${E2E_JOBS:-1}
+rc=0 FAILED=()
+declare -A PIDS=()
+reap() {
+    local pid
+    wait -n -p pid "${!PIDS[@]}" || { rc=1; FAILED+=("${PIDS[$pid]}"); }
+    unset "PIDS[$pid]"
+}
+mkdir -p "$RUN_DIR/artifacts"
+for SUITE in "${RUNNABLE[@]}"; do
+    while [ ${#PIDS[@]} -ge "$JOBS" ]; do reap; done
+    if [ "$JOBS" -le 1 ]; then
+        run_one &
+    else
+        run_one > >(tee "$RUN_DIR/artifacts/$TAG-$SUITE.run.log" | sed -u "s/^/[$SUITE] /") 2>&1 &
+    fi
+    PIDS[$!]=$SUITE
+done
+while [ ${#PIDS[@]} -gt 0 ]; do reap; done
+[ ${#FAILED[@]} = 0 ] || echo "== failed: ${FAILED[*]}"
 echo "== artifacts in $RUN_DIR/artifacts"
 exit $rc
