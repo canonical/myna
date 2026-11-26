@@ -214,8 +214,8 @@ else
     wait_ready "$VM"
     wait_snapd_idle "$VM"
     on_vm "$VM" 'set -e
-sudo snap install myna-text+model-disfluency-en
-sudo snap install myna-translation+model-translate-en-fr+model-translate-fr-en+model-translate-fa-en'
+sudo snap install --edge myna-text+model-disfluency-en
+sudo snap install --edge myna-translation+model-translate-en-fr+model-translate-fr-en+model-translate-fa-en'
     wait_snapd_idle "$VM"
     snapd_cache_save "$VM"
     stop_vm "$VM"
