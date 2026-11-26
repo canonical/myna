@@ -210,7 +210,10 @@ impl Compiler<'_> {
             }
             None => self.ask(Request::translate(&from, &to), check),
         };
-        self.changed = Some((index, self.lang.replace(myna_core::chains::primary_language(&to))));
+        self.changed = Some((
+            index,
+            self.lang.replace(myna_core::chains::primary_language(&to)),
+        ));
         state
     }
 

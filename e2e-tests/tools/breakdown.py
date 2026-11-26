@@ -51,7 +51,8 @@ def report(path):
         end = steps[index + 1][STEP_START] if index + 1 < len(steps) else total
         took = max(0, end - step[STEP_START])
         print(
-            f"  {index:>4}  {took:>4}s  {step[STEP_PASS]:>4}  {step[STEP_FAIL]:>4}  {step[STEP_TEXT]}"
+            f"  {index:>4}  {took:>4}s  {step[STEP_PASS]:>4}  {step[STEP_FAIL]:>4}"
+            f"  {step[STEP_TEXT]}"
         )
     return 1 if failed else 0
 
