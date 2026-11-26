@@ -8,7 +8,8 @@ export PYTHONPATH="$SNAP/usr/local/lib/python3.12/dist-packages"
 streaming=()
 [ "$(snapctl get streaming)" = true ] && streaming=(--streaming)
 # `snap set myna-fake-backend transcript='Bonjour à tous.'`: hear that text
-# as one segment, for the suites that dictate another language.
+# as one segment, for the suites that dictate another language; `|` splits
+# it into segments a second apart ('One.|Two.|Three.').
 transcript=$(snapctl get transcript)
 exec /usr/bin/python3 -m myna.server \
   --adapter fake \
