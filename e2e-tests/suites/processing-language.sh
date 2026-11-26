@@ -10,6 +10,7 @@
 #   1. Translate opens the language page, named after the language the text is
 #      in where the step would go
 #   2. the search matches an endonym, the interface language's name and the code
+#      (German finds Deutsch; Francais finds Français with its cedilla)
 #   3. a language no model reaches from here is not listed
 #   4. choosing a language installs it and adds the step at its stage
 #   5. installed translation models offers Remove
@@ -40,6 +41,12 @@ shot waitfor:General tab:Processing "click:$CHAIN" "click:Add step…" "click:Tr
     "waitfor:Search languages" "click:Search languages" "type:fa" \
     "waitfor:Français" shot:shots/processing-language/02-code.png \
     || { echo "code search failed" >&2; FAILED=1; }
+# The interface's own name for a language finds the row titled in that
+# language, which is the whole point of the exonym table behind it.
+shot waitfor:General tab:Processing "click:$CHAIN" "click:Add step…" "click:Translate" \
+    "waitfor:Search languages" "click:Search languages" "type:German" \
+    "waitfor:Deutsch" "gone:Español" shot:shots/processing-language/02-exonym.png \
+    || { echo "exonym search failed" >&2; FAILED=1; }
 
 step 3 "a language no model reaches from here is not listed"
 shot waitfor:General tab:Processing "click:$CHAIN" "click:Add step…" "click:Translate" \
