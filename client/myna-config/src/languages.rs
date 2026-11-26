@@ -127,3 +127,21 @@ pub fn exonym(code: &str) -> Option<String> {
     let (_, name) = exonyms().iter().find(|(have, _)| *have == code)?;
     Some(name.clone())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The contract of the two naming functions: a Chinese target carries
+    /// its script's name rather than its code, and a language is found by
+    /// the name it has in the interface language. Both are what the language
+    /// page shows and searches; no display and no catalog needed.
+    #[test]
+    fn a_language_is_named_where_it_is_listed() {
+        assert_eq!(language_name("zh-Hans"), "Chinese (Simplified)");
+        assert_eq!(language_name("zh-Hant"), "Chinese (Traditional)");
+        assert_eq!(exonym("de").as_deref(), Some("German"));
+        assert_eq!(exonym("ja").as_deref(), Some("Japanese"));
+        assert_eq!(exonym("zz"), None);
+    }
+}
