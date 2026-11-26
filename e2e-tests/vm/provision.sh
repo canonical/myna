@@ -65,6 +65,14 @@ if ! lxc info "$VM" >/dev/null 2>&1; then
         -c limits.cpu="$E2E_VM_CPUS" -c limits.memory="$E2E_VM_MEMORY" -d root,size=20GiB \
         -c cloud-init.user-data="$(user_data)"
 fi
+# Already provisioned: the stage snapshots were this script's cache and are
+# deleted at the end, so `$SNAPSHOT` is what says the work is done. Without
+# this, a second run boots every stage again and re-installs what is there.
+if [ -z "$FORCE" ] && [ "$SNAPSHOT" != bare ] && snapshots "$VM" | grep -qx "$SNAPSHOT"; then
+    echo "== $VM already provisioned ($SNAPSHOT)"
+    exit 0
+fi
+
 # The display manager only starts from the next boot, the first stage's. A
 # run that died before that stage finishes the first boot here.
 if ! snapshots "$VM" | grep -qx bare; then
