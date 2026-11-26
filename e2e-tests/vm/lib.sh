@@ -21,6 +21,12 @@ export E2E_VM_CPUS=${E2E_VM_CPUS:-3}
 # Which desktop the VM runs; scripts take --desktop to override.
 export E2E_DESKTOP=${E2E_DESKTOP:-gnome}
 
+# The pool the e2e VMs live on, when there is a copy-on-write one: a per-suite
+# copy and a stage snapshot are then deltas, where on `dir` each is a full
+# 20 GiB disk. Three provisioned VMs on `dir` once held 460 GB of snapshots.
+# Create it once: lxc storage create e2e zfs source=/var/snap/lxd/common/lxd/disks/e2e.img size=180GiB
+export E2E_POOL=${E2E_POOL:-$(lxc storage list --format csv -c n 2>/dev/null | grep -qx e2e && echo e2e || true)}
+
 # The GNOME VM keeps its historical name so existing VMs and snapshots stay
 # valid; every other desktop is named after itself, so they coexist.
 vm_name() {

@@ -167,6 +167,34 @@ component (`slowpoll`): closing Settings first drops the request.
 `dev/try-desktop.sh` (`make try-desktop`) reuses the provisioning above for a
 manual-test VM; it only ever copies the `installed` snapshot of an e2e VM.
 
+## The fleet
+
+One provisioned VM per (release, desktop), named by `vm/lib.sh`'s `vm_name`:
+`myna-e2e-<release>` for GNOME, `myna-e2e-<desktop>-<release>` otherwise. Each
+holds two snapshots: `bare`, the machine onboarding installs onto, and `ready`
+(the `--snapshot` name), everything installed. `provision.sh` keeps its six
+stage snapshots only while it runs, as a resume cache, and deletes them at the
+end unless `--keep-stages`: on a `dir` pool each is a full 20 GiB disk.
+
+Suites never run on a base. `run-suite.sh` copies it, runs, and deletes the
+copy, so a run costs one disk for its duration. The bases are the warm cache
+that makes a run reproducible without a 25-minute provision.
+
+A stage snapshot on `dir` is a copy of the whole disk, which is how three
+provisioned VMs once held 460 GB. The fleet therefore lives on a
+copy-on-write pool when there is one:
+
+    lxc storage create e2e zfs source=/var/snap/lxd/common/lxd/disks/e2e.img size=180GiB
+
+`vm/lib.sh` picks it up (`E2E_POOL=e2e`) and `provision.sh` passes it through.
+`fleet.sh list` shows which bases exist, their snapshots and their size;
+`fleet.sh delete --release R --desktop D` takes one down.
+
+A suite that does not test the store's snap needs `E2E_MYNA_SNAP`, the snap
+`make snap-myna` built at this tree's HEAD: `run-suite.sh` now refuses to run
+one without it, because the store's edge revision does not carry the settings
+the tree writes and the suite would silently test the wrong daemon.
+
 # Important
 
 - The GNOME VM keeps the name `myna-e2e-<release>`; other desktops are

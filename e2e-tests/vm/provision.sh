@@ -27,19 +27,26 @@
 # run-suite.sh copies one per suite and leaves the VM itself untouched;
 # reprovision on a new edge revision or a stale image with --force.
 #
-# Usage: provision.sh --release noble|resolute|stonking [--desktop gnome|xubuntu|kde] [--force]
+# Usage: provision.sh --release noble|resolute|stonking [--desktop gnome|xubuntu|kde]
+#        [--force] [--keep-stages]
+#   --keep-stages  keep the six stage snapshots as well as the final one: they
+#                  are this script's resume cache, and on a copy-on-write pool
+#                  they cost their deltas. Run, then delete them by hand.
+#   --snapshot N   name the one snapshot suites run from (default `ready`).
 set -euo pipefail
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=e2e-tests/vm/lib.sh
 source "$HERE/lib.sh"
 
-RELEASE='' FORCE=''
+RELEASE='' FORCE='' KEEP_STAGES='' SNAPSHOT=ready
 while [ $# -gt 0 ]; do
     case $1 in
         --release) RELEASE=$2; shift 2 ;;
         --desktop) E2E_DESKTOP=$2; shift 2 ;;
         --force) FORCE=1; shift ;;
+        --keep-stages) KEEP_STAGES=1; shift ;;
+        --snapshot) SNAPSHOT=$2; shift 2 ;;
         -h|--help) sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "unknown option $1" >&2; exit 2 ;;
     esac
@@ -180,6 +187,21 @@ CONF
     systemctl --user is-active snap.myna.myna.service' push_fake_snap
 else
     echo "== no fake backend snap (make snap-fake, or E2E_FAKE_SNAP): skipping stage dictation"
+fi
+
+# One snapshot to run from, plus `bare`, the machine onboarding installs onto.
+# The stage snapshots above exist so a failed provision can resume; they are
+# not for suites. On `dir` each is a full 20 GiB disk, so a repo of three
+# provisioned VMs once took 460 GB of snapshots, which is what `--keep-stages`
+# is for and what a copy-on-write pool (E2E_POOL) makes cheap.
+lxc snapshot "$VM" "$SNAPSHOT"
+if [ -z "$KEEP_STAGES" ]; then
+    for name in $(snapshots "$VM"); do
+        case $name in
+            bare|"$SNAPSHOT") ;;
+            *) lxc delete "$VM/$name" ;;
+        esac
+    done
 fi
 
 echo "== $VM provisioned; snapshots:"

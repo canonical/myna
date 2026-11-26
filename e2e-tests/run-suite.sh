@@ -113,8 +113,13 @@ attempt() {
     "$HERE"/tools/cpu-sample.sh "$ARTIFACTS/cpu-host.log" & sampler=$!
 
     src=0
-    VM=$RUN REL=$REL DESKTOP=$E2E_DESKTOP bash "$FILE" || src=$?
-    echo "== $SUITE rc=$src"
+    started=$(date +%s)
+    # Stamped, so `tools/breakdown.py` says where the suite's time went; the
+    # suite itself reports its steps, which is all the bookkeeping it needs.
+    VM=$RUN REL=$REL DESKTOP=$E2E_DESKTOP bash "$FILE" 2>&1 \
+        | "$HERE"/tools/stamp.sh | tee "$ARTIFACTS/suite.log" || src=$?
+    took=$(( $(date +%s) - started ))
+    echo "== $SUITE rc=$src in ${took}s"
     kill "$sampler"
 
     lxc file pull -r "$RUN/home/ubuntu/myna-shot/out" "$ARTIFACTS/" || true
@@ -145,6 +150,14 @@ for SUITE in "${SUITES[@]}"; do
     fi
     snapshots "$VM" | grep -qx "$SNAP" \
         || { echo "$VM lacks snapshot $SNAP; run vm/provision.sh --release $REL --desktop $E2E_DESKTOP" >&2; exit 1; }
+    # A suite that is not out to test the store's snap needs this tree's: the
+    # store's edge revision does not carry the settings a newer tree writes
+    # (`snap run myna.config set chains` fails with "No such key"), and running
+    # it anyway tests the wrong daemon silently.
+    if [ -z "${E2E_MYNA_SNAP:-}" ] && [ "$SNAP" != bare ] && ! grep -qx '# myna: store' "$FILE"; then
+        echo "== $SUITE: needs E2E_MYNA_SNAP (the snap \`make snap-myna\` built); refusing to test the store's edge one" >&2
+        exit 2
+    fi
     ARTIFACTS=$RUN_DIR/artifacts/$TAG-$SUITE
     rm -rf "$ARTIFACTS" "$RUN_DIR/artifacts/screenshots/$SUITE"; mkdir -p "$ARTIFACTS"
 
@@ -161,6 +174,9 @@ for SUITE in "${SUITES[@]}"; do
         attempt
     fi
     [ "$src" = 0 ] || rc=1
+    if [ -s "$ARTIFACTS/suite.log" ]; then
+        python3 -I "$HERE"/tools/breakdown.py "$ARTIFACTS/suite.log" || true
+    fi
 done
 echo "== artifacts in $RUN_DIR/artifacts"
 exit $rc
