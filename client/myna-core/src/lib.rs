@@ -23,6 +23,7 @@ pub mod chains;
 pub mod control;
 pub mod debug;
 pub mod events;
+pub mod graph;
 pub mod history;
 pub mod language;
 pub mod locale;
