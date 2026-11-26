@@ -519,7 +519,8 @@ SUITES ?=
 # fail for the wrong reason. Each is rebuilt when the source it is built from
 # changed since its last build (e2e-tests/tree-stamp.sh, uncommitted changes
 # included), never because a commit touched only tests or docs. The newest
-# file is the one a run drives.
+# file is the one a run drives, unless E2E_MYNA_SNAP or E2E_FAKE_SNAP names
+# one (CI builds them from this tree in jobs of their own).
 E2E_MYNA_SNAP_FILE := $(firstword $(shell ls -t myna-snap/myna_*_amd64.snap 2>/dev/null))
 E2E_FAKE_SNAP_FILE := $(firstword $(shell ls -t fake-snap/myna-fake-backend_*_amd64.snap 2>/dev/null))
 E2E_MYNA_SOURCE := client myna-snap ':!client/*/tests'
@@ -528,19 +529,21 @@ E2E_FAKE_SOURCE := fake-snap server/src server/pyproject.toml
 .PHONY: e2e-snaps
 e2e-snaps: ## The snaps an e2e run drives, rebuilt only when their source moved
 	@stamp=$$(e2e-tests/tree-stamp.sh $(E2E_MYNA_SOURCE)); \
-	if [ -z "$(E2E_MYNA_SNAP_FILE)" ] || [ "$$(cat myna-snap/.e2e-stamp 2>/dev/null)" != "$$stamp" ]; then \
+	if [ -n "$$E2E_MYNA_SNAP" ]; then echo "== the myna snap given: $$E2E_MYNA_SNAP"; \
+	elif [ -z "$(E2E_MYNA_SNAP_FILE)" ] || [ "$$(cat myna-snap/.e2e-stamp 2>/dev/null)" != "$$stamp" ]; then \
 	    echo "== the myna snap is not this tree's: building"; $(MAKE) snap-myna && echo "$$stamp" > myna-snap/.e2e-stamp; \
 	fi
 	@stamp=$$(e2e-tests/tree-stamp.sh $(E2E_FAKE_SOURCE)); \
-	if [ -z "$(E2E_FAKE_SNAP_FILE)" ] || [ "$$(cat fake-snap/.e2e-stamp 2>/dev/null)" != "$$stamp" ]; then \
+	if [ -n "$$E2E_FAKE_SNAP" ]; then echo "== the fake backend snap given: $$E2E_FAKE_SNAP"; \
+	elif [ -z "$(E2E_FAKE_SNAP_FILE)" ] || [ "$$(cat fake-snap/.e2e-stamp 2>/dev/null)" != "$$stamp" ]; then \
 	    echo "== the fake backend snap is not this tree's: building"; $(MAKE) snap-fake && echo "$$stamp" > fake-snap/.e2e-stamp; \
 	fi
 
 .PHONY: e2e
 e2e: e2e-snaps ## Suite(s) in a desktop VM (E2E_RELEASE, E2E_DESKTOP, SUITES), building and provisioning what is missing
 	e2e-tests/vm/provision.sh --release $(E2E_RELEASE) --desktop $(E2E_DESKTOP)
-	E2E_MYNA_SNAP=$(CURDIR)/$$(ls -t myna-snap/myna_*_amd64.snap | head -1) \
-	E2E_FAKE_SNAP=$(CURDIR)/$$(ls -t fake-snap/myna-fake-backend_*_amd64.snap | head -1) \
+	E2E_MYNA_SNAP=$${E2E_MYNA_SNAP:-$(CURDIR)/$$(ls -t myna-snap/myna_*_amd64.snap | head -1)} \
+	E2E_FAKE_SNAP=$${E2E_FAKE_SNAP:-$(CURDIR)/$$(ls -t fake-snap/myna-fake-backend_*_amd64.snap | head -1)} \
 	TAGS="$(TAGS)" \
 	e2e-tests/run-suite.sh --release $(E2E_RELEASE) --desktop $(E2E_DESKTOP) $(SUITES)
 

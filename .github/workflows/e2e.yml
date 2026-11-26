@@ -174,6 +174,7 @@ jobs:
       # client/target/coverage/ for ci.yml's patch gate.
       - run: |
           E2E_MYNA_SNAP=$(ls "$PWD"/myna-snap/myna_*_amd64.snap) \
+          E2E_FAKE_SNAP=$(ls "$PWD"/fake-snap/myna-fake-backend_*_amd64.snap) \
             make e2e E2E_RELEASE=${{ matrix.release }} E2E_DESKTOP=${{ matrix.desktop }} \
               ${{ inputs.upgrade_channel && 'SUITES=upgrade' || '' }}
         env:
