@@ -132,8 +132,8 @@ pub struct Plan {
     pub output: Tongue,
 }
 
-/// Downloads, then model hops, then latency, then lost quality.
-type Cost = (u32, u32, u32, u32);
+/// Downloads, then model hops, then latency, then lost quality, then hops.
+type Cost = (u32, u32, u32, u32, u32);
 
 fn cost(imp: &Implementation) -> Cost {
     (
@@ -141,11 +141,12 @@ fn cost(imp: &Implementation) -> Cost {
         u32::from(imp.kind != Kind::Transcode),
         imp.latency_ms,
         1000u32.saturating_sub(imp.quality),
+        1,
     )
 }
 
 fn add(a: Cost, b: Cost) -> Cost {
-    (a.0 + b.0, a.1 + b.1, a.2 + b.2, a.3 + b.3)
+    (a.0 + b.0, a.1 + b.1, a.2 + b.2, a.3 + b.3, a.4 + b.4)
 }
 
 type Found = (Cost, Vec<usize>, Tongue);
@@ -159,7 +160,7 @@ fn reach(
     goal: impl Fn(&Tongue) -> bool,
 ) -> Option<Found> {
     let mut heap = BinaryHeap::new();
-    heap.push(Reverse(((0, 0, 0, 0), start.clone(), Vec::new())));
+    heap.push(Reverse(((0, 0, 0, 0, 0), start.clone(), Vec::new())));
     let mut seen = HashSet::new();
     while let Some(Reverse((c, at, path))) = heap.pop() {
         if !seen.insert(at.clone()) {
@@ -311,6 +312,21 @@ mod tests {
             matches!(&plan.steps[0], Outcome::Runs(p) if p.hops[0].inserted && !p.hops[1].inserted)
         );
         assert_eq!(plan.output, t("en"));
+    }
+
+    #[test]
+    fn equal_cost_takes_the_fewest_hops() {
+        let impls: Vec<_> = opencc()
+            .into_iter()
+            .map(|mut i| {
+                i.latency_ms = 0;
+                i.quality = 1000;
+                i
+            })
+            .chain([imp("zh-en", Kind::Translate, "zh-Hant", "en", true)])
+            .collect();
+        let plan = solve(&to("zh-Hant"), &Tongue::new("zh", Script::Mixed), &impls);
+        assert_eq!(ids(&plan, 0, &impls), ["opencc-Hant"]);
     }
 
     #[test]

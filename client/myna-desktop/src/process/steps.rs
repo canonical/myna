@@ -147,8 +147,7 @@ fn offered(ctx: &Context) -> Vec<Implementation> {
         quality,
     };
     let mut out = Vec::new();
-    // An unknown language, read as English, may still be Chinese. One
-    // millisecond each keeps the shortest conversion the cheapest.
+    // An unknown language, read as English, may still be Chinese.
     let chinese = ["zh", "yue", "cmn"]
         .into_iter()
         .chain(ctx.language.is_none().then_some("en"));
@@ -156,7 +155,7 @@ fn offered(ctx: &Context) -> Vec<Implementation> {
         for (_, tag) in FORMS {
             let to = Tongue::new(language, Script::Known(tag.into()));
             let any = Tongue::new(language, Script::Unspecified);
-            out.push(imp(graph::Kind::Transcode, any, to, 1, 1000));
+            out.push(imp(graph::Kind::Transcode, any, to, 0, 1000));
         }
     }
     let models = |task: &'static str| ctx.models.iter().filter(move |c| c.capability.task == task);
