@@ -508,7 +508,18 @@ e2e: e2e-snaps ## Suite(s) in a desktop VM (E2E_RELEASE, E2E_DESKTOP, SUITES), b
 	e2e-tests/vm/provision.sh --release $(E2E_RELEASE) --desktop $(E2E_DESKTOP)
 	E2E_MYNA_SNAP=$(CURDIR)/$$(ls -t myna-snap/myna_*_amd64.snap | head -1) \
 	E2E_FAKE_SNAP=$(CURDIR)/$$(ls -t fake-snap/myna-fake-backend_*_amd64.snap | head -1) \
+	TAGS="$(TAGS)" \
 	e2e-tests/run-suite.sh --release $(E2E_RELEASE) --desktop $(E2E_DESKTOP) $(SUITES)
+
+E2E_BASE ?= origin/main
+TAGS ?=
+
+.PHONY: e2e-changed
+e2e-changed: ## The suites for what this branch changed (E2E_BASE=origin/main)
+	@tags=$$(e2e-tests/changed-tags.sh $(E2E_BASE) | sort -u | paste -sd, -); \
+	if [ -z "$$tags" ]; then echo "== no e2e tag for this diff"; exit 0; fi; \
+	echo "== tags: $$tags"; \
+	$(MAKE) e2e TAGS="$$tags"
 
 # A copy of the e2e VM running this tree's snap and deb, to try by hand; the
 # e2e VMs are untouched. See dev/try-desktop.sh --help and e2e-tests/README.md.

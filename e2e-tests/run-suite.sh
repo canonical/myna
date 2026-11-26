@@ -38,10 +38,26 @@ done
 check_release "$REL"
 check_desktop
 VM=$(vm_name "$REL")
+# A suite is a file in suites/ that is not shared code (`lib.sh`,
+# `chains-lib.sh`). TAGS narrows the run to the suites carrying one of them:
+# `TAGS=processing` is the Processing page, `TAGS=dictation` what reaches the
+# field. SUITES names files and wins when both are given.
+wanted() { # FILE
+    local tags
+    tags=$(sed -n 's/^# tags: //p' "$1")
+    [ -n "${TAGS:-}" ] || return 0
+    local tag
+    for tag in ${TAGS//,/ }; do
+        case ", $tags," in *" $tag,"*) return 0 ;; esac
+    done
+    return 1
+}
 if [ ${#SUITES[@]} = 0 ]; then
     for f in "$HERE"/suites/*.sh; do
-        [ "${f##*/}" = lib.sh ] || SUITES+=("$(basename "$f" .sh)")
+        case ${f##*/} in *-lib.sh|lib.sh) continue ;; esac
+        wanted "$f" && SUITES+=("$(basename "$f" .sh)")
     done
+    [ ${#SUITES[@]} -gt 0 ] || { echo "no suite carries TAGS=$TAGS" >&2; exit 2; }
 fi
 # Artifacts of the GNOME runs keep their release-only names.
 TAG=$REL; [ "$E2E_DESKTOP" = gnome ] || TAG=$E2E_DESKTOP-$REL

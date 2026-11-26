@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # snapshot: ready
+# tags: dictation
 # Dictation end to end on the real desktop session: activation -> a speech
 # clip played through a virtual microphone -> the fake backend (a scripted
 # transcript: "The quick brown fox" while recording, "jumps over the lazy dog."

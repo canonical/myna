@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # snapshot: ready
+# tags: settings
 # Backend switching on General: with parakeet connected and whisper also
 # installed, activating Whisper's radio raises snapd's polkit prompt; a
 # dismissed prompt silently reverts the radio and changes nothing, an

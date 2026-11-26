@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # snapshot: ready
+# tags: settings
 # A Model-tab backend setting applies through one pkexec prompt: a dismissed
 # prompt (pkexec 126) reverts the row silently and writes nothing; an
 # allowed one lands in snapd's config for the connected backend.

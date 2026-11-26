@@ -25,7 +25,10 @@ export E2E_DESKTOP=${E2E_DESKTOP:-gnome}
 # copy and a stage snapshot are then deltas, where on `dir` each is a full
 # 20 GiB disk. Three provisioned VMs on `dir` once held 460 GB of snapshots.
 # Create it once: lxc storage create e2e zfs source=/var/snap/lxd/common/lxd/disks/e2e.img size=180GiB
-export E2E_POOL=${E2E_POOL:-$(lxc storage list --format csv -c n 2>/dev/null | grep -qx e2e && echo e2e || true)}
+if [ -z "${E2E_POOL:-}" ] && lxc storage list --format csv -c n 2>/dev/null | grep -qx e2e; then
+    E2E_POOL=e2e
+fi
+export E2E_POOL
 
 # The GNOME VM keeps its historical name so existing VMs and snapshots stay
 # valid; every other desktop is named after itself, so they coexist.
