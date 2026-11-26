@@ -33,6 +33,9 @@
 #  14. Settings in French, Simplified Chinese and Farsi (no Farsi catalog
 #      yet: English words, right to left): the page, the editor and the
 #      language page, as screenshots; the selectors are the translations
+#  15. Add from the page with no chain makes one and uses it; a step's own
+#      switch pauses only that step; Undo of a chain that was off brings it
+#      back off
 set -uo pipefail
 # shellcheck source=e2e-tests/suites/lib.sh
 source "$(dirname "$0")/lib.sh"
@@ -329,6 +332,34 @@ for spec in fr_FR.UTF-8:fr zh_CN.UTF-8:zh_CN fa_IR.UTF-8:fa; do
         echo "FAIL: Settings in $loc"; FAILED=1
     fi
 done
+
+step 15 "Add from the page with no chain makes and uses it; a step's switch pauses only it; Undo of an off chain comes back off"
+assert_on "the chains are emptied" \
+    "snap run myna.config set chains '[]' && snap run myna.config set active-chain ''"
+# Get more steps opens the catalog for the active chain, and there is none.
+shot waitfor:General tab:Processing "click:Get more steps" "waitfor:Tidy up speech" \
+    "click:Add Tidy up speech@$BTN" \
+    "$(poll "grep -qF \"('tidy', true, {})\" $STORE")" \
+    shot:shots/chains/15-add-no-chain.png \
+    || { echo "add with no chain failed" >&2; FAILED=1; }
+assert_on "a chain was made, holds the step and is in use" \
+    "grep -qF \"('tidy', true, {})\" $STORE && ! grep -q \"active-chain=''\" $STORE"
+# Off again, then deleted: Undo puts back the chain, not its use.
+shot waitfor:General tab:Processing "click:Use $CHAIN" \
+    "$(poll "grep -q \"active-chain=''\" $STORE")" "click:Delete $CHAIN@$BTN" \
+    "$(poll "! grep -qF \"'$CHAIN'\" $STORE")" "click:Undo@$BTN" \
+    "$(poll "grep -qF \"'$CHAIN'\" $STORE")" \
+    || { echo "undo of an off chain failed" >&2; FAILED=1; }
+assert_on "the chain is back and still off" \
+    "grep -qF \"'$CHAIN'\" $STORE && grep -q \"active-chain=''\" $STORE"
+# The step's own switch pauses that step and leaves the others alone.
+shot waitfor:General tab:Processing "click:$CHAIN" "waitfor:Add step…" "click:Add step…" \
+    "click:Chinese script" "click:Add Chinese script@$BTN" \
+    "$(poll "grep -qF \"('script', true\" $STORE")" \
+    "click:Use Chinese script" "$(poll "grep -qF \"('script', false\" $STORE")" \
+    || { echo "step switch failed" >&2; FAILED=1; }
+assert_on "only that step was paused" \
+    "grep -qF \"('script', false\" $STORE && grep -qF \"('tidy', true\" $STORE"
 
 dict 'mic_stop' >/dev/null 2>&1
 suite_status
