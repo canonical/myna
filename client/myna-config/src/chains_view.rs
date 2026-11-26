@@ -310,6 +310,34 @@ pub fn new_name(chains: &[Chain]) -> String {
 mod tests {
     use super::*;
 
+    /// What the editor shows of a step's place: a translation's badge is
+    /// its source and target as language codes (a script is the picker's to
+    /// name), and a skipped step says why, once.
+    #[test]
+    fn a_step_reads_where_it_goes_and_why_it_is_skipped() {
+        let chain = Chain {
+            id: "c".into(),
+            name: "C".into(),
+            steps: vec![
+                ChainStep::new("translate").with("to", "zh-Hans"),
+                ChainStep::new("tidy"),
+            ],
+        };
+        let (installing, preparing) = (BTreeMap::new(), BTreeSet::new());
+        let ctx = Context {
+            language: Some("en"),
+            catalog: &[],
+            daemon: None,
+            installing: &installing,
+            preparing: &preparing,
+            locales: &[],
+        };
+        let rows = lines(&chain, &ctx);
+        assert_eq!(rows[0].place.badge, "EN \u{2192} ZH");
+        assert!(rows[1].place.skipped);
+        assert_eq!(rows[1].subtitle, "Applies when the text is English");
+    }
+
     #[test]
     fn the_language_at_a_place_is_what_the_steps_before_it_made() {
         let steps = vec![
