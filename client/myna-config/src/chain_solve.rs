@@ -233,7 +233,7 @@ impl<'a> World<'a> {
                 }
                 let judged = match &at {
                     Some(here) => self.judge(step, here).map(|path| {
-                        let inserted = path
+                        let mut inserted: Vec<String> = path
                             .hops
                             .iter()
                             .filter(|hop| hop.inserted)
@@ -241,6 +241,14 @@ impl<'a> World<'a> {
                                 written_first(&self.impls[hop.implementation].produces.script)
                             })
                             .collect();
+                        let legs = path
+                            .hops
+                            .iter()
+                            .filter(|hop| self.impls[hop.implementation].kind == Kind::Translate)
+                            .count();
+                        if legs > 1 {
+                            inserted.push(gettextrs::gettext("Through English"));
+                        }
                         (Some(path.produces), inserted)
                     }),
                     None => wanted(step).map(|solved| match solved {

@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-26 23:47+0000\n"
+"POT-Creation-Date: 2026-11-26 23:56+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -337,49 +337,53 @@ msgstr ""
 msgid ", "
 msgstr ""
 
-#: src/chain_solve.rs:104
+#: src/chain_solve.rs:102
 msgid "Writes Simplified first"
 msgstr ""
 
-#: src/chain_solve.rs:105
+#: src/chain_solve.rs:103
 msgid "Writes Traditional first"
 msgstr ""
 
-#: src/chain_solve.rs:106
+#: src/chain_solve.rs:104
 msgid "Writes Traditional (Taiwan) first"
 msgstr ""
 
-#: src/chain_solve.rs:107
+#: src/chain_solve.rs:105
 msgid "Writes Traditional (Hong Kong) first"
 msgstr ""
 
-#: src/chain_solve.rs:108
+#: src/chain_solve.rs:106
 msgid "Converts the script first"
 msgstr ""
 
-#: src/chain_solve.rs:299
+#: src/chain_solve.rs:250
+msgid "Through English"
+msgstr ""
+
+#: src/chain_solve.rs:296
 msgid "Needs a language to translate to"
 msgstr ""
 
-#: src/chain_solve.rs:300
+#: src/chain_solve.rs:297
 msgid "Needs a script to write"
 msgstr ""
 
-#: src/chain_solve.rs:301
+#: src/chain_solve.rs:298
 msgid "The text is already in that language"
 msgstr ""
 
-#: src/chain_solve.rs:302
+#: src/chain_solve.rs:299
 msgid "Applies when the text is Chinese"
 msgstr ""
 
 #. TRANSLATORS: {language} is a language name, such as "English".
-#: src/chain_solve.rs:305
+#: src/chain_solve.rs:302
 msgid "Applies when the text is {language}"
 msgstr ""
 
 #. TRANSLATORS: {from} and {to} are language names, such as "فارسی" and "Français".
-#: src/chain_solve.rs:310 src/processing_steps.rs:389
+#: src/chain_solve.rs:307 src/processing_steps.rs:389
 msgid "No model translates {from} to {to} yet"
 msgstr ""
 
