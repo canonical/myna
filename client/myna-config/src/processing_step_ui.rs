@@ -59,10 +59,7 @@ struct RowMenu {
 
 /// The row under a step: its fix, its picker when the window is narrow, and
 /// its install.
-pub(crate) fn line_detail(
-    narrow: bool,
-    picker: &gtk::DropDown,
-) -> (adw::ActionRow, InstallControl, gtk::Button) {
+pub(crate) fn line_detail(picker: &gtk::DropDown) -> (adw::ActionRow, InstallControl, gtk::Button) {
     let control = InstallControl::new();
     control.set_visible(false);
     let fix = gtk::Button::builder()
@@ -77,7 +74,7 @@ pub(crate) fn line_detail(
         &detail,
         &[
             Some(fix.upcast_ref()),
-            narrow.then_some(picker.upcast_ref()),
+            Some(picker.upcast_ref()),
             Some(control.upcast_ref()),
         ],
     );
@@ -140,7 +137,7 @@ pub(crate) fn show_line(
 ) {
     show_step(widgets, line, total, narrow);
     let listed = show_parameter(widgets, line);
-    show_offers(widgets, line, blocked, narrow, items, listed);
+    show_offers(widgets, line, blocked, items, listed);
 }
 
 /// What the step is and where it stands: its place, its title, its input, the
@@ -258,7 +255,6 @@ pub(crate) fn show_offers(
     widgets: &LineWidgets,
     line: &Row,
     blocked: bool,
-    narrow: bool,
     items: &[Row],
     listed: bool,
 ) {
@@ -281,7 +277,11 @@ pub(crate) fn show_offers(
     }
     // From the line and the layout, not the widgets: `is_visible` is false
     // for anything in a hidden row.
-    let picker_under = narrow && listed;
+    // The picker is always the row under the step, never a suffix: a target
+    // like "Chinese (Simplified) (not installed)" is wider than the whole row
+    // it would share, and beside it the step's own title came out one
+    // character to a line.
+    let picker_under = listed;
     let title = if line.place.fix.is_some() {
         gettextrs::gettext("To make it run")
     } else if picker_under && line.id == TRANSLATE {
@@ -331,10 +331,10 @@ impl RowMenu {
 }
 
 impl LineWidgets {
-    /// A step's row and the row under it, before anything is wired. Below the
-    /// editor's breakpoint the picker moves under the step, so the title keeps
-    /// its room beside the badge, the switch and the menu.
-    pub(crate) fn new(narrow: bool) -> Self {
+    /// A step's row and the row under it, before anything is wired. Its
+    /// parameter picker is the row under it, so the step's title keeps its
+    /// room beside the badge, the switch and the menu at every width.
+    pub(crate) fn new() -> Self {
         let row = adw::ActionRow::builder().subtitle_lines(0).build();
         let number = dim_label(&["dim-label", "numeric"]);
         number.set_width_chars(2);
@@ -363,11 +363,7 @@ impl LineWidgets {
         } = RowMenu::new();
         add_suffixes(
             &row,
-            &[
-                Some(skipped.upcast_ref()),
-                Some(badge.upcast_ref()),
-                (!narrow).then_some(picker.upcast_ref()),
-            ],
+            &[Some(skipped.upcast_ref()), Some(badge.upcast_ref())],
         );
         add_suffixes(
             &row,
@@ -378,7 +374,7 @@ impl LineWidgets {
                 Some(menu.upcast_ref()),
             ],
         );
-        let (detail, control, fix) = line_detail(narrow, &picker);
+        let (detail, control, fix) = line_detail(&picker);
         Self {
             row,
             skipped,
@@ -461,13 +457,8 @@ pub(crate) fn show_standing(control: &InstallControl, standing: &Standing) {
 }
 impl StepsPage {
     /// A step in the editor: its row, the row under it, and what they do.
-    pub(crate) fn line_widgets(
-        self: &Rc<Self>,
-        id: &str,
-        index: usize,
-        narrow: bool,
-    ) -> LineWidgets {
-        let widgets = LineWidgets::new(narrow);
+    pub(crate) fn line_widgets(self: &Rc<Self>, id: &str, index: usize) -> LineWidgets {
+        let widgets = LineWidgets::new();
         self.wire_line(&widgets, id, index);
         widgets
     }

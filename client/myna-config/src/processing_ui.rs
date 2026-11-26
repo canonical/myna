@@ -717,7 +717,7 @@ impl StepsPage {
         }
         let mut built = Vec::new();
         for index in 0..count {
-            let widgets = self.line_widgets(&editor.id, index, editor.narrow.get());
+            let widgets = self.line_widgets(&editor.id, index);
             editor.steps.add(&widgets.row);
             editor.steps.add(&widgets.detail);
             built.push(widgets);
