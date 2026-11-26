@@ -61,7 +61,8 @@ shot waitfor:General tab:Processing "click:Use $CHAIN" \
     || { echo "switch on failed" >&2; FAILED=1; }
 shot waitfor:General tab:Processing "click:Delete $CHAIN@$BTN" \
     "$(poll "! grep -qF \"'$CHAIN'\" $STORE")" shot:shots/processing-page/04-deleted.png \
-    "click:Undo@$BTN" "$(poll "grep -qF \"'$CHAIN'\" $STORE")" \
+    "waitfor:Undo" "click:Undo@$BTN" "$(poll "grep -qF \"'$CHAIN'\" $STORE")" \
+    "waitfor:Use $CHAIN" \
     || { echo "delete run failed" >&2; FAILED=1; }
 # The Undo toast writes the chain back and its use in one go, a moment after
 # the click: assert_soon, not a read that races it.
@@ -71,8 +72,8 @@ assert_soon "the chain is back and in use" \
 step 5 "a chain that was off comes back off"
 shot waitfor:General tab:Processing "click:Use $CHAIN" \
     "$(poll "grep -q \"active-chain=''\" $STORE")" "click:Delete $CHAIN@$BTN" \
-    "$(poll "! grep -qF \"'$CHAIN'\" $STORE")" "click:Undo@$BTN" \
-    "$(poll "grep -qF \"'$CHAIN'\" $STORE")" \
+    "$(poll "! grep -qF \"'$CHAIN'\" $STORE")" "waitfor:Undo" "click:Undo@$BTN" \
+    "$(poll "grep -qF \"'$CHAIN'\" $STORE")" "waitfor:Use $CHAIN" \
     || { echo "undo of an off chain failed" >&2; FAILED=1; }
 assert_soon "the chain is back and still off" \
     "grep -qF \"'$CHAIN'\" $STORE && grep -q \"active-chain=''\" $STORE"
