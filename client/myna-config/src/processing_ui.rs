@@ -274,7 +274,7 @@ impl StepsPage {
         slots.more.add(&more_row);
         let catalog_group = adw::PreferencesGroup::builder()
             .description(gettextrs::gettext(
-                "Steps your catalogs offer. Add one to put it in the chain; one that is not installed downloads first.",
+                "Add a step to the chain. A step that needs a model downloads it first.",
             ))
             .build();
         let preferences = adw::PreferencesPage::new();

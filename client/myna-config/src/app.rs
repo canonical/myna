@@ -330,7 +330,7 @@ fn processing_group() -> ProcessingGroups {
         chain: adw::PreferencesGroup::builder()
             .title(gettextrs::gettext("Chains"))
             .description(gettextrs::gettext(
-                "What Myna does to what you say. Pick one; open it to change its steps. Text a chain changes is shown on screen while you speak and typed a sentence at a time. This is experimental.",
+                "What Myna does to what you say. Turn one chain on, or open it to change its steps. While a chain is on, its text shows on screen as you speak and is typed a sentence at a time. Experimental.",
             ))
             .build(),
         past: crate::past_dictations_ui::PastPage::new(),
