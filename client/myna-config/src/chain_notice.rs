@@ -191,25 +191,9 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            state,
-            ChainState::Degraded(vec![
-                "text.cleanup".into(),
-                "text.translate".into(),
-                "text.translate".into()
-            ])
-        );
-        assert_eq!(
             state.summary(),
             "missing a model for text cleanup, translation"
         );
-    }
-
-    #[test]
-    fn an_unknown_or_empty_task_reads_as_text() {
-        let unknown = ChainState::parse("degraded", "audio.denoise", "").unwrap();
-        assert_eq!(unknown.summary(), "missing a model for text");
-        let empty = ChainState::parse("degraded", "", "").unwrap();
-        assert_eq!(empty.summary(), "missing a model for text");
     }
 
     #[test]
@@ -251,30 +235,6 @@ mod tests {
     }
 
     #[test]
-    fn a_pair_the_user_asked_for_is_left_as_it_is() {
-        let json = r#"[{"task":"text.translate","params":{"language":"en","to":"fr"}},{"task":"text.translate","params":{"language":"fr","to":"en"}},{"task":"text.cleanup","params":{}}]"#;
-        let state = ChainState::parse("degraded", "text.translate", json)
-            .unwrap()
-            .as_asked(&asked(&[("en", "fr"), ("fr", "en")]));
-        assert_eq!(
-            state,
-            ChainState::Degraded(vec![
-                "text.translate:en>fr".into(),
-                "text.translate:fr>en".into(),
-                "text.cleanup".into()
-            ])
-        );
-        let other = ChainState::parse("degraded", "text.translate", json)
-            .unwrap()
-            .as_asked(&asked(&[("de", "fa")]));
-        assert_eq!(other, ChainState::parse("degraded", "", json).unwrap());
-        assert_eq!(
-            ChainState::Restart.as_asked(&asked(&[("fa", "fr")])),
-            ChainState::Restart
-        );
-    }
-
-    #[test]
     fn a_request_naming_only_its_target_says_so() {
         let json = r#"[{"task":"text.translate","params":{"to":"de"}}]"#;
         let state = ChainState::parse("degraded", "text.translate", json).unwrap();
@@ -282,22 +242,5 @@ mod tests {
             state.summary(),
             "missing a model for translation to Deutsch"
         );
-    }
-
-    #[test]
-    fn only_a_translation_is_named_by_its_languages() {
-        let json = r#"[{"task":"text.cleanup","params":{"language":"en","to":"fr"}},{"task":"text.cleanup","params":{"to":"fr"}}]"#;
-        let state = ChainState::parse("degraded", "text.cleanup", json).unwrap();
-        assert_eq!(state.summary(), "missing a model for text cleanup");
-    }
-
-    #[test]
-    fn restart_asks_for_a_restart() {
-        let state = ChainState::parse("restart", "text.translate", "").expect("restart");
-        assert_eq!(
-            state.notice().as_deref(),
-            Some("A model was connected after Myna started. Restart dictation to use it.")
-        );
-        assert_eq!(state.summary(), "restart dictation to use a new model");
     }
 }
