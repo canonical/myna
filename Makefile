@@ -337,9 +337,26 @@ install-desktop: ## Install the Myna Settings desktop entry + icons for this use
 
 # The settings app, run from the workspace. Needs `make install-schema` first:
 # unpackaged, it reads the host's schema copy, not the snap's.
+#
+# A GUI started from a confined shell inherits that shell's AppArmor label
+# (a Ptyxis or terminal snap, or an agent's own shell), and the myna snap's
+# daemon profile then refuses its D-Bus calls: Settings shows no model, no
+# Install button and every language as not installed, while the daemon answers
+# fine from an unconfined shell. systemd --user is unconfined, so a confined
+# shell is handed over to it rather than launched from.
 .PHONY: run-config
 run-config: ## Launch Myna Settings (myna-config) from the workspace
-	cd client && cargo run -p myna-config
+	cd client && cargo build -q -p myna-config
+	@label=$$(cat /proc/self/attr/current); \
+	if [ "$$label" = "unconfined" ]; then \
+		exec $(CURDIR)/client/target/debug/myna-config; \
+	else \
+		echo "== this shell is confined ($$label): launching under systemd --user, which is not"; \
+		systemd-run --user --collect --unit=myna-config-review \
+			--working-directory=$(CURDIR)/client \
+			$(CURDIR)/client/target/debug/myna-config; \
+		echo "== log: journalctl --user -u myna-config-review"; \
+	fi
 
 ##@ Snaps
 
