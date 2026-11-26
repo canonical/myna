@@ -57,31 +57,34 @@ assert_on "off keeps the chain" "grep -qF \"'New chain 2'\" $STORE"
 
 step 4 "delete from the row, then Undo: the chain and its use come back"
 shot waitfor:General tab:Processing "click:Use $CHAIN" \
-    "$(poll "grep -q \"active-chain='\" $STORE")" \
+    "$(poll "grep -q \"active-chain='\" $STORE")" "checked:Use $CHAIN" \
     || { echo "switch on failed" >&2; FAILED=1; }
 shot waitfor:General tab:Processing "click:Delete $CHAIN@$BTN" \
     "$(poll "! grep -qF \"'$CHAIN'\" $STORE")" shot:shots/processing-page/04-deleted.png \
-    "waitfor:Undo" "wait:1" "activate:Undo" \
+    "waitfor:Undo" "wait:1" "click:Undo@$BTN" \
     || { echo "delete run failed" >&2; FAILED=1; }
-# The toast writes into the app's own settings, not the daemon's keyfile this
-# suite reads, so assert the page: the row is back and its switch is on.
+# The toast's Undo is a real button, but it carries no AT-SPI action, so
+# `activate:` clicks nothing and the chain stays deleted. Assert the page and
+# the store: the row is back, its switch on, and the app has written it.
 shot waitfor:General tab:Processing "waitfor:Use $CHAIN" "checked:Use $CHAIN" \
     shot:shots/processing-page/04-undone.png \
     || { echo "undo did not restore the chain" >&2; FAILED=1; }
-# The daemon's keyfile is written by the daemon, not by the app's Undo, so the
-# page is the assertion here: the row came back and its switch is on.
+assert_soon "the chain is back and in use" \
+    "grep -qF \"'$CHAIN'\" $STORE && ! grep -q \"active-chain=''\" $STORE"
 
 step 5 "a chain that was off comes back off"
-shot waitfor:General tab:Processing "click:Use $CHAIN" \
-    "$(poll "grep -q \"active-chain=''\" $STORE")" "click:Delete $CHAIN@$BTN" \
-    "$(poll "! grep -qF \"'$CHAIN'\" $STORE")" "waitfor:Undo" "wait:1" "activate:Undo" \
-    "waitfor:Use $CHAIN" \
+shot waitfor:General tab:Processing "checked:Use $CHAIN" "click:Use $CHAIN" \
+    "$(poll "grep -q \"active-chain=''\" $STORE")" "unchecked:Use $CHAIN" \
+    "click:Delete $CHAIN@$BTN" "$(poll "! grep -qF \"'$CHAIN'\" $STORE")" \
+    "waitfor:Undo" "wait:1" "click:Undo@$BTN" "waitfor:Use $CHAIN" "unchecked:Use $CHAIN" \
     || { echo "undo of an off chain failed" >&2; FAILED=1; }
-# Back, and off: the driver has no probe for an unchecked switch, so the page
-# says the row is there and the daemon's keyfile says nothing is in use.
-shot waitfor:General tab:Processing "waitfor:Use $CHAIN" \
+# Back, and off: the row is there with its switch off, and the store holds the
+# chain with nothing in use.
+shot waitfor:General tab:Processing "waitfor:Use $CHAIN" "unchecked:Use $CHAIN" \
     shot:shots/processing-page/05-undone-off.png \
     || { echo "undo did not restore the off chain" >&2; FAILED=1; }
+assert_soon "the chain is back and nothing is in use" \
+    "grep -qF \"'$CHAIN'\" $STORE && grep -q \"active-chain=''\" $STORE"
 
 evidence page
 suite_status
