@@ -38,28 +38,7 @@ mod imp {
         }
     }
 
-    impl ObjectImpl for InstallControl {
-        fn constructed(&self) {
-            self.parent_constructed();
-            // GtkSpinner's ring is `opacity: 0` unless its :checked state flag
-            // is set (GTK's theme: "non spinning spinner makes no sense"), and
-            // `set_spinning()` only touches that flag when the property
-            // changes, which it cannot do while the widget is unmapped: a page
-            // left and returned to painted no ring at all. Put the flag back
-            // whenever it is missing; false then true is a real style change.
-            let spinner = self.spinner.get();
-            glib::timeout_add_local(std::time::Duration::from_millis(250), move || {
-                if spinner.is_mapped()
-                    && spinner.property::<bool>("spinning")
-                    && !spinner.state_flags().contains(gtk::StateFlags::CHECKED)
-                {
-                    spinner.set_spinning(false);
-                    spinner.set_spinning(true);
-                }
-                glib::ControlFlow::Continue
-            });
-        }
-    }
+    impl ObjectImpl for InstallControl {}
     impl WidgetImpl for InstallControl {}
     impl BoxImpl for InstallControl {}
 }
@@ -86,7 +65,6 @@ impl InstallControl {
         super::register_resources();
         glib::Object::builder().build()
     }
-
 
     pub fn button(&self) -> gtk::Button {
         self.imp().button.get()
