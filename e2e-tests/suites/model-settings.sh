@@ -10,10 +10,12 @@ source "$(dirname "$0")/lib.sh"
 
 P=model-settings-$REL
 S=shots/model-settings
-# The connected backend's snap name (myna-whisper, myna-parakeet, ...).
-BACKEND=$(on 'snap connections myna | sed -n "s/^.*myna:backend[[:space:]]\+\(myna-[a-z]*\):provider.*$/\1/p"')
-[ -n "$BACKEND" ] || { echo "no backend connected" >&2; exit 1; }
-echo "connected backend: $BACKEND"
+# `ready` leaves the fake backend connected, which has no runtime settings:
+# the rows are Parakeet's.
+BACKEND=myna-parakeet
+on "sudo snap disconnect myna:backend && sudo snap connect myna:backend $BACKEND:provider \
+    && systemctl --user restart snap.myna.myna.service" >/dev/null \
+    || { echo "could not connect $BACKEND" >&2; exit 1; }
 OLD=$(on "sudo snap get -d $BACKEND | jq -r 'first(.. .\"sleep-idle-seconds\"? // empty)'")
 echo "old sleep-idle-seconds = $OLD"
 NEW=450
