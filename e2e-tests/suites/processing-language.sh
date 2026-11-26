@@ -14,6 +14,7 @@
 #   3. a language no model reaches from here is not listed
 #   4. choosing a language installs it and adds the step at its stage
 #   5. installed translation models offers Remove
+#   6. a language reachable only through a script converter is listed
 set -uo pipefail
 # shellcheck source=e2e-tests/suites/lib.sh
 source "$(dirname "$0")/lib.sh"
@@ -75,6 +76,16 @@ shot --polkit allow waitfor:General tab:Processing "click:$CHAIN" "click:Add ste
     "click:Translate" "waitfor:Search languages" "waitfor:English to Français" \
     shot:shots/processing-language/05-installed.png \
     || { echo "installed models failed" >&2; FAILED=1; }
+
+step 6 "a language reachable only through a script converter is listed"
+# The only model out of Chinese reads Traditional text, so English is
+# reachable from Chinese dictation only with the converter in front of it.
+assert_on "the chains are emptied and the dictation language is Chinese" \
+    "snap run myna.config set chains '[]' && snap run myna.config set active-chain '' && snap run myna.config set language zh"
+shot waitfor:General tab:Processing "click:New chain…" "click:Add step…" "click:Translate" \
+    "waitfor:Search languages" "click:Search languages" "type:English" \
+    "waitfor:English" shot:shots/processing-language/06-through-converter.png \
+    || { echo "converter route failed" >&2; FAILED=1; }
 
 evidence language
 suite_status
