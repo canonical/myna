@@ -52,15 +52,19 @@ pub fn language_name(code: &str) -> String {
 }
 
 /// A language's name to put inside a sentence ("فارسی to English"): a
-/// right-to-left name is isolated (U+2068 ... U+2069), or it would turn
-/// the whole sentence around it ("to English فارسی").
+/// right-to-left name is isolated (U+2068 ... U+2069) and led by a
+/// left-to-right mark, or a sentence it opens takes its direction and turns
+/// around it ("to English فارسی"): Pango finds a paragraph's direction from
+/// its first strong letter, isolate or not. Every catalog Myna ships writes
+/// its frames left to right; a right-to-left one would need the frame's
+/// own mark instead.
 pub fn language_in_text(code: &str) -> String {
     let name = language_name(code);
     let rtl = name.chars().any(|c| {
         matches!(c, '\u{0590}'..='\u{08FF}' | '\u{FB1D}'..='\u{FDFF}' | '\u{FE70}'..='\u{FEFF}')
     });
     if rtl {
-        format!("\u{2068}{name}\u{2069}")
+        format!("\u{200E}\u{2068}{name}\u{2069}")
     } else {
         name
     }
@@ -158,7 +162,7 @@ mod tests {
         assert_eq!(exonym("zh-Hans").as_deref(), Some("Chinese (Simplified)"));
         assert_eq!(language_name("zh-Hant"), "繁體中文");
         assert_eq!(language_in_text("fr"), "Français");
-        assert_eq!(language_in_text("fa"), "\u{2068}فارسی\u{2069}");
+        assert_eq!(language_in_text("fa"), "\u{200E}\u{2068}فارسی\u{2069}");
         assert_eq!(exonym("de").as_deref(), Some("German"));
         assert_eq!(exonym("ja").as_deref(), Some("Japanese"));
         assert_eq!(exonym("zz"), None);
