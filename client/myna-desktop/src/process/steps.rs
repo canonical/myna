@@ -146,18 +146,12 @@ fn offered(ctx: &Context) -> Vec<Implementation> {
         latency_ms,
         quality,
     };
-    let mut out = Vec::new();
     // An unknown language, read as English, may still be Chinese.
-    let chinese = ["zh", "yue", "cmn"]
-        .into_iter()
-        .chain(ctx.language.is_none().then_some("en"));
-    for language in chinese {
-        for (_, tag) in FORMS {
-            let to = Tongue::new(language, Script::Known(tag.into()));
-            let any = Tongue::new(language, Script::Unspecified);
-            out.push(imp(graph::Kind::Transcode, any, to, 0, 1000));
-        }
-    }
+    let mut out = graph::opencc(
+        ["zh", "yue", "cmn"]
+            .into_iter()
+            .chain(ctx.language.is_none().then_some("en")),
+    );
     let models = |task: &'static str| ctx.models.iter().filter(move |c| c.capability.task == task);
     let english = Tongue::new("en", Script::Unspecified);
     out.push(imp(graph::Kind::Tidy, english.clone(), english, 0, 0));

@@ -10,8 +10,6 @@ use myna_core::processing::ChineseScript;
 use crate::plugin_catalog::Entry;
 use crate::processing_steps::Offered;
 
-const OPENCC_SCRIPTS: [&str; 4] = ["Hans", "Hant", "Hant-TW", "Hant-HK"];
-
 /// What Settings can plan with.
 pub struct World<'a> {
     impls: Vec<Implementation>,
@@ -113,9 +111,10 @@ impl<'a> World<'a> {
     /// Installed models are those `daemon` offers; every other catalog
     /// entry is a download.
     pub fn new(catalog: &'a [Entry], daemon: Option<&Offered>) -> Self {
+        let impls = graph::opencc(["zh"]);
         let mut world = Self {
-            impls: Vec::new(),
-            entries: Vec::new(),
+            entries: vec![None; impls.len()],
+            impls,
         };
         let model = |id: String, kind, accepts, produces, installed| Implementation {
             id,
@@ -126,16 +125,6 @@ impl<'a> World<'a> {
             latency_ms: 100,
             quality: 800,
         };
-        for script in OPENCC_SCRIPTS {
-            world.impls.push(model(
-                format!("opencc-{script}"),
-                Kind::Transcode,
-                Tongue::new("zh", Script::Unspecified),
-                Tongue::new("zh", Script::Known(script.to_owned())),
-                true,
-            ));
-            world.entries.push(None);
-        }
         for entry in catalog {
             let kind = match entry.step.id.as_str() {
                 "translate" => Kind::Translate,

@@ -86,6 +86,29 @@ pub struct Implementation {
     pub quality: u32,
 }
 
+/// The scripts the built-in OpenCC converter writes Chinese in.
+pub const OPENCC_SCRIPTS: [&str; 4] = ["Hans", "Hant", "Hant-TW", "Hant-HK"];
+
+/// OpenCC as transcoders: text of any script in each of `languages`
+/// becomes each of [`OPENCC_SCRIPTS`].
+pub fn opencc<'a>(languages: impl IntoIterator<Item = &'a str>) -> Vec<Implementation> {
+    let mut out = Vec::new();
+    for language in languages {
+        for script in OPENCC_SCRIPTS {
+            out.push(Implementation {
+                id: format!("opencc-{language}-{script}"),
+                kind: Kind::Transcode,
+                accepts: Tongue::new(language, Script::Unspecified),
+                produces: Tongue::new(language, Script::Known(script.to_owned())),
+                installed: true,
+                latency_ms: 0,
+                quality: 1000,
+            });
+        }
+    }
+    out
+}
+
 /// What the user put in the chain.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Step {
@@ -273,17 +296,7 @@ mod tests {
     }
 
     fn opencc() -> Vec<Implementation> {
-        ["Hans", "Hant"]
-            .map(|s| {
-                imp(
-                    &format!("opencc-{s}"),
-                    Kind::Transcode,
-                    "zh",
-                    &format!("zh-{s}"),
-                    true,
-                )
-            })
-            .into()
+        super::opencc(["zh"])
     }
 
     fn ids<'a>(plan: &Plan, i: usize, impls: &'a [Implementation]) -> Vec<&'a str> {
@@ -307,7 +320,7 @@ mod tests {
         impls.push(imp("zh-en", Kind::Translate, "zh-Hant", "en", true));
         let mixed = Tongue::new("zh", Script::Mixed);
         let plan = solve(&to("en"), &mixed, &impls);
-        assert_eq!(ids(&plan, 0, &impls), ["opencc-Hant", "zh-en"]);
+        assert_eq!(ids(&plan, 0, &impls), ["opencc-zh-Hant", "zh-en"]);
         assert!(
             matches!(&plan.steps[0], Outcome::Runs(p) if p.hops[0].inserted && !p.hops[1].inserted)
         );
@@ -316,17 +329,10 @@ mod tests {
 
     #[test]
     fn equal_cost_takes_the_fewest_hops() {
-        let impls: Vec<_> = opencc()
-            .into_iter()
-            .map(|mut i| {
-                i.latency_ms = 0;
-                i.quality = 1000;
-                i
-            })
-            .chain([imp("zh-en", Kind::Translate, "zh-Hant", "en", true)])
-            .collect();
+        let mut impls = opencc();
+        impls.push(imp("zh-en", Kind::Translate, "zh-Hant", "en", true));
         let plan = solve(&to("zh-Hant"), &Tongue::new("zh", Script::Mixed), &impls);
-        assert_eq!(ids(&plan, 0, &impls), ["opencc-Hant"]);
+        assert_eq!(ids(&plan, 0, &impls), ["opencc-zh-Hant"]);
     }
 
     #[test]
@@ -413,7 +419,7 @@ mod tests {
             Step::Translate { to: t("en") },
         ];
         let plan = solve(&chain, &Tongue::new("zh", Script::Mixed), &impls);
-        assert_eq!(ids(&plan, 0, &impls), ["opencc-Hant"]);
+        assert_eq!(ids(&plan, 0, &impls), ["opencc-zh-Hant"]);
         assert_eq!(ids(&plan, 1, &impls), ["zh-en"]);
     }
 
