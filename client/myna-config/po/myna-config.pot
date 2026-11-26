@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-26 20:31+0000\n"
+"POT-Creation-Date: 2026-11-26 20:57+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -337,239 +337,239 @@ msgstr ""
 msgid ", "
 msgstr ""
 
-#: src/languages.rs:77
+#: src/languages.rs:81
 msgid "Afrikaans"
 msgstr ""
 
-#: src/languages.rs:78
+#: src/languages.rs:82
 msgid "Arabic"
 msgstr ""
 
-#: src/languages.rs:79
+#: src/languages.rs:83
 msgid "Azerbaijani"
 msgstr ""
 
-#: src/languages.rs:80
+#: src/languages.rs:84
 msgid "Belarusian"
 msgstr ""
 
-#: src/languages.rs:81
+#: src/languages.rs:85
 msgid "Bulgarian"
 msgstr ""
 
-#: src/languages.rs:82
+#: src/languages.rs:86
 msgid "Bengali"
 msgstr ""
 
-#: src/languages.rs:83
+#: src/languages.rs:87
 msgid "Bosnian"
 msgstr ""
 
-#: src/languages.rs:84
+#: src/languages.rs:88
 msgid "Catalan"
 msgstr ""
 
-#: src/languages.rs:85
+#: src/languages.rs:89
 msgid "Czech"
 msgstr ""
 
-#: src/languages.rs:86
+#: src/languages.rs:90
 msgid "Danish"
 msgstr ""
 
-#: src/languages.rs:87
+#: src/languages.rs:91
 msgid "German"
 msgstr ""
 
-#: src/languages.rs:88
+#: src/languages.rs:92
 msgid "Greek"
 msgstr ""
 
-#: src/languages.rs:89
+#: src/languages.rs:93
 msgid "English"
 msgstr ""
 
-#: src/languages.rs:90
+#: src/languages.rs:94
 msgid "Spanish"
 msgstr ""
 
-#: src/languages.rs:91
+#: src/languages.rs:95
 msgid "Estonian"
 msgstr ""
 
-#: src/languages.rs:92
+#: src/languages.rs:96
 msgid "Basque"
 msgstr ""
 
-#: src/languages.rs:93
+#: src/languages.rs:97
 msgid "Persian"
 msgstr ""
 
-#: src/languages.rs:94
+#: src/languages.rs:98
 msgid "Finnish"
 msgstr ""
 
-#: src/languages.rs:95
+#: src/languages.rs:99
 msgid "French"
 msgstr ""
 
-#: src/languages.rs:96
+#: src/languages.rs:100
 msgid "Galician"
 msgstr ""
 
-#: src/languages.rs:97
+#: src/languages.rs:101
 msgid "Gujarati"
 msgstr ""
 
-#: src/languages.rs:98
+#: src/languages.rs:102
 msgid "Hebrew"
 msgstr ""
 
-#: src/languages.rs:99
+#: src/languages.rs:103
 msgid "Hindi"
 msgstr ""
 
-#: src/languages.rs:100
+#: src/languages.rs:104
 msgid "Croatian"
 msgstr ""
 
-#: src/languages.rs:101
+#: src/languages.rs:105
 msgid "Hungarian"
 msgstr ""
 
-#: src/languages.rs:102
+#: src/languages.rs:106
 msgid "Indonesian"
 msgstr ""
 
-#: src/languages.rs:103
+#: src/languages.rs:107
 msgid "Icelandic"
 msgstr ""
 
-#: src/languages.rs:104
+#: src/languages.rs:108
 msgid "Italian"
 msgstr ""
 
-#: src/languages.rs:105
+#: src/languages.rs:109
 msgid "Japanese"
 msgstr ""
 
-#: src/languages.rs:106
+#: src/languages.rs:110
 msgid "Kannada"
 msgstr ""
 
-#: src/languages.rs:107
+#: src/languages.rs:111
 msgid "Korean"
 msgstr ""
 
-#: src/languages.rs:108
+#: src/languages.rs:112
 msgid "Lithuanian"
 msgstr ""
 
-#: src/languages.rs:109
+#: src/languages.rs:113
 msgid "Latvian"
 msgstr ""
 
-#: src/languages.rs:110
+#: src/languages.rs:114
 msgid "Malayalam"
 msgstr ""
 
-#: src/languages.rs:111
+#: src/languages.rs:115
 msgid "Marathi"
 msgstr ""
 
-#: src/languages.rs:112
+#: src/languages.rs:116
 msgid "Malay"
 msgstr ""
 
-#: src/languages.rs:113
+#: src/languages.rs:117
 msgid "Norwegian Bokmål"
 msgstr ""
 
-#: src/languages.rs:114
+#: src/languages.rs:118
 msgid "Dutch"
 msgstr ""
 
-#: src/languages.rs:115
+#: src/languages.rs:119
 msgid "Polish"
 msgstr ""
 
-#: src/languages.rs:116
+#: src/languages.rs:120
 msgid "Portuguese"
 msgstr ""
 
-#: src/languages.rs:117
+#: src/languages.rs:121
 msgid "Romanian"
 msgstr ""
 
-#: src/languages.rs:118
+#: src/languages.rs:122
 msgid "Russian"
 msgstr ""
 
-#: src/languages.rs:119
+#: src/languages.rs:123
 msgid "Slovak"
 msgstr ""
 
-#: src/languages.rs:120
+#: src/languages.rs:124
 msgid "Slovenian"
 msgstr ""
 
-#: src/languages.rs:121
+#: src/languages.rs:125
 msgid "Albanian"
 msgstr ""
 
-#: src/languages.rs:122
+#: src/languages.rs:126
 msgid "Serbian"
 msgstr ""
 
-#: src/languages.rs:123
+#: src/languages.rs:127
 msgid "Swedish"
 msgstr ""
 
-#: src/languages.rs:124
+#: src/languages.rs:128
 msgid "Tamil"
 msgstr ""
 
-#: src/languages.rs:125
+#: src/languages.rs:129
 msgid "Telugu"
 msgstr ""
 
-#: src/languages.rs:126
+#: src/languages.rs:130
 msgid "Thai"
 msgstr ""
 
-#: src/languages.rs:127
+#: src/languages.rs:131
 msgid "Tagalog"
 msgstr ""
 
-#: src/languages.rs:128
+#: src/languages.rs:132
 msgid "Turkish"
 msgstr ""
 
-#: src/languages.rs:129
+#: src/languages.rs:133
 msgid "Uyghur"
 msgstr ""
 
-#: src/languages.rs:130
+#: src/languages.rs:134
 msgid "Ukrainian"
 msgstr ""
 
-#: src/languages.rs:131
+#: src/languages.rs:135
 msgid "Urdu"
 msgstr ""
 
-#: src/languages.rs:132
+#: src/languages.rs:136
 msgid "Vietnamese"
 msgstr ""
 
-#: src/languages.rs:133
+#: src/languages.rs:137
 msgid "Chinese"
 msgstr ""
 
-#: src/languages.rs:134
+#: src/languages.rs:138
 msgid "Chinese (Simplified)"
 msgstr ""
 
-#: src/languages.rs:135
+#: src/languages.rs:139
 msgid "Chinese (Traditional)"
 msgstr ""
 
