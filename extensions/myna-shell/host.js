@@ -643,6 +643,14 @@ export class OverlayHost {
         this._position();
     }
 
+    /** The pill's frame as {x, y, width, height}, or null while hidden. */
+    get pillRect() {
+        const frame = this._window?.get_frame_rect();
+        return frame
+            ? {x: frame.x, y: frame.y, width: frame.width, height: frame.height}
+            : null;
+    }
+
     _position() {
         if (!this._window || this._positioning)
             return;
