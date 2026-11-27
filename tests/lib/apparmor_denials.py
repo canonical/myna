@@ -106,6 +106,17 @@ ALLOWED: tuple[Allowed, ...] = (
         " myna-text:hardware-observe yet, and the server starts inside Settings'"
         " install, before any connect (delete once the store grants it)",
     ),
+    Allowed(
+        {
+            "subject": r"snap\.myna\.myna",
+            "operation": "connect",
+            "name": r"/var/snap/myna-(text|translation)/common/share/provider/text\.sock",
+        },
+        "`snap connect myna:backend <text snap>:provider` remounts the share, the daemon"
+        " exits and systemd restarts it before snapd replaces snap.myna.myna's profile"
+        " with the new connect rule; it reads the provider as unavailable and binds it"
+        " at its next start",
+    ),
 )
 
 
