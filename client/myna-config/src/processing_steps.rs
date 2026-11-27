@@ -506,6 +506,14 @@ mod tests {
     }
 
     #[test]
+    fn a_script_step_with_no_script_chosen_still_says_it_wants_chinese() {
+        let world = World::new(&[], None);
+        let unset = ChainStep::new(SCRIPT);
+        assert_eq!(world.skip(&unset, "fr"), Some(Why::NotChinese));
+        assert_eq!(world.skip(&unset, "zh"), Some(Why::NoScript));
+    }
+
+    #[test]
     fn sizes_round_up_to_whole_megabytes() {
         assert_eq!(size(1), "1 MB");
         assert_eq!(size(24_000_001), "25 MB");

@@ -200,7 +200,15 @@ impl<'a> World<'a> {
         if !KNOWN_STEPS.contains(&step.step.as_str()) {
             return None;
         }
-        self.judge(step, &tongue_of(from)).err()
+        let at = tongue_of(from);
+        match self.judge(step, &at) {
+            Err(Why::NoScript) => {
+                // No script chosen yet: whether the text is Chinese still decides.
+                let probe = ChainStep::new(&step.step).with("mode", "simplified");
+                self.judge(&probe, &at).err().or(Some(Why::NoScript))
+            }
+            verdict => verdict.err(),
+        }
     }
 
     /// The catalog entries a translation from `from` to `to` runs through,
