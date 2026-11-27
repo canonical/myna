@@ -15,29 +15,42 @@ const TIMEOUT_MS: i32 = 2_000;
 #[derive(Default)]
 pub struct SessionBusDaemon {
     address: Option<String>,
+    /// The one connection to `address`, as the session bus has: replies
+    /// then arrive in the order the daemon sent them.
+    private: std::cell::OnceCell<gio::DBusConnection>,
 }
 
 impl SessionBusDaemon {
     pub fn on_bus(address: &str) -> Self {
         Self {
             address: Some(address.to_owned()),
+            private: std::cell::OnceCell::new(),
         }
     }
 
     async fn connection(&self) -> Result<gio::DBusConnection, String> {
         match &self.address {
             None => gio::bus_get_future(gio::BusType::Session).await,
-            Some(address) => {
-                gio::DBusConnection::for_address_future(
-                    address,
-                    gio::DBusConnectionFlags::AUTHENTICATION_CLIENT
-                        | gio::DBusConnectionFlags::MESSAGE_BUS_CONNECTION,
-                    None,
-                )
-                .await
-            }
+            Some(address) => match self.private.get() {
+                Some(connection) => Ok(connection.clone()),
+                None => {
+                    let connection = gio::DBusConnection::for_address_future(
+                        address,
+                        gio::DBusConnectionFlags::AUTHENTICATION_CLIENT
+                            | gio::DBusConnectionFlags::MESSAGE_BUS_CONNECTION,
+                        None,
+                    )
+                    .await
+                    .map_err(|error| error.to_string());
+                    let connection = match connection {
+                        Ok(connection) => connection,
+                        Err(error) => return Err(error),
+                    };
+                    Ok(self.private.get_or_init(|| connection).clone())
+                }
+            },
         }
-        .map_err(|error| error.to_string())
+        .map_err(|error: glib::Error| error.to_string())
     }
 }
 

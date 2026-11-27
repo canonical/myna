@@ -410,16 +410,21 @@ pub fn watch_daemon(on_change: impl Fn() + 'static) {
 /// Follow the daemon on `connection`: each change to one of [`FOLLOWED`], and
 /// its arrival and departure. A restarted daemon signals no change for the
 /// values it starts with, so its arrival is a change too.
+///
+/// `PropertiesChanged` is the standard interface's signal, matched by its
+/// object path and the interface named in its first argument, from any
+/// sender: a subscription naming the well-known name misses what a new
+/// owner emits before the connection has learned who owns it.
 pub(crate) fn follow_daemon(connection: &gio::DBusConnection, on_change: std::rc::Rc<dyn Fn()>) {
     let on_signal = on_change.clone();
     // The deprecated form keeps the subscription until the connection goes.
     #[allow(deprecated)]
     connection.signal_subscribe(
-        Some(DICTATION_BUS),
-        Some(DICTATION_BUS),
+        None,
+        Some("org.freedesktop.DBus.Properties"),
         Some("PropertiesChanged"),
         Some(DICTATION_PATH),
-        None,
+        Some(DICTATION_BUS),
         gio::DBusSignalFlags::NONE,
         move |_, _, _, _, _, params| {
             if followed_change(params) {
