@@ -22,6 +22,7 @@ pub mod capture;
 pub mod control;
 pub mod debug;
 pub mod events;
+pub mod graph;
 pub mod language;
 pub mod locale;
 pub mod mode;
