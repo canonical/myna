@@ -16,7 +16,7 @@ use libadwaita as adw;
 use myna_core::chains::{ChainStep, Processing};
 
 use crate::adapters::client_settings::GioClientSettings;
-use crate::chains_view::{self, Card};
+use crate::chains_view::{self, Card, Field, Trace};
 use crate::command::CancellationToken;
 use crate::languages::Source;
 use crate::markup::escape_markup;
@@ -82,10 +82,57 @@ pub(crate) struct Editor {
     pub(crate) delete: gtk::Button,
     pub(crate) lines: RefCell<Vec<LineWidgets>>,
     pub(crate) shown: RefCell<Vec<Row>>,
+    /// Try it: what the text is typed into, the sample and what it
+    /// becomes, and the step by step under them.
+    pub(crate) field: Cell<Field>,
+    pub(crate) field_row: adw::ComboRow,
+    pub(crate) heard: gtk::Label,
+    pub(crate) typed: gtk::Label,
+    pub(crate) trace_group: adw::PreferencesGroup,
+    pub(crate) trace_rows: RefCell<Vec<gtk::ListBoxRow>>,
+    pub(crate) shown_trace: RefCell<Option<Trace>>,
     /// Below the editor's breakpoint: the ▴/▾ buttons hide (the row menu's
     /// Move up/down remain) and a step's parameter picker moves to the row
     /// under it, so the title keeps its room.
     pub(crate) narrow: Rc<Cell<bool>>,
+}
+
+/// A wrapping label holding a sample; its text is its accessible name.
+fn value_label(strong: bool) -> gtk::Label {
+    let label = gtk::Label::builder()
+        .xalign(0.0)
+        .wrap(true)
+        .selectable(true)
+        .build();
+    if strong {
+        label.add_css_class("heading");
+    }
+    label
+}
+
+/// A row of Try it: a dimmed caption over `value`.
+fn trace_row(caption: &str, value: &gtk::Label) -> gtk::ListBoxRow {
+    let column = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .spacing(2)
+        .margin_top(8)
+        .margin_bottom(8)
+        .margin_start(12)
+        .margin_end(12)
+        .build();
+    let caption = gtk::Label::builder()
+        .label(caption)
+        .xalign(0.0)
+        .wrap(true)
+        .css_classes(["dim-label", "caption"])
+        .build();
+    column.append(&caption);
+    column.append(value);
+    gtk::ListBoxRow::builder()
+        .child(&column)
+        .activatable(false)
+        .selectable(false)
+        .build()
 }
 
 /// A chain's editor before anything is wired: its name, its steps, and the
@@ -127,8 +174,34 @@ fn editor_page(id: &str) -> (adw::NavigationPage, Rc<Editor>, adw::Breakpoint) {
     actions.append(&delete);
     let actions_group = adw::PreferencesGroup::new();
     actions_group.add(&actions);
+    let fields: Vec<String> = Field::ALL.iter().map(|f| f.label()).collect();
+    let field_row = adw::ComboRow::builder()
+        .title(gettextrs::gettext("Typing into"))
+        .model(&gtk::StringList::new(
+            &fields.iter().map(String::as_str).collect::<Vec<_>>(),
+        ))
+        .build();
+    let (heard, typed) = (value_label(false), value_label(true));
+    let try_group = adw::PreferencesGroup::builder()
+        .title(gettextrs::gettext("Try it"))
+        .description(gettextrs::gettext(
+            "An example with this chain's steps. No model runs.",
+        ))
+        .build();
+    try_group.add(&field_row);
+    try_group.add(&trace_row(&gettextrs::gettext("You say"), &heard));
+    try_group.add(&trace_row(&gettextrs::gettext("Myna types"), &typed));
+    let trace_group = adw::PreferencesGroup::builder()
+        .title(gettextrs::gettext("Step by step"))
+        .build();
     let preferences = adw::PreferencesPage::new();
-    for group in [&name_group, &steps, &actions_group] {
+    for group in [
+        &name_group,
+        &steps,
+        &try_group,
+        &trace_group,
+        &actions_group,
+    ] {
         preferences.add(group);
     }
     let bin = adw::BreakpointBin::builder()
@@ -151,6 +224,13 @@ fn editor_page(id: &str) -> (adw::NavigationPage, Rc<Editor>, adw::Breakpoint) {
         delete,
         lines: RefCell::new(Vec::new()),
         shown: RefCell::new(Vec::new()),
+        field: Cell::new(Field::default()),
+        field_row,
+        heard,
+        typed,
+        trace_group,
+        trace_rows: RefCell::new(Vec::new()),
+        shown_trace: RefCell::new(None),
         narrow: Rc::new(Cell::new(false)),
     });
     (page, editor, breakpoint)
@@ -481,9 +561,11 @@ impl StepsPage {
         self.updating.set(true);
         for ((_, chain), card) in self.chain_rows.borrow().iter().zip(&cards) {
             chain.row.set_title(&escape_markup(&card.name));
+            // TRANSLATORS: a chain's sample result on the Processing page; {result} is a sentence.
+            let result = gettextrs::gettext("Types: {result}").replace("{result}", &card.result);
             let subtitle = match &card.needs {
-                Some(needs) => format!("{}\n{needs}", card.steps),
-                None => card.steps.clone(),
+                Some(needs) => format!("{}\n{result}\n{needs}", card.steps),
+                None => format!("{}\n{result}", card.steps),
             };
             chain.row.set_subtitle(&escape_markup(&subtitle));
             chain.switch.set_active(card.active);
@@ -591,6 +673,15 @@ impl StepsPage {
                         p.rename(id, &text);
                     });
                 }
+            }));
+        editor
+            .field_row
+            .connect_selected_notify(self.on(id, |page, _, row: &adw::ComboRow| {
+                if let Some(editor) = page.editor.borrow().clone() {
+                    let at = (row.selected() as usize).min(Field::ALL.len() - 1);
+                    editor.field.set(Field::ALL[at]);
+                }
+                page.render();
             }));
         editor
             .add_row
@@ -705,6 +796,33 @@ impl StepsPage {
         }
         self.updating.set(false);
         editor.shown.replace(lines);
+        let trace = self.view(|ctx| chains_view::trace(chain, editor.field.get(), ctx));
+        if editor.shown_trace.borrow().as_ref() != Some(&trace) {
+            editor.heard.set_label(&trace.heard);
+            editor.typed.set_label(&trace.typed);
+            for row in editor.trace_rows.take() {
+                editor.trace_group.remove(&row);
+            }
+            let mut built = Vec::new();
+            for line in &trace.lines {
+                let shown = match &line.note {
+                    Some(note) => format!("{}\n{note}", line.text),
+                    None => line.text.clone(),
+                };
+                let text = gtk::Label::builder()
+                    .label(shown)
+                    .xalign(0.0)
+                    .wrap(true)
+                    .selectable(true)
+                    .build();
+                let row = trace_row(&line.title, &text);
+                editor.trace_group.add(&row);
+                built.push(row);
+            }
+            editor.trace_rows.replace(built);
+            editor.trace_group.set_visible(!trace.lines.is_empty());
+            editor.shown_trace.replace(Some(trace));
+        }
     }
 
     pub(crate) fn rebuild_lines(self: &Rc<Self>, editor: &Rc<Editor>, count: usize) {
