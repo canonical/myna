@@ -157,7 +157,7 @@ shot waitfor:General tab:Processing "click:$CHAIN" "waitfor:ZH → EN" \
     || { echo "chinese to english editor failed" >&2; FAILED=1; }
 dictate
 assert_dict "English is in the field, no Chinese" \
-    "field_get plain | grep -q '[a-zA-Z]' && ! field_get plain | grep -qP '\\p{Han}'"
+    "field_get plain | grep -q '[a-zA-Z]' && ! field_get plain | LC_ALL=C.UTF-8 grep -qP '\\p{Han}'"
 evidence chinese-english
 
 # The fake hears three sentences a second apart. A chain holds the sentence
