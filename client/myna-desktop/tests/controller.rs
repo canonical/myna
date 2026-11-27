@@ -2039,7 +2039,7 @@ async fn a_model_connected_after_login_is_a_notice_not_an_error() {
     assert_eq!(
         indicate_log.lock().unwrap().last(),
         Some(&IndicatorState::recoverable(
-            "Model connected. Retry shortly"
+            "Model connecting… Retry shortly"
         ))
     );
     assert!(last_errors.lock().unwrap().is_empty(), "nothing failed");
@@ -2138,4 +2138,397 @@ async fn a_warning_an_empty_utterance_could_not_show_waits_for_the_next() {
         )),
         "{states:?}"
     );
+}
+
+// ── Held text: commit policies, processing and the draft view ───────────────
+
+use myna_desktop::draft::{CommitPolicy, DraftView};
+use myna_desktop::process::Processor;
+
+/// Records every draft shown, as (stable, tail).
+#[derive(Clone, Default)]
+struct Drafts(Arc<Mutex<Vec<(String, String)>>>);
+
+#[async_trait::async_trait]
+impl DraftView for Drafts {
+    async fn show(&mut self, stable: &str, tail: &str) {
+        self.0.lock().unwrap().push((stable.into(), tail.into()));
+    }
+}
+
+fn held(
+    policy: CommitPolicy,
+    injector: MockInjector,
+    session: impl myna_desktop::SessionFactory + 'static,
+) -> (myna_desktop::controller::DesktopControllerBuilder, Drafts) {
+    let drafts = Drafts::default();
+    let builder = DesktopController::builder()
+        .trigger(ScriptedTrigger::new([
+            TriggerEdge::Press,
+            TriggerEdge::Release,
+        ]))
+        .injector(injector)
+        .indicator(MockIndicator::new())
+        .session(session)
+        .preedit(true)
+        .commit(policy)
+        .draft(drafts.clone());
+    (builder, drafts)
+}
+
+fn completed(transcript: &str) -> SessionOutcome {
+    SessionOutcome::Completed {
+        transcript: transcript.into(),
+    }
+}
+
+#[tokio::test]
+async fn held_text_is_written_when_the_session_fails_after_hearing_it() {
+    let injector = MockInjector::new();
+    let inject_log = injector.log();
+    let (builder, _) = held(
+        CommitPolicy::Horizon { sentences: 1 },
+        injector,
+        events_session(
+            vec![OrchestratorEvent::Final("hello".into())],
+            SessionOutcome::Failed {
+                code: "capture_failed".into(),
+                failure: Failure::new("Some audio lost", "mic unplugged"),
+            },
+        ),
+    );
+    builder.build().run().await;
+
+    assert_eq!(inject_log.lock().unwrap().commits, vec!["hello"]);
+}
+
+#[tokio::test]
+async fn held_text_is_discarded_and_its_draft_hidden_when_focus_is_lost() {
+    let injector = MockInjector::new();
+    let inject_log = injector.log();
+    let mut focus = Some(injector.field());
+    let session = move |tx: mpsc::Sender<OrchestratorEvent>| {
+        let focus = focus.take().expect("single-use session");
+        let run: SessionRun = Box::pin(async move {
+            let _ = tx.send(OrchestratorEvent::Final("hello".into())).await;
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            focus.lose_focus(myna_desktop::FocusEvent::FocusOut);
+            Ok(completed("hello"))
+        });
+        (run, StopHandle::default())
+    };
+    let (builder, drafts) = held(CommitPolicy::Horizon { sentences: 1 }, injector, session);
+    builder.build().run().await;
+
+    assert_eq!(inject_log.lock().unwrap().attempts(), 0);
+    assert_eq!(
+        drafts.0.lock().unwrap().last(),
+        Some(&(String::new(), String::new()))
+    );
+}
+
+struct LayoutRule;
+
+#[async_trait::async_trait]
+impl Processor for LayoutRule {
+    async fn process(&mut self, text: String) -> String {
+        text.replace(" new line ", "\n").replace("new line ", "\n")
+    }
+}
+
+#[tokio::test]
+async fn terminal_fields_fold_layout_breaks_across_streaming_and_held_commits() {
+    let injector = MockInjector::new();
+    let field = injector.field();
+    field.set_purpose(myna_desktop::FieldPurpose::Terminal);
+    let (builder, _) = held(
+        CommitPolicy::Horizon { sentences: 0 },
+        injector,
+        events_session(
+            vec![
+                OrchestratorEvent::Final("rm -rf /tmp/x.".into()),
+                OrchestratorEvent::Transcribing,
+                OrchestratorEvent::Final("new line sudo reboot".into()),
+                OrchestratorEvent::Done("rm -rf /tmp/x. new line sudo reboot".into()),
+            ],
+            completed("rm -rf /tmp/x. new line sudo reboot"),
+        ),
+    );
+    builder.processor(LayoutRule).build().run().await;
+    assert_eq!(field.text(), "rm -rf /tmp/x. sudo reboot");
+
+    let plain_injector = MockInjector::new();
+    let plain_field = plain_injector.field();
+    let (builder, _) = held(
+        CommitPolicy::Horizon { sentences: 1 },
+        plain_injector,
+        events_session(
+            vec![OrchestratorEvent::Final("one new line two".into())],
+            completed("one new line two"),
+        ),
+    );
+    builder.processor(LayoutRule).build().run().await;
+    assert_eq!(plain_field.text(), "one\ntwo");
+}
+
+/// No chain, fitted to the field.
+fn fitted() -> myna_desktop::process::pipeline::Pipeline {
+    use myna_desktop::process::{graph::Graph, pipeline::*, resolve::Resolver};
+    Pipeline::new(Graph::passthrough(), Resolver::open(Vec::new()))
+}
+
+async fn dictate_into(
+    injector: MockInjector,
+    words: &str,
+    purpose: myna_desktop::FieldPurpose,
+    before: &str,
+) -> String {
+    let field = injector.field();
+    field.set_purpose(purpose);
+    field.set_text(before);
+    // Streaming: fitting holds nothing back.
+    let (builder, _) = held(
+        CommitPolicy::Streaming,
+        injector,
+        events_session(
+            vec![OrchestratorEvent::Final(words.into())],
+            completed(words),
+        ),
+    );
+    builder.processor(fitted()).build().run().await;
+    field.text()
+}
+
+#[tokio::test]
+async fn streamed_text_is_fitted_to_the_field() {
+    use myna_desktop::FieldPurpose::{Email, Plain};
+    assert_eq!(
+        dictate_into(MockInjector::new(), "Maria.", Email, "").await,
+        "maria"
+    );
+    assert_eq!(
+        dictate_into(
+            MockInjector::new().with_surrounding_text(),
+            "The end.",
+            Plain,
+            "see"
+        )
+        .await,
+        "see the end."
+    );
+    assert_eq!(
+        dictate_into(
+            MockInjector::new().with_surrounding_text(),
+            "The end.",
+            Plain,
+            "See it."
+        )
+        .await,
+        "See it. The end."
+    );
+    assert_eq!(
+        dictate_into(
+            MockInjector::new().with_surrounding_text(),
+            "The end.",
+            Plain,
+            ""
+        )
+        .await,
+        "The end."
+    );
+}
+
+// ── What became of each piece, for the record of dictations ──────────────────
+
+#[derive(Clone, Default)]
+struct Landings(Arc<Mutex<Vec<myna_desktop::process::Landing>>>);
+
+struct Tally(Landings);
+
+#[async_trait::async_trait]
+impl Processor for Tally {
+    async fn process(&mut self, text: String) -> String {
+        text.to_uppercase()
+    }
+
+    fn landed(&mut self, landing: myna_desktop::process::Landing) {
+        (self.0).0.lock().unwrap().push(landing);
+    }
+}
+
+async fn landings_of(
+    policy: CommitPolicy,
+    injector: MockInjector,
+    edges: impl IntoIterator<Item = TriggerEdge>,
+    session: impl myna_desktop::SessionFactory + 'static,
+) -> Vec<myna_desktop::process::Landing> {
+    let seen = Landings::default();
+    DesktopController::builder()
+        .trigger(ScriptedTrigger::new(edges))
+        .injector(injector)
+        .indicator(MockIndicator::new())
+        .session(session)
+        .commit(policy)
+        .processor(Tally(seen.clone()))
+        .build()
+        .run()
+        .await;
+    let landed = seen.0.lock().unwrap().clone();
+    landed
+}
+
+#[tokio::test]
+async fn text_that_lands_after_the_stop_edge_is_timed() {
+    use myna_core::history::Outcome;
+    for policy in [
+        CommitPolicy::Horizon { sentences: 1 },
+        CommitPolicy::Streaming,
+    ] {
+        let landed = landings_of(
+            policy,
+            MockInjector::new(),
+            [TriggerEdge::Press, TriggerEdge::Release],
+            two_segment_focus_session(completed("first second")),
+        )
+        .await;
+        let last = landed.last().expect("a piece landed");
+        assert_eq!(last.outcome, Outcome::Typed, "{policy:?}");
+        let timing = last.timing.expect("timed after the stop edge");
+        assert!(timing.dead_air >= timing.inject, "{policy:?}");
+        assert!(timing.dead_air >= timing.asr_tail, "{policy:?}");
+        // The session waits for the stop edge before it ends, so the text
+        // cannot have been ready before the edge.
+        assert!(timing.asr_tail > Duration::ZERO, "{policy:?}");
+    }
+}
+
+#[tokio::test]
+async fn processed_text_is_reported_with_what_it_became() {
+    let landed = landings_of(
+        CommitPolicy::Horizon { sentences: 1 },
+        MockInjector::new(),
+        [TriggerEdge::Press, TriggerEdge::Release],
+        two_segment_focus_session(completed("first second")),
+    )
+    .await;
+    assert_eq!(landed.len(), 1);
+    assert_eq!(landed[0].heard, "first second");
+    assert_eq!(landed[0].typed, "FIRST SECOND");
+}
+
+#[tokio::test]
+async fn text_dropped_for_lost_focus_is_reported_untimed() {
+    use myna_core::history::Outcome;
+    let landed = landings_of(
+        CommitPolicy::Streaming,
+        MockInjector::new().with_focus_event(myna_desktop::FocusEvent::FocusOut),
+        [TriggerEdge::Press],
+        two_segment_focus_session(completed("first second")),
+    )
+    .await;
+    assert!(!landed.is_empty());
+    assert!(landed.iter().all(|p| p.outcome == Outcome::FocusLost));
+    assert!(landed.iter().all(|p| p.timing.is_none()));
+    assert!(landed.iter().any(|p| p.heard.contains("first")));
+}
+
+#[tokio::test]
+async fn text_the_field_refuses_is_reported_as_lost() {
+    use myna_core::history::Outcome;
+    let landed = landings_of(
+        CommitPolicy::Horizon { sentences: 1 },
+        MockInjector::new().with_focus_event_during_commit(myna_desktop::FocusEvent::FocusOut),
+        [TriggerEdge::Press, TriggerEdge::Release],
+        events_session(
+            vec![OrchestratorEvent::Final("tail".into())],
+            completed("tail"),
+        ),
+    )
+    .await;
+    assert_eq!(landed.len(), 1);
+    assert_eq!(landed[0].outcome, Outcome::FocusLost);
+    assert_eq!(landed[0].heard, "tail");
+    assert!(landed[0].timing.is_none(), "it never landed");
+}
+
+#[tokio::test]
+async fn held_text_discarded_on_a_cancelled_dictation_is_reported() {
+    use myna_core::history::Outcome;
+    let landed = landings_of(
+        CommitPolicy::Horizon { sentences: 1 },
+        MockInjector::new(),
+        [TriggerEdge::Press, TriggerEdge::Release],
+        events_session(
+            vec![OrchestratorEvent::Final("held words".into())],
+            SessionOutcome::Aborted,
+        ),
+    )
+    .await;
+    assert_eq!(landed.len(), 1, "{landed:?}");
+    assert_eq!(landed[0].outcome, Outcome::Discarded);
+    assert_eq!(landed[0].heard, "held words");
+    assert_eq!(landed[0].typed, "");
+}
+
+// ── Leaving when idle (the bridge for snapd LP#2175592) ─────────────────────
+
+/// Yields its edges, then waits forever, like a real shortcut.
+struct EdgesThenWait(std::collections::VecDeque<TriggerEdge>);
+
+#[async_trait::async_trait]
+impl myna_orchestrator::Trigger for EdgesThenWait {
+    async fn next_edge(&mut self) -> Option<TriggerEdge> {
+        match self.0.pop_front() {
+            Some(edge) => Some(edge),
+            None => std::future::pending().await,
+        }
+    }
+}
+
+fn waiting_controller(
+    leave: Option<Arc<Notify>>,
+) -> (
+    DesktopController,
+    Arc<Mutex<myna_desktop::inject::mock::InjectorLog>>,
+) {
+    let injector = MockInjector::new();
+    let log = injector.log();
+    let builder = DesktopController::builder()
+        .trigger(EdgesThenWait(
+            [TriggerEdge::Press, TriggerEdge::Release].into(),
+        ))
+        .injector(injector)
+        .indicator(MockIndicator::new())
+        .session(backend_session(FakeBackend::commit_drain));
+    let builder = match leave {
+        Some(leave) => builder.leave_when_idle(leave),
+        None => builder,
+    };
+    (builder.build(), log)
+}
+
+/// Asked to leave before a press, the controller still runs the dictation
+/// it was pressed for, and leaves only once it is back to idle.
+#[tokio::test]
+async fn leaving_waits_for_the_dictation_in_progress() {
+    let leave = Arc::new(Notify::new());
+    let (mut controller, log) = waiting_controller(Some(leave.clone()));
+    leave.notify_one();
+    tokio::time::timeout(Duration::from_secs(5), controller.run())
+        .await
+        .expect("left once idle");
+    assert_eq!(
+        log.lock().unwrap().commits.len(),
+        1,
+        "the dictation finished"
+    );
+    assert_eq!(controller.state(), DictationState::Idle);
+}
+
+#[tokio::test]
+async fn without_being_asked_the_controller_keeps_waiting() {
+    let (mut controller, log) = waiting_controller(None);
+    let waited = tokio::time::timeout(Duration::from_millis(300), controller.run()).await;
+    assert!(waited.is_err(), "still waiting for a press");
+    assert_eq!(log.lock().unwrap().commits.len(), 1);
 }

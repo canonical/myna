@@ -26,10 +26,13 @@
 
 pub mod controller;
 pub mod dbus;
+pub mod draft;
 pub mod indicator;
 pub mod inject;
 pub mod live;
 pub mod platform;
+pub mod process;
+pub mod restart;
 pub mod shortcut;
 pub mod sound;
 

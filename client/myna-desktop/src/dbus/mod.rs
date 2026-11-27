@@ -29,7 +29,8 @@ use async_trait::async_trait;
 
 /// A property value crossing the bus seam. The contract only uses `s` and `d`
 /// shapes (`State`/`StatusMessage` strings, `AudioRms`/`AudioPeak` doubles), so
-/// those are the only variants — no transcript-bearing shape exists here (C3).
+/// those are the only variants. Transcript text crosses in exactly two
+/// properties, `DraftText` and `DraftTail`, and only while text is held (C3).
 #[derive(Debug, Clone, PartialEq)]
 pub enum PropertyValue {
     /// A D-Bus string (`s`) property.
@@ -139,6 +140,11 @@ impl FakeBus {
                 _ => None,
             })
             .collect()
+    }
+
+    /// Every property set, in order.
+    pub fn sets(&self) -> Vec<(String, PropertyValue)> {
+        self.inner.lock().expect("fake bus poisoned").sets.clone()
     }
 
     /// The latest value set for `name`, if any.

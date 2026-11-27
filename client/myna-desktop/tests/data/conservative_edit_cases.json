@@ -1,0 +1,496 @@
+[
+  {
+    "answer": "we do nginx ship",
+    "heard": "we do not ship",
+    "verdict": "dropped-negation",
+    "written": [
+      "nginx"
+    ]
+  },
+  {
+    "answer": "Restart MySQL now.",
+    "heard": "restart my sequel now",
+    "verdict": "ok",
+    "written": [
+      "MySQL"
+    ]
+  },
+  {
+    "answer": "Restart MySQL now.",
+    "heard": "restart my sequel now",
+    "verdict": "ok",
+    "written": [
+      "my sequel => MySQL"
+    ]
+  },
+  {
+    "answer": "Gnome here",
+    "heard": "gee nome here",
+    "verdict": "ok",
+    "written": [
+      "Gnome"
+    ]
+  },
+  {
+    "answer": "hello",
+    "heard": "",
+    "verdict": "new-word",
+    "written": []
+  },
+  {
+    "answer": "今天天气很好",
+    "heard": "今天天气很好啊啊啊啊",
+    "verdict": "ok",
+    "written": []
+  },
+  {
+    "answer": "I think we should ship on Friday.",
+    "heard": "Um, I think we should ship on Friday.",
+    "verdict": "ok",
+    "written": []
+  },
+  {
+    "answer": "I think we ship on Friday.",
+    "heard": "Um, I think we should ship on Friday.",
+    "verdict": "ok",
+    "written": []
+  },
+  {
+    "answer": "Friday. on ship should we think I",
+    "heard": "Um, I think we should ship on Friday.",
+    "verdict": "long-drop",
+    "written": []
+  },
+  {
+    "answer": "Um, think should on",
+    "heard": "Um, I think we should ship on Friday.",
+    "verdict": "ok",
+    "written": []
+  },
+  {
+    "answer": "We should ship on Friday.",
+    "heard": "We should, uh, ship on Friday.",
+    "verdict": "ok",
+    "written": []
+  },
+  {
+    "answer": "We should on Friday.",
+    "heard": "We should, uh, ship on Friday.",
+    "verdict": "ok",
+    "written": []
+  },
+  {
+    "answer": "Friday. on ship should We",
+    "heard": "We should, uh, ship on Friday.",
+    "verdict": "new-word",
+    "written": []
+  },
+  {
+    "answer": "We uh, on",
+    "heard": "We should, uh, ship on Friday.",
+    "verdict": "ok",
+    "written": []
+  },
+  {
+    "answer": "Can you send me the report?",
+    "heard": "Uh, can you send me the report?",
+    "verdict": "ok",
+    "written": []
+  },
+  {
+    "answer": "Can you send the report?",
+    "heard": "Uh, can you send me the report?",
+    "verdict": "ok",
+    "written": []
+  },
+  {
+    "answer": "report? the me send you Can",
+    "heard": "Uh, can you send me the report?",
+    "verdict": "new-word",
+    "written": []
+  },
+  {
+    "answer": "Uh, you me report?",
+    "heard": "Uh, can you send me the report?",
+    "verdict": "ok",
+    "written": []
+  },
+  {
+    "answer": "Erm, am sure that.",
+    "heard": "Erm, I am not sure about that.",
+    "verdict": "dropped-negation",
+    "written": []
+  },
+  {
+    "answer": "I'll call her tomorrow.",
+    "heard": "I'll call her tomorrow, um.",
+    "verdict": "ok",
+    "written": []
+  },
+  {
+    "answer": "I'll call tomorrow.",
+    "heard": "I'll call her tomorrow, um.",
+    "verdict": "ok",
+    "written": []
+  },
+  {
+    "answer": "tomorrow. her call I'll",
+    "heard": "I'll call her tomorrow, um.",
+    "verdict": "new-word",
+    "written": []
+  },
+  {
+    "answer": "Please open the file and read the first line.",
+    "heard": "Please open the file, uh, and read the first line.",
+    "verdict": "ok",
+    "written": []
+  },
+  {
+    "answer": "Please open the file read the first line.",
+    "heard": "Please open the file, uh, and read the first line.",
+    "verdict": "ok",
+    "written": []
+  },
+  {
+    "answer": "line. first the read and file the open Please",
+    "heard": "Please open the file, uh, and read the first line.",
+    "verdict": "new-word",
+    "written": []
+  },
+  {
+    "answer": "Please the uh, read first",
+    "heard": "Please open the file, uh, and read the first line.",
+    "verdict": "ok",
+    "written": []
+  },
+  {
+    "answer": "password. the forgot I",
+    "heard": "Um, uh, I forgot the password.",
+    "verdict": "new-word",
+    "written": []
+  },
+  {
+    "answer": "Hello everyone.",
+    "heard": "Um, hello everyone.",
+    "verdict": "ok",
+    "written": []
+  },
+  {
+    "answer": "Hello",
+    "heard": "Um, hello everyone.",
+    "verdict": "ok",
+    "written": []
+  },
+  {
+    "answer": "everyone. Hello",
+    "heard": "Um, hello everyone.",
+    "verdict": "new-word",
+    "written": []
+  },
+  {
+    "answer": "go. should we think I",
+    "heard": "I think I think we should go.",
+    "verdict": "new-word",
+    "written": []
+  },
+  {
+    "answer": "Let's go to the park.",
+    "heard": "Let's go to let's go to the park.",
+    "verdict": "ok",
+    "written": []
+  },
+  {
+    "answer": "park. the to go Let's",
+    "heard": "Let's go to let's go to the park.",
+    "verdict": "long-drop",
+    "written": []
+  },
+  {
+    "answer": "It might broken.",
+    "heard": "It might be it might be broken.",
+    "verdict": "ok",
+    "written": []
+  },
+  {
+    "answer": "broken. be might It",
+    "heard": "It might be it might be broken.",
+    "verdict": "new-word",
+    "written": []
+  },
+  {
+    "answer": "We moved to a new office.",
+    "heard": "We moved to we moved to a new office.",
+    "verdict": "ok",
+    "written": []
+  },
+  {
+    "answer": "We moved to new office.",
+    "heard": "We moved to we moved to a new office.",
+    "verdict": "ok",
+    "written": []
+  },
+  {
+    "answer": "moved to we moved to a new office.",
+    "heard": "We moved to we moved to a new office.",
+    "verdict": "ok",
+    "written": []
+  },
+  {
+    "answer": "office. new a to moved We",
+    "heard": "We moved to we moved to a new office.",
+    "verdict": "new-word",
+    "written": []
+  },
+  {
+    "answer": "key. tab the use can You",
+    "heard": "You can you can use the tab key.",
+    "verdict": "long-drop",
+    "written": []
+  },
+  {
+    "answer": "I was going to call you.",
+    "heard": "I was going to I was going to call you.",
+    "verdict": "ok",
+    "written": []
+  },
+  {
+    "answer": "you. call to going was I",
+    "heard": "I was going to I was going to call you.",
+    "verdict": "new-word",
+    "written": []
+  },
+  {
+    "answer": "He said would come.",
+    "heard": "He said he would he said he would come.",
+    "verdict": "ok",
+    "written": []
+  },
+  {
+    "answer": "come. would he said He",
+    "heard": "He said he would he said he would come.",
+    "verdict": "new-word",
+    "written": []
+  },
+  {
+    "answer": "Let me know if you need help.",
+    "heard": "Let me know if let me know if you need help.",
+    "verdict": "ok",
+    "written": []
+  },
+  {
+    "answer": "Let me know you need help.",
+    "heard": "Let me know if let me know if you need help.",
+    "verdict": "ok",
+    "written": []
+  },
+  {
+    "answer": "me know if let me know if you need help.",
+    "heard": "Let me know if let me know if you need help.",
+    "verdict": "ok",
+    "written": []
+  },
+  {
+    "answer": "help. need you if know me Let",
+    "heard": "Let me know if let me know if you need help.",
+    "verdict": "new-word",
+    "written": []
+  },
+  {
+    "answer": "Then deploy.",
+    "heard": "Then we then we deploy.",
+    "verdict": "ok",
+    "written": []
+  },
+  {
+    "answer": "deploy. we Then",
+    "heard": "Then we then we deploy.",
+    "verdict": "new-word",
+    "written": []
+  },
+  {
+    "answer": "It was very very cold.",
+    "heard": "It was very very cold.",
+    "verdict": "ok",
+    "written": []
+  },
+  {
+    "answer": "cold. very very was It",
+    "heard": "It was very very cold.",
+    "verdict": "new-word",
+    "written": []
+  },
+  {
+    "answer": "That is a very, very good idea.",
+    "heard": "That is a very, very good idea.",
+    "verdict": "ok",
+    "written": []
+  },
+  {
+    "answer": "idea. good very very, a is That",
+    "heard": "That is a very, very good idea.",
+    "verdict": "new-word",
+    "written": []
+  },
+  {
+    "answer": "She said bye bye and left.",
+    "heard": "She said bye bye and left.",
+    "verdict": "ok",
+    "written": []
+  },
+  {
+    "answer": "left. and bye bye said She",
+    "heard": "She said bye bye and left.",
+    "verdict": "new-word",
+    "written": []
+  },
+  {
+    "answer": "Night night, sleep well.",
+    "heard": "Night night, sleep well.",
+    "verdict": "ok",
+    "written": []
+  },
+  {
+    "answer": "Night night, well.",
+    "heard": "Night night, sleep well.",
+    "verdict": "ok",
+    "written": []
+  },
+  {
+    "answer": "well. sleep night, Night",
+    "heard": "Night night, sleep well.",
+    "verdict": "new-word",
+    "written": []
+  },
+  {
+    "answer": "Night sleep",
+    "heard": "Night night, sleep well.",
+    "verdict": "ok",
+    "written": []
+  },
+  {
+    "answer": "The singer sang la la la during the chorus.",
+    "heard": "The singer sang la la la during the chorus.",
+    "verdict": "ok",
+    "written": []
+  },
+  {
+    "answer": "chorus. the during la la la sang singer The",
+    "heard": "The singer sang la la la during the chorus.",
+    "verdict": "new-word",
+    "written": []
+  },
+  {
+    "answer": "No no, that is not what I meant.",
+    "heard": "No no, that is not what I meant.",
+    "verdict": "ok",
+    "written": []
+  },
+  {
+    "answer": "No no, that is what I meant.",
+    "heard": "No no, that is not what I meant.",
+    "verdict": "dropped-negation",
+    "written": []
+  },
+  {
+    "answer": "meant. I what not is that no, No",
+    "heard": "No no, that is not what I meant.",
+    "verdict": "long-drop",
+    "written": []
+  },
+  {
+    "answer": "I like pizza.",
+    "heard": "I like pizza.",
+    "verdict": "ok",
+    "written": []
+  },
+  {
+    "answer": "pizza. like I",
+    "heard": "I like pizza.",
+    "verdict": "new-word",
+    "written": []
+  },
+  {
+    "answer": "Ping",
+    "heard": "Ping Alice, wait, Alex.",
+    "verdict": "too-many-dropped",
+    "written": []
+  },
+  {
+    "answer": "Alex. Ping",
+    "heard": "Ping Alice, wait, Alex.",
+    "verdict": "new-word",
+    "written": []
+  },
+  {
+    "answer": "Reserve 14.",
+    "heard": "Reserve room 12, no, room 14.",
+    "verdict": "too-many-dropped",
+    "written": []
+  },
+  {
+    "answer": "14. room Reserve",
+    "heard": "Reserve room 12, no, room 14.",
+    "verdict": "new-word",
+    "written": []
+  },
+  {
+    "answer": "Do merge branch.",
+    "heard": "Do not merge this branch.",
+    "verdict": "dropped-negation",
+    "written": []
+  },
+  {
+    "answer": "I said",
+    "heard": "I never said that.",
+    "verdict": "dropped-negation",
+    "written": []
+  },
+  {
+    "answer": "I think is",
+    "heard": "I don't think that is right.",
+    "verdict": "dropped-negation",
+    "written": []
+  },
+  {
+    "answer": "push to main.",
+    "heard": "Never push to main.",
+    "verdict": "dropped-negation",
+    "written": []
+  },
+  {
+    "answer": "We will be late.",
+    "heard": "We will not be late.",
+    "verdict": "dropped-negation",
+    "written": []
+  },
+  {
+    "answer": "We wait, should on",
+    "heard": "We shouldn't, wait, we should ship on Friday.",
+    "verdict": "dropped-negation",
+    "written": []
+  },
+  {
+    "answer": "Do merge branch.",
+    "heard": "Do not, I mean, do merge the branch.",
+    "verdict": "too-many-dropped",
+    "written": []
+  },
+  {
+    "answer": "branch. the merge Do",
+    "heard": "Do not, I mean, do merge the branch.",
+    "verdict": "long-drop",
+    "written": []
+  },
+  {
+    "answer": "I wait, will the tomorrow.",
+    "heard": "I won't, wait, I will attend the call tomorrow.",
+    "verdict": "dropped-negation",
+    "written": []
+  },
+  {
+    "answer": "They I they accept major",
+    "heard": "They don't, I mean, they do accept all major cards.",
+    "verdict": "dropped-negation",
+    "written": []
+  }
+]

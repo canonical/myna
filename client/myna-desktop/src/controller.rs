@@ -15,20 +15,27 @@
 //! capabilities a backend reports.
 
 use std::collections::BTreeSet;
-use std::time::Duration;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use futures_util::stream::{BoxStream, StreamExt};
 use gettextrs::gettext;
 use myna_audio::AudioStats;
+use myna_core::history::Outcome;
 use tokio::sync::{mpsc, watch};
 
+use crate::draft::{CommitPolicy, DraftView, NoDraftView};
 use crate::indicator::{Indicator, IndicatorState, InputLevels};
 use crate::live::Live;
+use crate::process::landing::{Landing, Timing};
+use crate::process::{Field, Processor, Unprocessed};
 use async_trait::async_trait;
 use myna_orchestrator::{
     BackendError, OrchestratorEvent, SessionOutcome, StopHandle, TextSink, Trigger, TriggerEdge,
 };
-use myna_platform::text_input::{FocusEvent, InjectError, Injector, Support, Target};
+use myna_platform::text_input::{
+    is_control_or_break, FocusEvent, InjectError, Injector, Support, Target,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DictationState {
@@ -406,9 +413,14 @@ pub struct DesktopController {
     /// Policy-driven session end (see [`AutoStop`]). Live for the same
     /// reason: the silence timeout is a user setting.
     auto_stop: Live<AutoStop>,
+    /// When heard text may be written. Read at each press.
+    commit: Live<CommitPolicy>,
+    processor: Box<dyn Processor>,
+    draft: Box<dyn DraftView>,
     /// The backend warnings already shown, by code: each condition outlasts
     /// the utterance that reported it, so one notice per run says it.
     warned: BTreeSet<String>,
+    leave: Option<Arc<tokio::sync::Notify>>,
 }
 
 /// This session's accept-gate drop count, published as it changes.
@@ -431,6 +443,10 @@ pub struct DesktopControllerBuilder {
     session: Option<Box<dyn SessionFactory>>,
     preedit: Live<bool>,
     auto_stop: Live<AutoStop>,
+    commit: Live<CommitPolicy>,
+    processor: Option<Box<dyn Processor>>,
+    draft: Option<Box<dyn DraftView>>,
+    leave: Option<Arc<tokio::sync::Notify>>,
 }
 
 impl DesktopControllerBuilder {
@@ -473,6 +489,32 @@ impl DesktopControllerBuilder {
         self
     }
 
+    /// Hold heard text back from the field (see [`CommitPolicy`]). Streaming
+    /// by default, which holds nothing.
+    pub fn commit(mut self, policy: impl Into<Live<CommitPolicy>>) -> Self {
+        self.commit = policy.into();
+        self
+    }
+
+    /// Process text on its way to the field. Unprocessed by default.
+    pub fn processor(mut self, processor: impl Processor + 'static) -> Self {
+        self.processor = Some(Box::new(processor));
+        self
+    }
+
+    /// Asked through `leave`, [`DesktopController::run`] returns the next
+    /// time it is idle, never during a dictation (`crate::restart`).
+    pub fn leave_when_idle(mut self, leave: Arc<tokio::sync::Notify>) -> Self {
+        self.leave = Some(leave);
+        self
+    }
+
+    /// Where held text is shown. Nowhere by default.
+    pub fn draft(mut self, view: impl DraftView + 'static) -> Self {
+        self.draft = Some(Box::new(view));
+        self
+    }
+
     /// Finish the controller. Panics if any boundary is missing (a wiring bug).
     pub fn build(self) -> DesktopController {
         DesktopController {
@@ -487,7 +529,11 @@ impl DesktopControllerBuilder {
             state: DictationState::Idle,
             preedit: self.preedit,
             auto_stop: self.auto_stop,
+            commit: self.commit,
+            processor: self.processor.unwrap_or_else(|| Box::new(Unprocessed)),
+            draft: self.draft.unwrap_or_else(|| Box::new(NoDraftView)),
             warned: BTreeSet::new(),
+            leave: self.leave,
         }
     }
 }
@@ -509,7 +555,19 @@ impl DesktopController {
         loop {
             // Idle: wait for a Press. Stray Releases are ignored; `None` quits.
             let pressed = loop {
-                match self.trigger.next_edge().await {
+                let edge = match self.leave.clone() {
+                    // A press already queued wins: the user asked first.
+                    Some(leave) => tokio::select! {
+                        biased;
+                        edge = self.trigger.next_edge() => edge,
+                        () = leave.notified() => {
+                            myna_core::info_log!("ctrl", "idle: leaving as asked");
+                            return;
+                        }
+                    },
+                    None => self.trigger.next_edge().await,
+                };
+                match edge {
                     Some(TriggerEdge::Press) => break true,
                     Some(TriggerEdge::Release) => continue,
                     None => break false,
@@ -572,6 +630,17 @@ impl DesktopController {
         let preedit = self.preedit.clone();
         let auto_stop = self.auto_stop.clone();
         let warned = &self.warned;
+        let policy = self.commit.get();
+        // Text typed as it arrives is typed as heard: with nothing held,
+        // behaviour is exactly today's.
+        self.processor.prepare();
+        let mut asheard = AsHeard(self.processor.as_mut());
+        let processor: &mut dyn Processor = if policy.streams() {
+            &mut asheard
+        } else {
+            &mut *asheard.0
+        };
+        let draft = self.draft.as_mut();
 
         tokio::pin!(run);
         let mut trigger_open = true;
@@ -651,6 +720,7 @@ impl DesktopController {
                         Some(TriggerEdge::Release) => {
                             myna_core::info_log!("ctrl", "release: graceful stop, finalizing");
                             stop.stop();
+                            utterance.buffer.stopped.get_or_insert_with(Instant::now);
                             enter_finalizing(state, indicator.as_mut()).await;
                             // Stop reading the trigger for this utterance: any
                             // further edges (the next push-to-talk cycle) belong to
@@ -661,6 +731,7 @@ impl DesktopController {
                         None => {
                             trigger_open = false;
                             stop.stop();
+                            utterance.buffer.stopped.get_or_insert_with(Instant::now);
                             enter_finalizing(state, indicator.as_mut()).await;
                         }
                     }
@@ -675,6 +746,7 @@ impl DesktopController {
                     } else if auto_stop_due(&stats.borrow(), auto_stop.get()) {
                         myna_core::info_log!("ctrl", "silence timeout: graceful stop, finalizing");
                         stop.stop();
+                        utterance.buffer.stopped.get_or_insert_with(Instant::now);
                         enter_finalizing(state, indicator.as_mut()).await;
                         trigger.resync().await;
                         trigger_open = false;
@@ -700,6 +772,11 @@ impl DesktopController {
                                 warned,
                             },
                             &mut utterance,
+                            Held {
+                                policy,
+                                processor: &mut *processor,
+                                draft: &mut *draft,
+                            },
                         )
                         .await;
                     }
@@ -712,12 +789,26 @@ impl DesktopController {
         // Safety flush: normally the terminal `done` already flushed the
         // buffered burst in `route_event` (leaving the buffer empty); this
         // catches a completed run whose last event was a `Final` with nothing
-        // after it.
-        if matches!(outcome, Ok(SessionOutcome::Completed { .. })) {
+        // after it. Held text has not been written at all yet, so it is
+        // written even when the session failed after hearing it; only a
+        // cancelled dictation discards it.
+        let finish = match outcome {
+            Ok(SessionOutcome::Completed { .. }) => true,
+            Ok(SessionOutcome::Aborted) => false,
+            _ => !policy.streams(),
+        };
+        if finish {
+            let ready = utterance.buffer.pending.len();
             ending = ending.or(utterance
                 .buffer
-                .flush(target.as_mut(), ending.writes_allowed())
+                .flush_ready(target.as_mut(), ending.writes_allowed(), ready, processor)
                 .await);
+        }
+        if !finish {
+            utterance.buffer.discard(processor);
+        }
+        if !policy.streams() {
+            draft.show("", "").await;
         }
         // Release settles any commit held for an unresolved blip before
         // publishing the completion disposition.
@@ -951,12 +1042,19 @@ async fn route_event(
     state: &mut DictationState,
     flags: RouteFlags<'_>,
     utterance: &mut Utterance,
+    held: Held<'_>,
 ) -> Ending {
     let Utterance {
         buffer,
+        tail,
         drops,
         warning,
     } = utterance;
+    let Held {
+        policy,
+        processor,
+        draft,
+    } = held;
     let RouteFlags {
         mut ending,
         preedit,
@@ -965,7 +1063,10 @@ async fn route_event(
     // A non-Final event is a boundary: flush the buffered final burst as one
     // commit before handling it (so ordering with `done`/indicator holds).
     if !matches!(event, OrchestratorEvent::Final(_)) {
-        ending = ending.or(buffer.flush(target, ending.writes_allowed()).await);
+        let ready = policy.ready(&buffer.pending, false);
+        ending = ending.or(buffer
+            .flush_ready(target, ending.writes_allowed(), ready, processor)
+            .await);
     }
 
     if let OrchestratorEvent::Transcribing = event {
@@ -1009,8 +1110,10 @@ async fn route_event(
             text.len()
         );
         buffer.push(text);
+        tail.clear();
     }
     if let OrchestratorEvent::Unstable(text) = &event {
+        tail.clone_from(text);
         // Streaming preedit (R9, opt-in): show the volatile hypothesis in the
         // target's preedit region — replaced on each update, cleared by the
         // next `commit`. The flush above runs first, so any pending stable
@@ -1018,12 +1121,48 @@ async fn route_event(
         // preedit tail is drawn after it. Never committed (FR-012); suppressed
         // with commits after focus-loss (FR-014); skipped unless enabled and
         // the backend has a real preedit region (`capabilities().preedit`).
-        if preedit && ending.writes_allowed() {
+        // Held text is read in the draft view instead: a preedit would put
+        // it in the field's own rendering after all.
+        if preedit && policy.streams() && ending.writes_allowed() {
             myna_core::dbg_log!("inject", "preedit(len={})", text.len());
             target.set_preedit(text).await;
         }
     }
+    if !policy.streams() {
+        if ending.writes_allowed() {
+            draft.show(&buffer.pending, tail).await;
+        } else {
+            draft.show("", "").await;
+        }
+    }
     ending
+}
+
+/// Passes text through untouched, whatever the processor behind it would
+/// do, and still tells it what became of each piece.
+struct AsHeard<'a>(&'a mut dyn Processor);
+
+#[async_trait]
+impl Processor for AsHeard<'_> {
+    async fn process(&mut self, text: String) -> String {
+        text
+    }
+
+    fn fit(&mut self, text: String, field: &Field) -> String {
+        self.0.fit(text, field)
+    }
+
+    fn landed(&mut self, landing: Landing) {
+        self.0.landed(landing);
+    }
+}
+
+/// What holding text back needs at each event: when it may be written, what
+/// processes it on the way, and where it is shown until then.
+struct Held<'a> {
+    policy: CommitPolicy,
+    processor: &'a mut dyn Processor,
+    draft: &'a mut dyn DraftView,
 }
 
 #[derive(Clone, Copy)]
@@ -1039,6 +1178,8 @@ struct RouteFlags<'a> {
 #[derive(Default)]
 struct Utterance {
     buffer: CommitBuffer,
+    /// The recogniser's current guess at what follows the buffered text.
+    tail: String,
     drops: AudioDrops,
     warning: Option<PendingWarning>,
 }
@@ -1059,12 +1200,17 @@ struct PendingWarning {
 struct CommitBuffer {
     /// Committed text not yet inserted.
     pending: String,
+    /// The last character this utterance inserted.
+    last: Option<char>,
     /// Whether this utterance has already inserted text. Streaming commits
     /// flush *separately* (spaced by liveness/unstable events), so a later
     /// flush needs a separator from the text already in the field.
     committed_any: bool,
     /// Whether buffered text was discarded or refused (see [`Self::dropped`]).
     dropped: bool,
+    /// When the trigger asked capture to stop, if it has: the start of the
+    /// wait the user feels.
+    stopped: Option<Instant>,
 }
 
 impl CommitBuffer {
@@ -1074,13 +1220,7 @@ impl CommitBuffer {
     /// (leading-space) whitespace concatenate verbatim (contract I2);
     /// stripped-segment servers get a separator - never a double space.
     fn push(&mut self, text: &str) {
-        if !self.pending.is_empty()
-            && !self.pending.ends_with(char::is_whitespace)
-            && !text.starts_with(char::is_whitespace)
-        {
-            self.pending.push(' ');
-        }
-        self.pending.push_str(text);
+        crate::draft::append(&mut self.pending, text);
     }
 
     /// Whether text this utterance produced reached no field: the ending
@@ -1089,6 +1229,20 @@ impl CommitBuffer {
     /// - a real delivery disposition for them is its own change.
     fn dropped(&self) -> bool {
         self.dropped
+    }
+
+    /// Report text still held back when the dictation was cancelled: it was
+    /// never typed, and `heard` is what can be recovered.
+    fn discard(&mut self, processor: &mut dyn Processor) {
+        let heard = std::mem::take(&mut self.pending);
+        if !heard.trim().is_empty() {
+            processor.landed(Landing {
+                heard,
+                typed: String::new(),
+                outcome: Outcome::Discarded,
+                timing: None,
+            });
+        }
     }
 
     /// Insert the buffered text as a single `CommitText`, then clear the
@@ -1105,18 +1259,67 @@ impl CommitBuffer {
     /// (contract I2 servers) - never a double space. The first flush is
     /// separated from what the field already holds before the cursor, so a
     /// second dictation does not run on from the first.
+    #[cfg(test)]
     async fn flush(&mut self, target: &mut dyn Target, allowed: bool) -> Ending {
+        let ready = self.pending.len();
+        self.flush_ready(target, allowed, ready, &mut Unprocessed)
+            .await
+    }
+
+    /// [`Self::flush`] for the first `ready` bytes only, passed through
+    /// `processor` on the way; the rest stays buffered. A disallowed write
+    /// still discards everything.
+    async fn flush_ready(
+        &mut self,
+        target: &mut dyn Target,
+        allowed: bool,
+        ready: usize,
+        processor: &mut dyn Processor,
+    ) -> Ending {
         if self.pending.is_empty() {
             return Ending::None;
         }
         if !allowed {
-            self.pending.clear();
+            let heard = std::mem::take(&mut self.pending);
             self.dropped = true;
+            processor.landed(Landing {
+                heard,
+                typed: String::new(),
+                outcome: Outcome::FocusLost,
+                timing: None,
+            });
             return Ending::None;
         }
-        let mut text = std::mem::take(&mut self.pending);
+        if ready == 0 {
+            return Ending::None;
+        }
+        let ready_at = Instant::now();
+        let rest = self.pending.split_off(ready);
+        let heard = std::mem::replace(&mut self.pending, rest);
+        let said = heard.clone();
+        let purpose = target.field_purpose();
+        let before = if self.committed_any {
+            self.last
+        } else {
+            target.char_before_cursor()
+        };
+        let field = Field::after(purpose, before);
+        let text = processor.process(heard).await;
+        let mut text = processor.fit(text, &field);
+        if text.is_empty() {
+            if !said.trim().is_empty() {
+                processor.landed(Landing {
+                    heard: said,
+                    typed: String::new(),
+                    outcome: Outcome::Empty,
+                    timing: None,
+                });
+            }
+            return Ending::None;
+        }
+        let typed = text.clone();
         let separate = if self.committed_any {
-            !text.starts_with(char::is_whitespace)
+            !starts_blank(&text)
         } else {
             target
                 .char_before_cursor()
@@ -1125,10 +1328,28 @@ impl CommitBuffer {
         if separate {
             text.insert(0, ' ');
         }
+        let injecting = Instant::now();
         let result = target.commit(&text).await;
+        let landed = Instant::now();
         if result.is_ok() {
-            myna_core::dbg_log!("inject", "committed {} chars: {:?}", text.len(), text);
+            self.last = text.trim_end().chars().last().or(self.last);
+            myna_core::dbg_log!("inject", "committed {} chars", text.chars().count());
         }
+        let outcome = match &result {
+            Ok(()) => Outcome::Typed,
+            Err(InjectError::FocusLost) => Outcome::FocusLost,
+            Err(_) => Outcome::Refused,
+        };
+        let landed_now = outcome == Outcome::Typed;
+        processor.landed(Landing {
+            heard: said,
+            typed,
+            outcome,
+            timing: self
+                .stopped
+                .filter(|_| landed_now)
+                .map(|stopped| Timing::between(stopped, ready_at, injecting, landed)),
+        });
         self.record(result)
     }
 
@@ -1154,12 +1375,22 @@ impl CommitBuffer {
 /// Whether `text` dictated after `before` needs a space between them. Not
 /// at the start of a line or after an opening bracket, not before closing
 /// punctuation, and not next to scripts written without spaces.
+/// Whether the text opens on a blank a reader sees. An opening control
+/// character counts as no blank at all: a terminal sink folds it away and
+/// trims it, so the word behind it still needs separating.
+fn starts_blank(text: &str) -> bool {
+    match text.chars().next() {
+        None => true,
+        Some(first) => first.is_whitespace() && !is_control_or_break(first),
+    }
+}
+
 fn continues_after(before: char, text: &str) -> bool {
     let Some(first) = text.chars().next() else {
         return false;
     };
     !before.is_whitespace()
-        && !first.is_whitespace()
+        && !starts_blank(text)
         && !matches!(
             before,
             '(' | '[' | '{' | '\u{201C}' | '\u{2018}' | '\u{AB}' | '\u{BF}' | '\u{A1}'
@@ -1548,6 +1779,7 @@ mod tests {
         answer: Option<InjectError>,
         commits: Vec<String>,
         before_cursor: Option<char>,
+        purpose: myna_platform::text_input::FieldPurpose,
     }
 
     impl ScriptedTarget {
@@ -1578,6 +1810,10 @@ mod tests {
 
         fn char_before_cursor(&self) -> Option<char> {
             self.before_cursor
+        }
+
+        fn field_purpose(&self) -> myna_platform::text_input::FieldPurpose {
+            self.purpose
         }
 
         fn focus_events(&self) -> BoxStream<'static, FocusEvent> {
@@ -1681,6 +1917,55 @@ mod tests {
                 "a backend failure says nothing about the target being ours"
             );
         }
+    }
+
+    /// Answers with `reply` and keeps what it is told landed.
+    struct Reply {
+        reply: &'static str,
+        landed: Vec<Landing>,
+    }
+
+    #[async_trait]
+    impl Processor for Reply {
+        async fn process(&mut self, _: String) -> String {
+            self.reply.to_owned()
+        }
+
+        fn landed(&mut self, landing: Landing) {
+            self.landed.push(landing);
+        }
+    }
+
+    async fn flushed(target: &mut ScriptedTarget, reply: &'static str) -> Vec<Landing> {
+        let mut processor = Reply {
+            reply,
+            landed: Vec::new(),
+        };
+        let mut buffer = CommitBuffer::default();
+        buffer.push("hello there");
+        let len = buffer.pending.len();
+        buffer.flush_ready(target, true, len, &mut processor).await;
+        processor.landed
+    }
+
+    #[tokio::test]
+    async fn text_processing_emptied_is_still_recorded() {
+        let landed = flushed(&mut ScriptedTarget::default(), "").await;
+        assert_eq!(landed.len(), 1);
+        assert_eq!(landed[0].heard, "hello there");
+        assert_eq!(landed[0].typed, "");
+        assert_eq!(landed[0].outcome, Outcome::Empty);
+    }
+
+    #[tokio::test]
+    async fn text_the_field_failed_on_is_recorded_with_what_was_heard() {
+        let mut target = ScriptedTarget::refusing(InjectError::Backend("boom".into()));
+        let landed = flushed(&mut target, "Hello there.").await;
+        assert_eq!(landed.len(), 1);
+        assert_eq!(landed[0].heard, "hello there");
+        assert_eq!(landed[0].typed, "Hello there.");
+        assert_eq!(landed[0].outcome, Outcome::Refused);
+        assert!(landed[0].timing.is_none());
     }
 
     #[tokio::test]

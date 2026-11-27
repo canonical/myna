@@ -41,6 +41,23 @@ impl<T> Live<T> {
             .clone()
     }
 
+    /// Replace the value when it differs from `now`, logging `what` at the
+    /// info tier; the silent case (a flag outranks the change) is still
+    /// logged, at the debug tier, where it explains "I changed it and
+    /// nothing happened". True when the value moved.
+    pub fn update(&self, now: &T, what: &str) -> bool
+    where
+        T: Clone + PartialEq + std::fmt::Debug,
+    {
+        if self.get() == *now {
+            myna_core::dbg_log!("settings", "{what} stays {now:?}");
+            return false;
+        }
+        myna_core::info_log!("settings", "{what} -> {now:?} (live)");
+        self.set(now.clone());
+        true
+    }
+
     pub fn set(&self, value: T) {
         *self
             .0
