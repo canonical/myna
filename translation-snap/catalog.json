@@ -987,7 +987,7 @@
         "description_key": "step.translate.description",
         "example_key": "step.translate.example"
       },
-      "download_bytes": 35564322,
+      "download_bytes": 33144832,
       "installed_bytes": 35564322,
       "quality": {
         "value": 0.0,
@@ -1145,7 +1145,7 @@
         "description_key": "step.translate.description",
         "example_key": "step.translate.example"
       },
-      "download_bytes": 35569106,
+      "download_bytes": 32485376,
       "installed_bytes": 35569106,
       "quality": {
         "value": 0.481,
@@ -1224,7 +1224,7 @@
         "description_key": "step.translate.description",
         "example_key": "step.translate.example"
       },
-      "download_bytes": 35127290,
+      "download_bytes": 31948800,
       "installed_bytes": 35127290,
       "quality": {
         "value": 0.441,
@@ -1303,7 +1303,7 @@
         "description_key": "step.translate.description",
         "example_key": "step.translate.example"
       },
-      "download_bytes": 35560217,
+      "download_bytes": 32727040,
       "installed_bytes": 35560217,
       "quality": {
         "value": 0.686,
@@ -1461,7 +1461,7 @@
         "description_key": "step.translate.description",
         "example_key": "step.translate.example"
       },
-      "download_bytes": 35599859,
+      "download_bytes": 32493568,
       "installed_bytes": 35599859,
       "quality": {
         "value": 0.612,
@@ -1540,7 +1540,7 @@
         "description_key": "step.translate.description",
         "example_key": "step.translate.example"
       },
-      "download_bytes": 36716532,
+      "download_bytes": 33222656,
       "installed_bytes": 36716532,
       "quality": {
         "value": 0.674,
@@ -1698,7 +1698,7 @@
         "description_key": "step.translate.description",
         "example_key": "step.translate.example"
       },
-      "download_bytes": 21801188,
+      "download_bytes": 18821120,
       "installed_bytes": 21801188,
       "quality": {
         "value": 0.671,
@@ -2014,7 +2014,7 @@
         "description_key": "step.translate.description",
         "example_key": "step.translate.example"
       },
-      "download_bytes": 35867729,
+      "download_bytes": 32600064,
       "installed_bytes": 35867729,
       "quality": {
         "value": 0.624,
@@ -2093,7 +2093,7 @@
         "description_key": "step.translate.description",
         "example_key": "step.translate.example"
       },
-      "download_bytes": 35532187,
+      "download_bytes": 32641024,
       "installed_bytes": 35532187,
       "quality": {
         "value": 0.0,
@@ -2251,7 +2251,7 @@
         "description_key": "step.translate.description",
         "example_key": "step.translate.example"
       },
-      "download_bytes": 35870649,
+      "download_bytes": 32169984,
       "installed_bytes": 35870649,
       "quality": {
         "value": 0.61,
@@ -2409,7 +2409,7 @@
         "description_key": "step.translate.description",
         "example_key": "step.translate.example"
       },
-      "download_bytes": 35396493,
+      "download_bytes": 32964608,
       "installed_bytes": 35396493,
       "quality": {
         "value": 0.0,
@@ -2488,7 +2488,7 @@
         "description_key": "step.translate.description",
         "example_key": "step.translate.example"
       },
-      "download_bytes": 21285646,
+      "download_bytes": 18759680,
       "installed_bytes": 21285646,
       "quality": {
         "value": 0.55,
@@ -2567,7 +2567,7 @@
         "description_key": "step.translate.description",
         "example_key": "step.translate.example"
       },
-      "download_bytes": 21052116,
+      "download_bytes": 19103744,
       "installed_bytes": 21052116,
       "quality": {
         "value": 0.62,
@@ -2725,7 +2725,7 @@
         "description_key": "step.translate.description",
         "example_key": "step.translate.example"
       },
-      "download_bytes": 21257882,
+      "download_bytes": 18747392,
       "installed_bytes": 21257882,
       "quality": {
         "value": 0.58,
@@ -2804,7 +2804,7 @@
         "description_key": "step.translate.description",
         "example_key": "step.translate.example"
       },
-      "download_bytes": 35813666,
+      "download_bytes": 32481280,
       "installed_bytes": 35813666,
       "quality": {
         "value": 0.601,
@@ -2883,7 +2883,7 @@
         "description_key": "step.translate.description",
         "example_key": "step.translate.example"
       },
-      "download_bytes": 21429690,
+      "download_bytes": 18739200,
       "installed_bytes": 21429690,
       "quality": {
         "value": 0.691,
@@ -2962,7 +2962,7 @@
         "description_key": "step.translate.description",
         "example_key": "step.translate.example"
       },
-      "download_bytes": 36209342,
+      "download_bytes": 32292864,
       "installed_bytes": 36209342,
       "quality": {
         "value": 0.838,
@@ -3205,7 +3205,7 @@
         "description_key": "step.translate.description",
         "example_key": "step.translate.example"
       },
-      "download_bytes": 21014535,
+      "download_bytes": 18960384,
       "installed_bytes": 21014535,
       "quality": {
         "value": 0.592,
@@ -3600,7 +3600,7 @@
         "description_key": "step.translate.description",
         "example_key": "step.translate.example"
       },
-      "download_bytes": 35302839,
+      "download_bytes": 32088064,
       "installed_bytes": 35302839,
       "quality": {
         "value": 0.0,
@@ -3679,7 +3679,7 @@
         "description_key": "step.translate.description",
         "example_key": "step.translate.example"
       },
-      "download_bytes": 21879919,
+      "download_bytes": 19644416,
       "installed_bytes": 21879919,
       "quality": {
         "value": 0.687,
@@ -3758,7 +3758,7 @@
         "description_key": "step.translate.description",
         "example_key": "step.translate.example"
       },
-      "download_bytes": 22177813,
+      "download_bytes": 19558400,
       "installed_bytes": 22177813,
       "quality": {
         "value": 0.628,
@@ -4074,7 +4074,7 @@
         "description_key": "step.translate.description",
         "example_key": "step.translate.example"
       },
-      "download_bytes": 21682453,
+      "download_bytes": 18464768,
       "installed_bytes": 21682453,
       "quality": {
         "value": 0.652,
@@ -4390,7 +4390,7 @@
         "description_key": "step.translate.description",
         "example_key": "step.translate.example"
       },
-      "download_bytes": 21264747,
+      "download_bytes": 19148800,
       "installed_bytes": 21264747,
       "quality": {
         "value": 0.0,
@@ -4469,7 +4469,7 @@
         "description_key": "step.translate.description",
         "example_key": "step.translate.example"
       },
-      "download_bytes": 35026482,
+      "download_bytes": 32108544,
       "installed_bytes": 35026482,
       "quality": {
         "value": 0.655,
@@ -4785,7 +4785,7 @@
         "description_key": "step.translate.description",
         "example_key": "step.translate.example"
       },
-      "download_bytes": 35571916,
+      "download_bytes": 32436224,
       "installed_bytes": 35571916,
       "quality": {
         "value": 0.552,
@@ -4864,7 +4864,7 @@
         "description_key": "step.translate.description",
         "example_key": "step.translate.example"
       },
-      "download_bytes": 35156223,
+      "download_bytes": 32735232,
       "installed_bytes": 35156223,
       "quality": {
         "value": 0.617,
@@ -4943,7 +4943,7 @@
         "description_key": "step.translate.description",
         "example_key": "step.translate.example"
       },
-      "download_bytes": 21201144,
+      "download_bytes": 19058688,
       "installed_bytes": 21201144,
       "quality": {
         "value": 0.586,
@@ -5022,7 +5022,7 @@
         "description_key": "step.translate.description",
         "example_key": "step.translate.example"
       },
-      "download_bytes": 34475151,
+      "download_bytes": 32174080,
       "installed_bytes": 34475151,
       "quality": {
         "value": 0.0,
@@ -5180,7 +5180,7 @@
         "description_key": "step.translate.description",
         "example_key": "step.translate.example"
       },
-      "download_bytes": 35472108,
+      "download_bytes": 31662080,
       "installed_bytes": 35472108,
       "quality": {
         "value": 0.0,
@@ -5259,7 +5259,7 @@
         "description_key": "step.translate.description",
         "example_key": "step.translate.example"
       },
-      "download_bytes": 36944671,
+      "download_bytes": 33943552,
       "installed_bytes": 36944671,
       "quality": {
         "value": 0.607,
