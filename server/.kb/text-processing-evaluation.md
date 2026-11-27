@@ -11,7 +11,7 @@ Read the top-level `.kb/agents.md` file before continuing below.
 1. **Few-shot small models (0.27-1.7B) lose.** They trail the rules or the shipped tagger everywhere and alter 5-40% of clean sentences. Only Qwen3-4B few-shot is good (tidy 88-93, numbers 81-89, run 1) at 2-3.5 s, outside the budget.
 2. **Fine-tuned (LoRA) Qwen3 wins on accuracy** for tidy, numbers, addresses and non-English commands, but no fine-tuned arm passes the break gate (0-6% of clean sentences altered), the numbers arms change digits (6-19 per 1000) and they cost 150-800 ms where rules cost microseconds.
 3. **What passes the gates and is fast:**
-   - tidy: the word tagger (one 49 MB int8 model for en/fr/de/es, 2-6 ms, damage 0). It ships as `myna-disfluency` in the `model-disfluency-en` component, see [the multilingual tagger](#the-multilingual-tagger).
+   - tidy: the word taggers (2-8 ms). English keeps the English-only `myna-disfluency-en` (`model-disfluency-en`, tau 0.9); French, German and Spanish get the multilingual `myna-disfluency` (`model-disfluency-fr-de-es`, tau 0.6). The multilingual one scored damage 0 on the synthetic corpora but deleted more content than the English one on real English dictations, see [real dictations](#real-dictations).
    - numbers in fr/de/es: text2num (MIT Rust crate) plus a small convention pass.
    - everything else in English: the rules.
 4. **Shipped as a result (DECISIONS 10):** the first release offers Tidy, Translate and Chinese script. Commands, emoji, snippets, casing, addresses, numbers, profanity, typography and Keep the original were removed from the tree and return per language when their research task lands. The rules that were measured are linked [below](#the-deleted-steps).
@@ -126,8 +126,8 @@ The 212 rows of the run 2 report reproduce byte for byte from the raw outputs wi
 | arm | what | status in the tree |
 |---|---|---|
 | rules | the Rust rule steps, driven through a bridge crate | removed (see below); tidy's English rule `disfluency.rs` stays |
-| tagger | the English-only MiniLM-L12 word tagger, int8 ONNX, tau 0.9 | replaced by tagger-multi |
-| tagger-multi | `myna-disfluency`, one 49 MB int8 tagger for en/fr/de/es (600k examples), tau 0.6 | ships; `text/tagger.py` |
+| tagger | `myna-disfluency-en`, the English-only MiniLM-L12 word tagger, int8 ONNX, tau 0.9 | ships for English (`model-disfluency-en`) |
+| tagger-multi | `myna-disfluency`, one 49 MB int8 tagger for en/fr/de/es (600k examples), tau 0.6 | ships for fr/de/es only (`model-disfluency-fr-de-es`); `text/tagger.py` |
 | text2num (+conv) | MIT Rust crate, threshold 10, a per-language post-pass for currency, percent and clock time | not shipped |
 | NeMo ITN | NeMo-text-processing WFST grammars (Apache-2.0), Python and pynini (413 MB stack) | measured only; grammars 15.7 MB for four languages |
 | LoRA | Qwen3 0.6B or 1.7B, one adapter per operation (tidy, numbers, addresses, commands) trained on synthetic data | not shipped; recipe in the workstream |
@@ -145,7 +145,7 @@ The raw per-item outputs of both runs (52 MB) were on `chug:/var/tmp/smallmodel/
 
 ## The multilingual tagger
 
-`myna-disfluency` (component `model-disfluency-en`, which keeps its store name) is the v3 retrain of the one-model tagger: Multilingual-MiniLM-L12-H384 with its vocabulary pruned to the pieces en/fr/de/es text uses, 4 word tags, the English decode plus capitalisation after opening marks (`¿puedes` becomes `¿Puedes`). Recipe unchanged from v2 (600k examples, 2 epochs, lr 1e-4, batch 64, 42 minutes on chug's RTX 3050) except the generator, which gained the classes both blind runs missed:
+`myna-disfluency` (component `model-disfluency-fr-de-es`; it shipped briefly as `model-disfluency-en` for all four languages) is the v3 retrain of the one-model tagger: Multilingual-MiniLM-L12-H384 with its vocabulary pruned to the pieces en/fr/de/es text uses, 4 word tags, the English decode plus capitalisation after opening marks (`¿puedes` becomes `¿Puedes`). Recipe unchanged from v2 (600k examples, 2 epochs, lr 1e-4, batch 64, 42 minutes on chug's RTX 3050) except the generator, which gained the classes both blind runs missed:
 
 - phrase restarts: the first, sometimes partial, copy of a 3-7 word phrase is deleted, with or without a comma or a filler between the copies;
 - repairs marked by the language's "actually" family (actually / or rather, plutôt / ou plutôt / en fait, eigentlich / besser gesagt, mejor dicho / más bien / en realidad) over a wrong span of 1-5 words;
@@ -153,7 +153,7 @@ The raw per-item outputs of both runs (52 MB) were on `chug:/var/tmp/smallmodel/
 
 Dev exact match at tau 0.9: en 94.9, fr 98.0, de 97.8, es 96.0 (v2: 94.7, 94.3, 95.1, 92.0), held-out clean break 0-1%.
 
-Scores, shipped configuration (English with its rule first, the others bare), tau 0.6, acc / pos / keep / break %, damage 0 everywhere, 1 thread p50 5 ms, p95 7-9 ms on a shared box:
+Scores on the synthetic corpora, English with its rule first, the others bare, tau 0.6, acc / pos / keep / break %, damage 0 everywhere on these corpora (not on real English, see [real dictations](#real-dictations)), 1 thread p50 5 ms, p95 7-9 ms on a shared box:
 
 | lang | run 2 (blind) v2 | run 2 v3 | run 3 (blind, fresh) v2 | run 3 v3 |
 |---|---|---|---|---|
@@ -166,13 +166,41 @@ No language regresses on either corpus. Run 2 was not tuned on; run 3 (48 items 
 
 Decisions behind the numbers:
 
-- **tau 0.6.** On run 2 the two values tie in every language; on run 3, 0.6 beats 0.9 by 2-4 points in all four (en 77.1 to 81.2, fr 70.8 to 75.0, de 79.2 to 81.2, es 70.8 to 72.9) with the same break. That is the one choice run 3 informed.
+- **tau 0.6** (for fr/de/es; English no longer uses this model). On run 2 the two values tie in every language; on run 3, 0.6 beats 0.9 by 2-4 points in all four (en 77.1 to 81.2, fr 70.8 to 75.0, de 79.2 to 81.2, es 70.8 to 72.9) with the same break. That is the one choice run 3 informed.
 - **No rule before the tagger outside English.** On run 2 bare beats rule-first by 3-12 points (fr 85.0 against 73.3, de 80.0 against 71.7) because the per-language rule rewrites the negatives (keep 48-67% against 76-95%). Run 3 is the exception: it has fewer negatives (12 of 48), so rule-first scores 4 points higher on its positives in fr, de and es (79.2, 85.4, 77.1) while keep stays 25 points lower. The tree has no per-language rule anyway (`disfluency.rs` reads English and pauses only), so the daemon runs the English rule for English and nothing before the tagger elsewhere.
 - **One model, not four.** Unchanged from the v1 comparison.
 
 Reproduce: `myna-bench text --eval run2 --op tidy --arm rules=identity --arm tagger:<component dir>:0.6`, and `--eval run3` for the fresh slice. `tagger:` and `socket:` read all four languages, bare; English with its rule first is `rules` composed by the daemon, so add `--lang en` and compare against the numbers above only for fr/de/es. Raw outputs of the v2/v3 comparison were on `chug:/var/tmp/smallmodel/run2b` and `run3`, the model in `chug:/var/tmp/tm_data/model3`, the training data in `chug:/var/tmp/tm_data/gen3`.
 
 Caveats specific to this run: run 3 shares its author's blind spots with the generator's design (both follow the classes named in the task), its negatives are few, and it used up its blindness on the tau choice. No native speaker has read the outputs; the sheets for that are `file:///home/charles/myna-processing-graphs/design/tidy-spot-check-en.md` (and `-fr`, `-de`, `-es`). The English rule still deletes a repeated list item it should keep ("left, right, left, right, left" loses the second pair), which is the rule's, not the tagger's.
+
+### Real dictations
+
+Measured 2026-11-27 on Charles' own dictations, because the synthetic corpora share the generator's blind spots. English only: no real fr/de/es dictation exists yet, so the fr/de/es choice still rests on the synthetic scores above.
+
+- **Sample:** 212 recordings from `~/myna-tail-loss/audio` (2026-11-18 to 11-25), 178 distinct transcripts (duplicates are replays), 468 sentences, 6302 words. Transcribed by chug's `myna-parakeet` snap (edge 0.3.3+git44, streaming, `--language en`) through `myna-testbed`.
+- **How:** each transcript split at the daemon's `sentence_ends` and each sentence run through the daemon's own `Resolver` and `Pipeline` (Tidy: English rule, then the tagger under `ConservativeEdit`), one private provider per arm from HEAD `server/src`. A deletion is counted against the rule's output, so only the tagger's are listed. The daemon holds back one sentence, so a commit can carry more than one; per sentence is the common case.
+- **Judging:** one reviewer (the agent), strict: a deleted clause that carries meaning, a hedge ("I hope", "I'd say") or a changed number is damage; a deletion that leaves a botched but meaning-preserving repair is "partial"; spoken commands the tree no longer has ("Begin quote", "New line", "Scratch that") are counted apart.
+
+| arm | tagger deletions | filler/stutter/repair | partial | command words | **damage** | mid-sentence capitals |
+|---|---|---|---|---|---|---|
+| `myna-disfluency-en`, tau 0.9 (store) | 25 | 19 | 0 | 3 | **3** | 0 |
+| `myna-disfluency`, tau 0.6 (as shipped 84fc427d) | 43 | 24 | 3 | 4 | **12** | 2 |
+| `myna-disfluency`, tau 0.75 | 37 | 23 | 3 | 4 | **7** | 3 |
+| `myna-disfluency`, tau 0.9 | 30 | 18 | 2 | 4 | **6** | 5 |
+| `myna-disfluency`, tau 0.95 (raw tagger) | 23 | 16 | 1 | 3 | **3** | - |
+| `myna-disfluency`, tau 0.97 (raw tagger) | 21 | 14 | 2 | 3 | **2** | - |
+
+- The old tagger's damage: "I'd say" (hedge), "I was wondering" losing "was", and "We should time" from "We should time the messages".
+- The new tagger's, by kind: numbers ("One thousand three hundred and seventeen." becomes "Three hundred and seventeen." in all 3 such dictations, tau 0.6 to 0.9; 1 of 3 at 0.95 and 0.97), clauses ("We need to start" at every tau up to 0.99, "So the agents," and "Does she want that" at 0.6), hedges ("I hope", "that seems"), a name ("Fun" in "Fun ASR").
+- A synthetic probe confirms the number failure is systematic: "Two thousand five hundred people came." becomes "Five hundred people came." at tau 0.6, 0.9 and 0.97, and so does "We sold three thousand two hundred units" (to "two hundred units"); the other 3 English number sentences and all 6 fr/de/es ones came through untouched, and the English tagger changed none of the 12. The v3 generator's phrase restarts teach "X thousand Y hundred" as a restart.
+- Mid-sentence capitals ("So I Just Whenever") came from a capital tag left behind when the deletes before it fell below tau; `decode` now honours that tag only where a sentence opens.
+- The raw-tagger rows (tau 0.95, 0.97) ran the tagger directly on the rule's output, outside the pipeline; they leave out the "um"-only sentence the pipeline rejects.
+- The pipeline's `ConservativeEdit` rejected nothing a tagger proposed here, apart from emptying a sentence that was only "um".
+
+Decision: English stays on `myna-disfluency-en`. The rule is content damage first, then fillers removed; tau 0.95-0.97 reach the old count (3, 2) but keep the number and "We need to start" losses, remove fewer fillers (16, 14 against 19) and would lower recall in fr/de/es too, since tau is per component. Counts this small (2-12 per arm, one reviewer) separate tau 0.6 from the old tagger, not 0.95 from it; the number failure decides.
+
+Rerun: rig, transcripts and per-arm outputs on `chug:/var/tmp/showcase/` (`asr_all.sh`, `tg/`; private, mode 700). Delete it when done.
 
 ## The deleted steps
 
@@ -269,7 +297,7 @@ Custom terms that need a legal decision, not treated as free: Gemma 3 and Functi
 ```
   # the tagger directly, against the identity baseline (run3 is the blind tidy slice)
 myna-bench text --eval run3 --op tidy \
-    --arm rules=identity --arm tagger:/path/to/model-disfluency-en:0.6
+    --arm rules=identity --arm tagger:/path/to/model-disfluency-fr-de-es:0.6
   # the same tagger through a running myna-text daemon
 myna-bench text --eval run3 --op tidy \
     --arm rules=identity --arm socket:/path/to/myna-text.sock:myna-disfluency
