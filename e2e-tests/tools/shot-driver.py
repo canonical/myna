@@ -37,7 +37,8 @@ ignoring case, for a name that carries a value the suite cannot know (a
 size, a count); a substring otherwise also finds "New chain 2" for "New
 chain". Any name may carry a role filter, "name@role" (e.g. "Backend@combo
 box"); `dump` prints the roles. A wait that times out lists the showing
-names that come closest.
+names that come closest, and leaves failure.png and failure-tree.txt (the
+screen and the showing accessible tree) in OUT_DIR.
 """
 
 import os
@@ -163,6 +164,25 @@ def near_misses(name):
     return sorted(n for n in names if words & set(n.lower().split()))[:10]
 
 
+def fail(message):
+    """Exit on a timed-out wait, leaving what the screen and the a11y tree
+    held at that moment next to the shots (failure.png, failure-tree.txt)."""
+    try:
+        os.makedirs(OUT_DIR, exist_ok=True)
+        subprocess.run(
+            ["import", "-window", "root", os.path.join(OUT_DIR, "failure.png")],
+            check=False,
+            timeout=20,
+        )
+        with open(os.path.join(OUT_DIR, "failure-tree.txt"), "w") as out:
+            root = app()
+            for n, depth in walk(root) if root is not None else []:
+                out.write("  " * depth + f"[{n.get_role_name()}] {name_of(n)!r}\n")
+    except Exception as err:
+        print(f"shot-driver: could not record the failure: {err}", flush=True)
+    sys.exit(message)
+
+
 def wait_for(name, timeout=30.0, roles=None):
     if "@" in name:
         name, _, role = name.rpartition("@")
@@ -173,7 +193,7 @@ def wait_for(name, timeout=30.0, roles=None):
         if node is not None:
             return node
         time.sleep(0.2)
-    sys.exit(
+    fail(
         f"shot-driver: no showing widget named {name!r} after {timeout}s;"
         f" showing: {near_misses(name)}"
     )
@@ -192,7 +212,7 @@ def wait_until(what, probe, timeout=60.0):
     deadline = time.monotonic() + timeout
     while not probe():
         if time.monotonic() > deadline:
-            sys.exit(f"shot-driver: {what} not true after {timeout}s")
+            fail(f"shot-driver: {what} not true after {timeout}s")
         time.sleep(0.2)
 
 
@@ -409,7 +429,7 @@ def main(steps):
             name, _, role = arg.rpartition("@") if "@" in arg else (arg, "", "")
             while find(name, (role,) if role else None) is not None:
                 if time.monotonic() > deadline:
-                    sys.exit(f"shot-driver: {arg!r} still showing after 60s")
+                    fail(f"shot-driver: {arg!r} still showing after 60s")
                 time.sleep(0.2)
         elif verb == "checked":
             wait_until(f"{arg!r} checked", lambda arg=arg: is_checked(arg))
