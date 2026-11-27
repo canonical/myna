@@ -91,11 +91,18 @@ def check_inputs(plugin: dict[str, Any], snap_dir: Path) -> Path:
 
 
 def fetch_files(plugin: dict[str, Any], cache: Path) -> dict[str, Path]:
-    """Every pinned file in ``cache``, verified; a mismatch deletes it and refuses."""
-    cache.mkdir(parents=True, exist_ok=True)
+    """Every pinned file in ``cache``, verified; a mismatch deletes it and refuses.
+
+    A file lives at ``<cache>/<sha256>/<name>``: pairs reuse names (zh-Hans
+    and zh-Hant both ship ``model.zhen...``). One cached under its bare name
+    by the older layout is linked in rather than downloaded again."""
     out: dict[str, Path] = {}
     for entry in plugin["files"]:
-        path = cache / entry["name"]
+        path = cache / entry["sha256"] / entry["name"]
+        path.parent.mkdir(parents=True, exist_ok=True)
+        legacy = cache / entry["name"]
+        if not path.is_file() and legacy.is_file() and sha256_file(legacy) == entry["sha256"]:
+            _link_or_copy(legacy, path)
         if not path.is_file() or sha256_file(path) != entry["sha256"]:
             url = entry.get("url")
             if not url:
@@ -111,6 +118,13 @@ def fetch_files(plugin: dict[str, Any], cache: Path) -> dict[str, Path]:
     return out
 
 
+def _link_or_copy(src: Path, dst: Path) -> None:
+    if _same_fs(src, dst.parent):
+        os.link(src, dst)
+    else:
+        shutil.copy2(src, dst)
+
+
 def stage_component(
     plugin: dict[str, Any], models: Path, files: dict[str, Path], components: Path
 ) -> Path:
@@ -118,10 +132,7 @@ def stage_component(
     out: Path = components / plugin["component"]
     out.mkdir(parents=True)
     for name, path in files.items():
-        if _same_fs(path, out):
-            os.link(path, out / name)
-        else:
-            shutil.copy2(path, out / name)
+        _link_or_copy(path, out / name)
     for item in models.iterdir():
         shutil.copy2(item, out / item.name)
     licence = Path(plugin["license_file"]) if "license_file" in plugin else None

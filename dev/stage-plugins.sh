@@ -7,7 +7,10 @@
 # The plan comes from <snap-dir>/plugins/*.toml through dev/gen-plugins.py
 # --list-files. A file with a url is fetched (Remote Settings CDN, cached
 # under ~/.cache/myna/models/<snap>); one without is copied from the [local]
-# directory named by its environment variable. Either way it must match its
+# directory named by its environment variable. The cache keys a file by its
+# sha256 (<cache>/<sha256>/<name>), because pairs reuse names (zh-Hans and
+# zh-Hant both ship model.zhen...); one cached under its bare name by the older
+# layout is linked in, not downloaded again. Either way it must match its
 # pinned sha256 or staging fails. The generated manifest and NOTICE, and the
 # licence text, are copied on every run, pin current or not: a manifest edited
 # after the weights were staged must reach the pack.
@@ -42,11 +45,10 @@ stage_plugin() { # <snap> <component> <name> <pin> <license file> <env> <default
         return 0
     fi
 
-    local src="$cache" file sha url
+    local src="" file sha url
     if [ "$env" != "-" ]; then
         src="${!env:-${default/#\~/$HOME}}"
     fi
-    mkdir -p "$cache"
     while IFS=$'\t' read -r _ _ file sha url; do
         if [ "$url" = "-" ]; then
             verified "$src/$file" "$sha" || {
@@ -56,22 +58,29 @@ stage_plugin() { # <snap> <component> <name> <pin> <license file> <env> <default
             }
             continue
         fi
-        verified "$cache/$file" "$sha" || {
+        local cached="$cache/$sha/$file"
+        mkdir -p "$cache/$sha"
+        if ! [ -f "$cached" ] && verified "$cache/$file" "$sha"; then
+            ln "$cache/$file" "$cached" 2>/dev/null || cp -a "$cache/$file" "$cached"
+        fi
+        verified "$cached" "$sha" || {
             curl --fail --silent --show-error --location --retry 5 \
-                --output "$cache/$file.part" "$url"
-            mv "$cache/$file.part" "$cache/$file"
+                --output "$cached.part" "$url"
+            mv "$cached.part" "$cached"
         }
-        verified "$cache/$file" "$sha" || {
+        verified "$cached" "$sha" || {
             echo "error: $file does not match its pinned sha256" >&2
-            rm -f "$cache/$file"
+            rm -f "$cached"
             return 1
         }
     done <<<"$files"
 
     rm -rf "$out"
     mkdir -p "$out"
-    while IFS=$'\t' read -r _ _ file _ _; do
-        cp -al "$src/$file" "$out/$file" 2>/dev/null || cp -a "$src/$file" "$out/$file"
+    while IFS=$'\t' read -r _ _ file sha url; do
+        local from="$src/$file"
+        [ "$url" = "-" ] || from="$cache/$sha/$file"
+        cp -al "$from" "$out/$file" 2>/dev/null || cp -a "$from" "$out/$file"
     done <<<"$files"
     install_text_files
     pin_stamp "$out" "$pin"

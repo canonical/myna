@@ -170,6 +170,40 @@ def test_fetch_downloads_verifies_and_reuses_the_cache(env, tmp_path):
     assert pe.fetch_files(plugin, cache).keys() == FILES.keys()
 
 
+def test_same_named_files_of_two_pairs_share_the_cache(env, tmp_path):
+    repo, _ = env
+    plugin = plugin_of(repo)
+    other = tmp_path / "other-model.bin"
+    other.write_bytes(b"another pair's model")
+    twin = plugin_of(repo)
+    twin["files"][0] |= {
+        "sha256": sha(other.read_bytes()),
+        "bytes": other.stat().st_size,
+        "url": f"file://{other}",
+    }
+    cache = tmp_path / "cache"
+    pe.fetch_files(plugin, cache)
+    pe.fetch_files(twin, cache)
+    for entry in plugin["files"] + twin["files"]:
+        Path(entry["url"].removeprefix("file://")).unlink(missing_ok=True)
+    assert pe.fetch_files(plugin, cache)["model.bin"].read_bytes() == FILES["model.bin"]
+    assert pe.fetch_files(twin, cache)["model.bin"].read_bytes() == b"another pair's model"
+
+
+def test_a_file_cached_under_its_bare_name_is_reused(env, tmp_path):
+    repo, _ = env
+    plugin = plugin_of(repo)
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    for name, data in FILES.items():
+        (cache / name).write_bytes(data)
+    for entry in plugin["files"]:
+        Path(entry["url"].removeprefix("file://")).unlink()
+    files = pe.fetch_files(plugin, cache)
+    assert {n: p.read_bytes() for n, p in files.items()} == FILES
+    assert (cache / "model.bin").is_file()
+
+
 def test_fetch_refuses_and_deletes_a_file_that_differs_from_its_pin(env, tmp_path):
     repo, _ = env
     plugin = plugin_of(repo)
@@ -177,7 +211,7 @@ def test_fetch_refuses_and_deletes_a_file_that_differs_from_its_pin(env, tmp_pat
     cache = tmp_path / "cache"
     with pytest.raises(pe.PipelineError, match="model.bin: does not match the sha256"):
         pe.fetch_files(plugin, cache)
-    assert not (cache / "model.bin").exists()
+    assert not list(cache.rglob("model.bin"))
 
 
 def test_fetch_refuses_a_size_that_differs_and_a_file_with_no_source(env, tmp_path):
@@ -196,8 +230,7 @@ def test_a_corrupt_cached_file_is_fetched_again(env, tmp_path):
     repo, _ = env
     plugin = plugin_of(repo)
     cache = tmp_path / "cache"
-    cache.mkdir()
-    (cache / "model.bin").write_bytes(b"truncated")
+    pe.fetch_files(plugin, cache)["model.bin"].write_bytes(b"truncated")
     assert pe.fetch_files(plugin, cache)["model.bin"].read_bytes() == FILES["model.bin"]
 
 
