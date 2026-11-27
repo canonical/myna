@@ -44,15 +44,21 @@ assert_on "Tidy runs before Translate" \
     "grep -qF \"('tidy', true, {}), ('translate', true\" $STORE"
 
 step 3 "moved after Translate it is skipped and dimmed; Move above puts it back"
+# Into Italian, which no Tidy model reads: French has one, so the step
+# would not be skipped there. The French chain comes back for step 4.
+assert_on "the chain translates to Italian, with Tidy before it" \
+    "snap run myna.config set chains \"[('en', 'New chain', [('tidy', true, {}), ('translate', true, {'to': 'it'})])]\""
 shot waitfor:General tab:Processing "click:$CHAIN" "waitfor:More actions for Tidy up speech" \
     "click:More actions for Tidy up speech" "activate:Move to bottom" \
-    "$(poll "grep -qF \"('translate', true, {'to': 'fr'}), ('tidy', true\" $STORE")" \
+    "$(poll "grep -qF \"('translate', true, {'to': 'it'}), ('tidy', true\" $STORE")" \
     "waitfor:Skipped" shot:shots/processing-editor/03-skipped.png \
     "click:Move above Translate@$BTN" \
     "$(poll "grep -qF \"('tidy', true, {}), ('translate', true\" $STORE")" \
     || { echo "skipped and fixed failed" >&2; FAILED=1; }
 assert_on "Tidy runs before Translate again" \
     "grep -qF \"('tidy', true, {}), ('translate', true\" $STORE"
+assert_on "the French chain is back for the steps below" \
+    "snap run myna.config set chains \"[('en', 'New chain', [('tidy', true, {}), ('translate', true, {'to': 'fr'})])]\""
 
 step 4 "a step's own switch pauses only that step"
 shot waitfor:General tab:Processing "click:$CHAIN" "waitfor:Use Tidy up speech" \
