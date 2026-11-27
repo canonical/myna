@@ -4,6 +4,15 @@ Use this file for repository-wide orientation. Before changing a subsystem, read
 
 Read the top-level `.kb/agents.md` file before continuing below.
 
+# Commands
+
+`make help` lists every target; `.kb/verification.md` defines the merge bar and the rules behind it.
+
+- `make check` - every static gate over the whole tree: fmt, clippy, py-lint, i18n, packaging lints.
+- `make test-client`, `make test-server`, `make test-extension` - one component's suites. `make preflight` is `check` + `test` + `coverage-gate`, the merge bar.
+- `make test-client-gated` and `make test-client-ui` - the service-backed suites, and the GTK suites headless.
+- A component's own commands (its fast loop, how to run one GTK suite, how to launch its binary for review) are in that component's `AGENTS.md` under `# Commands`. Read that section instead of reconstructing a command.
+
 # Overview
 
 Myna is an offline speech-to-text system for Ubuntu Desktop. A Rust client captures microphone audio, drives dictation sessions, and injects committed text into the focused application. Inference backends run in strictly confined snaps and receive audio over a Unix socket.
@@ -33,6 +42,8 @@ The client pushes PCM to a backend; inference snaps never access the microphone.
 - `client/` - Rust workspace for the dictation client and desktop integration.
 - `server/` - Python inference server, adapters, testbed, and benchmarker.
 - `*-snap/` - Snap packaging for the client and each inference family.
+- `text-snap/` - The `myna-text` snap: the generic text models (today the disfluency tagger) served as `myna-text-v1`; read `text-snap/AGENTS.md`.
+- `translation-snap/` - The `myna-translation` snap: Bergamot and one component per language pair, served as `myna-text-v1`; read `translation-snap/AGENTS.md`.
 - `myna-config-deb/` - Debian packaging for Myna Settings, which ships outside the snap.
 - `extensions/` - GNOME Shell integration.
 - `dev/` - Development, packaging, benchmark, and quality-gate scripts.
@@ -50,9 +61,14 @@ The client pushes PCM to a backend; inference snaps never access the microphone.
 - `.kb/build-inputs.md` - How every workshop input is pinned, and the weekly apt snapshot bump.
 - `.kb/versioning.md` - The single version source, how each artifact receives it, and why the manifests say `0.0.0`.
 - `.kb/releasing.md` - Cutting a release: version choice, notes in the tag, what is published from it.
+- `.kb/plugins-snapd.md` - What snapd does when Settings installs, connects and removes text-model components (probe results).
 - `.kb/verification.md` - What done means: the gates, patch coverage, red/green tests and scoped mutation testing.
+- `.kb/plugins-snapd.md` - How snapd installs, connects and removes text-model components for Myna Settings, measured.
+- `.kb/text-plugin-contract.md` - The text plugin contract: manifest and capabilities fields, class to check, versioning rules.
 - `client/AGENTS.md` - Rust client architecture and local knowledge.
 - `server/AGENTS.md` - Python server, inference, packaging, and benchmark knowledge.
 - `e2e-tests/AGENTS.md` - How the desktop end-to-end suites run and the rules for writing them.
 - `docs/AGENTS.md` - Scope and maintenance rules for human test documentation.
+- `text-snap/AGENTS.md` - The text-model snap, its components and the `myna-text-v1` provider.
+- `translation-snap/AGENTS.md` - The translation snap, its language-pair components and the Bergamot runtime.
 - `myna-config-deb/AGENTS.md` - Deb packaging, version scheme, and sbuild constraints for Myna Settings.

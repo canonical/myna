@@ -33,6 +33,7 @@ Sub-headers are okay.
 - _Preface_ - A brief introduction outlining the scope and relevance of a specific `*.md` file. This section MUST be at the top of every `.kb/*.md` file so agents can easily grep for it, and the last line of this section MUST be "Read the top-level `.kb/agents.md` file before continuing below." so rules are followed.
 - _Overview_ - High-level summary of the directory, subsystem or knowledge base layout at large. Do NOT use this to list files or directories.
 - _Important_ - Essential directives for the agent outlining critical constraints, behaviors, or rules.
+- _Commands_ - The exact, copy-pasteable commands for the directory that file governs: its fast loop, how to run a gated or GTK suite headless, and how to launch its binary for a person to review. Commands live here, never in a task handoff; put it straight after _Preface_ so it is found first.
 - _Headers_ - Global registry of header definitions, uniquely hosted at the root `.kb/agents.md` (this file). Do NOT use this header in any other document.
 - _Architecture_ - Structural design details or boundary explanations for a given component. Only use this for software architecture concepts, NOT for directory outlining. Also avoid using this as a code reference (keep that in the code itself).
 - _Directory_ - Only in `AGENTS.md` files, it briefly outlines the contents and structure of the directory the `AGENTS.md` file is in, and potentially nested small directories that do not justify their own `AGENTS.md` file.
