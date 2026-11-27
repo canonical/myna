@@ -21,8 +21,12 @@
 //! a corpus manifest instead of a single clip. `--mic` captures live audio via
 //! `myna-audio` (native PipeWire backend): capture starts at press and buffers in
 //! the pre-ready ring while the model loads, so nothing said is lost.
+//!
+//! What the processing graphs do to the text is measured end to end by the
+//! `deadair` e2e suite, against the real daemon; this binary drives sessions.
 
 mod convert;
+mod discover;
 
 use std::io::Write as _;
 use std::path::PathBuf;
@@ -73,13 +77,20 @@ const USAGE: &str = "\
 myna-testbed - drive a backend session from WAV clips, a corpus or the microphone
 
 USAGE:
-    myna-testbed (--socket <path> | --backend-dir <d>) (--clip <wav> | --corpus <dir> | --mic) [options]
+    myna-testbed [--socket <path> | --backend-dir <d>] (--clip <wav> | --corpus <dir> | --mic) [options]
+
+    The speech backend defaults to the installed snap.
+
+EXAMPLES:
+    myna-testbed --mic
+    myna-testbed --corpus <dir> --limit 20
+    myna-testbed --socket /tmp/myna.sock --clip corpus/english/audio/<id>.wav
 
 OPTIONS:
     --socket <path>    Unix socket of a running myna-server
     --backend-dir <d>  directory to find the backend socket under
                        (<d>/*/provider.env - how the snap wires the `backend`
-                       content share). One of these two is required.
+                       content share). Default: the installed speech snap.
     --clip <wav>       a single PCM WAV clip to dictate (repeatable); any rate,
                        channel count or integer width, converted to 16 kHz mono
     --corpus <dir>     a corpus dir with manifest.json; cycles its clips
@@ -100,6 +111,8 @@ OPTIONS:
     --mode <mode>      transcription mode: `streaming` or `batch`; overrides
                        the persisted setting, which overrides the backend's
                        own mode
+    --limit <n>        with --corpus: only the first n clips
+    --only <substr>    with --corpus: only clips whose path contains substr
     --realtime         pace clips at real time, like a microphone (default: as
                        fast as the backend takes them)
     -h, --help         show this help
@@ -119,6 +132,8 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
     let mut ws_path: Option<String> = None;
     let mut show_unstable = false;
     let mut mode = None;
+    let mut limit: Option<usize> = None;
+    let mut only: Option<String> = None;
     let mut it = args.into_iter();
     while let Some(arg) = it.next() {
         match arg.as_str() {
@@ -137,29 +152,32 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
             "--target" => target = Some(next(&mut it, "--target")?),
             "--language" => language = Some(next(&mut it, "--language")?),
             "--vocabulary" => vocabulary.push(next(&mut it, "--vocabulary")?),
-            "--dialect" => {
-                dialect = match next(&mut it, "--dialect")?.as_str() {
-                    "internal" => Dialect::Internal,
-                    "ie115" => Dialect::Ie115,
-                    other => return Err(format!("unknown dialect: {other} (want internal|ie115)")),
-                }
-            }
+            "--dialect" => dialect = parse_dialect(&next(&mut it, "--dialect")?)?,
             "--base64-audio" => base64_audio = true,
             "--ws-path" => ws_path = Some(next(&mut it, "--ws-path")?),
             "--show-unstable" => show_unstable = true,
-            "--mode" => {
-                mode = Some(match next(&mut it, "--mode")?.as_str() {
-                    "streaming" => myna_core::StreamingMode::Streaming,
-                    "batch" => myna_core::StreamingMode::Batch,
-                    other => return Err(format!("unknown mode: {other} (want streaming|batch)")),
-                })
-            }
+            "--mode" => mode = Some(parse_mode(&next(&mut it, "--mode")?)?),
             "--realtime" => realtime = true,
+            "--limit" => {
+                limit = Some(
+                    next(&mut it, "--limit")?
+                        .parse()
+                        .map_err(|_| "--limit needs a number".to_string())?,
+                )
+            }
+            "--only" => only = Some(next(&mut it, "--only")?),
             other => return Err(format!("unknown argument: {other}\n\n{USAGE}")),
         }
     }
-    let backend = BackendSocket::from_flags(socket, backend_dir)?
-        .ok_or_else(|| format!("--socket or --backend-dir is required\n\n{USAGE}"))?;
+    if let Some(only) = &only {
+        clips.retain(|c| c.path.to_string_lossy().contains(only.as_str()));
+    }
+    if let Some(limit) = limit {
+        clips.truncate(limit);
+    }
+    if (only.is_some() || limit.is_some()) && clips.is_empty() && !mic {
+        return Err("--limit/--only left no clips (they apply to --corpus)".into());
+    }
     if mic && !clips.is_empty() {
         return Err("--mic and --clip/--corpus are mutually exclusive".into());
     }
@@ -177,10 +195,12 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
     if ws_path.is_some() && dialect != Dialect::Ie115 {
         return Err("--ws-path only applies to --dialect ie115".into());
     }
-    let socket = resolve_socket(&backend)?;
-
+    let backend = match BackendSocket::from_flags(socket, backend_dir)? {
+        Some(backend) => backend,
+        None => discover::default_backend(discover::var_snap())?,
+    };
     Ok(Args {
-        socket,
+        socket: resolve_socket(&backend)?,
         clips,
         mic,
         target,
@@ -193,6 +213,22 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
         show_unstable,
         mode,
     })
+}
+
+fn parse_dialect(name: &str) -> Result<Dialect, String> {
+    match name {
+        "internal" => Ok(Dialect::Internal),
+        "ie115" => Ok(Dialect::Ie115),
+        other => Err(format!("unknown dialect: {other} (want internal|ie115)")),
+    }
+}
+
+fn parse_mode(name: &str) -> Result<myna_core::StreamingMode, String> {
+    match name {
+        "streaming" => Ok(myna_core::StreamingMode::Streaming),
+        "batch" => Ok(myna_core::StreamingMode::Batch),
+        other => Err(format!("unknown mode: {other} (want streaming|batch)")),
+    }
 }
 
 /// The socket to use; on failure, the translated headline and, on the next
@@ -606,16 +642,18 @@ async fn dictate_mic<B: BackendClient>(backend: B, args: &Args) -> ExitCode {
 
         // Run the utterance while watching for a Release edge (graceful early
         // stop → end-of-audio → finalize).
-        let fut = run_dictation(&backend, config, source, &mut sink);
-        tokio::pin!(fut);
         let mut quit = false;
-        let outcome = loop {
-            tokio::select! {
-                result = &mut fut => break result,
-                edge = trigger.next_edge() => match edge {
-                    Some(TriggerEdge::Release) => stop.stop(),
-                    Some(TriggerEdge::Press) => {} // ignore an extra press
-                    None => { stop.stop(); quit = true; }
+        let outcome = {
+            let fut = run_dictation(&backend, config, source, &mut sink);
+            tokio::pin!(fut);
+            loop {
+                tokio::select! {
+                    result = &mut fut => break result,
+                    edge = trigger.next_edge() => match edge {
+                        Some(TriggerEdge::Release) => stop.stop(),
+                        Some(TriggerEdge::Press) => {} // ignore an extra press
+                        None => { stop.stop(); quit = true; }
+                    }
                 }
             }
         };
@@ -627,7 +665,9 @@ async fn dictate_mic<B: BackendClient>(backend: B, args: &Args) -> ExitCode {
         let _ = std::io::stdout().flush();
 
         match outcome {
-            Ok(SessionOutcome::Completed { .. }) => {} // StdoutSink already printed it
+            Ok(SessionOutcome::Completed { .. }) => {
+                // MicMeterSink already printed it.
+            }
             Ok(SessionOutcome::Aborted) => println!("  (aborted)"),
             Ok(SessionOutcome::Failed { code, failure }) if code == "capture_failed" => {
                 eprintln!("✗ {}\n  {}", failure.headline, failure.detail);
@@ -729,6 +769,14 @@ mod tests {
     }
 
     #[test]
+    fn corpus_clips_can_be_limited() {
+        assert!(parse(&["--only", "nothing-matches"])
+            .err()
+            .unwrap()
+            .contains("no clips"));
+    }
+
+    #[test]
     fn clips_are_sent_flat_out_unless_realtime_is_asked_for() {
         assert!(!parse(&[]).unwrap().realtime);
         assert!(parse(&["--realtime"]).unwrap().realtime);
@@ -737,7 +785,7 @@ mod tests {
     #[test]
     fn a_failed_search_names_the_directory() {
         let dir = PathBuf::from("/nonexistent/share");
-        let err = resolve_socket(&BackendSocket::Search(dir)).unwrap_err();
+        let err = resolve_socket(&BackendSocket::Search(dir)).err().unwrap();
         let (headline, detail) = err.split_once('\n').expect("two lines");
         assert_eq!(headline, "Model not connected");
         assert!(
