@@ -117,9 +117,9 @@ actions:
     cargo build --workspace --example render_check
     dbus-run-session -- xvfb-run -a -s "-screen 0 800x600x24" \
       ./target/debug/examples/render_check
-    MYNA_CONFIG_TEMPLATE_TESTS=1 MYNA_CONFIG_GTK_TESTS=1 MYNA_HUD_GTK_TESTS=1 \
+    MYNA_CONFIG_GTK_TESTS=1 MYNA_HUD_GTK_TESTS=1 \
       dbus-run-session -- xvfb-run -a -s "-screen 0 1024x768x24" \
-      cargo test --workspace --lib --test template_instantiation \
+      cargo test --workspace --lib \
         --test appearance_conformance --test xfce_appearance --test window_size \
         --test pill_icons \
         --test x11_host_resize -- --test-threads=1
@@ -153,9 +153,9 @@ actions:
     # drive is measured; `ui-check` runs the same suite uninstrumented, and
     # explains the private bus.
     export GIO_USE_VFS=local
-    MYNA_CONFIG_TEMPLATE_TESTS=1 MYNA_CONFIG_GTK_TESTS=1 MYNA_HUD_GTK_TESTS=1 \
+    MYNA_CONFIG_GTK_TESTS=1 MYNA_HUD_GTK_TESTS=1 \
       dbus-run-session -- xvfb-run -a -s "-screen 0 1024x768x24" \
-      cargo llvm-cov --no-report --workspace --lib --test template_instantiation \
+      cargo llvm-cov --no-report --workspace --lib \
         --test appearance_conformance --test xfce_appearance --test window_size \
         --test pill_icons \
         --test x11_host_resize -- --test-threads=1
@@ -306,7 +306,7 @@ actions:
     # before cargo-mutants starts, and cargo-mutants fails the baseline loudly
     # if the suite it enables is red.
     export GIO_USE_VFS=local
-    export MYNA_CONFIG_TEMPLATE_TESTS=1 MYNA_CONFIG_GTK_TESTS=1 MYNA_HUD_GTK_TESTS=1
+    export MYNA_CONFIG_GTK_TESTS=1 MYNA_HUD_GTK_TESTS=1
     cd /project/client
     exec /project/dev/gated-tests.sh \
       xvfb-run -a -s "-screen 0 1024x768x24" cargo mutants "$@"

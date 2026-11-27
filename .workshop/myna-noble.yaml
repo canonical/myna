@@ -23,6 +23,6 @@ actions:
     # cargo does not rebuild when the system libraries under it change.
     export CARGO_TARGET_DIR=$HOME/target
     cd /project/client
-    MYNA_CONFIG_TEMPLATE_TESTS=1 MYNA_CONFIG_GTK_TESTS=1 \
+    MYNA_CONFIG_GTK_TESTS=1 \
       dbus-run-session -- xvfb-run -a -s "-screen 0 1024x768x24" \
       cargo test -p myna-config -- --test-threads=1

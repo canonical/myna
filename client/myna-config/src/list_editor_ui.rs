@@ -54,19 +54,7 @@ impl ListEditor {
         group.set_widget_name(&plan.key);
         let content = adw::PreferencesPage::new();
         content.add(&group);
-        // The window's header holds the tab switcher; this one holds the way
-        // back.
-        let header = adw::HeaderBar::builder()
-            .show_start_title_buttons(false)
-            .show_end_title_buttons(false)
-            .build();
-        let toolbar = adw::ToolbarView::new();
-        toolbar.add_top_bar(&header);
-        toolbar.set_content(Some(&content));
-        let page = adw::NavigationPage::builder()
-            .title(&plan.title)
-            .child(&toolbar)
-            .build();
+        let page = crate::subpage::subpage(&plan.title, &content);
         link.connect_activated(move |link| {
             if let Some(navigation) = link
                 .ancestor(adw::NavigationView::static_type())
@@ -142,9 +130,14 @@ impl ListEditor {
 
     fn row(self: &Rc<Self>, value: &str) -> adw::ActionRow {
         let row = adw::ActionRow::builder()
-            .title(value)
+            .title(myna_core::spoken_written(value).map_or(value, |(_, written)| written))
             .use_markup(false)
             .build();
+        if let Some((spoken, _)) = myna_core::spoken_written(value) {
+            row.set_subtitle(
+                &gettextrs::gettext("Typed when you say “{spoken}”").replace("{spoken}", spoken),
+            );
+        }
         let remove = gtk::Button::builder()
             .icon_name("user-trash-symbolic")
             .tooltip_text(gettextrs::gettext("Remove"))

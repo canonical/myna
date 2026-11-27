@@ -11,6 +11,7 @@ template is stale.
 merges it into the desktop entry and metainfo
 (`build/install-translations.sh`).
 
-Set `MYNA_CONFIG_LOCALEDIR` to test a catalog outside the system locale
-directories. Without an installed catalog, gettext safely returns each source
+Set `MYNA_CONFIG_LOCALEDIR` to a gettext localedir (`DIR/<lang>/LC_MESSAGES/myna-config.mo`,
+what `msgfmt -o` into such a tree makes) to test a catalog outside the
+system locale directories, with `LANG` set to that language. Without an installed catalog, gettext safely returns each source
 string unchanged.

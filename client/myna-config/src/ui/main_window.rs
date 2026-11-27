@@ -19,6 +19,8 @@ mod imp {
         #[template_child]
         pub backend_nav: gtk::TemplateChild<adw::NavigationView>,
         #[template_child]
+        pub processing_nav: gtk::TemplateChild<adw::NavigationView>,
+        #[template_child]
         pub diagnostics_nav: gtk::TemplateChild<adw::NavigationView>,
         #[template_child]
         pub view_switcher_bar: gtk::TemplateChild<adw::ViewSwitcherBar>,
@@ -75,6 +77,10 @@ impl MainWindow {
 
     pub fn backend_nav(&self) -> adw::NavigationView {
         self.imp().backend_nav.get()
+    }
+
+    pub fn processing_nav(&self) -> adw::NavigationView {
+        self.imp().processing_nav.get()
     }
 
     pub fn diagnostics_nav(&self) -> adw::NavigationView {

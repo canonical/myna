@@ -77,3 +77,20 @@ button.outlined:active {
   color: @error_color;
   opacity: 1;
 }
+
+/* A chain step that does not run where it stands: its row dimmed (the
+   row under it, with the fix, is a separate row and stays clear) and a
+   "Skipped" marker in place of looking live. */
+row.skipped-step label.title,
+row.skipped-step label.subtitle,
+row.skipped-step label.monospace,
+row.skipped-step label.numeric {
+  opacity: 0.55;
+}
+
+.skipped-marker {
+  font-weight: bold;
+  border: 1px solid alpha(currentColor, 0.4);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
