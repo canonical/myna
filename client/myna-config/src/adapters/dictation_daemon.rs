@@ -143,22 +143,7 @@ impl DictationDaemon for SessionBusDaemon {
         let Ok(connection) = self.connection().await else {
             return;
         };
-        // The deprecated form keeps the subscription until the connection
-        // goes, which is what a page that outlives this call wants.
-        #[allow(deprecated)]
-        connection.signal_subscribe(
-            Some(BUS),
-            Some(BUS),
-            Some("PropertiesChanged"),
-            Some(PATH),
-            None,
-            gio::DBusSignalFlags::NONE,
-            move |_, _, _, _, _, params| {
-                if crate::machine::followed_change(params) {
-                    on_change();
-                }
-            },
-        );
+        crate::machine::follow_daemon(&connection, on_change);
     }
 }
 

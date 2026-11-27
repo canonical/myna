@@ -402,9 +402,17 @@ pub(crate) fn followed_change(params: &gio::glib::Variant) -> bool {
 /// long as the session bus lives: the Processing banner and Diagnostics follow
 /// the daemon by signal, not by polling.
 pub fn watch_daemon(on_change: impl Fn() + 'static) {
-    let Ok(connection) = gio::bus_get_sync(gio::BusType::Session, gio::Cancellable::NONE) else {
-        return;
-    };
+    if let Ok(connection) = gio::bus_get_sync(gio::BusType::Session, gio::Cancellable::NONE) {
+        follow_daemon(&connection, std::rc::Rc::new(on_change));
+    }
+}
+
+/// Follow the daemon on `connection`: each change to one of [`FOLLOWED`], and
+/// its arrival and departure. A restarted daemon signals no change for the
+/// values it starts with, so its arrival is a change too.
+pub(crate) fn follow_daemon(connection: &gio::DBusConnection, on_change: std::rc::Rc<dyn Fn()>) {
+    let on_signal = on_change.clone();
+    // The deprecated form keeps the subscription until the connection goes.
     #[allow(deprecated)]
     connection.signal_subscribe(
         Some(DICTATION_BUS),
@@ -415,9 +423,18 @@ pub fn watch_daemon(on_change: impl Fn() + 'static) {
         gio::DBusSignalFlags::NONE,
         move |_, _, _, _, _, params| {
             if followed_change(params) {
-                on_change();
+                on_signal();
             }
         },
+    );
+    let on_owner = on_change.clone();
+    // Never unwatched: dropping the id leaves the watch in place.
+    gio::bus_watch_name_on_connection(
+        connection,
+        DICTATION_BUS,
+        gio::BusNameWatcherFlags::NONE,
+        move |_, _, _| on_owner(),
+        move |_, _| on_change(),
     );
 }
 
