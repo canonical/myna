@@ -236,34 +236,36 @@ fn decode_event(text: &str) -> Result<Option<TranscriptionEvent>, BackendError> 
     }
 }
 
-/// One-line summary of a wire event for `MYNA_DEBUG` (type + text length/preview
-/// for transcript-bearing events, so "which final carried what" is visible).
+/// One-line summary of a wire event for `MYNA_DEBUG`: its type and the
+/// length of its text, never the text, which is the user's.
 pub(crate) fn event_summary(event: &TranscriptionEvent) -> String {
     match event {
         TranscriptionEvent::Progress(p) => format!("progress(phase={})", p.phase),
-        TranscriptionEvent::Final(f) => {
-            format!("final(len={}, {:?})", f.text.len(), preview(&f.text))
-        }
-        TranscriptionEvent::Done(d) => {
-            format!("done(len={}, {:?})", d.text.len(), preview(&d.text))
-        }
+        TranscriptionEvent::Final(f) => format!("final(len={})", f.text.len()),
+        TranscriptionEvent::Done(d) => format!("done(len={})", d.text.len()),
         TranscriptionEvent::Error(e) => format!("error(code={}, {})", e.code, e.message),
-    }
-}
-
-fn preview(text: &str) -> String {
-    let max = 60;
-    if text.chars().count() <= max {
-        text.to_string()
-    } else {
-        let head: String = text.chars().take(max).collect();
-        format!("{head}…")
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_debug_summary_never_carries_the_dictated_text() {
+        let said = myna_core::events::TranscriptionFinal {
+            text: "my secret sentence".into(),
+            ..Default::default()
+        };
+        for event in [
+            TranscriptionEvent::Final(said.clone()),
+            TranscriptionEvent::Done(said),
+        ] {
+            let summary = event_summary(&event);
+            assert!(summary.contains("len=18"), "{summary}");
+            assert!(!summary.contains("secret"), "{summary}");
+        }
+    }
 
     /// Accepts and upgrades, then never sends the greeting.
     async fn wedged_backend(tag: &str) -> (std::path::PathBuf, tokio::task::JoinHandle<()>) {
