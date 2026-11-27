@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# snapshot: dictation
+# snapshot: ready
+# tags: upgrade
 # myna: store
 # requires: E2E_UPGRADE_CHANNEL
 # A user's upgrade to the next release: the store's myna and backends, as the

@@ -127,8 +127,104 @@ has run on main. The e2e job `pull`s it while the workshop launches, and
 the tree's fake backend. Keep tree-dependent work out of the stages up to
 `rig`.
 
+The `plugins` suite follows a text plugin's life from the store, on the
+`chains` snapshot over a fake speech backend: both text snaps installed from
+edge and connected, then through Settings Get more steps → Translate →
+Français (a chain made and used, the model installed with one polkit grant),
+Tidy installed and added in stage order, a dictation typing French while a
+provider outside the allow-list is ignored, Remove on the language page (the
+step stays, says what it needs, and the dictation types what was heard), and
+Install from the chain's editor healing it. About half of component changes
+empty the running daemon's backend mounts (snapd LP#2175592) and the daemon
+then restarts itself once idle (`myna_desktop::restart`); the suite never
+restarts it and asserts only the outcome. Each shot that changes a component
+stays open until the daemon's `InstalledSteps` shows the change: Settings
+asks the daemon to rescan after snapd is done, and closing it first skips
+that.
+
+The `deadair` suite takes `E2E_PLUGIN_BLOBS` (the sideloadable text snaps and
+their components, what `snapcraft pack` leaves in `text-snap/` and
+`translation-snap/`) and installs both
+text snaps with their models over the fake speech backend, so what it
+measures is Myna's own wait: `dead_air_ms` minus `asr_tail_ms` from the record
+of past dictations (the first dictation after five daemon starts, then
+`E2E_DEADAIR_N` warm ones, for Tidy and Tidy then French; bounds 1000 ms cold,
+p95 100 ms and 1000 ms warm). It then breaks the text model (stopped,
+SIGSTOPped, and `tools/fault-text.py` passing for `myna-text` while answering
+with a chat reply, control characters, one word, nothing, or never) and asserts
+every dictation still types the words that were heard and that the daemon's
+journal holds none of them. The fake's scripted transcript is nine words; a
+long dictation's wait is the last sentence's, which the bound already covers.
+
+The `chains` suite drives the Processing tab like a user, on the `chains`
+snapshot (`dictation` plus the French, Farsi and Simplified Chinese language
+packs and the fake snap installed again). It makes a chain from New chain…,
+adds Translate from the searchable language page and Tidy from the catalog,
+installs their models from the store through Settings (one polkit grant each;
+`run-suite.sh` pushes the catalog snapshots the deb installs, since the VM has
+no deb), switches the chain on and off from its row, deletes and undoes,
+removes a model from Diagnostics' Models groups, and dictates French, Chinese
+and Farsi through the fake backend's scripted transcript (`snap set
+myna-fake-backend transcript=TEXT`, one segment; empty keeps the default
+script). Every case asserts the keyfile and the daemon (`ChainStatus`,
+`--status`, the typed text), and each state is a checkpoint. Settings is also
+run in fr_FR, zh_CN and fa_IR with the catalogs compiled on the host and
+pushed (`MYNA_CONFIG_LOCALEDIR`); the selectors are the translations
+(`tr_po`), falling back to the English msgid. A store install makes the
+running daemon lose its backend mounts (snapd LP#2175592) or miss a share
+connected after it started; the daemon restarts itself once idle
+(`myna_desktop::restart`), and the suite asserts that rather than restarting
+it. A shot run that starts an install stays open until snapd has the
+component (`slowpoll`): closing Settings first drops the request.
+
 `dev/try-desktop.sh` (`make try-desktop`) reuses the provisioning above for a
 manual-test VM; it only ever copies the `installed` snapshot of an e2e VM.
+
+## Coverage
+
+`E2E_COVERAGE=1` (CI sets it) builds myna-config and myna-hud-host with
+`-C instrument-coverage` and counter relocation, and `on_vm` hands every
+process `LLVM_PROFILE_FILE` with `%c`, so profiles are written as the app
+runs and a suite that kills Settings still counts. They land in
+`out/prof/`; after the run `coverage-export.sh` merges this run's suites in
+the myna-noble workshop (llvm-cov needs the build's own objects) into
+`client/target/coverage/e2e-<tag>.cobertura.xml`, stamped with the `client/`
+tree id, for the
+patch gate. The pkexec root executor drops the environment: what it runs is
+not counted.
+
+## The fleet
+
+One provisioned VM per (release, desktop), named by `vm/lib.sh`'s `vm_name`:
+`myna-e2e-<release>` for GNOME, `myna-e2e-<desktop>-<release>` otherwise. Each
+holds two snapshots: `bare`, the machine onboarding installs onto, and `ready`
+(the `--snapshot` name), everything installed. `provision.sh` keeps its six
+stage snapshots only while it runs, as a resume cache, and deletes them at the
+end unless `--keep-stages`: on a `dir` pool each is a full 20 GiB disk.
+
+Suites never run on a base. `run-suite.sh` copies it, runs, and deletes the
+copy, so a run costs one disk for its duration. Each suite has its own copy
+(`<vm>-run-<suite>`), so `E2E_JOBS=N` runs N suites side by side, each
+logging to `.run/artifacts/<tag>-<suite>.run.log` with its lines prefixed
+on the terminal (on chug, `make e2e E2E_RELEASE=resolute E2E_JOBS=3` ran
+the fifteen in 13 minutes, a snap rebuild included). Every copy takes
+`E2E_VM_MEMORY`, so mind the host; CI keeps one at a time. The bases are the warm cache
+that makes a run reproducible without a 25-minute provision.
+
+A stage snapshot on `dir` is a copy of the whole disk, which is how three
+provisioned VMs once held 460 GB. The fleet therefore lives on a
+copy-on-write pool when there is one:
+
+    lxc storage create e2e zfs source=/var/snap/lxd/common/lxd/disks/e2e.img size=180GiB
+
+`vm/lib.sh` picks it up (`E2E_POOL=e2e`) and `provision.sh` passes it through.
+`fleet.sh list` shows which bases exist, their snapshots and their size;
+`fleet.sh delete --release R --desktop D` takes one down.
+
+A suite that does not test the store's snap needs `E2E_MYNA_SNAP`, the snap
+`make snap-myna` built at this tree's HEAD: `run-suite.sh` now refuses to run
+one without it, because the store's edge revision does not carry the settings
+the tree writes and the suite would silently test the wrong daemon.
 
 # Important
 

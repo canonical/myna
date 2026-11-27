@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# snapshot: dictation
+# snapshot: ready
+# tags: dictation
 # Dictation end to end on the real desktop session: activation -> a speech
 # clip played through a virtual microphone -> the fake backend (a scripted
 # transcript: "The quick brown fox" while recording, "jumps over the lazy dog."
@@ -37,6 +38,20 @@
 #      non-empty attribute list (#18): the Shell logs no IBusAttrList double
 #      free through two GJS collections and is still the same process.
 #  11. (Xubuntu, Plasma) logging out ends the HUD host and its HUD.
+#  12. a chain switched on from its row on the Processing tab is the
+#      daemon's step list: the Tidy chain is stored as the active chain, the
+#      daemon reads the step 'tidy', and the next dictation still lands whole
+#      (no text snap: the step is skipped, never a lost dictation); the row
+#      says what it needs. Switched off, the chain stays.
+#  13. Chinese script is a step of a chain: skipped and dimmed for English,
+#      and once the dictation language is Chinese its "Write Chinese as"
+#      picker stores the mode, which the daemon reads.
+#  14. Past dictations is a sub-page that owns the record switch: with the
+#      record on, a dictation is listed there, each segment as it landed
+#      (no chain is in use), and Original shows what the backend heard where
+#      Result shows what was typed.
+#  15. Get more steps lists the catalog by job (Tidy up speech, Translate,
+#      Chinese script); Fitted to the field is no switch and no setting.
 set -uo pipefail
 # shellcheck source=e2e-tests/suites/lib.sh
 source "$(dirname "$0")/lib.sh"
@@ -82,7 +97,7 @@ assert_dict "the daemon logs at the debug tier" 'daemon_debug on'
 assert_dict "the field app is up" 'field_start'
 assert_dict "the field is focused and the window active" 'field_focus plain'
 
-echo "-- 1. a toggle dictates into a plain field"
+echo "-- 1. a toggle dictates into a plain field (no chain: text is still fitted to it)"
 assert_dict "the field starts empty" 'field_clear'
 dict dictation_toggle
 assert_dict "recording" 'wait_until 10 dictation_state_is recording'
@@ -265,6 +280,80 @@ if [ "$DESKTOP" = gnome ]; then
 fi
 evidence 10
 dict 'fake_streaming false; daemon_debug off' >/dev/null 2>&1
+
+echo "-- 12. a chain switched on from its row drives the steps"
+# shellcheck disable=SC2016 # expands in the VM
+STORE='$HOME/snap/myna/common/.config/glib-2.0/settings/keyfile'
+assert_on "a Tidy chain is saved, none in use" \
+    "snap run myna.config set chains \"[('t', 'Tidy', [('tidy', true, {})])]\" && snap run myna.config set active-chain ''"
+shot waitfor:General tab:Processing "waitfor:Use Tidy" "click:Use Tidy" \
+    "$(poll "grep -q \"active-chain='t'\" $STORE")" "waitfor:~Needs the Tidy up speech model" \
+    shot:shots/dictation/12-processing.png \
+    || { echo "processing run failed" >&2; FAILED=1; }
+assert_on "the switch is stored as the active chain" "grep -q \"active-chain='t'\" $STORE"
+assert_dict "the daemon reads the steps" \
+    "wait_until 20 sh -c 'snap run myna --status 2>&1 | grep -q \"steps .*tidy\"'"
+assert_dict "the field is cleared" 'field_clear'
+assert_dict "the plain field is focused afresh" 'field_focus other && field_focus plain'
+dict dictation_toggle
+assert_dict "recording" 'wait_until 10 dictation_state_is recording'
+dict dictation_toggle
+assert_dict "idle after the stop" 'wait_until 10 dictation_state_is idle'
+assert_dict "the dictation lands whole with a step missing its model" \
+    "wait_until 10 field_is plain '$FULL'"
+evidence 12
+shot waitfor:General tab:Processing "waitfor:Use Tidy" "click:Use Tidy" \
+    "$(poll "grep -q \"active-chain=''\" $STORE")" \
+    || { echo "processing reset failed" >&2; FAILED=1; }
+assert_on "off keeps the chain" "grep -qF \"('t', 'Tidy'\" $STORE"
+
+echo "-- 13. Chinese script is a step"
+assert_on "a Chinese script chain is saved and in use" \
+    "snap run myna.config set chains \"[('z', 'Script', [('script', true, {'mode': 'simplified'})])]\" && snap run myna.config set active-chain z"
+shot waitfor:General tab:Processing "click:Script" "waitfor:Skipped" \
+    shot:shots/dictation/13-script-dimmed.png \
+    || { echo "script dim run failed" >&2; FAILED=1; }
+assert_on "Chinese dictation makes the step run" "snap run myna.config set language zh"
+shot waitfor:General tab:Processing "click:Script" "click:Write Chinese as@combo box" \
+    "waitfor:Traditional, Taiwan (繁體)" "key:Down" "key:Down" "key:Return" \
+    "$(poll "grep -qF \"('script', true, {'mode': 'traditional-taiwan'})\" $STORE")" \
+    shot:shots/dictation/13-script-taiwan.png \
+    || { echo "script run failed" >&2; FAILED=1; }
+assert_dict "the daemon reads the script step" \
+    "wait_until 20 sh -c 'snap run myna --status 2>&1 | grep -q \"steps .*script\"'"
+on "snap run myna.config set active-chain '' && snap run myna.config set language ''" >/dev/null 2>&1
+
+echo "-- 14. Past dictations lists the dictation, Original and Result compare"
+shot waitfor:General tab:Processing "waitfor:Past dictations" \
+    "click:Past dictations" "waitfor:Keep a record of what was changed" \
+    "click:Keep a record of what was changed" \
+    "$(poll "grep -q \"processing-history=true\" $STORE")" \
+    || { echo "record switch run failed" >&2; FAILED=1; }
+assert_dict "the field is cleared" 'field_clear'
+assert_dict "the plain field is focused afresh" 'field_focus other && field_focus plain'
+dict dictation_toggle
+assert_dict "recording" 'wait_until 10 dictation_state_is recording'
+dict dictation_toggle
+assert_dict "idle after the stop" 'wait_until 10 dictation_state_is idle'
+# shellcheck disable=SC2016 # expands in the VM
+dict 'cp "$HOME/snap/myna/common/processing-history.jsonl" myna-shot/out/ 2>/dev/null; true'
+# With no chain in use each segment lands, and is recorded, as it comes.
+shot waitfor:General tab:Processing "click:Past dictations" \
+    "waitfor:$FIRST" "waitfor:jumps over the lazy dog." shot:shots/dictation/14-past-dictations.png \
+    || { echo "past dictations run failed" >&2; FAILED=1; }
+shot waitfor:General tab:Processing "click:Past dictations" \
+    "click:Keep a record of what was changed" \
+    "$(poll "grep -q \"processing-history=false\" $STORE")" \
+    || { echo "record switch reset failed" >&2; FAILED=1; }
+
+echo "-- 15. Get more steps lists the catalog by job; Fitted to the field has no switch"
+shot waitfor:General tab:Processing "waitfor:Get more steps" "click:Get more steps" \
+    "waitfor:Tidy up speech" "waitfor:Translate" "waitfor:Chinese script" \
+    shot:shots/dictation/15-get-more-steps.png \
+    || { echo "get more steps run failed" >&2; FAILED=1; }
+shot waitfor:General tab:Processing "waitfor:Get more steps" "gone:Fitted to the field" \
+    || { echo "the page still offers a fit switch" >&2; FAILED=1; }
+assert_on "no fit setting is stored" "! grep -q fit-to-field $STORE"
 
 dict 'mic_stop' >/dev/null 2>&1
 if [ -n "$HOSTED" ]; then

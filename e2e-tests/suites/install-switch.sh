@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# snapshot: installed
+# snapshot: ready
+# tags: settings
 # Choosing a model snapd is still installing (issue #51): its slot lists
-# before its model has arrived, and a switch to it used to disconnect
-# Parakeet, then fail the connect on snapd's "changes in progress", leaving
-# no model at all. A drop-in holds the server's start, the install's last
+# before its model has arrived, and a switch to it used to disconnect the
+# connected model (the fake backend in `ready`), then fail the connect on
+# snapd's "changes in progress", leaving no model at all. A drop-in holds the server's start, the install's last
 # step, until the suite releases it: a cached snap installs in seconds.
-# Settings must show it installing, keep Parakeet connected whatever is
+# Settings must show it installing, keep the fake connected whatever is
 # clicked, and let it be chosen once done.
 set -uo pipefail
 # shellcheck source=e2e-tests/suites/lib.sh
@@ -13,8 +14,8 @@ source "$(dirname "$0")/lib.sh"
 
 S=shots/install-switch
 
-assert_on "precondition: backend is parakeet" \
-    'snap connections myna | grep -q "myna:backend.*myna-parakeet:provider"'
+assert_on "precondition: backend is the fake" \
+    'snap connections myna | grep -q "myna:backend.*myna-fake-backend:provider"'
 on 'sudo snap remove --purge myna-whisper' >/dev/null \
     || { echo "could not remove whisper" >&2; exit 1; }
 
@@ -38,12 +39,12 @@ done; exit 1' >/dev/null \
 # The click is a negative check: the wait is how long a switch's disconnect
 # took to land when the row still took it.
 shot --polkit allow --monitor install-switch \
-    waitfor:General "waitfor:Whisper@radio button" "waitfor:Installing" \
+    waitfor:General "waitfor:Whisper@radio button" "waitfor:Installing…" \
     shot:$S/01-installing.png \
     click:Whisper wait:5 shot:$S/02-clicked.png \
     || { echo "Whisper never showed installing" >&2; FAILED=1; }
-assert_on "parakeet still connected while whisper installs" \
-    'snap connections myna | grep -q "myna:backend.*myna-parakeet:provider"'
+assert_on "the fake still connected while whisper installs" \
+    'snap connections myna | grep -q "myna:backend.*myna-fake-backend:provider"'
 assert_on "whisper not connected while it installs" \
     '! snap connections myna | grep -q "myna:backend.*myna-whisper:provider"'
 

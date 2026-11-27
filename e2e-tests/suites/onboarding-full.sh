@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # snapshot: bare
+# tags: onboarding
 # The whole first-run onboarding on a bare machine: Welcome -> Install all
 # components (snapd flag, Dictation app, model; polkit allowed) -> How to
 # dictate -> Done closes the app. Afterwards the machine must be exactly

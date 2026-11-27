@@ -1,0 +1,99 @@
+#!/usr/bin/env bash
+# snapshot: seeded
+# tags: processing, chains
+# time: 120s
+# A chain's editor: adding a step, where it lands, what a step's own controls
+# do, and the narrow layout. The text models are already installed, so nothing
+# here waits on the store.
+#
+#   1. Add step… lists jobs, not models
+#   2. a step added from the editor goes in at its stage
+#   3. moved after Translate it is skipped and dimmed; Move above puts it back
+#   4. a step's own switch pauses only that step
+#   5. the step's input badge and picker, and the picker under it at 360 px
+#   6. a translation of Chinese shows the converter the solver puts first
+#   7. English to Traditional Chinese shows no conversion
+set -uo pipefail
+# shellcheck source=e2e-tests/suites/lib.sh
+source "$(dirname "$0")/lib.sh"
+# shellcheck source=e2e-tests/suites/chains-lib.sh
+source "$(dirname "$0")/chains-lib.sh"
+
+rig seeded
+
+step 1 "Add step… lists jobs, not models"
+shot waitfor:General tab:Processing "click:New chain…" "waitfor:Add step…" "click:Add step…" \
+    "waitfor:Tidy up speech" "waitfor:Translate" \
+    shot:shots/processing-editor/01-add-step-jobs.png \
+    || { echo "add step run failed" >&2; FAILED=1; }
+
+step 2 "a step added from the editor goes in at its stage"
+# The language page adds the Translate step at its stage's place; Tidy then
+# goes before it, which the keyfile shows.
+shot waitfor:General tab:Processing "click:$CHAIN" "waitfor:Add step…" "click:Add step…" \
+    "click:Translate" "waitfor:Search languages" "click:Search languages" "type:fran" \
+    "gone:Español" "click:Français" "waitfor:Add step…" \
+    "$(poll "grep -qF \"('translate', true, {'to': 'fr'})\" $STORE")" \
+    || { echo "translate added failed" >&2; FAILED=1; }
+shot waitfor:General tab:Processing "click:$CHAIN" "waitfor:Add step…" "click:Add step…" \
+    "waitfor:Tidy up speech" "click:Add Tidy up speech@$BTN" \
+    "$(poll "grep -qF \"('tidy', true, {}), ('translate', true\" $STORE")" \
+    shot:shots/processing-editor/02-stage-order.png \
+    || { echo "stage order failed" >&2; FAILED=1; }
+assert_on "Tidy runs before Translate" \
+    "grep -qF \"('tidy', true, {}), ('translate', true\" $STORE"
+
+step 3 "moved after Translate it is skipped and dimmed; Move above puts it back"
+# Into Italian, which no Tidy model reads: French has one, so the step
+# would not be skipped there. The French chain comes back for step 4.
+assert_on "the chain translates to Italian, with Tidy before it" \
+    "snap run myna.config set chains \"[('en', 'New chain', [('tidy', true, {}), ('translate', true, {'to': 'it'})])]\""
+shot waitfor:General tab:Processing "click:$CHAIN" "waitfor:More actions for Tidy up speech" \
+    "click:More actions for Tidy up speech" "activate:Move to bottom" \
+    "$(poll "grep -qF \"('translate', true, {'to': 'it'}), ('tidy', true\" $STORE")" \
+    "waitfor:Skipped" shot:shots/processing-editor/03-skipped.png \
+    "click:Move above Translate@$BTN" \
+    "$(poll "grep -qF \"('tidy', true, {}), ('translate', true\" $STORE")" \
+    || { echo "skipped and fixed failed" >&2; FAILED=1; }
+assert_on "Tidy runs before Translate again" \
+    "grep -qF \"('tidy', true, {}), ('translate', true\" $STORE"
+assert_on "the French chain is back for the steps below" \
+    "snap run myna.config set chains \"[('en', 'New chain', [('tidy', true, {}), ('translate', true, {'to': 'fr'})])]\""
+
+step 4 "a step's own switch pauses only that step"
+shot waitfor:General tab:Processing "click:$CHAIN" "waitfor:Use Tidy up speech" \
+    "click:Use Tidy up speech" "$(poll "grep -qF \"('tidy', false\" $STORE")" \
+    shot:shots/processing-editor/04-paused.png \
+    || { echo "step switch failed" >&2; FAILED=1; }
+assert_on "only that step was paused" \
+    "grep -qF \"('tidy', false\" $STORE && grep -qF \"('translate', true\" $STORE"
+
+step 5 "the step's input badge and picker, and the picker under it at 360 px"
+shot waitfor:General tab:Processing "click:$CHAIN" "waitfor:EN → FR" \
+    shot:shots/processing-editor/05-wide.png \
+    "sh:xdotool search --onlyvisible --name 'Myna Settings' windowsize 360 760" \
+    "waitfor:Translate to" shot:shots/processing-editor/05-360px.png \
+    || { echo "narrow editor failed" >&2; FAILED=1; }
+
+step 6 "a translation of Chinese shows the converter the solver puts first"
+assert_on "a chain translating to English is saved, for Chinese dictation" \
+    "snap run myna.config set chains \"[('zh', 'Chinese to English', [('translate', true, {'to': 'en'})])]\" && snap run myna.config set language zh"
+shot waitfor:General tab:Processing "click:Chinese to English" \
+    "waitfor:Converts to Traditional first" shot:shots/processing-editor/06-inserted.png \
+    || { echo "inserted converter failed" >&2; FAILED=1; }
+
+step 7 "English to Traditional Chinese converts after the model, never before"
+# The seeded VM has en->zh-Hans installed and en->zh-Hant only in the
+# catalog: an installed model and a converter beat a download, so the
+# solver writes Simplified and converts it, and the editor says so under
+# the step. The input is English: nothing converts it first. (With both
+# models installed the direct one wins: myna-core's graph tests.)
+assert_on "a chain translating to Traditional Chinese is saved, for English dictation" \
+    "snap run myna.config set chains \"[('en', 'English to Traditional', [('translate', true, {'to': 'zh-Hant'})])]\" && snap run myna.config set language en"
+shot waitfor:General tab:Processing "click:English to Traditional" \
+    "waitfor:Translate to" "waitfor:Then converts to Traditional" "gone:Converts to Traditional first" \
+    shot:shots/processing-editor/07-converts-after.png \
+    || { echo "english to traditional editor failed" >&2; FAILED=1; }
+
+evidence editor
+suite_status
