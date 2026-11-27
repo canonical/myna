@@ -11,8 +11,10 @@ Three JSONL slices under ``textcorpus/``, pinned by ``SHA256SUMS``:
                     code, see ``fleurs_codes``), built by
                     ``myna-bench build-text-corpus --pair en:<l>``.
 
-``eval/run1`` and ``eval/run2`` hold the per-operation evaluation corpora of
-``myna-bench text --eval`` (see ``text_eval``), pinned by ``eval/SHA256SUMS``.
+``eval/run1``, ``eval/run2`` and ``eval/run3`` hold the per-operation evaluation
+corpora of ``myna-bench text --eval`` (see ``text_eval``), pinned by
+``eval/SHA256SUMS``. Run 3 is the tidy slice written blind for the multilingual
+tagger; it grades breaks on run 2's clean sentences.
 
 ``NOTICE`` carries the provenance. The FLEURS slices are regenerated with
 ``myna-bench build-text-corpus`` from the cached FLEURS ``test.tsv`` files; the
@@ -33,7 +35,7 @@ from myna.benchmarker import fleurs_codes
 
 CORPUS_DIR = Path(__file__).parent / "textcorpus"
 EVAL_DIR = CORPUS_DIR / "eval"
-EVAL_RUNS = ("run1", "run2")
+EVAL_RUNS = ("run1", "run2", "run3")
 EVAL_LANGS = ("en", "fr", "de", "es")
 CLEAN_PER_LANG = 100
 SUMS = "SHA256SUMS"
@@ -201,10 +203,10 @@ def verify_eval(directory: Path = EVAL_DIR) -> None:
 def _clean_sentences(lang: str, run: str, directory: Path) -> list[str]:
     """The ordinary sentences a run grades breaks on, ``CLEAN_PER_LANG`` per language.
 
-    Run 1 reuses the first lines of the FLEURS test slices; run 2 uses FLEURS
-    dev sentences that no arm was trained on."""
-    if run == "run2":
-        rows = _rows(directory / run, "clean_dev")
+    Run 1 reuses the first lines of the FLEURS test slices; runs 2 and 3 use
+    run 2's FLEURS dev sentences that no arm was trained on."""
+    if run in ("run2", "run3"):
+        rows = _rows(directory / "run2", "clean_dev")
         return [r["text"] for r in rows if r["lang"] == lang][:CLEAN_PER_LANG]
     base = directory.parent
     if lang == "en":
@@ -228,7 +230,7 @@ def load_eval(
     if check:
         verify_eval(directory)
         verify(directory.parent)
-    prefix = "clean2" if run == "run2" else "clean"
+    prefix = "clean2" if run in ("run2", "run3") else "clean"
     groups: dict[tuple[str, str], list[EvalItem]] = {}
     for name in eval_names(run, directory):
         stem = Path(name).stem

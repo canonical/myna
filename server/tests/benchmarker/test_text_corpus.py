@@ -257,7 +257,7 @@ def test_the_shipped_german_slice_is_a_real_aligned_pair(corpus):
 
 def test_eval_corpora_are_pinned_and_load_with_100_clean_sentences_per_operation():
     tc.verify_eval()
-    for run, count in (("run1", 3521), ("run2", 2532)):
+    for run, count in (("run1", 3521), ("run2", 2532), ("run3", 592)):
         items = tc.load_eval(run)
         assert len(items) == count and len({i.id for i in items}) == count
         for op, lang in {(i.op, i.lang) for i in items}:

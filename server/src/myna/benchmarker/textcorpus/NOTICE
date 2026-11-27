@@ -94,6 +94,16 @@ eval/run1/*.jsonl, eval/run2/*.jsonl (except eval/run2/clean_dev.jsonl)
   were checked against the Rust rules they grade. Findings and caveats:
   server/.kb/text-processing-evaluation.md.
 
+eval/run3/tidy_*.jsonl
+  Original work written for this repository by a Claude agent (not by native
+  speakers), licensed with it (AGPL-3.0-or-later), 48 items per language in
+  en/fr/de/es: phrase restarts, repairs introduced by "actually" and its
+  family (plutot, eigentlich, mejor dicho), mixed and multi-sentence
+  disfluencies, and legitimate uses that must stay. Written with the
+  multilingual tagger's training data fixed but its scores unseen, by an
+  author that saw no training code; it grades breaks on run2's clean
+  sentences.
+
 eval/run2/clean_dev.jsonl
   Derived from Google FLEURS dev transcriptions (en_us, fr_fr, de_de, es_419;
   the raw cased, punctuated column), redistributed under the original licence.
