@@ -82,14 +82,17 @@ shot waitfor:General tab:Processing "click:Chinese to English" \
     "waitfor:Converts to Traditional first" shot:shots/processing-editor/06-inserted.png \
     || { echo "inserted converter failed" >&2; FAILED=1; }
 
-step 7 "English to Traditional Chinese needs no conversion of either text"
-# The Traditional model writes the script itself, so the solver adds no
-# converter before or after it.
+step 7 "English to Traditional Chinese converts after the model, never before"
+# The seeded VM has en->zh-Hans installed and en->zh-Hant only in the
+# catalog: an installed model and a converter beat a download, so the
+# solver writes Simplified and converts it, and the editor says so under
+# the step. The input is English: nothing converts it first. (With both
+# models installed the direct one wins: myna-core's graph tests.)
 assert_on "a chain translating to Traditional Chinese is saved, for English dictation" \
     "snap run myna.config set chains \"[('en', 'English to Traditional', [('translate', true, {'to': 'zh-Hant'})])]\" && snap run myna.config set language en"
 shot waitfor:General tab:Processing "click:English to Traditional" \
-    "waitfor:Translate to" "gone:Converts to Traditional first" "gone:Then converts to Traditional" \
-    shot:shots/processing-editor/07-no-conversion.png \
+    "waitfor:Translate to" "waitfor:Then converts to Traditional" "gone:Converts to Traditional first" \
+    shot:shots/processing-editor/07-converts-after.png \
     || { echo "english to traditional editor failed" >&2; FAILED=1; }
 
 evidence editor
