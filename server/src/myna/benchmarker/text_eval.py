@@ -1,10 +1,11 @@
 """``myna-bench text --eval``: per-operation accuracy of text-processing arms.
 
 Grades any text-in, text-out arm on the evaluation corpora of ``text_corpus``
-(``eval/run1``, the corpus the model arms were developed against, and
-``eval/run2``, written blind). An *item* is an input and the outputs that count
-as right; its ``kind`` is ``positive`` (must change), ``negative`` (must stay)
-or ``clean`` (an ordinary sentence, any change is a break).
+(``eval/run1``, the corpus the model arms were developed against,
+``eval/run2``, written blind, and ``eval/run3``, the blind tidy slice). An *item*
+is an input and the outputs that count as right; its ``kind`` is ``positive``
+(must change), ``negative`` (must stay) or ``clean`` (an ordinary sentence, any
+change is a break).
 
 Per (operation, language, arm):
 
@@ -22,7 +23,7 @@ A hybrid arm ``hyb:<arm>`` takes the arm's output when a verifier passes and
 the baseline's otherwise, which is how a model sits behind a conservative edit.
 
 Arms are named by a spec: ``identity``, ``tagger:<dir>[:tau]``
-(the disfluency tagger directly), ``socket:<path>:<model>`` (a running
+(the disfluency tagger directly, bare: no rule before it), ``socket:<path>:<model>`` (a running
 ``myna-text`` daemon) and ``openai:<base-url>#<model>[#fewshot|task]`` (any
 OpenAI-compatible chat endpoint such as ``llama-server``). ``name=spec``
 renames an arm; the arm called ``rules`` is the baseline.
@@ -271,8 +272,9 @@ class Arm:
         return item.op in self.ops and item.lang in self.langs
 
 
-def _english_tidy(name: str, run: Callable[[str], str]) -> Arm:
-    return Arm(name, lambda item: run(item.input), frozenset({"tidy"}), frozenset({"en"}))
+def tidy_arm(name: str, run: Callable[[str], str]) -> Arm:
+    """A cleanup model: it reads tidy items, in every language the corpus has."""
+    return Arm(name, lambda item: run(item.input), frozenset({"tidy"}))
 
 
 def chat_request(
@@ -313,7 +315,7 @@ def parse_arm(spec: str) -> Arm:
         from myna.text.tagger import Tagger
 
         path, _, tau = arg.partition(":")
-        arm = _english_tidy("tagger", Tagger.load(Path(path), float(tau or 0.9)).edit)
+        arm = tidy_arm("tagger", Tagger.load(Path(path), float(tau or 0.9)).edit)
     elif kind == "socket":
         from myna.benchmarker.text_gate import socket_system
 
@@ -321,7 +323,7 @@ def parse_arm(spec: str) -> Arm:
         tidy = socket_system(path, model).tidy
         if tidy is None:
             raise SystemExit(f"{model} on {path} is not a cleanup model")
-        arm = _english_tidy(f"socket:{model}", tidy)
+        arm = tidy_arm(f"socket:{model}", tidy)
     elif kind == "openai":
         url, _, tail = arg.partition("#")
         model, _, prompt = tail.partition("#")
@@ -368,7 +370,7 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
         dest="eval_run",
         choices=text_corpus.EVAL_RUNS,
         help="grade arms per operation on this corpus instead of the ship gates "
-        "(run1: developed against, run2: blind)",
+        "(run1: developed against, run2: blind, run3: blind tidy only)",
     )
     group.add_argument(
         "--arm",

@@ -88,3 +88,11 @@ def test_eval_refuses_a_slice_without_items():
     )
     with pytest.raises(SystemExit, match="no item matches"):
         text_eval.cmd_eval(args)
+
+
+def test_a_cleanup_arm_reads_tidy_items_in_every_corpus_language():
+    arm = text_eval.tidy_arm("t", str.upper)
+    items = text_corpus.load_eval("run3")
+    covered = {(i.op, i.lang) for i in items if arm.covers(i)}
+    assert covered == {("tidy", lang) for lang in ("en", "fr", "de", "es")}
+    assert arm.run(items[0]) == items[0].input.upper()
