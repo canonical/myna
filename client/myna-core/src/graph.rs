@@ -327,6 +327,35 @@ mod tests {
         assert_eq!(plan.output, t("en"));
     }
 
+    /// The catalog's measurements: zh-Hans-en 15 ms, chrF 0.582; zh-Hant-en
+    /// 25 ms and not measured (no FLEURS slice).
+    fn chinese_models(hans: bool, hant: bool) -> Vec<Implementation> {
+        let mut impls = opencc();
+        let mut zh_hans = imp("zh-Hans-en", Kind::Translate, "zh-Hans", "en", hans);
+        (zh_hans.latency_ms, zh_hans.quality) = (15, 582);
+        let mut zh_hant = imp("zh-Hant-en", Kind::Translate, "zh-Hant", "en", hant);
+        (zh_hant.latency_ms, zh_hant.quality) = (25, 0);
+        impls.extend([zh_hans, zh_hant]);
+        impls
+    }
+
+    #[test]
+    fn mixed_chinese_takes_the_simplified_model_when_both_are_installed() {
+        let impls = chinese_models(true, true);
+        let plan = solve(&to("en"), &Tongue::new("zh", Script::Mixed), &impls);
+        assert_eq!(ids(&plan, 0, &impls), ["opencc-zh-Hans", "zh-Hans-en"]);
+        let plan = solve(&to("en"), &t("zh-Hans"), &impls);
+        assert_eq!(ids(&plan, 0, &impls), ["zh-Hans-en"]);
+    }
+
+    #[test]
+    fn an_installed_traditional_model_wins_over_downloading_the_simplified_one() {
+        let impls = chinese_models(false, true);
+        let plan = solve(&to("en"), &t("zh-Hans"), &impls);
+        assert!(matches!(plan.steps[0], Outcome::Runs(_)));
+        assert_eq!(ids(&plan, 0, &impls), ["opencc-zh-Hant", "zh-Hant-en"]);
+    }
+
     #[test]
     fn equal_cost_takes_the_fewest_hops() {
         let mut impls = opencc();
