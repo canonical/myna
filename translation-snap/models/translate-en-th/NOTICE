@@ -1,0 +1,17 @@
+model-translate-en-th: the Firefox Translations English to Thai student
+model (version 2.0), Copyright Mozilla and contributors,
+licensed under the Mozilla Public License 2.0 (LICENSE in this component).
+
+Source: Mozilla's Firefox Translations models,
+https://github.com/mozilla/firefox-translations-models (the files themselves
+are served from the Remote Settings collection "translations-models" of
+https://firefox.settings.services.mozilla.com). The model files are shipped
+unmodified; their sha256 are:
+
+  model.enth.intgemm.alphas.bin  80e326097655fca75f841130da3338a849aa245374e1616448bcf37b9523a05a
+  lex.50.50.enth.s2t.bin         6961ce07f38e6c113a70855706aa7cad4cc828f986d1751c33f14699f885a2e8
+  vocab.enth.spm                 5deff7093d558768f8c22406449202e27595f023cc383a2b66beed240ed46443
+
+config.yml and myna-text-model.json are Canonical's own (AGPL-3.0-or-later).
+The runtime that executes the model, bergamot-translator (MPL-2.0), and its
+bundled libraries are noted in the myna-translation snap's NOTICE.

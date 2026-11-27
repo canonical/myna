@@ -1,0 +1,21 @@
+{
+  "contract": 2,
+  "kind": "translate",
+  "id": "bergamot-tiny-en-ro",
+  "task": "text.translate",
+  "class": "translate",
+  "needs": "dictation",
+  "params": [
+    {"name": "language", "kind": "language", "role": "source", "required": true},
+    {"name": "to", "kind": "language", "role": "target", "required": true}
+  ],
+  "language": "en",
+  "to": "ro",
+  "latency_ms": 10,
+  "quality": 0.652,
+  "config": "config.yml",
+  "license": "MPL-2.0",
+  "attribution": "Mozilla and contributors, Firefox Translations (tiny 1.0)",
+  "download_bytes": 21682453,
+  "source": "https://github.com/mozilla/firefox-translations-models"
+}

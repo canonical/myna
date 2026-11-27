@@ -1,0 +1,17 @@
+model-translate-en-hu: the Firefox Translations English to Hungarian student
+model (version 2.1), Copyright Mozilla and contributors,
+licensed under the Mozilla Public License 2.0 (LICENSE in this component).
+
+Source: Mozilla's Firefox Translations models,
+https://github.com/mozilla/firefox-translations-models (the files themselves
+are served from the Remote Settings collection "translations-models" of
+https://firefox.settings.services.mozilla.com). The model files are shipped
+unmodified; their sha256 are:
+
+  model.enhu.intgemm.alphas.bin  0c42f56edca74b3f732a74c64553c47d0005b50cf095f43024601985fab5d461
+  lex.50.50.enhu.s2t.bin         b1c9763567bfa24082fee43a9c4cc05b8ceada949fa52f6686b11f70ce481238
+  vocab.enhu.spm                 8c3038afc15c5a3f7bb3c6fc4c4962907632b6f6d0ce7444974504bef19ef57b
+
+config.yml and myna-text-model.json are Canonical's own (AGPL-3.0-or-later).
+The runtime that executes the model, bergamot-translator (MPL-2.0), and its
+bundled libraries are noted in the myna-translation snap's NOTICE.

@@ -1,0 +1,17 @@
+model-translate-en-sq: the Firefox Translations English to Albanian student
+model "tiny" (version 2.0), Copyright Mozilla and contributors,
+licensed under the Mozilla Public License 2.0 (LICENSE in this component).
+
+Source: Mozilla's Firefox Translations models,
+https://github.com/mozilla/firefox-translations-models (the files themselves
+are served from the Remote Settings collection "translations-models" of
+https://firefox.settings.services.mozilla.com). The model files are shipped
+unmodified; their sha256 are:
+
+  model.ensq.intgemm.alphas.bin  8a90d17ab2798509e639e544caa1d577f7cf87c31b9ab7e53890c8d1d59b6eee
+  lex.50.50.ensq.s2t.bin         c901d1f5910315e0791720fa6f1275d79565e59d85013cf66b2f98cd9ba58ce1
+  vocab.ensq.spm                 f27814dffca6102255ed7a338f2a83c16905a07e09444016187c768aaf9ac7b6
+
+config.yml and myna-text-model.json are Canonical's own (AGPL-3.0-or-later).
+The runtime that executes the model, bergamot-translator (MPL-2.0), and its
+bundled libraries are noted in the myna-translation snap's NOTICE.

@@ -1,0 +1,17 @@
+model-translate-en-tl: the Firefox Translations English to Filipino student
+model (version 2.0), Copyright Mozilla and contributors,
+licensed under the Mozilla Public License 2.0 (LICENSE in this component).
+
+Source: Mozilla's Firefox Translations models,
+https://github.com/mozilla/firefox-translations-models (the files themselves
+are served from the Remote Settings collection "translations-models" of
+https://firefox.settings.services.mozilla.com). The model files are shipped
+unmodified; their sha256 are:
+
+  model.entl.intgemm.alphas.bin  33b71965ab9c9c533c63444551c9483e811dd540e75e4cfe21d062a83a60b72f
+  lex.50.50.entl.s2t.bin         6e129305669e4b79ac6fed8f9f4bea3b7f1372440bc26670d94b40a4f3398164
+  vocab.entl.spm                 bc9fe1743f2ef0b91c71506c47b0344ef9d3ce6047becfbced81c6c6dbb6109b
+
+config.yml and myna-text-model.json are Canonical's own (AGPL-3.0-or-later).
+The runtime that executes the model, bergamot-translator (MPL-2.0), and its
+bundled libraries are noted in the myna-translation snap's NOTICE.

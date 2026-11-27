@@ -1,0 +1,17 @@
+model-translate-en-gl: the Firefox Translations English to Galician student
+model (version 2.1), Copyright Mozilla and contributors,
+licensed under the Mozilla Public License 2.0 (LICENSE in this component).
+
+Source: Mozilla's Firefox Translations models,
+https://github.com/mozilla/firefox-translations-models (the files themselves
+are served from the Remote Settings collection "translations-models" of
+https://firefox.settings.services.mozilla.com). The model files are shipped
+unmodified; their sha256 are:
+
+  model.engl.intgemm.alphas.bin  bec08e5408932c3813ccfb565ab7003d334dd6ca148c9d2bd074e17b8c0be1b1
+  lex.50.50.engl.s2t.bin         28621d3797a945ca0112c872640686586e77957b5421b0ef95886806b09d8874
+  vocab.engl.spm                 da044600f961c4c977e747cc9fb8afd4c05829629033d344a575a93807ea1cba
+
+config.yml and myna-text-model.json are Canonical's own (AGPL-3.0-or-later).
+The runtime that executes the model, bergamot-translator (MPL-2.0), and its
+bundled libraries are noted in the myna-translation snap's NOTICE.

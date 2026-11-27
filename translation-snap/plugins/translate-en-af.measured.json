@@ -1,0 +1,8 @@
+{
+  "latency_ms": 20,
+  "quality": 0.0,
+  "quality_source": "not measured: no FLEURS slice for af; served 200 English sentences; quality not measured by the vendor",
+  "gate": "pass",
+  "runs": true,
+  "results_sha256": "f6bfaa94fa3ccce77c880c4153faa0933f03d219a9393e2cf61eb99f34559c04"
+}

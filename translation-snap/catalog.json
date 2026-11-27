@@ -951,6 +951,85 @@
       ]
     },
     {
+      "id": "model-translate-en-af",
+      "snap": "myna-translation",
+      "component": "model-translate-en-af",
+      "model": "bergamot-mozilla-en-af",
+      "contract": 2,
+      "entry_revision": 1,
+      "task": "text.translate",
+      "class": "translate",
+      "needs": "dictation",
+      "params": [
+        {
+          "name": "language",
+          "kind": "language",
+          "role": "source",
+          "required": true
+        },
+        {
+          "name": "to",
+          "kind": "language",
+          "role": "target",
+          "required": true
+        }
+      ],
+      "covers": {
+        "language": "en",
+        "to": "af"
+      },
+      "in_lang": "en",
+      "out_lang": "af",
+      "step": {
+        "id": "translate",
+        "stage": "translate",
+        "label_key": "step.translate.name",
+        "description_key": "step.translate.description",
+        "example_key": "step.translate.example"
+      },
+      "download_bytes": 35564322,
+      "installed_bytes": 35564322,
+      "quality": {
+        "value": 0.0,
+        "source": "not measured: no FLEURS slice for af; served 200 English sentences; quality not measured by the vendor"
+      },
+      "latency_ms": 20,
+      "latency_class": "fast",
+      "hardware": {
+        "arch": [
+          "amd64"
+        ],
+        "min_ram_mb": 512
+      },
+      "locales": [
+        "en"
+      ],
+      "curated": true,
+      "license": "MPL-2.0",
+      "attribution": "Mozilla and contributors, Firefox Translations (version 2.0)",
+      "source": "https://github.com/mozilla/firefox-translations-models",
+      "files": [
+        {
+          "name": "model.enaf.intgemm.alphas.bin",
+          "sha256": "afc1dcb25774e61f513fe722e037744a18c23063ba799bb01f5cdec5cc79b502",
+          "bytes": 31561787,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/20260831143343--ff4582bd-2cc8-4b84-856c-c34434d8c376--bf1692b0-711d-4a8f-a4bb-6dbbf570312c.bin"
+        },
+        {
+          "name": "lex.50.50.enaf.s2t.bin",
+          "sha256": "591e3465c6e5e8920e911cae36e1d92c61abe92b2d5ef9bf2f1d8b5825bba20f",
+          "bytes": 3193340,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/20260831143334--a5b4cc20-b5f5-4af7-aaf2-604612bdf57e--9c2f64d1-8eb1-4dd3-96d1-aff79842bc26.bin"
+        },
+        {
+          "name": "vocab.enaf.spm",
+          "sha256": "8d19c43df2142696227eb3462c6693bbc8c62cbd47b9a7372f86df2698864438",
+          "bytes": 809195,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/20260831143345--ec36146d-a3db-4fea-a08f-b9af89bd9789--2a0374f0-4539-4477-ad1e-642dc951f217.spm"
+        }
+      ]
+    },
+    {
       "id": "model-translate-en-ar",
       "snap": "myna-translation",
       "component": "model-translate-en-ar",
@@ -1026,6 +1105,243 @@
           "sha256": "8d93c54aa5e2044c416ec680b5ff9af0227bd698521666e8b1a1ea1b041fbae8",
           "bytes": 863591,
           "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/793d9667-7929-4375-855d-96bbed2f113d.spm"
+        }
+      ]
+    },
+    {
+      "id": "model-translate-en-az",
+      "snap": "myna-translation",
+      "component": "model-translate-en-az",
+      "model": "bergamot-mozilla-en-az",
+      "contract": 2,
+      "entry_revision": 1,
+      "task": "text.translate",
+      "class": "translate",
+      "needs": "dictation",
+      "params": [
+        {
+          "name": "language",
+          "kind": "language",
+          "role": "source",
+          "required": true
+        },
+        {
+          "name": "to",
+          "kind": "language",
+          "role": "target",
+          "required": true
+        }
+      ],
+      "covers": {
+        "language": "en",
+        "to": "az"
+      },
+      "in_lang": "en",
+      "out_lang": "az",
+      "step": {
+        "id": "translate",
+        "stage": "translate",
+        "label_key": "step.translate.name",
+        "description_key": "step.translate.description",
+        "example_key": "step.translate.example"
+      },
+      "download_bytes": 35569106,
+      "installed_bytes": 35569106,
+      "quality": {
+        "value": 0.481,
+        "source": "chrF 0.481 on 200 FLEURS pairs (translate_en_az); quality not measured by the vendor"
+      },
+      "latency_ms": 20,
+      "latency_class": "fast",
+      "hardware": {
+        "arch": [
+          "amd64"
+        ],
+        "min_ram_mb": 512
+      },
+      "locales": [
+        "en"
+      ],
+      "curated": true,
+      "license": "MPL-2.0",
+      "attribution": "Mozilla and contributors, Firefox Translations (version 2.1)",
+      "source": "https://github.com/mozilla/firefox-translations-models",
+      "files": [
+        {
+          "name": "model.enaz.intgemm.alphas.bin",
+          "sha256": "fcf1f5f36dd586db7078e938252f17ecb90ae6f2d1b28952fc3878738f81336a",
+          "bytes": 31561787,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/20261006203228--b54a8f81-7b8b-4a46-81e9-2bc40528020b--492ed9b0-dbe4-4a20-a6c9-96c5a6392606.bin"
+        },
+        {
+          "name": "lex.50.50.enaz.s2t.bin",
+          "sha256": "6b2f36c13a98c677af7a5f4e0087636fe2af44e004dd142add1ac2207cfa8ad1",
+          "bytes": 3166552,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/20261006203232--e2aa7fcc-0dc3-4951-9114-4ce606d2bae3--b25ae7b3-b26d-40f6-8650-a984e9154d10.bin"
+        },
+        {
+          "name": "vocab.enaz.spm",
+          "sha256": "ebe0ebd2e652a03e2f23c2209b8c297930df2c5da9391c4afe7762ec04af899a",
+          "bytes": 840767,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/20261006203230--297335ec-ee05-42bf-bdfd-8fff8b151da7--d0b3d6a9-ef61-4bdc-a0fe-8bfa18068476.spm"
+        }
+      ]
+    },
+    {
+      "id": "model-translate-en-be",
+      "snap": "myna-translation",
+      "component": "model-translate-en-be",
+      "model": "bergamot-mozilla-en-be",
+      "contract": 2,
+      "entry_revision": 1,
+      "task": "text.translate",
+      "class": "translate",
+      "needs": "dictation",
+      "params": [
+        {
+          "name": "language",
+          "kind": "language",
+          "role": "source",
+          "required": true
+        },
+        {
+          "name": "to",
+          "kind": "language",
+          "role": "target",
+          "required": true
+        }
+      ],
+      "covers": {
+        "language": "en",
+        "to": "be"
+      },
+      "in_lang": "en",
+      "out_lang": "be",
+      "step": {
+        "id": "translate",
+        "stage": "translate",
+        "label_key": "step.translate.name",
+        "description_key": "step.translate.description",
+        "example_key": "step.translate.example"
+      },
+      "download_bytes": 35127290,
+      "installed_bytes": 35127290,
+      "quality": {
+        "value": 0.441,
+        "source": "chrF 0.441 on 200 FLEURS pairs (translate_en_be); quality not measured by the vendor"
+      },
+      "latency_ms": 25,
+      "latency_class": "fast",
+      "hardware": {
+        "arch": [
+          "amd64"
+        ],
+        "min_ram_mb": 512
+      },
+      "locales": [
+        "en"
+      ],
+      "curated": true,
+      "license": "MPL-2.0",
+      "attribution": "Mozilla and contributors, Firefox Translations (version 2.0)",
+      "source": "https://github.com/mozilla/firefox-translations-models",
+      "files": [
+        {
+          "name": "model.enbe.intgemm.alphas.bin",
+          "sha256": "88fb3a6e2cc4b936313596eef445a548e63e1ca3ef0dfa54b88229c3ce877116",
+          "bytes": 31561787,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/20261006203645--d9266c59-4798-4467-8e1a-5bbaf1dfd19f--38c8924c-7e2a-4380-9b9f-45e273bbeca9.bin"
+        },
+        {
+          "name": "lex.50.50.enbe.s2t.bin",
+          "sha256": "992bd4fe0c88dc5693515c5e872459c32bc43329db775d3d3349d480449354ec",
+          "bytes": 2623776,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/20261006203648--848334d8-90a9-4ced-8c16-03aac68eb98b--202cf9cb-6ee2-4d35-a1f2-967fe5040b04.bin"
+        },
+        {
+          "name": "vocab.enbe.spm",
+          "sha256": "19981e67e5359fef1cd6c08a868a42c17b010f1c62bfbf48037d7be55c0e2756",
+          "bytes": 941727,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/20261006203634--4259fe38-2bdc-4536-a0f3-af21b4085269--1c83e2a1-85ce-4b77-84c7-65038de47c63.spm"
+        }
+      ]
+    },
+    {
+      "id": "model-translate-en-bg",
+      "snap": "myna-translation",
+      "component": "model-translate-en-bg",
+      "model": "bergamot-base-memory-en-bg",
+      "contract": 2,
+      "entry_revision": 1,
+      "task": "text.translate",
+      "class": "translate",
+      "needs": "dictation",
+      "params": [
+        {
+          "name": "language",
+          "kind": "language",
+          "role": "source",
+          "required": true
+        },
+        {
+          "name": "to",
+          "kind": "language",
+          "role": "target",
+          "required": true
+        }
+      ],
+      "covers": {
+        "language": "en",
+        "to": "bg"
+      },
+      "in_lang": "en",
+      "out_lang": "bg",
+      "step": {
+        "id": "translate",
+        "stage": "translate",
+        "label_key": "step.translate.name",
+        "description_key": "step.translate.description",
+        "example_key": "step.translate.example"
+      },
+      "download_bytes": 35560217,
+      "installed_bytes": 35560217,
+      "quality": {
+        "value": 0.686,
+        "source": "chrF 0.686 on 200 FLEURS pairs (translate_en_bg); vendor FLORES COMET 0.8996"
+      },
+      "latency_ms": 20,
+      "latency_class": "fast",
+      "hardware": {
+        "arch": [
+          "amd64"
+        ],
+        "min_ram_mb": 512
+      },
+      "locales": [
+        "en"
+      ],
+      "curated": true,
+      "license": "MPL-2.0",
+      "attribution": "Mozilla and contributors, Firefox Translations (base-memory 2.0)",
+      "source": "https://github.com/mozilla/firefox-translations-models",
+      "files": [
+        {
+          "name": "model.enbg.intgemm.alphas.bin",
+          "sha256": "e2b30db98ac6706efc893067a74e51f36f015a8f820fe8a4f0f5052fa6a22f30",
+          "bytes": 31561787,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/d6370002-bed8-4add-bf86-50f1ab67e6d6.bin"
+        },
+        {
+          "name": "lex.50.50.enbg.s2t.bin",
+          "sha256": "93d4ca4412db269cc4164cbfa04c08edd0f65690c8264d6215a0522d4a13ec1a",
+          "bytes": 3075948,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/934075f0-9235-4921-964c-3de9d19d904b.bin"
+        },
+        {
+          "name": "vocab.enbg.spm",
+          "sha256": "4bafad5fcc0e771ed82233d1e99d69dcb96487b430702f7e688615c8a61f3df4",
+          "bytes": 922482,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/a8ce512a-c98e-4ec3-83f4-10b1b91c75c2.spm"
         }
       ]
     },
@@ -1109,6 +1425,164 @@
       ]
     },
     {
+      "id": "model-translate-en-bs",
+      "snap": "myna-translation",
+      "component": "model-translate-en-bs",
+      "model": "bergamot-mozilla-en-bs",
+      "contract": 2,
+      "entry_revision": 1,
+      "task": "text.translate",
+      "class": "translate",
+      "needs": "dictation",
+      "params": [
+        {
+          "name": "language",
+          "kind": "language",
+          "role": "source",
+          "required": true
+        },
+        {
+          "name": "to",
+          "kind": "language",
+          "role": "target",
+          "required": true
+        }
+      ],
+      "covers": {
+        "language": "en",
+        "to": "bs"
+      },
+      "in_lang": "en",
+      "out_lang": "bs",
+      "step": {
+        "id": "translate",
+        "stage": "translate",
+        "label_key": "step.translate.name",
+        "description_key": "step.translate.description",
+        "example_key": "step.translate.example"
+      },
+      "download_bytes": 35599859,
+      "installed_bytes": 35599859,
+      "quality": {
+        "value": 0.612,
+        "source": "chrF 0.612 on 200 FLEURS pairs (translate_en_bs); quality not measured by the vendor"
+      },
+      "latency_ms": 20,
+      "latency_class": "fast",
+      "hardware": {
+        "arch": [
+          "amd64"
+        ],
+        "min_ram_mb": 512
+      },
+      "locales": [
+        "en"
+      ],
+      "curated": true,
+      "license": "MPL-2.0",
+      "attribution": "Mozilla and contributors, Firefox Translations (version 2.0)",
+      "source": "https://github.com/mozilla/firefox-translations-models",
+      "files": [
+        {
+          "name": "model.enbs.intgemm.alphas.bin",
+          "sha256": "27575113fffad6c45a0bad36bd1823c4f319ed30f65ec134815b67bdae0d9f8d",
+          "bytes": 31561787,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/20260522192526--41a84edd-7e70-4a36-ba50-0f544acfb51d--f2daa80a-0ee1-4e4e-956f-f89b512c8e2a.bin"
+        },
+        {
+          "name": "lex.50.50.enbs.s2t.bin",
+          "sha256": "6847523f4d5df9425cda606e73f404c07e19452dac7659bdcc92743c46cba3c0",
+          "bytes": 3214628,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/20260522192529--bc21738d-bea2-4e66-bc44-e61cdf5e396d--0682af00-d069-4865-a5fc-e4871dec96b6.bin"
+        },
+        {
+          "name": "vocab.enbs.spm",
+          "sha256": "dfed9c3e08e85a22feac7748a20fa981dca94f358115af2f45d704b9cc944cc8",
+          "bytes": 823444,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/20260522192531--fa88b6e0-55a7-4b12-b71e-5c1c6f29d23a--c3539411-be49-4b90-a2ac-79db102c8bc0.spm"
+        }
+      ]
+    },
+    {
+      "id": "model-translate-en-ca",
+      "snap": "myna-translation",
+      "component": "model-translate-en-ca",
+      "model": "bergamot-base-memory-en-ca",
+      "contract": 2,
+      "entry_revision": 1,
+      "task": "text.translate",
+      "class": "translate",
+      "needs": "dictation",
+      "params": [
+        {
+          "name": "language",
+          "kind": "language",
+          "role": "source",
+          "required": true
+        },
+        {
+          "name": "to",
+          "kind": "language",
+          "role": "target",
+          "required": true
+        }
+      ],
+      "covers": {
+        "language": "en",
+        "to": "ca"
+      },
+      "in_lang": "en",
+      "out_lang": "ca",
+      "step": {
+        "id": "translate",
+        "stage": "translate",
+        "label_key": "step.translate.name",
+        "description_key": "step.translate.description",
+        "example_key": "step.translate.example"
+      },
+      "download_bytes": 36716532,
+      "installed_bytes": 36716532,
+      "quality": {
+        "value": 0.674,
+        "source": "chrF 0.674 on 200 FLEURS pairs (translate_en_ca); vendor FLORES COMET 0.8695"
+      },
+      "latency_ms": 20,
+      "latency_class": "fast",
+      "hardware": {
+        "arch": [
+          "amd64"
+        ],
+        "min_ram_mb": 512
+      },
+      "locales": [
+        "en"
+      ],
+      "curated": true,
+      "license": "MPL-2.0",
+      "attribution": "Mozilla and contributors, Firefox Translations (base-memory 2.0)",
+      "source": "https://github.com/mozilla/firefox-translations-models",
+      "files": [
+        {
+          "name": "model.enca.intgemm.alphas.bin",
+          "sha256": "735881c99ff303e55eb2e92a3b86762523d5dd1a4797b2574b851062051426ee",
+          "bytes": 31561787,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/deeec29e-faaa-4273-bef6-2827edf193f6.bin"
+        },
+        {
+          "name": "lex.50.50.enca.s2t.bin",
+          "sha256": "8f2151a7fb75454f5167a8df8758ec02ab02c0302893851bad7caa6b729822fb",
+          "bytes": 4344092,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/d2065bc0-e4bf-4810-a0cf-a0cd1163b3c0.bin"
+        },
+        {
+          "name": "vocab.enca.spm",
+          "sha256": "64ebcb5f6cb5a954ced615e48a44a85e77a644e4910544014b299b8ee0fa1b1f",
+          "bytes": 810653,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/6f3f4782-5c23-4f61-bcd5-3234441c59e6.spm"
+        }
+      ]
+    },
+    {
       "id": "model-translate-en-cs",
       "snap": "myna-translation",
       "component": "model-translate-en-cs",
@@ -1184,6 +1658,85 @@
           "sha256": "ee4b8ce15c8e1237c5f7a2d04741341beb0a5d5c09820f7ec08f13ee2b212755",
           "bytes": 815154,
           "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/008ef5e3-4ba0-4d97-9dd6-5898c7348e28.spm"
+        }
+      ]
+    },
+    {
+      "id": "model-translate-en-da",
+      "snap": "myna-translation",
+      "component": "model-translate-en-da",
+      "model": "bergamot-tiny-en-da",
+      "contract": 2,
+      "entry_revision": 1,
+      "task": "text.translate",
+      "class": "translate",
+      "needs": "dictation",
+      "params": [
+        {
+          "name": "language",
+          "kind": "language",
+          "role": "source",
+          "required": true
+        },
+        {
+          "name": "to",
+          "kind": "language",
+          "role": "target",
+          "required": true
+        }
+      ],
+      "covers": {
+        "language": "en",
+        "to": "da"
+      },
+      "in_lang": "en",
+      "out_lang": "da",
+      "step": {
+        "id": "translate",
+        "stage": "translate",
+        "label_key": "step.translate.name",
+        "description_key": "step.translate.description",
+        "example_key": "step.translate.example"
+      },
+      "download_bytes": 21801188,
+      "installed_bytes": 21801188,
+      "quality": {
+        "value": 0.671,
+        "source": "chrF 0.671 on 200 FLEURS pairs (translate_en_da); vendor FLORES COMET 0.8881"
+      },
+      "latency_ms": 10,
+      "latency_class": "fast",
+      "hardware": {
+        "arch": [
+          "amd64"
+        ],
+        "min_ram_mb": 512
+      },
+      "locales": [
+        "en"
+      ],
+      "curated": true,
+      "license": "MPL-2.0",
+      "attribution": "Mozilla and contributors, Firefox Translations (tiny 1.0)",
+      "source": "https://github.com/mozilla/firefox-translations-models",
+      "files": [
+        {
+          "name": "model.enda.intgemm.alphas.bin",
+          "sha256": "0157ed1162dd5a7a0fc6a3cc86014ec21cb47a8febf77164df24d8921270bb29",
+          "bytes": 17141051,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/b832f3bb-5961-4c78-93de-509b9c750abe.bin"
+        },
+        {
+          "name": "lex.50.50.enda.s2t.bin",
+          "sha256": "d183786cae59a5df06d5b00c58e3ec2a5791d302240a65540fc6a1da2b66eada",
+          "bytes": 3864788,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/3ef0b3ec-7989-47b3-affb-7098159745a0.bin"
+        },
+        {
+          "name": "vocab.enda.spm",
+          "sha256": "b06349522bf053e4a6f01efc4d1450e4fe35717a938a82831988c087229c9619",
+          "bytes": 795349,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/8dbcff2f-5e41-4163-adc5-5e5caea9b675.spm"
         }
       ]
     },
@@ -1425,6 +1978,164 @@
       ]
     },
     {
+      "id": "model-translate-en-et",
+      "snap": "myna-translation",
+      "component": "model-translate-en-et",
+      "model": "bergamot-base-memory-en-et",
+      "contract": 2,
+      "entry_revision": 1,
+      "task": "text.translate",
+      "class": "translate",
+      "needs": "dictation",
+      "params": [
+        {
+          "name": "language",
+          "kind": "language",
+          "role": "source",
+          "required": true
+        },
+        {
+          "name": "to",
+          "kind": "language",
+          "role": "target",
+          "required": true
+        }
+      ],
+      "covers": {
+        "language": "en",
+        "to": "et"
+      },
+      "in_lang": "en",
+      "out_lang": "et",
+      "step": {
+        "id": "translate",
+        "stage": "translate",
+        "label_key": "step.translate.name",
+        "description_key": "step.translate.description",
+        "example_key": "step.translate.example"
+      },
+      "download_bytes": 35867729,
+      "installed_bytes": 35867729,
+      "quality": {
+        "value": 0.624,
+        "source": "chrF 0.624 on 200 FLEURS pairs (translate_en_et); vendor FLORES COMET 0.9028"
+      },
+      "latency_ms": 20,
+      "latency_class": "fast",
+      "hardware": {
+        "arch": [
+          "amd64"
+        ],
+        "min_ram_mb": 512
+      },
+      "locales": [
+        "en"
+      ],
+      "curated": true,
+      "license": "MPL-2.0",
+      "attribution": "Mozilla and contributors, Firefox Translations (base-memory 2.0)",
+      "source": "https://github.com/mozilla/firefox-translations-models",
+      "files": [
+        {
+          "name": "model.enet.intgemm.alphas.bin",
+          "sha256": "36bdc87f8d500861a5d286ebd3ea58df530da87e31b8a233f5e9c46c300c281d",
+          "bytes": 31561787,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/4c2378de-a52b-4773-9f1a-73ca396520e1.bin"
+        },
+        {
+          "name": "lex.50.50.enet.s2t.bin",
+          "sha256": "259c60582f49449c226a6e5a369481c68322013f367e459e54c595686c05d4d8",
+          "bytes": 3488368,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/074d0851-cd04-4494-8037-ac14bab5663c.bin"
+        },
+        {
+          "name": "vocab.enet.spm",
+          "sha256": "89a3deea4ae7d674fb46a4dae39135dd4dfaac9786f2868d0b5bc5c0aca2ef83",
+          "bytes": 817574,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/957b94c4-d106-40b7-b4e2-176f2a923d32.spm"
+        }
+      ]
+    },
+    {
+      "id": "model-translate-en-eu",
+      "snap": "myna-translation",
+      "component": "model-translate-en-eu",
+      "model": "bergamot-mozilla-en-eu",
+      "contract": 2,
+      "entry_revision": 1,
+      "task": "text.translate",
+      "class": "translate",
+      "needs": "dictation",
+      "params": [
+        {
+          "name": "language",
+          "kind": "language",
+          "role": "source",
+          "required": true
+        },
+        {
+          "name": "to",
+          "kind": "language",
+          "role": "target",
+          "required": true
+        }
+      ],
+      "covers": {
+        "language": "en",
+        "to": "eu"
+      },
+      "in_lang": "en",
+      "out_lang": "eu",
+      "step": {
+        "id": "translate",
+        "stage": "translate",
+        "label_key": "step.translate.name",
+        "description_key": "step.translate.description",
+        "example_key": "step.translate.example"
+      },
+      "download_bytes": 35532187,
+      "installed_bytes": 35532187,
+      "quality": {
+        "value": 0.0,
+        "source": "not measured: no FLEURS slice for eu; served 200 English sentences; quality not measured by the vendor"
+      },
+      "latency_ms": 20,
+      "latency_class": "fast",
+      "hardware": {
+        "arch": [
+          "amd64"
+        ],
+        "min_ram_mb": 512
+      },
+      "locales": [
+        "en"
+      ],
+      "curated": true,
+      "license": "MPL-2.0",
+      "attribution": "Mozilla and contributors, Firefox Translations (version 2.0)",
+      "source": "https://github.com/mozilla/firefox-translations-models",
+      "files": [
+        {
+          "name": "model.eneu.intgemm.alphas.bin",
+          "sha256": "f28d03817b718806c9262e3d76960efb8cbd04d0721307c8e23edcae9364150a",
+          "bytes": 31561787,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/20260522192556--eab96ef5-5666-40b0-a384-68f0a8f364e2--31f6154b-707f-430a-9cfe-0084c1b6ad99.bin"
+        },
+        {
+          "name": "lex.50.50.eneu.s2t.bin",
+          "sha256": "a6a856a89acc6bbf970b6c5e51fe705bee6fe2b8007a3c31ae54ca2c6fd69aad",
+          "bytes": 3149580,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/20260522192543--c0d951c2-820d-42f1-9654-cd6318e04e81--c53edb46-65e3-4743-8dd0-987508c9b0d8.bin"
+        },
+        {
+          "name": "vocab.eneu.spm",
+          "sha256": "d0cbd7a04e20c3a45bcf29260967db26a97c4787c03a9d867df0465bc104cec2",
+          "bytes": 820820,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/20260522192546--5f7809e6-5fdf-4f00-8540-6bf4060a8340--06a3091e-196c-429c-86a9-1f2151e9164e.spm"
+        }
+      ]
+    },
+    {
       "id": "model-translate-en-fa",
       "snap": "myna-translation",
       "component": "model-translate-en-fa",
@@ -1500,6 +2211,85 @@
           "sha256": "6435d3d9d766159fe192ab90892540b438ad7adb7ab4ea4049f68d0b4cdea3bd",
           "bytes": 843133,
           "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/203a10f4-6885-49c2-89e3-e7a4f3e3e738.spm"
+        }
+      ]
+    },
+    {
+      "id": "model-translate-en-fi",
+      "snap": "myna-translation",
+      "component": "model-translate-en-fi",
+      "model": "bergamot-base-memory-en-fi",
+      "contract": 2,
+      "entry_revision": 1,
+      "task": "text.translate",
+      "class": "translate",
+      "needs": "dictation",
+      "params": [
+        {
+          "name": "language",
+          "kind": "language",
+          "role": "source",
+          "required": true
+        },
+        {
+          "name": "to",
+          "kind": "language",
+          "role": "target",
+          "required": true
+        }
+      ],
+      "covers": {
+        "language": "en",
+        "to": "fi"
+      },
+      "in_lang": "en",
+      "out_lang": "fi",
+      "step": {
+        "id": "translate",
+        "stage": "translate",
+        "label_key": "step.translate.name",
+        "description_key": "step.translate.description",
+        "example_key": "step.translate.example"
+      },
+      "download_bytes": 35870649,
+      "installed_bytes": 35870649,
+      "quality": {
+        "value": 0.61,
+        "source": "chrF 0.610 on 200 FLEURS pairs (translate_en_fi); vendor FLORES COMET 0.9087"
+      },
+      "latency_ms": 20,
+      "latency_class": "fast",
+      "hardware": {
+        "arch": [
+          "amd64"
+        ],
+        "min_ram_mb": 512
+      },
+      "locales": [
+        "en"
+      ],
+      "curated": true,
+      "license": "MPL-2.0",
+      "attribution": "Mozilla and contributors, Firefox Translations (base-memory 2.0)",
+      "source": "https://github.com/mozilla/firefox-translations-models",
+      "files": [
+        {
+          "name": "model.enfi.intgemm.alphas.bin",
+          "sha256": "88b0caa4cc6980d632801cb2b1950748f1dc43ad2ac83678917ad86c720b5cdd",
+          "bytes": 31561787,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/b23aac5b-1f93-407d-be1a-aff19bcd86b4.bin"
+        },
+        {
+          "name": "lex.50.50.enfi.s2t.bin",
+          "sha256": "26e95a87f87e4b0fa9a35524cf9fea691204504453877ba4ac81ccc66af1488c",
+          "bytes": 3490092,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/a32029c0-5216-49a3-ba89-8f48c29e7188.bin"
+        },
+        {
+          "name": "vocab.enfi.spm",
+          "sha256": "6a866911427f2916609ae89c7f2f04a78de3fdd8aa183039ecba986635d4f246",
+          "bytes": 818770,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/f98de766-1b61-4245-83f3-0d300232ebe4.spm"
         }
       ]
     },
@@ -1583,6 +2373,243 @@
       ]
     },
     {
+      "id": "model-translate-en-gl",
+      "snap": "myna-translation",
+      "component": "model-translate-en-gl",
+      "model": "bergamot-mozilla-en-gl",
+      "contract": 2,
+      "entry_revision": 1,
+      "task": "text.translate",
+      "class": "translate",
+      "needs": "dictation",
+      "params": [
+        {
+          "name": "language",
+          "kind": "language",
+          "role": "source",
+          "required": true
+        },
+        {
+          "name": "to",
+          "kind": "language",
+          "role": "target",
+          "required": true
+        }
+      ],
+      "covers": {
+        "language": "en",
+        "to": "gl"
+      },
+      "in_lang": "en",
+      "out_lang": "gl",
+      "step": {
+        "id": "translate",
+        "stage": "translate",
+        "label_key": "step.translate.name",
+        "description_key": "step.translate.description",
+        "example_key": "step.translate.example"
+      },
+      "download_bytes": 35396493,
+      "installed_bytes": 35396493,
+      "quality": {
+        "value": 0.0,
+        "source": "not measured: no FLEURS slice for gl; served 200 English sentences; quality not measured by the vendor"
+      },
+      "latency_ms": 20,
+      "latency_class": "fast",
+      "hardware": {
+        "arch": [
+          "amd64"
+        ],
+        "min_ram_mb": 512
+      },
+      "locales": [
+        "en"
+      ],
+      "curated": true,
+      "license": "MPL-2.0",
+      "attribution": "Mozilla and contributors, Firefox Translations (version 2.1)",
+      "source": "https://github.com/mozilla/firefox-translations-models",
+      "files": [
+        {
+          "name": "model.engl.intgemm.alphas.bin",
+          "sha256": "bec08e5408932c3813ccfb565ab7003d334dd6ca148c9d2bd074e17b8c0be1b1",
+          "bytes": 31561787,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/20260603153845--3408c3e9-a4a9-4eb6-b791-e8bb0dde1d51--9d656b6e-0c5e-43a7-8cc3-367c0befe133.bin"
+        },
+        {
+          "name": "lex.50.50.engl.s2t.bin",
+          "sha256": "28621d3797a945ca0112c872640686586e77957b5421b0ef95886806b09d8874",
+          "bytes": 3007680,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/20260603153847--5503a4ee-15d9-4cc0-ab84-33de89e97ab1--910f6134-7bea-4a7e-beab-00bc391e7ebd.bin"
+        },
+        {
+          "name": "vocab.engl.spm",
+          "sha256": "da044600f961c4c977e747cc9fb8afd4c05829629033d344a575a93807ea1cba",
+          "bytes": 827026,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/20260603153833--30d1a7a7-1b42-43a2-8df8-0accf391ff1b--88306c26-9356-4156-827b-4efd76343d52.spm"
+        }
+      ]
+    },
+    {
+      "id": "model-translate-en-gu",
+      "snap": "myna-translation",
+      "component": "model-translate-en-gu",
+      "model": "bergamot-tiny-en-gu",
+      "contract": 2,
+      "entry_revision": 1,
+      "task": "text.translate",
+      "class": "translate",
+      "needs": "dictation",
+      "params": [
+        {
+          "name": "language",
+          "kind": "language",
+          "role": "source",
+          "required": true
+        },
+        {
+          "name": "to",
+          "kind": "language",
+          "role": "target",
+          "required": true
+        }
+      ],
+      "covers": {
+        "language": "en",
+        "to": "gu"
+      },
+      "in_lang": "en",
+      "out_lang": "gu",
+      "step": {
+        "id": "translate",
+        "stage": "translate",
+        "label_key": "step.translate.name",
+        "description_key": "step.translate.description",
+        "example_key": "step.translate.example"
+      },
+      "download_bytes": 21285646,
+      "installed_bytes": 21285646,
+      "quality": {
+        "value": 0.55,
+        "source": "chrF 0.550 on 200 FLEURS pairs (translate_en_gu); vendor FLORES COMET 0.8621"
+      },
+      "latency_ms": 10,
+      "latency_class": "fast",
+      "hardware": {
+        "arch": [
+          "amd64"
+        ],
+        "min_ram_mb": 512
+      },
+      "locales": [
+        "en"
+      ],
+      "curated": true,
+      "license": "MPL-2.0",
+      "attribution": "Mozilla and contributors, Firefox Translations (tiny 1.0)",
+      "source": "https://github.com/mozilla/firefox-translations-models",
+      "files": [
+        {
+          "name": "model.engu.intgemm.alphas.bin",
+          "sha256": "0f2c8bc7f13ecb9b89459e8fd9af6d8736e0f6b1c8f8a80f747fcdc030d0a588",
+          "bytes": 17141051,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/a2576987-0797-4a60-a266-5f155d067135.bin"
+        },
+        {
+          "name": "lex.50.50.engu.s2t.bin",
+          "sha256": "5699d5f0f6265766c57e8e860596091d16a7ea68e9e181a3310b8b52d79f8b5e",
+          "bytes": 3179500,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/5b0e3636-9bdd-4997-9a67-7eb67308e22d.bin"
+        },
+        {
+          "name": "vocab.engu.spm",
+          "sha256": "74ce11b041bfc527eedded78594498419c781c81a3fcb3384a3485af70cc2325",
+          "bytes": 965095,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/1aca3a35-aa44-4893-a1da-355b5a4108bf.spm"
+        }
+      ]
+    },
+    {
+      "id": "model-translate-en-he",
+      "snap": "myna-translation",
+      "component": "model-translate-en-he",
+      "model": "bergamot-tiny-en-he",
+      "contract": 2,
+      "entry_revision": 1,
+      "task": "text.translate",
+      "class": "translate",
+      "needs": "dictation",
+      "params": [
+        {
+          "name": "language",
+          "kind": "language",
+          "role": "source",
+          "required": true
+        },
+        {
+          "name": "to",
+          "kind": "language",
+          "role": "target",
+          "required": true
+        }
+      ],
+      "covers": {
+        "language": "en",
+        "to": "he"
+      },
+      "in_lang": "en",
+      "out_lang": "he",
+      "step": {
+        "id": "translate",
+        "stage": "translate",
+        "label_key": "step.translate.name",
+        "description_key": "step.translate.description",
+        "example_key": "step.translate.example"
+      },
+      "download_bytes": 21052116,
+      "installed_bytes": 21052116,
+      "quality": {
+        "value": 0.62,
+        "source": "chrF 0.620 on 200 FLEURS pairs (translate_en_he); vendor FLORES COMET 0.8673"
+      },
+      "latency_ms": 10,
+      "latency_class": "fast",
+      "hardware": {
+        "arch": [
+          "amd64"
+        ],
+        "min_ram_mb": 512
+      },
+      "locales": [
+        "en"
+      ],
+      "curated": true,
+      "license": "MPL-2.0",
+      "attribution": "Mozilla and contributors, Firefox Translations (tiny 1.0)",
+      "source": "https://github.com/mozilla/firefox-translations-models",
+      "files": [
+        {
+          "name": "model.enhe.intgemm.alphas.bin",
+          "sha256": "e37ac6e6f131704c85deb94a657aa20afbb44db2879f44aec9c33a34f4467587",
+          "bytes": 17141051,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/507ad0e2-1a10-419f-867c-04bb09c4566b.bin"
+        },
+        {
+          "name": "lex.50.50.enhe.s2t.bin",
+          "sha256": "8795f4c5e19b4a196c9ed394c275a28a09e5ddbbf47ae16faa4446bf2b8bc7d9",
+          "bytes": 3066048,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/31eb1832-fdd0-41f2-91f6-355866dd4232.bin"
+        },
+        {
+          "name": "vocab.enhe.spm",
+          "sha256": "672b334afa84011200fdaee02c2fc7810910c35ae9ea7619be073c851703ce9e",
+          "bytes": 845017,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/bf209be5-23fb-476e-91dc-ad902de664a1.spm"
+        }
+      ]
+    },
+    {
       "id": "model-translate-en-hi",
       "snap": "myna-translation",
       "component": "model-translate-en-hi",
@@ -1658,6 +2685,322 @@
           "sha256": "8017cbf812bae400794c424699b89de90db06ac7a4ca67a420013a9f68b270c1",
           "bytes": 925360,
           "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/5d4cb145-1f61-4913-973f-d7643c06b917.spm"
+        }
+      ]
+    },
+    {
+      "id": "model-translate-en-hr",
+      "snap": "myna-translation",
+      "component": "model-translate-en-hr",
+      "model": "bergamot-tiny-en-hr",
+      "contract": 2,
+      "entry_revision": 1,
+      "task": "text.translate",
+      "class": "translate",
+      "needs": "dictation",
+      "params": [
+        {
+          "name": "language",
+          "kind": "language",
+          "role": "source",
+          "required": true
+        },
+        {
+          "name": "to",
+          "kind": "language",
+          "role": "target",
+          "required": true
+        }
+      ],
+      "covers": {
+        "language": "en",
+        "to": "hr"
+      },
+      "in_lang": "en",
+      "out_lang": "hr",
+      "step": {
+        "id": "translate",
+        "stage": "translate",
+        "label_key": "step.translate.name",
+        "description_key": "step.translate.description",
+        "example_key": "step.translate.example"
+      },
+      "download_bytes": 21257882,
+      "installed_bytes": 21257882,
+      "quality": {
+        "value": 0.58,
+        "source": "chrF 0.580 on 200 FLEURS pairs (translate_en_hr); vendor FLORES COMET 0.8777"
+      },
+      "latency_ms": 15,
+      "latency_class": "fast",
+      "hardware": {
+        "arch": [
+          "amd64"
+        ],
+        "min_ram_mb": 512
+      },
+      "locales": [
+        "en"
+      ],
+      "curated": true,
+      "license": "MPL-2.0",
+      "attribution": "Mozilla and contributors, Firefox Translations (tiny 1.0)",
+      "source": "https://github.com/mozilla/firefox-translations-models",
+      "files": [
+        {
+          "name": "model.enhr.intgemm.alphas.bin",
+          "sha256": "29ba32235778da3e38cfeb0d7f36eaf8dc37c961ff8651d86f7cae7e29e97d88",
+          "bytes": 17141051,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/08947d77-90d5-40ef-a896-560e7cf3c0c7.bin"
+        },
+        {
+          "name": "lex.50.50.enhr.s2t.bin",
+          "sha256": "b811d67aca11e12e6bd956c1b4a1e74c6162d71e9ac259bfff415fbb90c3f666",
+          "bytes": 3319896,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/9d7acc73-dba2-4d5e-9e6b-3b58a6ef6a27.bin"
+        },
+        {
+          "name": "vocab.enhr.spm",
+          "sha256": "7b75fe5ee12743c787a393489d8810adc3ca6cefe0142e8993227dd125d224b3",
+          "bytes": 796935,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/15b77cc4-84ff-47c2-b54c-6075910ef1ce.spm"
+        }
+      ]
+    },
+    {
+      "id": "model-translate-en-hu",
+      "snap": "myna-translation",
+      "component": "model-translate-en-hu",
+      "model": "bergamot-mozilla-en-hu",
+      "contract": 2,
+      "entry_revision": 1,
+      "task": "text.translate",
+      "class": "translate",
+      "needs": "dictation",
+      "params": [
+        {
+          "name": "language",
+          "kind": "language",
+          "role": "source",
+          "required": true
+        },
+        {
+          "name": "to",
+          "kind": "language",
+          "role": "target",
+          "required": true
+        }
+      ],
+      "covers": {
+        "language": "en",
+        "to": "hu"
+      },
+      "in_lang": "en",
+      "out_lang": "hu",
+      "step": {
+        "id": "translate",
+        "stage": "translate",
+        "label_key": "step.translate.name",
+        "description_key": "step.translate.description",
+        "example_key": "step.translate.example"
+      },
+      "download_bytes": 35813666,
+      "installed_bytes": 35813666,
+      "quality": {
+        "value": 0.601,
+        "source": "chrF 0.601 on 200 FLEURS pairs (translate_en_hu); quality not measured by the vendor"
+      },
+      "latency_ms": 25,
+      "latency_class": "fast",
+      "hardware": {
+        "arch": [
+          "amd64"
+        ],
+        "min_ram_mb": 512
+      },
+      "locales": [
+        "en"
+      ],
+      "curated": true,
+      "license": "MPL-2.0",
+      "attribution": "Mozilla and contributors, Firefox Translations (version 2.1)",
+      "source": "https://github.com/mozilla/firefox-translations-models",
+      "files": [
+        {
+          "name": "model.enhu.intgemm.alphas.bin",
+          "sha256": "0c42f56edca74b3f732a74c64553c47d0005b50cf095f43024601985fab5d461",
+          "bytes": 31561787,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/20260831143551--daed5bc9-2f4d-42c9-9762-4fbedec7ca80--a6957748-3ebd-4d43-82c0-ab7e7ad3e67d.bin"
+        },
+        {
+          "name": "lex.50.50.enhu.s2t.bin",
+          "sha256": "b1c9763567bfa24082fee43a9c4cc05b8ceada949fa52f6686b11f70ce481238",
+          "bytes": 3419024,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/20260831143554--213b291c-d628-4fed-a285-0331287508ef--ed861d94-a183-4994-9db7-32eb890e797d.bin"
+        },
+        {
+          "name": "vocab.enhu.spm",
+          "sha256": "8c3038afc15c5a3f7bb3c6fc4c4962907632b6f6d0ce7444974504bef19ef57b",
+          "bytes": 832855,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/20260831143546--2ab0221b-e8b4-4784-a6bd-ee4ae4344c35--d6f29656-f614-49c1-ad8d-75076a588832.spm"
+        }
+      ]
+    },
+    {
+      "id": "model-translate-en-id",
+      "snap": "myna-translation",
+      "component": "model-translate-en-id",
+      "model": "bergamot-tiny-en-id",
+      "contract": 2,
+      "entry_revision": 1,
+      "task": "text.translate",
+      "class": "translate",
+      "needs": "dictation",
+      "params": [
+        {
+          "name": "language",
+          "kind": "language",
+          "role": "source",
+          "required": true
+        },
+        {
+          "name": "to",
+          "kind": "language",
+          "role": "target",
+          "required": true
+        }
+      ],
+      "covers": {
+        "language": "en",
+        "to": "id"
+      },
+      "in_lang": "en",
+      "out_lang": "id",
+      "step": {
+        "id": "translate",
+        "stage": "translate",
+        "label_key": "step.translate.name",
+        "description_key": "step.translate.description",
+        "example_key": "step.translate.example"
+      },
+      "download_bytes": 21429690,
+      "installed_bytes": 21429690,
+      "quality": {
+        "value": 0.691,
+        "source": "chrF 0.691 on 200 FLEURS pairs (translate_en_id); vendor FLORES COMET 0.9023"
+      },
+      "latency_ms": 10,
+      "latency_class": "fast",
+      "hardware": {
+        "arch": [
+          "amd64"
+        ],
+        "min_ram_mb": 512
+      },
+      "locales": [
+        "en"
+      ],
+      "curated": true,
+      "license": "MPL-2.0",
+      "attribution": "Mozilla and contributors, Firefox Translations (tiny 1.0)",
+      "source": "https://github.com/mozilla/firefox-translations-models",
+      "files": [
+        {
+          "name": "model.enid.intgemm.alphas.bin",
+          "sha256": "f81f13eef703a4e0650ffc3138a0f4bab7b6c8bfd173ef1b7bda68d16b8bc7e8",
+          "bytes": 17141051,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/0d494914-73de-49af-804a-a4bd443f0554.bin"
+        },
+        {
+          "name": "lex.50.50.enid.s2t.bin",
+          "sha256": "d37f72bcab6e7bc52fd223350f95521b5810bb2486a97275f86077988fced3f4",
+          "bytes": 3515428,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/a9610c56-2593-4513-b4ac-954276327788.bin"
+        },
+        {
+          "name": "vocab.enid.spm",
+          "sha256": "61bc7db24d3b6de638a02a280580a273fe0c942ecbe8a8204b2f81978211db22",
+          "bytes": 773211,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/6c49d51b-167b-4bdc-aab8-2abe32105529.spm"
+        }
+      ]
+    },
+    {
+      "id": "model-translate-en-is",
+      "snap": "myna-translation",
+      "component": "model-translate-en-is",
+      "model": "bergamot-base-memory-en-is",
+      "contract": 2,
+      "entry_revision": 1,
+      "task": "text.translate",
+      "class": "translate",
+      "needs": "dictation",
+      "params": [
+        {
+          "name": "language",
+          "kind": "language",
+          "role": "source",
+          "required": true
+        },
+        {
+          "name": "to",
+          "kind": "language",
+          "role": "target",
+          "required": true
+        }
+      ],
+      "covers": {
+        "language": "en",
+        "to": "is"
+      },
+      "in_lang": "en",
+      "out_lang": "is",
+      "step": {
+        "id": "translate",
+        "stage": "translate",
+        "label_key": "step.translate.name",
+        "description_key": "step.translate.description",
+        "example_key": "step.translate.example"
+      },
+      "download_bytes": 36209342,
+      "installed_bytes": 36209342,
+      "quality": {
+        "value": 0.838,
+        "source": "not measured: no FLEURS slice for is; served 200 English sentences; vendor FLORES COMET 0.8382"
+      },
+      "latency_ms": 20,
+      "latency_class": "fast",
+      "hardware": {
+        "arch": [
+          "amd64"
+        ],
+        "min_ram_mb": 512
+      },
+      "locales": [
+        "en"
+      ],
+      "curated": true,
+      "license": "MPL-2.0",
+      "attribution": "Mozilla and contributors, Firefox Translations (base-memory 2.0)",
+      "source": "https://github.com/mozilla/firefox-translations-models",
+      "files": [
+        {
+          "name": "model.enis.intgemm.alphas.bin",
+          "sha256": "459626236a49158aa555facd23e5f594e2f8416f4ebad32e0548af94c5b1ae0c",
+          "bytes": 31561787,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/6fc94b8f-3dfd-4c2c-8d11-df3d07e0cfba.bin"
+        },
+        {
+          "name": "lex.50.50.enis.s2t.bin",
+          "sha256": "4927d2bed702141b4ddd8a5e7034b27fb17312fdb7e3cc5f455ccf2e2f6670e0",
+          "bytes": 3837564,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/f166d353-90b1-4ae7-adc7-c4fdc44744a5.bin"
+        },
+        {
+          "name": "vocab.enis.spm",
+          "sha256": "61b2ea10edbe4cc61e36c833cacc2f55778ed9ca860cd382729060634d4b0adb",
+          "bytes": 809991,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/8e36da15-fa26-4ae3-a661-e6f5f92e8ff4.spm"
         }
       ]
     },
@@ -1822,6 +3165,85 @@
           "sha256": "3b3d9f8f3a034d98d0a476f1794fa79c01e4e98a967ceb6777a66ba2d03ec1e1",
           "bytes": 827144,
           "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/5c1a663f-5736-4100-b681-c6737fe79cb5.spm"
+        }
+      ]
+    },
+    {
+      "id": "model-translate-en-kn",
+      "snap": "myna-translation",
+      "component": "model-translate-en-kn",
+      "model": "bergamot-tiny-en-kn",
+      "contract": 2,
+      "entry_revision": 1,
+      "task": "text.translate",
+      "class": "translate",
+      "needs": "dictation",
+      "params": [
+        {
+          "name": "language",
+          "kind": "language",
+          "role": "source",
+          "required": true
+        },
+        {
+          "name": "to",
+          "kind": "language",
+          "role": "target",
+          "required": true
+        }
+      ],
+      "covers": {
+        "language": "en",
+        "to": "kn"
+      },
+      "in_lang": "en",
+      "out_lang": "kn",
+      "step": {
+        "id": "translate",
+        "stage": "translate",
+        "label_key": "step.translate.name",
+        "description_key": "step.translate.description",
+        "example_key": "step.translate.example"
+      },
+      "download_bytes": 21014535,
+      "installed_bytes": 21014535,
+      "quality": {
+        "value": 0.592,
+        "source": "chrF 0.592 on 200 FLEURS pairs (translate_en_kn); vendor FLORES COMET 0.8397"
+      },
+      "latency_ms": 10,
+      "latency_class": "fast",
+      "hardware": {
+        "arch": [
+          "amd64"
+        ],
+        "min_ram_mb": 512
+      },
+      "locales": [
+        "en"
+      ],
+      "curated": true,
+      "license": "MPL-2.0",
+      "attribution": "Mozilla and contributors, Firefox Translations (tiny 1.0)",
+      "source": "https://github.com/mozilla/firefox-translations-models",
+      "files": [
+        {
+          "name": "model.enkn.intgemm.alphas.bin",
+          "sha256": "17a5ddc86e24f62c04aa15272930275812b5c1674bec50a877528680d5834d2d",
+          "bytes": 17141051,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/5f0a491a-4a14-4591-b1a6-0a442f4e5ad5.bin"
+        },
+        {
+          "name": "lex.50.50.enkn.s2t.bin",
+          "sha256": "94b660f37c9c29a904b48498a7202846faaeef16f30668f356336c29cefc0f63",
+          "bytes": 2808304,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/a77bf1a9-68fc-4331-8b9d-9cb918ff0e8b.bin"
+        },
+        {
+          "name": "vocab.enkn.spm",
+          "sha256": "1d41f1f6b67a8c29fa3aabbc7758b766bdd9acdbeec7d1277ab60c8e492c8b7a",
+          "bytes": 1065180,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/5999f7f2-21e7-439e-bf95-f8a1926ea499.spm"
         }
       ]
     },
@@ -2142,6 +3564,243 @@
       ]
     },
     {
+      "id": "model-translate-en-mr",
+      "snap": "myna-translation",
+      "component": "model-translate-en-mr",
+      "model": "bergamot-mozilla-en-mr",
+      "contract": 2,
+      "entry_revision": 1,
+      "task": "text.translate",
+      "class": "translate",
+      "needs": "dictation",
+      "params": [
+        {
+          "name": "language",
+          "kind": "language",
+          "role": "source",
+          "required": true
+        },
+        {
+          "name": "to",
+          "kind": "language",
+          "role": "target",
+          "required": true
+        }
+      ],
+      "covers": {
+        "language": "en",
+        "to": "mr"
+      },
+      "in_lang": "en",
+      "out_lang": "mr",
+      "step": {
+        "id": "translate",
+        "stage": "translate",
+        "label_key": "step.translate.name",
+        "description_key": "step.translate.description",
+        "example_key": "step.translate.example"
+      },
+      "download_bytes": 35302839,
+      "installed_bytes": 35302839,
+      "quality": {
+        "value": 0.0,
+        "source": "not measured: no FLEURS slice for mr; served 200 English sentences; quality not measured by the vendor"
+      },
+      "latency_ms": 20,
+      "latency_class": "fast",
+      "hardware": {
+        "arch": [
+          "amd64"
+        ],
+        "min_ram_mb": 512
+      },
+      "locales": [
+        "en"
+      ],
+      "curated": true,
+      "license": "MPL-2.0",
+      "attribution": "Mozilla and contributors, Firefox Translations (version 2.0)",
+      "source": "https://github.com/mozilla/firefox-translations-models",
+      "files": [
+        {
+          "name": "model.enmr.intgemm.alphas.bin",
+          "sha256": "1520f77c2f1c703b6148e4452b376ac28aec1e63c467eedec8a986864827ce8c",
+          "bytes": 31561787,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/20260824134729--07838b7f-0536-4c3f-8315-d68b59e31267--2df02735-8195-4429-8849-e0b52b633b74.bin"
+        },
+        {
+          "name": "lex.50.50.enmr.s2t.bin",
+          "sha256": "5f343589941c5445e9c27ee2d5329b6da65867590a4df79c09532aeef379bca9",
+          "bytes": 2731352,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/20260824134731--2fae9b1a-4df4-479a-98b9-714e86c3847e--a7a45cf5-8b2a-4bea-9dfc-d6e85af5fad8.bin"
+        },
+        {
+          "name": "vocab.enmr.spm",
+          "sha256": "f71f279069e19a9a9317fd4fcbdffa6b2c621ee6fcaa369a92046fb7fb572735",
+          "bytes": 1009700,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/20260824134722--c5f546d6-9229-457d-aed8-2d36f9abc6d0--2605c853-2e7d-4ea1-88fb-ed24c86c1117.spm"
+        }
+      ]
+    },
+    {
+      "id": "model-translate-en-ms",
+      "snap": "myna-translation",
+      "component": "model-translate-en-ms",
+      "model": "bergamot-tiny-en-ms",
+      "contract": 2,
+      "entry_revision": 1,
+      "task": "text.translate",
+      "class": "translate",
+      "needs": "dictation",
+      "params": [
+        {
+          "name": "language",
+          "kind": "language",
+          "role": "source",
+          "required": true
+        },
+        {
+          "name": "to",
+          "kind": "language",
+          "role": "target",
+          "required": true
+        }
+      ],
+      "covers": {
+        "language": "en",
+        "to": "ms"
+      },
+      "in_lang": "en",
+      "out_lang": "ms",
+      "step": {
+        "id": "translate",
+        "stage": "translate",
+        "label_key": "step.translate.name",
+        "description_key": "step.translate.description",
+        "example_key": "step.translate.example"
+      },
+      "download_bytes": 21879919,
+      "installed_bytes": 21879919,
+      "quality": {
+        "value": 0.687,
+        "source": "chrF 0.687 on 200 FLEURS pairs (translate_en_ms); vendor FLORES COMET 0.8828"
+      },
+      "latency_ms": 10,
+      "latency_class": "fast",
+      "hardware": {
+        "arch": [
+          "amd64"
+        ],
+        "min_ram_mb": 512
+      },
+      "locales": [
+        "en"
+      ],
+      "curated": true,
+      "license": "MPL-2.0",
+      "attribution": "Mozilla and contributors, Firefox Translations (tiny 1.0)",
+      "source": "https://github.com/mozilla/firefox-translations-models",
+      "files": [
+        {
+          "name": "model.enms.intgemm.alphas.bin",
+          "sha256": "3d6961462ffa711413d513624d7e6399b3560c2b0994daa73b0a45699e657af8",
+          "bytes": 17141051,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/c389f1da-0c97-47d5-adc3-6ceaa0c4af07.bin"
+        },
+        {
+          "name": "lex.50.50.enms.s2t.bin",
+          "sha256": "be8fec4866c9ed2cf669adaea2e259c4c22f34838032eb0ee117c10fcb968c4c",
+          "bytes": 3936428,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/2db20d9c-6a6c-4d0a-b909-1763b402e064.bin"
+        },
+        {
+          "name": "vocab.enms.spm",
+          "sha256": "c1f182330fb8c80778da36dd6e5bde59464db2390f623ea62817081cc759695a",
+          "bytes": 802440,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/136a7b29-aea9-483d-b96d-2683a55ecdb3.spm"
+        }
+      ]
+    },
+    {
+      "id": "model-translate-en-nb",
+      "snap": "myna-translation",
+      "component": "model-translate-en-nb",
+      "model": "bergamot-mozilla-en-nb",
+      "contract": 2,
+      "entry_revision": 1,
+      "task": "text.translate",
+      "class": "translate",
+      "needs": "dictation",
+      "params": [
+        {
+          "name": "language",
+          "kind": "language",
+          "role": "source",
+          "required": true
+        },
+        {
+          "name": "to",
+          "kind": "language",
+          "role": "target",
+          "required": true
+        }
+      ],
+      "covers": {
+        "language": "en",
+        "to": "nb"
+      },
+      "in_lang": "en",
+      "out_lang": "nb",
+      "step": {
+        "id": "translate",
+        "stage": "translate",
+        "label_key": "step.translate.name",
+        "description_key": "step.translate.description",
+        "example_key": "step.translate.example"
+      },
+      "download_bytes": 22177813,
+      "installed_bytes": 22177813,
+      "quality": {
+        "value": 0.628,
+        "source": "chrF 0.628 on 200 FLEURS pairs (translate_en_nb); quality not measured by the vendor"
+      },
+      "latency_ms": 10,
+      "latency_class": "fast",
+      "hardware": {
+        "arch": [
+          "amd64"
+        ],
+        "min_ram_mb": 512
+      },
+      "locales": [
+        "en"
+      ],
+      "curated": true,
+      "license": "MPL-2.0",
+      "attribution": "Mozilla and contributors, Firefox Translations (version 2.0)",
+      "source": "https://github.com/mozilla/firefox-translations-models",
+      "files": [
+        {
+          "name": "model.ennb.intgemm.alphas.bin",
+          "sha256": "78429eb7f544361061c9d9ec2f0872adf30b76e4c9ef3dbaab1210a0f2aa19b5",
+          "bytes": 17141051,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/20260522192648--58c9706b-c41c-4717-813b-a1140166c93c--2253e5e8-c1f4-4bed-8046-4054e5315ba3.bin"
+        },
+        {
+          "name": "lex.50.50.ennb.s2t.bin",
+          "sha256": "0780a1659ef460864ba92da6d58ca6f9056fb8ec8be507c189aeb25ce23e429f",
+          "bytes": 4234572,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/20260522192641--2b4cba8d-58c6-4a21-8352-9b041654d010--02a468ad-759c-40b0-ba2e-ef68bd2bfd3d.bin"
+        },
+        {
+          "name": "vocab.ennb.spm",
+          "sha256": "cad75f2c3eccb9545b571ca32f235e6ffaae6d8a77bfa808cf8068948c421f10",
+          "bytes": 802190,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/20260522192642--b1c57385-f3cf-4e06-a95c-3fa639f9bdcb--0f8e2778-c18e-47ac-9d85-21d991acc7c4.spm"
+        }
+      ]
+    },
+    {
       "id": "model-translate-en-nl",
       "snap": "myna-translation",
       "component": "model-translate-en-nl",
@@ -2375,6 +4034,85 @@
           "sha256": "d9f46182823d5bbc84201252b2dfcac28f63e561f0ec827ed858f241864c9def",
           "bytes": 816726,
           "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/e5688e52-a5c1-458b-9dbb-459fdcec0b7d.spm"
+        }
+      ]
+    },
+    {
+      "id": "model-translate-en-ro",
+      "snap": "myna-translation",
+      "component": "model-translate-en-ro",
+      "model": "bergamot-tiny-en-ro",
+      "contract": 2,
+      "entry_revision": 1,
+      "task": "text.translate",
+      "class": "translate",
+      "needs": "dictation",
+      "params": [
+        {
+          "name": "language",
+          "kind": "language",
+          "role": "source",
+          "required": true
+        },
+        {
+          "name": "to",
+          "kind": "language",
+          "role": "target",
+          "required": true
+        }
+      ],
+      "covers": {
+        "language": "en",
+        "to": "ro"
+      },
+      "in_lang": "en",
+      "out_lang": "ro",
+      "step": {
+        "id": "translate",
+        "stage": "translate",
+        "label_key": "step.translate.name",
+        "description_key": "step.translate.description",
+        "example_key": "step.translate.example"
+      },
+      "download_bytes": 21682453,
+      "installed_bytes": 21682453,
+      "quality": {
+        "value": 0.652,
+        "source": "chrF 0.652 on 200 FLEURS pairs (translate_en_ro); vendor FLORES COMET 0.8838"
+      },
+      "latency_ms": 10,
+      "latency_class": "fast",
+      "hardware": {
+        "arch": [
+          "amd64"
+        ],
+        "min_ram_mb": 512
+      },
+      "locales": [
+        "en"
+      ],
+      "curated": true,
+      "license": "MPL-2.0",
+      "attribution": "Mozilla and contributors, Firefox Translations (tiny 1.0)",
+      "source": "https://github.com/mozilla/firefox-translations-models",
+      "files": [
+        {
+          "name": "model.enro.intgemm.alphas.bin",
+          "sha256": "aa98c415e5beb1c5ee2f7d2508a3bbba949be223d7d9e5e1788ad0ae8598dda5",
+          "bytes": 17141051,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/f12620b2-d705-4d7a-82e0-e16f0aa29d74.bin"
+        },
+        {
+          "name": "lex.50.50.enro.s2t.bin",
+          "sha256": "508bce64a8bc906a99043ad2f4855b4662e06f8827c1c6a75ab83181b4f17f81",
+          "bytes": 3739880,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/0b9db082-327d-4ab0-bad6-17e7631ec163.bin"
+        },
+        {
+          "name": "vocab.enro.spm",
+          "sha256": "d89eedf6cbbcb30d7ed4b0b092189196ac2b010ec0c3ede33a6676b17ea1c95e",
+          "bytes": 801522,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/41f055b0-76a8-4dae-a18c-44d8c1293bf0.spm"
         }
       ]
     },
@@ -2616,6 +4354,164 @@
       ]
     },
     {
+      "id": "model-translate-en-sq",
+      "snap": "myna-translation",
+      "component": "model-translate-en-sq",
+      "model": "bergamot-tiny-en-sq",
+      "contract": 2,
+      "entry_revision": 1,
+      "task": "text.translate",
+      "class": "translate",
+      "needs": "dictation",
+      "params": [
+        {
+          "name": "language",
+          "kind": "language",
+          "role": "source",
+          "required": true
+        },
+        {
+          "name": "to",
+          "kind": "language",
+          "role": "target",
+          "required": true
+        }
+      ],
+      "covers": {
+        "language": "en",
+        "to": "sq"
+      },
+      "in_lang": "en",
+      "out_lang": "sq",
+      "step": {
+        "id": "translate",
+        "stage": "translate",
+        "label_key": "step.translate.name",
+        "description_key": "step.translate.description",
+        "example_key": "step.translate.example"
+      },
+      "download_bytes": 21264747,
+      "installed_bytes": 21264747,
+      "quality": {
+        "value": 0.0,
+        "source": "not measured: no FLEURS slice for sq; served 200 English sentences; quality not measured by the vendor"
+      },
+      "latency_ms": 10,
+      "latency_class": "fast",
+      "hardware": {
+        "arch": [
+          "amd64"
+        ],
+        "min_ram_mb": 512
+      },
+      "locales": [
+        "en"
+      ],
+      "curated": true,
+      "license": "MPL-2.0",
+      "attribution": "Mozilla and contributors, Firefox Translations (tiny 2.0)",
+      "source": "https://github.com/mozilla/firefox-translations-models",
+      "files": [
+        {
+          "name": "model.ensq.intgemm.alphas.bin",
+          "sha256": "8a90d17ab2798509e639e544caa1d577f7cf87c31b9ab7e53890c8d1d59b6eee",
+          "bytes": 17141051,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/20261006203105--2f245b76-ac9c-4b19-ad91-b6dc5d352cea--5e6e9da3-4cd9-4307-9d40-4c6406700843.bin"
+        },
+        {
+          "name": "lex.50.50.ensq.s2t.bin",
+          "sha256": "c901d1f5910315e0791720fa6f1275d79565e59d85013cf66b2f98cd9ba58ce1",
+          "bytes": 3303648,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/20261006203107--4873da54-ad1c-4667-a916-1781a0824ea9--63617a36-e436-4665-a63e-6ea7f96cabd3.bin"
+        },
+        {
+          "name": "vocab.ensq.spm",
+          "sha256": "f27814dffca6102255ed7a338f2a83c16905a07e09444016187c768aaf9ac7b6",
+          "bytes": 820048,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/20261006203109--3c39f44e-f638-441a-a759-fe1fa0044a91--979febee-cd48-4bdf-ab36-2c44a43c2490.spm"
+        }
+      ]
+    },
+    {
+      "id": "model-translate-en-sr",
+      "snap": "myna-translation",
+      "component": "model-translate-en-sr",
+      "model": "bergamot-mozilla-en-sr",
+      "contract": 2,
+      "entry_revision": 1,
+      "task": "text.translate",
+      "class": "translate",
+      "needs": "dictation",
+      "params": [
+        {
+          "name": "language",
+          "kind": "language",
+          "role": "source",
+          "required": true
+        },
+        {
+          "name": "to",
+          "kind": "language",
+          "role": "target",
+          "required": true
+        }
+      ],
+      "covers": {
+        "language": "en",
+        "to": "sr"
+      },
+      "in_lang": "en",
+      "out_lang": "sr",
+      "step": {
+        "id": "translate",
+        "stage": "translate",
+        "label_key": "step.translate.name",
+        "description_key": "step.translate.description",
+        "example_key": "step.translate.example"
+      },
+      "download_bytes": 35026482,
+      "installed_bytes": 35026482,
+      "quality": {
+        "value": 0.655,
+        "source": "chrF 0.655 on 200 FLEURS pairs (translate_en_sr); quality not measured by the vendor"
+      },
+      "latency_ms": 20,
+      "latency_class": "fast",
+      "hardware": {
+        "arch": [
+          "amd64"
+        ],
+        "min_ram_mb": 512
+      },
+      "locales": [
+        "en"
+      ],
+      "curated": true,
+      "license": "MPL-2.0",
+      "attribution": "Mozilla and contributors, Firefox Translations (version 2.0)",
+      "source": "https://github.com/mozilla/firefox-translations-models",
+      "files": [
+        {
+          "name": "model.ensr.intgemm.alphas.bin",
+          "sha256": "d26e1c5a01f917c38ccda17d1bf116024ac4d988105e1bbf70bc5e8f9191c57a",
+          "bytes": 31561787,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/20260522192734--a80412e9-fa33-4c4d-9bd8-b3a1f5896acc--78cdbec0-371c-4284-89de-8742beda6c85.bin"
+        },
+        {
+          "name": "lex.50.50.ensr.s2t.bin",
+          "sha256": "b2ae22b4d7bc4295d25b8a55559ebbdbd8f728bc8de5c3d6f110bd44ce7d8962",
+          "bytes": 2542096,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/20260522192721--e24992f7-ee9c-4966-9a9e-01f432e76323--7568705b-d3b5-490c-b77f-bca96d59cf48.bin"
+        },
+        {
+          "name": "vocab.ensr.spm",
+          "sha256": "7f54ba1554b7b1a89299a0ec5950535432f062b50a5f8c9bcd664a2444fa882a",
+          "bytes": 922599,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/20260522192736--6dc4626d-ca16-4fb5-a935-28e13eee3f98--a66e2d92-458c-4afd-9e46-3a64050e0f24.spm"
+        }
+      ]
+    },
+    {
       "id": "model-translate-en-sv",
       "snap": "myna-translation",
       "component": "model-translate-en-sv",
@@ -2853,6 +4749,322 @@
       ]
     },
     {
+      "id": "model-translate-en-th",
+      "snap": "myna-translation",
+      "component": "model-translate-en-th",
+      "model": "bergamot-mozilla-en-th",
+      "contract": 2,
+      "entry_revision": 1,
+      "task": "text.translate",
+      "class": "translate",
+      "needs": "dictation",
+      "params": [
+        {
+          "name": "language",
+          "kind": "language",
+          "role": "source",
+          "required": true
+        },
+        {
+          "name": "to",
+          "kind": "language",
+          "role": "target",
+          "required": true
+        }
+      ],
+      "covers": {
+        "language": "en",
+        "to": "th"
+      },
+      "in_lang": "en",
+      "out_lang": "th",
+      "step": {
+        "id": "translate",
+        "stage": "translate",
+        "label_key": "step.translate.name",
+        "description_key": "step.translate.description",
+        "example_key": "step.translate.example"
+      },
+      "download_bytes": 35571916,
+      "installed_bytes": 35571916,
+      "quality": {
+        "value": 0.552,
+        "source": "chrF 0.552 on 200 FLEURS pairs (translate_en_th); quality not measured by the vendor"
+      },
+      "latency_ms": 20,
+      "latency_class": "fast",
+      "hardware": {
+        "arch": [
+          "amd64"
+        ],
+        "min_ram_mb": 512
+      },
+      "locales": [
+        "en"
+      ],
+      "curated": true,
+      "license": "MPL-2.0",
+      "attribution": "Mozilla and contributors, Firefox Translations (version 2.0)",
+      "source": "https://github.com/mozilla/firefox-translations-models",
+      "files": [
+        {
+          "name": "model.enth.intgemm.alphas.bin",
+          "sha256": "80e326097655fca75f841130da3338a849aa245374e1616448bcf37b9523a05a",
+          "bytes": 31561787,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/20260522192810--5cccab3e-c1fb-4de9-b2a1-607dc2280cb2--f3cb18dc-47f6-4ad8-bede-9319e0e6c88c.bin"
+        },
+        {
+          "name": "lex.50.50.enth.s2t.bin",
+          "sha256": "6961ce07f38e6c113a70855706aa7cad4cc828f986d1751c33f14699f885a2e8",
+          "bytes": 3016612,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/20260522192813--1deee5a6-eaef-4499-9443-20093491c48e--6300f5fe-62db-4288-8c14-7f1cee1b6a97.bin"
+        },
+        {
+          "name": "vocab.enth.spm",
+          "sha256": "5deff7093d558768f8c22406449202e27595f023cc383a2b66beed240ed46443",
+          "bytes": 993517,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/20260522192803--a787bf34-c470-405e-a69c-83fa1f38afe4--bf006223-e68d-4785-b86a-040edbb6a6a4.spm"
+        }
+      ]
+    },
+    {
+      "id": "model-translate-en-tl",
+      "snap": "myna-translation",
+      "component": "model-translate-en-tl",
+      "model": "bergamot-mozilla-en-tl",
+      "contract": 2,
+      "entry_revision": 1,
+      "task": "text.translate",
+      "class": "translate",
+      "needs": "dictation",
+      "params": [
+        {
+          "name": "language",
+          "kind": "language",
+          "role": "source",
+          "required": true
+        },
+        {
+          "name": "to",
+          "kind": "language",
+          "role": "target",
+          "required": true
+        }
+      ],
+      "covers": {
+        "language": "en",
+        "to": "tl"
+      },
+      "in_lang": "en",
+      "out_lang": "tl",
+      "step": {
+        "id": "translate",
+        "stage": "translate",
+        "label_key": "step.translate.name",
+        "description_key": "step.translate.description",
+        "example_key": "step.translate.example"
+      },
+      "download_bytes": 35156223,
+      "installed_bytes": 35156223,
+      "quality": {
+        "value": 0.617,
+        "source": "chrF 0.617 on 200 FLEURS pairs (translate_en_tl); quality not measured by the vendor"
+      },
+      "latency_ms": 20,
+      "latency_class": "fast",
+      "hardware": {
+        "arch": [
+          "amd64"
+        ],
+        "min_ram_mb": 512
+      },
+      "locales": [
+        "en"
+      ],
+      "curated": true,
+      "license": "MPL-2.0",
+      "attribution": "Mozilla and contributors, Firefox Translations (version 2.0)",
+      "source": "https://github.com/mozilla/firefox-translations-models",
+      "files": [
+        {
+          "name": "model.entl.intgemm.alphas.bin",
+          "sha256": "33b71965ab9c9c533c63444551c9483e811dd540e75e4cfe21d062a83a60b72f",
+          "bytes": 31561787,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/20261006203353--f94ba813-04ce-4d0b-8466-8bc775d5a33c--8de5fd33-7ca2-495e-abf4-e53679753fb6.bin"
+        },
+        {
+          "name": "lex.50.50.entl.s2t.bin",
+          "sha256": "6e129305669e4b79ac6fed8f9f4bea3b7f1372440bc26670d94b40a4f3398164",
+          "bytes": 2782328,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/20261006203347--c13b4b3c-8822-4ad3-9cd5-0e3baacf5d4f--92c2b8af-7fe9-47a7-a43e-0d8fd01394cd.bin"
+        },
+        {
+          "name": "vocab.entl.spm",
+          "sha256": "bc9fe1743f2ef0b91c71506c47b0344ef9d3ce6047becfbced81c6c6dbb6109b",
+          "bytes": 812108,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/20261006203355--2c7137a9-09e9-41be-8fab-06e2afd766de--f792b894-1b0a-4077-af40-8bd1808e67df.spm"
+        }
+      ]
+    },
+    {
+      "id": "model-translate-en-tr",
+      "snap": "myna-translation",
+      "component": "model-translate-en-tr",
+      "model": "bergamot-tiny-en-tr",
+      "contract": 2,
+      "entry_revision": 1,
+      "task": "text.translate",
+      "class": "translate",
+      "needs": "dictation",
+      "params": [
+        {
+          "name": "language",
+          "kind": "language",
+          "role": "source",
+          "required": true
+        },
+        {
+          "name": "to",
+          "kind": "language",
+          "role": "target",
+          "required": true
+        }
+      ],
+      "covers": {
+        "language": "en",
+        "to": "tr"
+      },
+      "in_lang": "en",
+      "out_lang": "tr",
+      "step": {
+        "id": "translate",
+        "stage": "translate",
+        "label_key": "step.translate.name",
+        "description_key": "step.translate.description",
+        "example_key": "step.translate.example"
+      },
+      "download_bytes": 21201144,
+      "installed_bytes": 21201144,
+      "quality": {
+        "value": 0.586,
+        "source": "chrF 0.586 on 200 FLEURS pairs (translate_en_tr); vendor FLORES COMET 0.8775"
+      },
+      "latency_ms": 10,
+      "latency_class": "fast",
+      "hardware": {
+        "arch": [
+          "amd64"
+        ],
+        "min_ram_mb": 512
+      },
+      "locales": [
+        "en"
+      ],
+      "curated": true,
+      "license": "MPL-2.0",
+      "attribution": "Mozilla and contributors, Firefox Translations (tiny 1.0)",
+      "source": "https://github.com/mozilla/firefox-translations-models",
+      "files": [
+        {
+          "name": "model.entr.intgemm.alphas.bin",
+          "sha256": "ea3cd4ee09de190df265c78d84260e277a9a8a3ddff05eb55d72afe7fc0fdbf4",
+          "bytes": 17141051,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/f48948a5-06b1-465b-a0dc-ea1a1a52323d.bin"
+        },
+        {
+          "name": "lex.50.50.entr.s2t.bin",
+          "sha256": "3aba0be842bd4c192659c781e6fdce8eb9b2b1fff29a40d22f75da369d59f46f",
+          "bytes": 3261300,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/ed96fb89-d560-415b-9391-e5dc8edd13fa.bin"
+        },
+        {
+          "name": "vocab.entr.spm",
+          "sha256": "a220363d60391f7ce3df8ec9785424dbc00c24d5786d1a4308cf8ca3ed3385c2",
+          "bytes": 798793,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/462a6fc1-0f2d-4b61-ae3f-147bd9f9d588.spm"
+        }
+      ]
+    },
+    {
+      "id": "model-translate-en-ug",
+      "snap": "myna-translation",
+      "component": "model-translate-en-ug",
+      "model": "bergamot-mozilla-en-ug",
+      "contract": 2,
+      "entry_revision": 1,
+      "task": "text.translate",
+      "class": "translate",
+      "needs": "dictation",
+      "params": [
+        {
+          "name": "language",
+          "kind": "language",
+          "role": "source",
+          "required": true
+        },
+        {
+          "name": "to",
+          "kind": "language",
+          "role": "target",
+          "required": true
+        }
+      ],
+      "covers": {
+        "language": "en",
+        "to": "ug"
+      },
+      "in_lang": "en",
+      "out_lang": "ug",
+      "step": {
+        "id": "translate",
+        "stage": "translate",
+        "label_key": "step.translate.name",
+        "description_key": "step.translate.description",
+        "example_key": "step.translate.example"
+      },
+      "download_bytes": 34475151,
+      "installed_bytes": 34475151,
+      "quality": {
+        "value": 0.0,
+        "source": "not measured: no FLEURS slice for ug; served 200 English sentences; quality not measured by the vendor"
+      },
+      "latency_ms": 20,
+      "latency_class": "fast",
+      "hardware": {
+        "arch": [
+          "amd64"
+        ],
+        "min_ram_mb": 512
+      },
+      "locales": [
+        "en"
+      ],
+      "curated": true,
+      "license": "MPL-2.0",
+      "attribution": "Mozilla and contributors, Firefox Translations (version 2.1)",
+      "source": "https://github.com/mozilla/firefox-translations-models",
+      "files": [
+        {
+          "name": "model.enug.intgemm.alphas.bin",
+          "sha256": "0fe41f8efab57c8f763d82af523f0219f5e4b90d559abccb4bf0c51d6af16660",
+          "bytes": 31561635,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/20261006203511--1951ad7d-9f86-4a1f-86ea-df09c9667ca5--40e1d990-9dfb-4f2c-9689-6c0ec929c119.bin"
+        },
+        {
+          "name": "lex.50.50.enug.s2t.bin",
+          "sha256": "adae8854b9d17cb4c2b72ec8a6a67e44a3d800497b5bb360376d07c74f88688f",
+          "bytes": 2044456,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/20261006203515--bf612d8e-ac8d-4af3-b10f-51b5cbd4859a--53a82cb0-b6f3-4215-8f27-552027700c2f.bin"
+        },
+        {
+          "name": "vocab.enug.spm",
+          "sha256": "730c6534e78e36115aae8df060359b9c85db5c7c6c43279f3eb76c3fbdd7f80c",
+          "bytes": 869060,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/20261006203513--caadc61a-351c-4294-a4c7-07517a7a4382--431bdda1-2d10-4076-9aa6-11aee4f9a47f.spm"
+        }
+      ]
+    },
+    {
       "id": "model-translate-en-uk",
       "snap": "myna-translation",
       "component": "model-translate-en-uk",
@@ -2928,6 +5140,164 @@
           "sha256": "4dd6a91feff71e745395dcc0d52f885848ca0d843d5f70628ca51b3be1b70b45",
           "bytes": 922077,
           "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/ffea5811-fcfe-486e-8812-6284bd33ee3a.spm"
+        }
+      ]
+    },
+    {
+      "id": "model-translate-en-ur",
+      "snap": "myna-translation",
+      "component": "model-translate-en-ur",
+      "model": "bergamot-mozilla-en-ur",
+      "contract": 2,
+      "entry_revision": 1,
+      "task": "text.translate",
+      "class": "translate",
+      "needs": "dictation",
+      "params": [
+        {
+          "name": "language",
+          "kind": "language",
+          "role": "source",
+          "required": true
+        },
+        {
+          "name": "to",
+          "kind": "language",
+          "role": "target",
+          "required": true
+        }
+      ],
+      "covers": {
+        "language": "en",
+        "to": "ur"
+      },
+      "in_lang": "en",
+      "out_lang": "ur",
+      "step": {
+        "id": "translate",
+        "stage": "translate",
+        "label_key": "step.translate.name",
+        "description_key": "step.translate.description",
+        "example_key": "step.translate.example"
+      },
+      "download_bytes": 35472108,
+      "installed_bytes": 35472108,
+      "quality": {
+        "value": 0.0,
+        "source": "not measured: no FLEURS slice for ur; served 200 English sentences; quality not measured by the vendor"
+      },
+      "latency_ms": 20,
+      "latency_class": "fast",
+      "hardware": {
+        "arch": [
+          "amd64"
+        ],
+        "min_ram_mb": 512
+      },
+      "locales": [
+        "en"
+      ],
+      "curated": true,
+      "license": "MPL-2.0",
+      "attribution": "Mozilla and contributors, Firefox Translations (version 2.0)",
+      "source": "https://github.com/mozilla/firefox-translations-models",
+      "files": [
+        {
+          "name": "model.enur.intgemm.alphas.bin",
+          "sha256": "0c29a5776a42ccb68f7969f41e64c0cd7a16ff00a5bfed0ed2809039febc202e",
+          "bytes": 31561787,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/20260824134606--396ed26c-84a7-470d-92d3-88c3bcd03788--887c2b23-bac9-49e1-8904-ddfd223aee5f.bin"
+        },
+        {
+          "name": "lex.50.50.enur.s2t.bin",
+          "sha256": "64fb95c1f2c782cc76227b5d3a09e08cb30fea7b14a27aad69b929ad25f24401",
+          "bytes": 3067772,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/20260824134610--2e99b5c4-0265-4e75-bc86-10611e9638e4--16ad2691-87c9-4f25-af54-10f6b9177a3c.bin"
+        },
+        {
+          "name": "vocab.enur.spm",
+          "sha256": "24be4dacbcb080e4dba5cd025fbb90113de346dcb49930520f49fed484ac2d1f",
+          "bytes": 842549,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/20260824134608--9800133e-bfe1-42b7-95ad-b1f0cc530aab--d059795e-dfed-4528-af77-637e840e9a67.spm"
+        }
+      ]
+    },
+    {
+      "id": "model-translate-en-vi",
+      "snap": "myna-translation",
+      "component": "model-translate-en-vi",
+      "model": "bergamot-mozilla-en-vi",
+      "contract": 2,
+      "entry_revision": 1,
+      "task": "text.translate",
+      "class": "translate",
+      "needs": "dictation",
+      "params": [
+        {
+          "name": "language",
+          "kind": "language",
+          "role": "source",
+          "required": true
+        },
+        {
+          "name": "to",
+          "kind": "language",
+          "role": "target",
+          "required": true
+        }
+      ],
+      "covers": {
+        "language": "en",
+        "to": "vi"
+      },
+      "in_lang": "en",
+      "out_lang": "vi",
+      "step": {
+        "id": "translate",
+        "stage": "translate",
+        "label_key": "step.translate.name",
+        "description_key": "step.translate.description",
+        "example_key": "step.translate.example"
+      },
+      "download_bytes": 36944671,
+      "installed_bytes": 36944671,
+      "quality": {
+        "value": 0.607,
+        "source": "chrF 0.607 on 200 FLEURS pairs (translate_en_vi); quality not measured by the vendor"
+      },
+      "latency_ms": 25,
+      "latency_class": "fast",
+      "hardware": {
+        "arch": [
+          "amd64"
+        ],
+        "min_ram_mb": 512
+      },
+      "locales": [
+        "en"
+      ],
+      "curated": true,
+      "license": "MPL-2.0",
+      "attribution": "Mozilla and contributors, Firefox Translations (version 2.0)",
+      "source": "https://github.com/mozilla/firefox-translations-models",
+      "files": [
+        {
+          "name": "model.envi.intgemm.alphas.bin",
+          "sha256": "04fa6044593a404c2aa02b3096f203880852df6f8f41e5eb966ed9f2b4366737",
+          "bytes": 31561787,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/20260522192834--e5c737d0-a39d-4bb8-8832-2bcc5ef45e5c--991fc4d6-87c3-476d-b879-ddeff0b6cae0.bin"
+        },
+        {
+          "name": "lex.50.50.envi.s2t.bin",
+          "sha256": "18116817fcd3d24dcdfd97cb57e9e60472800dae3b8a007f6f36d61d645f699c",
+          "bytes": 4597684,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/20260522192836--32f34bd8-c481-4c26-aad9-eeddaac9cd79--cd40019d-37ce-4a14-8f11-ccddc804e7a2.bin"
+        },
+        {
+          "name": "vocab.envi.spm",
+          "sha256": "76daa9a49e393e50c865c889290e4dc36e9453e5e1ec9df7b9f3bc39ea782537",
+          "bytes": 785200,
+          "url": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/20260522192839--8cf85580-732e-484a-8b75-7417bbef3c69--a5f5c4c0-3c8f-452d-ba95-68948247d1a4.spm"
         }
       ]
     },

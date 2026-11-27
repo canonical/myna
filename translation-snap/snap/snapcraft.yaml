@@ -148,31 +148,61 @@ parts:
       "model-translate-da-en/*": (component/model-translate-da-en)/
       "model-translate-de-en/*": (component/model-translate-de-en)/
       "model-translate-el-en/*": (component/model-translate-el-en)/
+      "model-translate-en-af/*": (component/model-translate-en-af)/
       "model-translate-en-ar/*": (component/model-translate-en-ar)/
+      "model-translate-en-az/*": (component/model-translate-en-az)/
+      "model-translate-en-be/*": (component/model-translate-en-be)/
+      "model-translate-en-bg/*": (component/model-translate-en-bg)/
       "model-translate-en-bn/*": (component/model-translate-en-bn)/
+      "model-translate-en-bs/*": (component/model-translate-en-bs)/
+      "model-translate-en-ca/*": (component/model-translate-en-ca)/
       "model-translate-en-cs/*": (component/model-translate-en-cs)/
+      "model-translate-en-da/*": (component/model-translate-en-da)/
       "model-translate-en-de/*": (component/model-translate-en-de)/
       "model-translate-en-el/*": (component/model-translate-en-el)/
       "model-translate-en-es/*": (component/model-translate-en-es)/
+      "model-translate-en-et/*": (component/model-translate-en-et)/
+      "model-translate-en-eu/*": (component/model-translate-en-eu)/
       "model-translate-en-fa/*": (component/model-translate-en-fa)/
+      "model-translate-en-fi/*": (component/model-translate-en-fi)/
       "model-translate-en-fr/*": (component/model-translate-en-fr)/
+      "model-translate-en-gl/*": (component/model-translate-en-gl)/
+      "model-translate-en-gu/*": (component/model-translate-en-gu)/
+      "model-translate-en-he/*": (component/model-translate-en-he)/
       "model-translate-en-hi/*": (component/model-translate-en-hi)/
+      "model-translate-en-hr/*": (component/model-translate-en-hr)/
+      "model-translate-en-hu/*": (component/model-translate-en-hu)/
+      "model-translate-en-id/*": (component/model-translate-en-id)/
+      "model-translate-en-is/*": (component/model-translate-en-is)/
       "model-translate-en-it/*": (component/model-translate-en-it)/
       "model-translate-en-ja/*": (component/model-translate-en-ja)/
+      "model-translate-en-kn/*": (component/model-translate-en-kn)/
       "model-translate-en-ko/*": (component/model-translate-en-ko)/
       "model-translate-en-lt/*": (component/model-translate-en-lt)/
       "model-translate-en-lv/*": (component/model-translate-en-lv)/
       "model-translate-en-ml/*": (component/model-translate-en-ml)/
+      "model-translate-en-mr/*": (component/model-translate-en-mr)/
+      "model-translate-en-ms/*": (component/model-translate-en-ms)/
+      "model-translate-en-nb/*": (component/model-translate-en-nb)/
       "model-translate-en-nl/*": (component/model-translate-en-nl)/
       "model-translate-en-pl/*": (component/model-translate-en-pl)/
       "model-translate-en-pt/*": (component/model-translate-en-pt)/
+      "model-translate-en-ro/*": (component/model-translate-en-ro)/
       "model-translate-en-ru/*": (component/model-translate-en-ru)/
       "model-translate-en-sk/*": (component/model-translate-en-sk)/
       "model-translate-en-sl/*": (component/model-translate-en-sl)/
+      "model-translate-en-sq/*": (component/model-translate-en-sq)/
+      "model-translate-en-sr/*": (component/model-translate-en-sr)/
       "model-translate-en-sv/*": (component/model-translate-en-sv)/
       "model-translate-en-ta/*": (component/model-translate-en-ta)/
       "model-translate-en-te/*": (component/model-translate-en-te)/
+      "model-translate-en-th/*": (component/model-translate-en-th)/
+      "model-translate-en-tl/*": (component/model-translate-en-tl)/
+      "model-translate-en-tr/*": (component/model-translate-en-tr)/
+      "model-translate-en-ug/*": (component/model-translate-en-ug)/
       "model-translate-en-uk/*": (component/model-translate-en-uk)/
+      "model-translate-en-ur/*": (component/model-translate-en-ur)/
+      "model-translate-en-vi/*": (component/model-translate-en-vi)/
       "model-translate-en-zh-hans/*": (component/model-translate-en-zh-hans)/
       "model-translate-en-zh-hant/*": (component/model-translate-en-zh-hant)/
       "model-translate-es-en/*": (component/model-translate-es-en)/
@@ -298,11 +328,35 @@ components:
     description: |
       Mozilla's Firefox Translations Greek to English student model
       (MPL-2.0), run by bergamot-translator. About 22 MB.
+  model-translate-en-af:
+    type: standard
+    summary: English to Afrikaans translation (Firefox Translations)
+    description: |
+      Mozilla's Firefox Translations English to Afrikaans student model
+      (MPL-2.0), run by bergamot-translator. About 36 MB.
   model-translate-en-ar:
     type: standard
     summary: English to Arabic translation (Firefox Translations base-memory)
     description: |
       Mozilla's Firefox Translations English to Arabic student model
+      (MPL-2.0), run by bergamot-translator. About 36 MB.
+  model-translate-en-az:
+    type: standard
+    summary: English to Azerbaijani translation (Firefox Translations)
+    description: |
+      Mozilla's Firefox Translations English to Azerbaijani student model
+      (MPL-2.0), run by bergamot-translator. About 36 MB.
+  model-translate-en-be:
+    type: standard
+    summary: English to Belarusian translation (Firefox Translations)
+    description: |
+      Mozilla's Firefox Translations English to Belarusian student model
+      (MPL-2.0), run by bergamot-translator. About 35 MB.
+  model-translate-en-bg:
+    type: standard
+    summary: English to Bulgarian translation (Firefox Translations base-memory)
+    description: |
+      Mozilla's Firefox Translations English to Bulgarian student model
       (MPL-2.0), run by bergamot-translator. About 36 MB.
   model-translate-en-bn:
     type: standard
@@ -310,12 +364,30 @@ components:
     description: |
       Mozilla's Firefox Translations English to Bengali student model
       (MPL-2.0), run by bergamot-translator. About 21 MB.
+  model-translate-en-bs:
+    type: standard
+    summary: English to Bosnian translation (Firefox Translations)
+    description: |
+      Mozilla's Firefox Translations English to Bosnian student model
+      (MPL-2.0), run by bergamot-translator. About 36 MB.
+  model-translate-en-ca:
+    type: standard
+    summary: English to Catalan translation (Firefox Translations base-memory)
+    description: |
+      Mozilla's Firefox Translations English to Catalan student model
+      (MPL-2.0), run by bergamot-translator. About 37 MB.
   model-translate-en-cs:
     type: standard
     summary: English to Czech translation (Firefox Translations base-memory)
     description: |
       Mozilla's Firefox Translations English to Czech student model
       (MPL-2.0), run by bergamot-translator. About 36 MB.
+  model-translate-en-da:
+    type: standard
+    summary: English to Danish translation (Firefox Translations tiny)
+    description: |
+      Mozilla's Firefox Translations English to Danish student model
+      (MPL-2.0), run by bergamot-translator. About 22 MB.
   model-translate-en-de:
     type: standard
     summary: English to German translation (Firefox Translations base-memory)
@@ -334,24 +406,84 @@ components:
     description: |
       Mozilla's Firefox Translations English to Spanish student model
       (MPL-2.0), run by bergamot-translator. About 37 MB.
+  model-translate-en-et:
+    type: standard
+    summary: English to Estonian translation (Firefox Translations base-memory)
+    description: |
+      Mozilla's Firefox Translations English to Estonian student model
+      (MPL-2.0), run by bergamot-translator. About 36 MB.
+  model-translate-en-eu:
+    type: standard
+    summary: English to Basque translation (Firefox Translations)
+    description: |
+      Mozilla's Firefox Translations English to Basque student model
+      (MPL-2.0), run by bergamot-translator. About 36 MB.
   model-translate-en-fa:
     type: standard
     summary: English to Persian translation (Firefox Translations tiny)
     description: |
       Mozilla's Firefox Translations English to Persian student model
       (MPL-2.0), run by bergamot-translator. About 22 MB.
+  model-translate-en-fi:
+    type: standard
+    summary: English to Finnish translation (Firefox Translations base-memory)
+    description: |
+      Mozilla's Firefox Translations English to Finnish student model
+      (MPL-2.0), run by bergamot-translator. About 36 MB.
   model-translate-en-fr:
     type: standard
     summary: English to French translation (Firefox Translations base-memory)
     description: |
       Mozilla's Firefox Translations English to French student model
       (MPL-2.0), run by bergamot-translator. About 37 MB.
+  model-translate-en-gl:
+    type: standard
+    summary: English to Galician translation (Firefox Translations)
+    description: |
+      Mozilla's Firefox Translations English to Galician student model
+      (MPL-2.0), run by bergamot-translator. About 35 MB.
+  model-translate-en-gu:
+    type: standard
+    summary: English to Gujarati translation (Firefox Translations tiny)
+    description: |
+      Mozilla's Firefox Translations English to Gujarati student model
+      (MPL-2.0), run by bergamot-translator. About 21 MB.
+  model-translate-en-he:
+    type: standard
+    summary: English to Hebrew translation (Firefox Translations tiny)
+    description: |
+      Mozilla's Firefox Translations English to Hebrew student model
+      (MPL-2.0), run by bergamot-translator. About 21 MB.
   model-translate-en-hi:
     type: standard
     summary: English to Hindi translation (Firefox Translations tiny)
     description: |
       Mozilla's Firefox Translations English to Hindi student model
       (MPL-2.0), run by bergamot-translator. About 22 MB.
+  model-translate-en-hr:
+    type: standard
+    summary: English to Croatian translation (Firefox Translations tiny)
+    description: |
+      Mozilla's Firefox Translations English to Croatian student model
+      (MPL-2.0), run by bergamot-translator. About 21 MB.
+  model-translate-en-hu:
+    type: standard
+    summary: English to Hungarian translation (Firefox Translations)
+    description: |
+      Mozilla's Firefox Translations English to Hungarian student model
+      (MPL-2.0), run by bergamot-translator. About 36 MB.
+  model-translate-en-id:
+    type: standard
+    summary: English to Indonesian translation (Firefox Translations tiny)
+    description: |
+      Mozilla's Firefox Translations English to Indonesian student model
+      (MPL-2.0), run by bergamot-translator. About 21 MB.
+  model-translate-en-is:
+    type: standard
+    summary: English to Icelandic translation (Firefox Translations base-memory)
+    description: |
+      Mozilla's Firefox Translations English to Icelandic student model
+      (MPL-2.0), run by bergamot-translator. About 36 MB.
   model-translate-en-it:
     type: standard
     summary: English to Italian translation (Firefox Translations base-memory)
@@ -364,6 +496,12 @@ components:
     description: |
       Mozilla's Firefox Translations English to Japanese student model
       (MPL-2.0), run by bergamot-translator. About 50 MB.
+  model-translate-en-kn:
+    type: standard
+    summary: English to Kannada translation (Firefox Translations tiny)
+    description: |
+      Mozilla's Firefox Translations English to Kannada student model
+      (MPL-2.0), run by bergamot-translator. About 21 MB.
   model-translate-en-ko:
     type: standard
     summary: English to Korean translation (Firefox Translations base)
@@ -388,6 +526,24 @@ components:
     description: |
       Mozilla's Firefox Translations English to Malayalam student model
       (MPL-2.0), run by bergamot-translator. About 21 MB.
+  model-translate-en-mr:
+    type: standard
+    summary: English to Marathi translation (Firefox Translations)
+    description: |
+      Mozilla's Firefox Translations English to Marathi student model
+      (MPL-2.0), run by bergamot-translator. About 35 MB.
+  model-translate-en-ms:
+    type: standard
+    summary: English to Malay translation (Firefox Translations tiny)
+    description: |
+      Mozilla's Firefox Translations English to Malay student model
+      (MPL-2.0), run by bergamot-translator. About 22 MB.
+  model-translate-en-nb:
+    type: standard
+    summary: English to Norwegian Bokmal translation (Firefox Translations)
+    description: |
+      Mozilla's Firefox Translations English to Norwegian Bokmal student model
+      (MPL-2.0), run by bergamot-translator. About 22 MB.
   model-translate-en-nl:
     type: standard
     summary: English to Dutch translation (Firefox Translations base-memory)
@@ -406,6 +562,12 @@ components:
     description: |
       Mozilla's Firefox Translations English to Portuguese student model
       (MPL-2.0), run by bergamot-translator. About 36 MB.
+  model-translate-en-ro:
+    type: standard
+    summary: English to Romanian translation (Firefox Translations tiny)
+    description: |
+      Mozilla's Firefox Translations English to Romanian student model
+      (MPL-2.0), run by bergamot-translator. About 22 MB.
   model-translate-en-ru:
     type: standard
     summary: English to Russian translation (Firefox Translations base)
@@ -424,6 +586,18 @@ components:
     description: |
       Mozilla's Firefox Translations English to Slovenian student model
       (MPL-2.0), run by bergamot-translator. About 36 MB.
+  model-translate-en-sq:
+    type: standard
+    summary: English to Albanian translation (Firefox Translations tiny)
+    description: |
+      Mozilla's Firefox Translations English to Albanian student model
+      (MPL-2.0), run by bergamot-translator. About 21 MB.
+  model-translate-en-sr:
+    type: standard
+    summary: English to Serbian translation (Firefox Translations)
+    description: |
+      Mozilla's Firefox Translations English to Serbian student model
+      (MPL-2.0), run by bergamot-translator. About 35 MB.
   model-translate-en-sv:
     type: standard
     summary: English to Swedish translation (Firefox Translations tiny)
@@ -442,12 +616,48 @@ components:
     description: |
       Mozilla's Firefox Translations English to Telugu student model
       (MPL-2.0), run by bergamot-translator. About 21 MB.
+  model-translate-en-th:
+    type: standard
+    summary: English to Thai translation (Firefox Translations)
+    description: |
+      Mozilla's Firefox Translations English to Thai student model
+      (MPL-2.0), run by bergamot-translator. About 36 MB.
+  model-translate-en-tl:
+    type: standard
+    summary: English to Filipino translation (Firefox Translations)
+    description: |
+      Mozilla's Firefox Translations English to Filipino student model
+      (MPL-2.0), run by bergamot-translator. About 35 MB.
+  model-translate-en-tr:
+    type: standard
+    summary: English to Turkish translation (Firefox Translations tiny)
+    description: |
+      Mozilla's Firefox Translations English to Turkish student model
+      (MPL-2.0), run by bergamot-translator. About 21 MB.
+  model-translate-en-ug:
+    type: standard
+    summary: English to Uyghur translation (Firefox Translations)
+    description: |
+      Mozilla's Firefox Translations English to Uyghur student model
+      (MPL-2.0), run by bergamot-translator. About 34 MB.
   model-translate-en-uk:
     type: standard
     summary: English to Ukrainian translation (Firefox Translations base-memory)
     description: |
       Mozilla's Firefox Translations English to Ukrainian student model
       (MPL-2.0), run by bergamot-translator. About 36 MB.
+  model-translate-en-ur:
+    type: standard
+    summary: English to Urdu translation (Firefox Translations)
+    description: |
+      Mozilla's Firefox Translations English to Urdu student model
+      (MPL-2.0), run by bergamot-translator. About 35 MB.
+  model-translate-en-vi:
+    type: standard
+    summary: English to Vietnamese translation (Firefox Translations)
+    description: |
+      Mozilla's Firefox Translations English to Vietnamese student model
+      (MPL-2.0), run by bergamot-translator. About 37 MB.
   model-translate-en-zh-hans:
     type: standard
     summary: English to Simplified Chinese translation (Firefox Translations base-memory)

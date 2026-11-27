@@ -1,0 +1,17 @@
+model-translate-en-af: the Firefox Translations English to Afrikaans student
+model (version 2.0), Copyright Mozilla and contributors,
+licensed under the Mozilla Public License 2.0 (LICENSE in this component).
+
+Source: Mozilla's Firefox Translations models,
+https://github.com/mozilla/firefox-translations-models (the files themselves
+are served from the Remote Settings collection "translations-models" of
+https://firefox.settings.services.mozilla.com). The model files are shipped
+unmodified; their sha256 are:
+
+  model.enaf.intgemm.alphas.bin  afc1dcb25774e61f513fe722e037744a18c23063ba799bb01f5cdec5cc79b502
+  lex.50.50.enaf.s2t.bin         591e3465c6e5e8920e911cae36e1d92c61abe92b2d5ef9bf2f1d8b5825bba20f
+  vocab.enaf.spm                 8d19c43df2142696227eb3462c6693bbc8c62cbd47b9a7372f86df2698864438
+
+config.yml and myna-text-model.json are Canonical's own (AGPL-3.0-or-later).
+The runtime that executes the model, bergamot-translator (MPL-2.0), and its
+bundled libraries are noted in the myna-translation snap's NOTICE.

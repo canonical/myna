@@ -1,0 +1,17 @@
+model-translate-en-eu: the Firefox Translations English to Basque student
+model (version 2.0), Copyright Mozilla and contributors,
+licensed under the Mozilla Public License 2.0 (LICENSE in this component).
+
+Source: Mozilla's Firefox Translations models,
+https://github.com/mozilla/firefox-translations-models (the files themselves
+are served from the Remote Settings collection "translations-models" of
+https://firefox.settings.services.mozilla.com). The model files are shipped
+unmodified; their sha256 are:
+
+  model.eneu.intgemm.alphas.bin  f28d03817b718806c9262e3d76960efb8cbd04d0721307c8e23edcae9364150a
+  lex.50.50.eneu.s2t.bin         a6a856a89acc6bbf970b6c5e51fe705bee6fe2b8007a3c31ae54ca2c6fd69aad
+  vocab.eneu.spm                 d0cbd7a04e20c3a45bcf29260967db26a97c4787c03a9d867df0465bc104cec2
+
+config.yml and myna-text-model.json are Canonical's own (AGPL-3.0-or-later).
+The runtime that executes the model, bergamot-translator (MPL-2.0), and its
+bundled libraries are noted in the myna-translation snap's NOTICE.

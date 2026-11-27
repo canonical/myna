@@ -1,0 +1,8 @@
+{
+  "latency_ms": 20,
+  "quality": 0.838,
+  "quality_source": "not measured: no FLEURS slice for is; served 200 English sentences; vendor FLORES COMET 0.8382",
+  "gate": "pass",
+  "runs": true,
+  "results_sha256": "46ef20a226cf7b815f09f8f77c924a06f4530df9851aa9895eb6e10e0926044d"
+}
