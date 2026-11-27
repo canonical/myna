@@ -61,7 +61,8 @@ shot waitfor:General tab:Processing "click:Use $CHAIN" \
     || { echo "switch on failed" >&2; FAILED=1; }
 shot waitfor:General tab:Processing "click:Delete $CHAIN@$BTN" \
     "$(poll "! grep -qF \"'$CHAIN'\" $STORE")" shot:shots/processing-page/04-deleted.png \
-    "waitfor:Undo" "wait:1" "click:Undo@$BTN" \
+    "waitfor:Undo" "wait:1" "click:Undo@$BTN" shot:shots/processing-page/04-undo-clicked.png \
+    "waitfor:Use $CHAIN" "$(poll "grep -qF \"'$CHAIN'\" $STORE")" \
     || { echo "delete run failed" >&2; FAILED=1; }
 # The toast's Undo is a real button, but it carries no AT-SPI action, so
 # `activate:` clicks nothing and the chain stays deleted. Assert the page and
