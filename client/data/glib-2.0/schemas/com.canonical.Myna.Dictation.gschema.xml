@@ -36,6 +36,35 @@
   </enum>
 
   <schema id="com.canonical.Myna.Dictation" path="/com/canonical/myna/dictation/">
+    <key name="chains" type="a(ssa(sba{ss}))">
+      <default>[('example', 'Tidy and translate', [('tidy', true, {}), ('translate', true, {'to': 'fr'})])]</default>
+      <summary>Saved chains of steps</summary>
+      <description>
+        Each chain is an id that never changes, the name shown for it, and
+        its steps in the order they run. A step is its id, whether it is on,
+        and its settings, for example to for the language a translation
+        writes. A step this version does not know is kept as it is.
+      </description>
+    </key>
+
+    <key name="active-chain" type="s">
+      <default>''</default>
+      <summary>The chain applied to what you say</summary>
+      <description>
+        The id of the chain in use. Empty, or an id no chain has, types
+        exactly what you say.
+      </description>
+    </key>
+
+    <key name="processing-history" type="b">
+      <default>false</default>
+      <summary>Keep a record of what was changed</summary>
+      <description>
+        Save what was heard and what was typed, to check what Myna changed.
+        The record holds your words and stays on this computer.
+      </description>
+    </key>
+
     <key name="sounds" type="b">
       <default>true</default>
       <summary>Sounds on start, stop and error</summary>
@@ -102,7 +131,9 @@
       <description>
         Names and terms you use that speech recognition might get wrong,
         such as a colleague's name, a product or a term from your field:
-        "Nguyen", "Kubernetes", "ibuprofen". Up to 100 words or short phrases.
+        "Nguyen", "Kubernetes", "ibuprofen". To choose how something is
+        written, type what you say, an arrow with a space on each
+        side, then what to write: "my sequel => MySQL". Up to 100 words or short phrases.
       </description>
     </key>
   </schema>

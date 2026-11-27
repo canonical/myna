@@ -145,6 +145,7 @@ const ENDONYMS: &[(&str, &str)] = &[
     ("ms", "Bahasa Melayu"),
     ("mt", "Malti"),
     ("my", "မြန်မာ"),
+    ("nb", "Norsk bokmål"),
     ("ne", "नेपाली"),
     ("nl", "Nederlands"),
     ("nn", "Nynorsk"),
@@ -176,6 +177,7 @@ const ENDONYMS: &[(&str, &str)] = &[
     ("tl", "Tagalog"),
     ("tr", "Türkçe"),
     ("tt", "Татар"),
+    ("ug", "ئۇيغۇرچە"),
     ("uk", "Українська"),
     ("ur", "اردو"),
     ("uz", "Oʻzbek"),
@@ -496,6 +498,8 @@ mod tests {
 
     #[test]
     fn languages_are_named_in_themselves() {
+        assert_eq!(endonym("nb"), Some("Norsk bokmål"));
+        assert_eq!(endonym("ug"), Some("ئۇيغۇرچە"));
         assert_eq!(endonym("en"), Some("English"));
         assert_eq!(endonym("de"), Some("Deutsch"));
         assert_eq!(endonym("fr"), Some("Français"));

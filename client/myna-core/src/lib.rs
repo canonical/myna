@@ -19,13 +19,16 @@
 pub mod audio;
 pub mod capabilities;
 pub mod capture;
+pub mod chains;
 pub mod control;
 pub mod debug;
 pub mod events;
 pub mod graph;
+pub mod history;
 pub mod language;
 pub mod locale;
 pub mod mode;
+pub mod processing;
 pub mod protocol;
 pub mod session;
 pub mod settings;
@@ -35,6 +38,7 @@ pub use capabilities::Capabilities;
 pub use capture::{
     AudioSource, CaptureError, CaptureHealth, CaptureHealthStream, CaptureStream, StopHandle,
 };
+pub use chains::ProcessingChain;
 pub use control::{ClientControl, ServerControl};
 pub use events::{
     Disposition, ErrorData, Progress, Segment, StreamingMode, TranscriptionEvent,
@@ -42,8 +46,10 @@ pub use events::{
     WARNING_GPU_UNAVAILABLE, WARNING_MEMORY_PRESSURE,
 };
 pub use mode::{effective_mode, streams_by_default, EffectiveMode, ModeSource};
+pub use processing::ChineseScript;
 pub use protocol::PROTOCOL_VERSION;
 pub use session::{
-    normalize_keywords, SessionConfig, KEYWORDS_MAX_ENTRIES, KEYWORDS_MAX_ENTRY_CHARS,
+    normalize_keywords, spoken_written, SessionConfig, KEYWORDS_MAX_ENTRIES,
+    KEYWORDS_MAX_ENTRY_CHARS,
 };
 pub use settings::{Settings, SettingsWatch, SoundSet};

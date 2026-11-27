@@ -25,6 +25,7 @@ use std::path::PathBuf;
 use gio::glib;
 use gio::prelude::{SettingsExt, SettingsExtManual};
 
+use crate::chains::Processing;
 use crate::StreamingMode;
 
 /// The schema every myna client settings key lives under.
@@ -56,6 +57,9 @@ pub const KEY_SOUNDS: &str = "sounds";
 /// The schema default for [`KEY_SOUNDS`], and what a machine with no schema
 /// installed gets.
 pub const DEFAULT_SOUNDS: bool = true;
+
+/// Whether processed dictations are recorded, as heard and as typed.
+pub const KEY_PROCESSING_HISTORY: &str = "processing-history";
 
 /// Which set of cues the daemon plays.
 pub const KEY_SOUND_SET: &str = "sound-set";
@@ -140,6 +144,10 @@ pub struct Settings {
     pub silence_timeout: u32,
     /// Whether a session's start, stop and failure are heard as well as seen.
     pub sounds: bool,
+    /// The saved chains and the one in use.
+    pub processing: Processing,
+    /// Whether each processed dictation is recorded, as heard and as typed.
+    pub processing_history: bool,
     /// Which cues are heard.
     pub sound_set: SoundSet,
     /// The user's local dictionary, raw (unnormalized) as stored.
@@ -155,6 +163,8 @@ impl Default for Settings {
             hud_style: None,
             silence_timeout: DEFAULT_SILENCE_TIMEOUT_SECS,
             sounds: DEFAULT_SOUNDS,
+            processing: Processing::default(),
+            processing_history: false,
             sound_set: SoundSet::default(),
             vocabulary: Vec::new(),
         }
@@ -185,6 +195,10 @@ impl Settings {
                 .seconds(KEY_SILENCE_TIMEOUT)
                 .unwrap_or(default.silence_timeout),
             sounds: store.flag(KEY_SOUNDS).unwrap_or(default.sounds),
+            processing: Processing::read(&store.settings),
+            processing_history: store
+                .flag(KEY_PROCESSING_HISTORY)
+                .unwrap_or(default.processing_history),
             sound_set: store
                 .text(KEY_SOUND_SET)
                 .as_deref()
@@ -221,6 +235,11 @@ impl Store {
         Some(Self {
             settings: gio::Settings::new_full(&schema, Some(&backend), None),
         })
+    }
+
+    /// The `gio::Settings` behind this store, for the chain writers.
+    pub(crate) fn gio(&self) -> &gio::Settings {
+        &self.settings
     }
 
     /// Wrap the `gio::Settings` a signal handed back. The same GObject, one
@@ -397,8 +416,10 @@ fn watch_with(
                         let _ = ready_tx.send(false);
                         return;
                     };
-                    store.settings.connect_changed(None, move |settings, key| {
-                        crate::dbg_log!("settings", "{key} changed");
+                    // One call per change event, so a batch of keys written
+                    // together (a chain edit) is read once, whole.
+                    crate::chains::on_change_event(&store.settings, move |settings| {
+                        crate::dbg_log!("settings", "changed");
                         on_change(Settings::from_store(&Store::from_settings(settings)));
                     });
                     let _ = ready_tx.send(true);
@@ -572,6 +593,13 @@ mod tests {
         assert!(!Settings::from_store(&store).sounds);
         assert!(store.settings.set_boolean(KEY_SOUNDS, true).is_ok());
         assert!(Settings::from_store(&store).sounds);
+
+        assert!(!Settings::from_store(&store).processing_history);
+        assert!(store
+            .settings
+            .set_boolean(KEY_PROCESSING_HISTORY, true)
+            .is_ok());
+        assert!(Settings::from_store(&store).processing_history);
     }
 
     /// The chime is heard out of the box, with or without a schema, and a set
@@ -590,6 +618,157 @@ mod tests {
             assert!(store.settings.set_string(KEY_SOUND_SET, set.nick()).is_ok());
             assert_eq!(Settings::from_store(&store).sound_set, set);
         }
+    }
+
+    /// The schema's chain defaults and the no-schema fallback agree: the
+    /// example present and inactive.
+    #[test]
+    fn the_chain_keys_default_to_the_example_inactive() {
+        let read = Settings::from_store(&test_store()).processing;
+        assert_eq!(read, Processing::default());
+        assert_eq!(read.active, None);
+        assert!(read.chain(crate::chains::EXAMPLE_ID).is_some());
+    }
+
+    /// Every edit round-trips through the store; an unknown step and its
+    /// parameters survive untouched.
+    #[test]
+    fn chains_round_trip_through_the_store() {
+        use crate::chains::ChainStep;
+        let store = test_store();
+        let mut p = Settings::from_store(&store).processing;
+        let id = p.add(
+            "Mine",
+            vec![
+                ChainStep::new("from-the-future").with("knob", "11"),
+                ChainStep {
+                    on: false,
+                    ..ChainStep::new("translate").with("to", "de")
+                },
+                ChainStep::new("translate").with("to", "fr"),
+            ],
+        );
+        assert!(p.activate(Some(&id)));
+        p.write(&store.settings).unwrap();
+        assert_eq!(Settings::from_store(&store).processing, p);
+
+        assert!(p.rename(&id, "Renamed"));
+        p.write(&store.settings).unwrap();
+        let read = Settings::from_store(&store).processing;
+        assert_eq!(read.active().map(|c| c.name.as_str()), Some("Renamed"));
+
+        assert!(p.delete(&id));
+        p.write(&store.settings).unwrap();
+        let read = Settings::from_store(&store).processing;
+        assert_eq!(read.active, None);
+        assert_eq!(read, p);
+    }
+
+    /// The bus's `ActiveChain` write: a known id or none is stored, an
+    /// unknown one changes nothing.
+    #[test]
+    fn activating_in_the_store_takes_a_saved_chain_or_none() {
+        use crate::chains::{activate_in, ActivateError, EXAMPLE_ID};
+        let store = test_store();
+        assert_eq!(
+            activate_in(&store.settings, Some("nope")),
+            Err(ActivateError::Unknown("nope".into()))
+        );
+        assert_eq!(Settings::from_store(&store).processing.active, None);
+        activate_in(&store.settings, Some(EXAMPLE_ID)).unwrap();
+        let read = Settings::from_store(&store).processing;
+        assert_eq!(read.active.as_deref(), Some(EXAMPLE_ID));
+        activate_in(&store.settings, None).unwrap();
+        assert_eq!(Settings::from_store(&store).processing.active, None);
+    }
+
+    /// An active id no chain has (a hand edit, a writer between two keys)
+    /// reads as none.
+    #[test]
+    fn a_dangling_active_chain_reads_as_none() {
+        let store = test_store();
+        store
+            .settings
+            .set_string(crate::chains::KEY_ACTIVE_CHAIN, "gone")
+            .unwrap();
+        let read = Settings::from_store(&store).processing;
+        assert_eq!(read.active.as_deref(), Some("gone"));
+        assert!(read.active().is_none());
+    }
+
+    /// Deleting the active chain changes two keys; a watcher in another
+    /// process wakes once and reads both changed.
+    #[test]
+    fn one_chain_edit_wakes_a_watcher_once() {
+        let path = std::env::temp_dir().join(format!("myna-chains-{}.ini", std::process::id()));
+        std::fs::remove_file(&path).ok();
+        let writer = store_on(&path);
+        let mut p = Settings::from_store(&writer).processing;
+        let id = p.add("Mine", vec![crate::chains::ChainStep::new("tidy")]);
+        p.activate(Some(&id));
+        p.write(&writer.settings).unwrap();
+        gio::Settings::sync();
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        let watch = watch_with(
+            {
+                let path = path.clone();
+                move || Some(store_on(&path))
+            },
+            move |settings| {
+                let _ = tx.send(settings.processing);
+            },
+        )
+        .expect("the test schema is always installed");
+        p.delete(&id);
+        p.write(&writer.settings).unwrap();
+        gio::Settings::sync();
+        let seen = rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("the change is delivered");
+        assert_eq!(seen, p);
+        assert!(
+            rx.recv_timeout(Duration::from_millis(500)).is_err(),
+            "one edit, one wake"
+        );
+        drop(watch);
+        std::fs::remove_file(&path).ok();
+    }
+
+    /// A schema without the chain keys (an older install beside a newer
+    /// binary) reads the defaults instead of aborting.
+    #[test]
+    fn a_schema_without_the_chain_keys_reads_the_defaults() {
+        let dir = std::env::temp_dir().join(format!("myna-old-schema-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("old.gschema.xml"),
+            format!(
+                "<schemalist><schema id='{SCHEMA_ID}' path='/com/canonical/myna/dictation/'>\
+                 <key name='sounds' type='b'><default>true</default></key>\
+                 </schema></schemalist>"
+            ),
+        )
+        .unwrap();
+        assert!(std::process::Command::new("glib-compile-schemas")
+            .arg(&dir)
+            .status()
+            .unwrap()
+            .success());
+        let schema = gio::SettingsSchemaSource::from_directory(&dir, None, false)
+            .unwrap()
+            .lookup(SCHEMA_ID, false)
+            .unwrap();
+        let settings = gio::Settings::new_full(
+            &schema,
+            Some(&gio::functions::memory_settings_backend_new()),
+            None,
+        );
+        assert_eq!(Processing::read(&settings), Processing::default());
+        assert!(Store::from_settings(&settings)
+            .strings("vocabulary")
+            .is_none());
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     /// The schema enum and [`SoundSet`] name the same sets: every nick this
