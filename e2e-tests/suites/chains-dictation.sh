@@ -168,6 +168,11 @@ use_tidy() {
     assert_on "a Tidy chain is in use" \
         "snap run myna.config set chains \"[('chain-1', '$CHAIN', [('tidy', true, {})])]\" && snap run myna.config set active-chain chain-1"
     assert_dict "the daemon's chain status is ready" "$READY"
+    # Ready says the model is installed, not loaded: the daemon warms it a
+    # moment later, and a press inside that load starts capture on a CPU the
+    # model is using. CI's resolute VM lost audio there on both attempts.
+    assert_dict "the cleanup model is loaded" \
+        'wait_until 30 sh -c "journalctl --user -u snap.myna.myna.service --no-pager | grep -q \"text.cleanup bound to\""'
 }
 start_held() {
     assert_dict "the field is cleared" 'field_clear'
