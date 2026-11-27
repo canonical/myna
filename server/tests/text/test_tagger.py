@@ -53,10 +53,10 @@ def words(n: int) -> list[str]:
 
 
 def test_decode_applies_each_tag():
-    toks = ["so,", "um,", "we", "go", "home,", "Bob"]
-    tags = [KEEP, DELETE, KEEP, KEEP, STRIP, CAP]
+    toks = ["um,", "so,", "we", "go", "home,", "bob"]
+    tags = [DELETE, CAP, KEEP, KEEP, STRIP, KEEP]
 
-    assert decode(toks, tags) == "so, we go home Bob"
+    assert decode(toks, tags) == "So, we go home bob"
     assert decode(["a"], [CAP]) == "A"
     assert decode(["a,"], [KEEP]) == "a,"
     assert decode([], []) == ""
@@ -75,6 +75,13 @@ def test_decode_capitalises_what_now_opens_a_sentence():
     # Not a word with capitals inside it, and not text that was never opened.
     assert decode(["um", "iPhone", "ok."], [DELETE, KEEP, KEEP]) == "iPhone ok."
     assert decode(["we", "uh", "go."], [KEEP, DELETE, KEEP]) == "we go."
+
+
+def test_decode_capitalises_a_tagged_word_only_where_a_sentence_opens():
+    # A restart kept below tau leaves its CAP behind: "So I Just Whenever".
+    toks = ["So", "I", "just", "whenever", "you", "ask."]
+    assert decode(toks, [KEEP, KEEP, CAP, CAP, KEEP, KEEP]) == "So I just whenever you ask."
+    assert decode(["Hi.", "so", "we", "go."], [KEEP, CAP, KEEP, KEEP]) == "Hi. So we go."
 
 
 def test_decode_capitalises_after_an_opening_mark():

@@ -55,7 +55,9 @@ def decode(words: Sequence[str], tags: Sequence[int]) -> str:
 
     Beyond the tags: a sentence-final mark on a deleted word moves to the last
     kept word, and a lowercase word that now opens the text or a sentence
-    because words before it went takes a capital.
+    because words before it went takes a capital. A capital tag counts only
+    where a sentence opens: it is trained after deleted openers, so one left
+    mid-sentence by a delete kept below tau would read "So I Just Whenever".
     """
     out: list[str] = []
     pending_stop = ""
@@ -71,7 +73,7 @@ def decode(words: Sequence[str], tags: Sequence[int]) -> str:
             continue
         if tag == STRIP and word.endswith(","):
             word = word[:-1]
-        elif tag == CAP and word:
+        elif tag == CAP and word and opening:
             word = capitalised(word)
         if (
             opening
