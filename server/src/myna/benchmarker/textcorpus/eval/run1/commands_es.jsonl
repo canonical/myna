@@ -1,0 +1,49 @@
+{"id": "commands-es-001", "op": "commands", "lang": "es", "input": "Huevos, harina, azúcar. Pon eso en lista.", "refs": ["- Huevos\n- harina\n- azúcar"], "kind": "positive", "class": "list"}
+{"id": "commands-es-002", "op": "commands", "lang": "es", "input": "Tachó eso de su lista.", "refs": ["Tachó eso de su lista."], "kind": "negative", "class": "negative_in_sentence"}
+{"id": "commands-es-003", "op": "commands", "lang": "es", "input": "Nos vemos mañana en casa. Borra las dos últimas palabras.", "refs": ["Nos vemos mañana."], "kind": "positive", "class": "delete_words"}
+{"id": "commands-es-004", "op": "commands", "lang": "es", "input": "Me llamo Pedro. Borra la última palabra, Carlos.", "refs": ["Me llamo Carlos."], "kind": "positive", "class": "delete_words"}
+{"id": "commands-es-005", "op": "commands", "lang": "es", "input": "Querida Ana. Nuevo párrafo. Gracias por la llamada.", "refs": ["Querida Ana.\n\nGracias por la llamada."], "kind": "positive", "class": "paragraph"}
+{"id": "commands-es-006", "op": "commands", "lang": "es", "input": "Tenemos que eliminar eso antes del lunes.", "refs": ["Tenemos que eliminar eso antes del lunes."], "kind": "negative", "class": "negative_in_sentence"}
+{"id": "commands-es-007", "op": "commands", "lang": "es", "input": "Introducción. Nuevo párrafo. Empezamos.", "refs": ["Introducción.\n\nEmpezamos."], "kind": "positive", "class": "paragraph"}
+{"id": "commands-es-008", "op": "commands", "lang": "es", "input": "Hace buen tiempo hoy. Borra la última palabra.", "refs": ["Hace buen tiempo."], "kind": "positive", "class": "delete_words"}
+{"id": "commands-es-009", "op": "commands", "lang": "es", "input": "El nuevo párrafo de la ley es muy claro.", "refs": ["El nuevo párrafo de la ley es muy claro."], "kind": "negative", "class": "negative_in_sentence"}
+{"id": "commands-es-010", "op": "commands", "lang": "es", "input": "Hola a todos. Nuevo párrafo. Salimos el viernes. Borra la última palabra, lunes.", "refs": ["Hola a todos.\n\nSalimos el lunes."], "kind": "positive", "class": "combo"}
+{"id": "commands-es-011", "op": "commands", "lang": "es", "input": "Haz una lista de la compra para mañana.", "refs": ["Haz una lista de la compra para mañana."], "kind": "negative", "class": "negative_in_sentence"}
+{"id": "commands-es-012", "op": "commands", "lang": "es", "input": "Ella añadió una nueva línea de productos.", "refs": ["Ella añadió una nueva línea de productos."], "kind": "negative", "class": "negative_in_sentence"}
+{"id": "commands-es-013", "op": "commands", "lang": "es", "input": "Gracias Ana. Borra eso. Querida Ana. Nuevo párrafo. Aquí está el informe.", "refs": ["Querida Ana.\n\nAquí está el informe."], "kind": "positive", "class": "combo"}
+{"id": "commands-es-014", "op": "commands", "lang": "es", "input": "Hola. Nueva línea. ¿Cómo estás?", "refs": ["Hola.\n¿Cómo estás?"], "kind": "positive", "class": "newline"}
+{"id": "commands-es-015", "op": "commands", "lang": "es", "input": "Reunión el lunes. Borra eso. Reunión el martes.", "refs": ["Reunión el martes."], "kind": "positive", "class": "scratch"}
+{"id": "commands-es-016", "op": "commands", "lang": "es", "input": "Hay una nueva línea de autobús en Madrid.", "refs": ["Hay una nueva línea de autobús en Madrid."], "kind": "negative", "class": "negative_in_sentence"}
+{"id": "commands-es-017", "op": "commands", "lang": "es", "input": "Leche. Huevos. Pan. Formato de lista.", "refs": ["- Leche\n- Huevos\n- Pan"], "kind": "positive", "class": "list"}
+{"id": "commands-es-018", "op": "commands", "lang": "es", "input": "Saludos cordiales. Nuevo párrafo.", "refs": ["Saludos cordiales.\n\n"], "kind": "positive", "class": "paragraph"}
+{"id": "commands-es-019", "op": "commands", "lang": "es", "input": "Compras. Nueva línea. Manzanas. Peras. Lista con viñetas.", "refs": ["Compras.\n- Manzanas\n- Peras"], "kind": "positive", "class": "list"}
+{"id": "commands-es-020", "op": "commands", "lang": "es", "input": "Ayer borró eso.", "refs": ["Ayer borró eso."], "kind": "negative", "class": "negative_in_sentence"}
+{"id": "commands-es-021", "op": "commands", "lang": "es", "input": "Borra eso de tu memoria.", "refs": ["Borra eso de tu memoria."], "kind": "negative", "class": "negative_in_sentence"}
+{"id": "commands-es-022", "op": "commands", "lang": "es", "input": "Un pepino, tres peras, seis limones. Haz una lista.", "refs": ["- Un pepino\n- tres peras\n- seis limones"], "kind": "positive", "class": "list"}
+{"id": "commands-es-023", "op": "commands", "lang": "es", "input": "Dijo nueva línea. Luego se fue.", "refs": ["Dijo nueva línea. Luego se fue."], "kind": "negative", "class": "negative_similar"}
+{"id": "commands-es-024", "op": "commands", "lang": "es", "input": "Me dijo que borrara eso de la lista.", "refs": ["Me dijo que borrara eso de la lista."], "kind": "negative", "class": "negative_in_sentence"}
+{"id": "commands-es-025", "op": "commands", "lang": "es", "input": "No borres eso sin preguntarme.", "refs": ["No borres eso sin preguntarme."], "kind": "negative", "class": "negative_in_sentence"}
+{"id": "commands-es-026", "op": "commands", "lang": "es", "input": "Nos vemos en casa de Pedro. Borra las dos últimas palabras.", "refs": ["Nos vemos en casa."], "kind": "positive", "class": "delete_words"}
+{"id": "commands-es-027", "op": "commands", "lang": "es", "input": "La reunión es a mediodía. Tacha eso. La reunión es a las dos.", "refs": ["La reunión es a las dos."], "kind": "positive", "class": "scratch"}
+{"id": "commands-es-028", "op": "commands", "lang": "es", "input": "Borra eso de la pizarra, por favor.", "refs": ["Borra eso de la pizarra, por favor."], "kind": "negative", "class": "negative_in_sentence"}
+{"id": "commands-es-029", "op": "commands", "lang": "es", "input": "¿Estás listo ahora? Borra la última palabra.", "refs": ["¿Estás listo?"], "kind": "positive", "class": "delete_words"}
+{"id": "commands-es-030", "op": "commands", "lang": "es", "input": "¿Puedes borrar eso de la pizarra?", "refs": ["¿Puedes borrar eso de la pizarra?"], "kind": "negative", "class": "negative_in_sentence"}
+{"id": "commands-es-031", "op": "commands", "lang": "es", "input": "Querida Ana. Nueva línea. Gracias por la llamada.", "refs": ["Querida Ana.\nGracias por la llamada."], "kind": "positive", "class": "newline"}
+{"id": "commands-es-032", "op": "commands", "lang": "es", "input": "Borra las últimas palabras de cada línea.", "refs": ["Borra las últimas palabras de cada línea."], "kind": "negative", "class": "negative_in_sentence"}
+{"id": "commands-es-033", "op": "commands", "lang": "es", "input": "Hola María. Nueva línea. Llamo a las cinco. Tacha eso. Llamo a las seis.", "refs": ["Hola María.\nLlamo a las seis."], "kind": "positive", "class": "combo"}
+{"id": "commands-es-034", "op": "commands", "lang": "es", "input": "Orden del día. Nueva línea. Presupuesto. Contratación. Lista numerada. Nuevo párrafo. ¿Preguntas?", "refs": ["Orden del día.\n1. Presupuesto\n2. Contratación\n\n¿Preguntas?"], "kind": "positive", "class": "combo"}
+{"id": "commands-es-035", "op": "commands", "lang": "es", "input": "¿Está listo? Borra eso. ¿Está terminado?", "refs": ["¿Está terminado?"], "kind": "positive", "class": "scratch"}
+{"id": "commands-es-036", "op": "commands", "lang": "es", "input": "Hola Ana. Borra eso.", "refs": [""], "kind": "positive", "class": "scratch"}
+{"id": "commands-es-037", "op": "commands", "lang": "es", "input": "Salimos mañana temprano. Borra la última palabra.", "refs": ["Salimos mañana."], "kind": "positive", "class": "delete_words"}
+{"id": "commands-es-038", "op": "commands", "lang": "es", "input": "Quiero borrar este archivo.", "refs": ["Quiero borrar este archivo."], "kind": "negative", "class": "negative_in_sentence"}
+{"id": "commands-es-039", "op": "commands", "lang": "es", "input": "La última palabra del poema es preciosa.", "refs": ["La última palabra del poema es preciosa."], "kind": "negative", "class": "negative_in_sentence"}
+{"id": "commands-es-040", "op": "commands", "lang": "es", "input": "Necesito una lista numerada de los pasos.", "refs": ["Necesito una lista numerada de los pasos."], "kind": "negative", "class": "negative_in_sentence"}
+{"id": "commands-es-041", "op": "commands", "lang": "es", "input": "Formato de lista numerada. Abre la caja. Quita la tapa.", "refs": ["1. Abre la caja\n2. Quita la tapa"], "kind": "positive", "class": "list"}
+{"id": "commands-es-042", "op": "commands", "lang": "es", "input": "Llego mañana. Elimina eso. Llego hoy.", "refs": ["Llego hoy."], "kind": "positive", "class": "scratch"}
+{"id": "commands-es-043", "op": "commands", "lang": "es", "input": "Borra la última palabra del título.", "refs": ["Borra la última palabra del título."], "kind": "negative", "class": "negative_in_sentence"}
+{"id": "commands-es-044", "op": "commands", "lang": "es", "input": "Nos vemos a las cinco. Borra eso, nos vemos a las seis.", "refs": ["Nos vemos a las seis."], "kind": "positive", "class": "scratch"}
+{"id": "commands-es-045", "op": "commands", "lang": "es", "input": "Compra leche. Compra huevos. Borra eso. Compra pan.", "refs": ["Compra leche. Compra pan."], "kind": "positive", "class": "scratch"}
+{"id": "commands-es-046", "op": "commands", "lang": "es", "input": "En este párrafo hay un error.", "refs": ["En este párrafo hay un error."], "kind": "negative", "class": "negative_in_sentence"}
+{"id": "commands-es-047", "op": "commands", "lang": "es", "input": "Querida Ana. Nuevo párrafo. Reunión el lunes. Borra eso. Reunión el martes.", "refs": ["Querida Ana.\n\nReunión el martes."], "kind": "positive", "class": "combo"}
+{"id": "commands-es-048", "op": "commands", "lang": "es", "input": "Adiós. Nueva línea.", "refs": ["Adiós.\n"], "kind": "positive", "class": "newline"}
+{"id": "commands-es-049", "op": "commands", "lang": "es", "input": "Rojo. Verde. Azul. Lista numerada.", "refs": ["1. Rojo\n2. Verde\n3. Azul"], "kind": "positive", "class": "list"}

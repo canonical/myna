@@ -38,6 +38,8 @@ def dispatched(monkeypatch):
         ("myna.benchmarker._summarize", "cmd_compare", "compare"),
         ("myna.benchmarker._parquet", "cmd_export", "export"),
         ("myna.benchmarker.guard", "cmd_check", "check"),
+        ("myna.benchmarker.text_suite", "cmd_text", "text"),
+        ("myna.benchmarker.text_corpus", "cmd_build", "build-text-corpus"),
     ]:
         monkeypatch.setattr(f"{module}.{attr}", capture(name))
     return seen
@@ -64,6 +66,23 @@ def test_download_corpus_dispatches_to_the_downloader(monkeypatch, dispatched):
 def test_make_corpus_dispatches_to_the_manifest_builder(monkeypatch, dispatched):
     run_cli(monkeypatch, "make-corpus", "--dir", "clips")
     assert dispatched["command"] == "make-corpus"
+
+
+def test_text_dispatches_to_the_text_suite(monkeypatch, dispatched):
+    run_cli(monkeypatch, "text", "--system", "reference-rule", "--suite", "clean_en")
+    assert dispatched["command"] == "text"
+    assert dispatched["args"].system == "reference-rule"
+    assert dispatched["args"].suite == ["clean_en"]
+    assert dispatched["args"].repeats == 3
+
+
+def test_build_text_corpus_defaults_to_the_packaged_corpus(monkeypatch, dispatched):
+    from myna.benchmarker import text_corpus
+
+    run_cli(monkeypatch, "build-text-corpus")
+    assert dispatched["command"] == "build-text-corpus"
+    assert dispatched["args"].out == text_corpus.CORPUS_DIR
+    assert dispatched["args"].fleurs.name == "fleurs"
 
 
 def test_summarize_dispatches_to_the_aggregator(monkeypatch, dispatched):

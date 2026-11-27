@@ -1,0 +1,155 @@
+{"id": "numbers-en-001", "op": "numbers", "lang": "en", "input": "Twenty five people signed up for the workshop.", "refs": ["25 people signed up for the workshop.", "Twenty-five people signed up for the workshop."], "kind": "positive", "class": "cardinal"}
+{"id": "numbers-en-002", "op": "numbers", "lang": "en", "input": "The warehouse holds about three hundred pallets.", "refs": ["The warehouse holds about 300 pallets."], "kind": "positive", "class": "cardinal"}
+{"id": "numbers-en-003", "op": "numbers", "lang": "en", "input": "We received one hundred and twenty three applications.", "refs": ["We received 123 applications."], "kind": "positive", "class": "cardinal"}
+{"id": "numbers-en-004", "op": "numbers", "lang": "en", "input": "Over four thousand five hundred fans came to the match.", "refs": ["Over 4,500 fans came to the match.", "Over 4500 fans came to the match."], "kind": "positive", "class": "cardinal"}
+{"id": "numbers-en-005", "op": "numbers", "lang": "en", "input": "The company employs eleven thousand people worldwide.", "refs": ["The company employs 11,000 people worldwide.", "The company employs 11000 people worldwide."], "kind": "positive", "class": "cardinal"}
+{"id": "numbers-en-006", "op": "numbers", "lang": "en", "input": "She read fourteen chapters before bed.", "refs": ["She read 14 chapters before bed."], "kind": "positive", "class": "cardinal"}
+{"id": "numbers-en-007", "op": "numbers", "lang": "en", "input": "There were seventy two attendees at the talk.", "refs": ["There were 72 attendees at the talk."], "kind": "positive", "class": "cardinal"}
+{"id": "numbers-en-008", "op": "numbers", "lang": "en", "input": "The population is around two million.", "refs": ["The population is around 2 million.", "The population is around 2,000,000."], "kind": "positive", "class": "cardinal"}
+{"id": "numbers-en-009", "op": "numbers", "lang": "en", "input": "Please bring ten copies to the meeting.", "refs": ["Please bring 10 copies to the meeting."], "kind": "positive", "class": "cardinal"}
+{"id": "numbers-en-010", "op": "numbers", "lang": "en", "input": "A team of twelve engineers built the prototype.", "refs": ["A team of 12 engineers built the prototype."], "kind": "positive", "class": "cardinal"}
+{"id": "numbers-en-011", "op": "numbers", "lang": "en", "input": "We need one thousand two hundred bolts.", "refs": ["We need 1,200 bolts.", "We need 1200 bolts."], "kind": "positive", "class": "cardinal"}
+{"id": "numbers-en-012", "op": "numbers", "lang": "en", "input": "I counted ninety nine steps up the tower.", "refs": ["I counted 99 steps up the tower."], "kind": "positive", "class": "cardinal"}
+{"id": "numbers-en-013", "op": "numbers", "lang": "en", "input": "The list has forty three items.", "refs": ["The list has 43 items."], "kind": "positive", "class": "cardinal"}
+{"id": "numbers-en-014", "op": "numbers", "lang": "en", "input": "Sixteen students passed the exam and two failed.", "refs": ["16 students passed the exam and two failed.", "Sixteen students passed the exam and two failed."], "kind": "positive", "class": "cardinal"}
+{"id": "numbers-en-015", "op": "numbers", "lang": "en", "input": "The tournament has sixty four players.", "refs": ["The tournament has 64 players."], "kind": "positive", "class": "cardinal"}
+{"id": "numbers-en-016", "op": "numbers", "lang": "en", "input": "Nearly eight hundred thousand visitors came last year.", "refs": ["Nearly 800,000 visitors came last year.", "Nearly 800000 visitors came last year."], "kind": "positive", "class": "cardinal"}
+{"id": "numbers-en-017", "op": "numbers", "lang": "en", "input": "He scored a hundred and five points.", "refs": ["He scored 105 points."], "kind": "positive", "class": "cardinal"}
+{"id": "numbers-en-018", "op": "numbers", "lang": "en", "input": "I have two cats and thirteen fish.", "refs": ["I have two cats and 13 fish."], "kind": "positive", "class": "cardinal"}
+{"id": "numbers-en-019", "op": "numbers", "lang": "en", "input": "Fourteen of the twenty teams qualified.", "refs": ["14 of the 20 teams qualified."], "kind": "positive", "class": "cardinal"}
+{"id": "numbers-en-020", "op": "numbers", "lang": "en", "input": "The stadium seats eighty thousand people.", "refs": ["The stadium seats 80,000 people.", "The stadium seats 80000 people."], "kind": "positive", "class": "cardinal"}
+{"id": "numbers-en-021", "op": "numbers", "lang": "en", "input": "Room four oh seven is on the fourth floor.", "refs": ["Room 407 is on the fourth floor."], "kind": "positive", "class": "identifier"}
+{"id": "numbers-en-022", "op": "numbers", "lang": "en", "input": "Chapter twelve covers the basics.", "refs": ["Chapter 12 covers the basics."], "kind": "positive", "class": "identifier"}
+{"id": "numbers-en-023", "op": "numbers", "lang": "en", "input": "Page two hundred and four has the diagram.", "refs": ["Page 204 has the diagram."], "kind": "positive", "class": "identifier"}
+{"id": "numbers-en-024", "op": "numbers", "lang": "en", "input": "We shipped thirty boxes and the customer wants forty more.", "refs": ["We shipped 30 boxes and the customer wants 40 more."], "kind": "positive", "class": "cardinal"}
+{"id": "numbers-en-025", "op": "numbers", "lang": "en", "input": "It takes about three to four weeks.", "refs": ["It takes about 3 to 4 weeks."], "kind": "positive", "class": "cardinal"}
+{"id": "numbers-en-026", "op": "numbers", "lang": "en", "input": "We need between ten and twenty volunteers.", "refs": ["We need between 10 and 20 volunteers."], "kind": "positive", "class": "cardinal"}
+{"id": "numbers-en-027", "op": "numbers", "lang": "en", "input": "I will be there in twenty minutes.", "refs": ["I will be there in 20 minutes."], "kind": "positive", "class": "cardinal"}
+{"id": "numbers-en-028", "op": "numbers", "lang": "en", "input": "He is thirty years old.", "refs": ["He is 30 years old."], "kind": "positive", "class": "cardinal"}
+{"id": "numbers-en-029", "op": "numbers", "lang": "en", "input": "She waited for two hours and thirty minutes.", "refs": ["She waited for 2 hours and 30 minutes."], "kind": "positive", "class": "cardinal"}
+{"id": "numbers-en-030", "op": "numbers", "lang": "en", "input": "The ratio is three point five to one.", "refs": ["The ratio is 3.5 to one."], "kind": "positive", "class": "decimal"}
+{"id": "numbers-en-031", "op": "numbers", "lang": "en", "input": "Pi is about three point one four.", "refs": ["Pi is about 3.14."], "kind": "positive", "class": "decimal"}
+{"id": "numbers-en-032", "op": "numbers", "lang": "en", "input": "The error rate fell to zero point three.", "refs": ["The error rate fell to 0.3."], "kind": "positive", "class": "decimal"}
+{"id": "numbers-en-033", "op": "numbers", "lang": "en", "input": "Version two point four point one is out.", "refs": ["Version 2.4.1 is out."], "kind": "positive", "class": "decimal"}
+{"id": "numbers-en-034", "op": "numbers", "lang": "en", "input": "The score was nine point five out of ten.", "refs": ["The score was 9.5 out of ten.", "The score was 9.5 out of 10."], "kind": "positive", "class": "decimal"}
+{"id": "numbers-en-035", "op": "numbers", "lang": "en", "input": "The average came to twelve point seven.", "refs": ["The average came to 12.7."], "kind": "positive", "class": "decimal"}
+{"id": "numbers-en-036", "op": "numbers", "lang": "en", "input": "It is a difference of zero point zero five.", "refs": ["It is a difference of 0.05."], "kind": "positive", "class": "decimal"}
+{"id": "numbers-en-037", "op": "numbers", "lang": "en", "input": "The beam is two point five metres long.", "refs": ["The beam is 2.5 metres long.", "The beam is 2.5 m long."], "kind": "positive", "class": "decimal"}
+{"id": "numbers-en-038", "op": "numbers", "lang": "en", "input": "The ticket costs twenty five dollars.", "refs": ["The ticket costs $25."], "kind": "positive", "class": "money"}
+{"id": "numbers-en-039", "op": "numbers", "lang": "en", "input": "It was only five dollars.", "refs": ["It was only $5."], "kind": "positive", "class": "money"}
+{"id": "numbers-en-040", "op": "numbers", "lang": "en", "input": "The laptop costs one thousand two hundred dollars.", "refs": ["The laptop costs $1,200.", "The laptop costs $1200."], "kind": "positive", "class": "money"}
+{"id": "numbers-en-041", "op": "numbers", "lang": "en", "input": "Rent is nine hundred pounds a month.", "refs": ["Rent is £900 a month."], "kind": "positive", "class": "money"}
+{"id": "numbers-en-042", "op": "numbers", "lang": "en", "input": "She paid fifteen euros for the book.", "refs": ["She paid €15 for the book."], "kind": "positive", "class": "money"}
+{"id": "numbers-en-043", "op": "numbers", "lang": "en", "input": "The fine is fifty dollars and fifty cents.", "refs": ["The fine is $50.50."], "kind": "positive", "class": "money"}
+{"id": "numbers-en-044", "op": "numbers", "lang": "en", "input": "It costs three dollars ninety nine.", "refs": ["It costs $3.99."], "kind": "positive", "class": "money"}
+{"id": "numbers-en-045", "op": "numbers", "lang": "en", "input": "A coffee is two dollars.", "refs": ["A coffee is $2."], "kind": "positive", "class": "money"}
+{"id": "numbers-en-046", "op": "numbers", "lang": "en", "input": "Donations reached two point five million dollars.", "refs": ["Donations reached $2.5 million.", "Donations reached $2,500,000."], "kind": "positive", "class": "money"}
+{"id": "numbers-en-047", "op": "numbers", "lang": "en", "input": "They offered me sixty thousand pounds a year.", "refs": ["They offered me £60,000 a year.", "They offered me £60000 a year."], "kind": "positive", "class": "money"}
+{"id": "numbers-en-048", "op": "numbers", "lang": "en", "input": "The meeting is at three thirty and costs twenty five dollars.", "refs": ["The meeting is at 3:30 and costs $25."], "kind": "positive", "class": "money"}
+{"id": "numbers-en-049", "op": "numbers", "lang": "en", "input": "Fifty percent of the votes were counted.", "refs": ["50% of the votes were counted."], "kind": "positive", "class": "percent"}
+{"id": "numbers-en-050", "op": "numbers", "lang": "en", "input": "Sales grew by twelve percent.", "refs": ["Sales grew by 12%."], "kind": "positive", "class": "percent"}
+{"id": "numbers-en-051", "op": "numbers", "lang": "en", "input": "About two percent of users complained.", "refs": ["About 2% of users complained."], "kind": "positive", "class": "percent"}
+{"id": "numbers-en-052", "op": "numbers", "lang": "en", "input": "The battery is at seventy five percent.", "refs": ["The battery is at 75%."], "kind": "positive", "class": "percent"}
+{"id": "numbers-en-053", "op": "numbers", "lang": "en", "input": "We had ninety nine point nine percent uptime.", "refs": ["We had 99.9% uptime."], "kind": "positive", "class": "percent"}
+{"id": "numbers-en-054", "op": "numbers", "lang": "en", "input": "Interest is three and a half percent.", "refs": ["Interest is 3.5%."], "kind": "positive", "class": "percent"}
+{"id": "numbers-en-055", "op": "numbers", "lang": "en", "input": "Only one percent replied.", "refs": ["Only 1% replied."], "kind": "positive", "class": "percent"}
+{"id": "numbers-en-056", "op": "numbers", "lang": "en", "input": "Let us meet at three thirty pm.", "refs": ["Let us meet at 3:30 pm.", "Let us meet at 3:30 PM.", "Let us meet at 3:30pm."], "kind": "positive", "class": "time"}
+{"id": "numbers-en-057", "op": "numbers", "lang": "en", "input": "The train leaves at eight fifteen am.", "refs": ["The train leaves at 8:15 am.", "The train leaves at 8:15 AM.", "The train leaves at 8:15am."], "kind": "positive", "class": "time"}
+{"id": "numbers-en-058", "op": "numbers", "lang": "en", "input": "Dinner is at seven pm.", "refs": ["Dinner is at 7 pm.", "Dinner is at 7 PM.", "Dinner is at 7pm."], "kind": "positive", "class": "time"}
+{"id": "numbers-en-059", "op": "numbers", "lang": "en", "input": "The shop closes at ten forty five.", "refs": ["The shop closes at 10:45."], "kind": "positive", "class": "time"}
+{"id": "numbers-en-060", "op": "numbers", "lang": "en", "input": "The flight departs at six oh five.", "refs": ["The flight departs at 6:05."], "kind": "positive", "class": "time"}
+{"id": "numbers-en-061", "op": "numbers", "lang": "en", "input": "We landed at eleven fifty nine pm.", "refs": ["We landed at 11:59 pm.", "We landed at 11:59 PM.", "We landed at 11:59pm."], "kind": "positive", "class": "time"}
+{"id": "numbers-en-062", "op": "numbers", "lang": "en", "input": "Doors open at nine pm sharp.", "refs": ["Doors open at 9 pm sharp.", "Doors open at 9 PM sharp.", "Doors open at 9pm sharp."], "kind": "positive", "class": "time"}
+{"id": "numbers-en-063", "op": "numbers", "lang": "en", "input": "The call is at two fifteen in the afternoon.", "refs": ["The call is at 2:15 in the afternoon."], "kind": "positive", "class": "time"}
+{"id": "numbers-en-064", "op": "numbers", "lang": "en", "input": "The deadline is March twenty first.", "refs": ["The deadline is March 21.", "The deadline is March 21st."], "kind": "positive", "class": "date"}
+{"id": "numbers-en-065", "op": "numbers", "lang": "en", "input": "The concert is on the twenty third of June.", "refs": ["The concert is on the 23rd of June."], "kind": "positive", "class": "date"}
+{"id": "numbers-en-066", "op": "numbers", "lang": "en", "input": "The conference runs from May twelfth to May fourteenth.", "refs": ["The conference runs from May 12 to May 14.", "The conference runs from May 12th to May 14th."], "kind": "positive", "class": "date"}
+{"id": "numbers-en-067", "op": "numbers", "lang": "en", "input": "It happened on January first, nineteen ninety nine.", "refs": ["It happened on January 1, 1999.", "It happened on January 1st, 1999."], "kind": "positive", "class": "date"}
+{"id": "numbers-en-068", "op": "numbers", "lang": "en", "input": "The deadline is the thirtieth of April.", "refs": ["The deadline is the 30th of April."], "kind": "positive", "class": "date"}
+{"id": "numbers-en-069", "op": "numbers", "lang": "en", "input": "Her birthday is on March third.", "refs": ["Her birthday is on March 3.", "Her birthday is on March 3rd."], "kind": "positive", "class": "date"}
+{"id": "numbers-en-070", "op": "numbers", "lang": "en", "input": "Two thousand twenty six was a busy year.", "refs": ["2026 was a busy year."], "kind": "positive", "class": "year"}
+{"id": "numbers-en-071", "op": "numbers", "lang": "en", "input": "He was born in nineteen eighty four.", "refs": ["He was born in 1984."], "kind": "positive", "class": "year"}
+{"id": "numbers-en-072", "op": "numbers", "lang": "en", "input": "The bridge was built in eighteen ninety.", "refs": ["The bridge was built in 1890."], "kind": "positive", "class": "year"}
+{"id": "numbers-en-073", "op": "numbers", "lang": "en", "input": "They moved here in two thousand and five.", "refs": ["They moved here in 2005."], "kind": "positive", "class": "year"}
+{"id": "numbers-en-074", "op": "numbers", "lang": "en", "input": "By twenty thirty we expect to be carbon neutral.", "refs": ["By 2030 we expect to be carbon neutral."], "kind": "positive", "class": "year"}
+{"id": "numbers-en-075", "op": "numbers", "lang": "en", "input": "It was the summer of nineteen sixty nine.", "refs": ["It was the summer of 1969."], "kind": "positive", "class": "year"}
+{"id": "numbers-en-076", "op": "numbers", "lang": "en", "input": "In the year two thousand the world did not end.", "refs": ["In the year 2000 the world did not end."], "kind": "positive", "class": "year"}
+{"id": "numbers-en-077", "op": "numbers", "lang": "en", "input": "She finished twenty third in the marathon.", "refs": ["She finished 23rd in the marathon."], "kind": "positive", "class": "ordinal"}
+{"id": "numbers-en-078", "op": "numbers", "lang": "en", "input": "This is the hundredth episode.", "refs": ["This is the 100th episode."], "kind": "positive", "class": "ordinal"}
+{"id": "numbers-en-079", "op": "numbers", "lang": "en", "input": "We live on the fourteenth floor.", "refs": ["We live on the 14th floor."], "kind": "positive", "class": "ordinal"}
+{"id": "numbers-en-080", "op": "numbers", "lang": "en", "input": "He came in thirty first.", "refs": ["He came in 31st."], "kind": "positive", "class": "ordinal"}
+{"id": "numbers-en-081", "op": "numbers", "lang": "en", "input": "It is our twenty fifth anniversary.", "refs": ["It is our 25th anniversary."], "kind": "positive", "class": "ordinal"}
+{"id": "numbers-en-082", "op": "numbers", "lang": "en", "input": "Happy fifty fifth birthday!", "refs": ["Happy 55th birthday!"], "kind": "positive", "class": "ordinal"}
+{"id": "numbers-en-083", "op": "numbers", "lang": "en", "input": "The road is five kilometres long.", "refs": ["The road is 5 km long.", "The road is 5 kilometres long."], "kind": "positive", "class": "measure"}
+{"id": "numbers-en-084", "op": "numbers", "lang": "en", "input": "He ran ten kilometres this morning.", "refs": ["He ran 10 km this morning.", "He ran 10 kilometres this morning."], "kind": "positive", "class": "measure"}
+{"id": "numbers-en-085", "op": "numbers", "lang": "en", "input": "The package weighs two kilograms.", "refs": ["The package weighs 2 kg.", "The package weighs 2 kilograms."], "kind": "positive", "class": "measure"}
+{"id": "numbers-en-086", "op": "numbers", "lang": "en", "input": "The room is four metres wide.", "refs": ["The room is 4 m wide.", "The room is 4 metres wide."], "kind": "positive", "class": "measure"}
+{"id": "numbers-en-087", "op": "numbers", "lang": "en", "input": "Set the oven to two hundred degrees.", "refs": ["Set the oven to 200 degrees.", "Set the oven to 200°."], "kind": "positive", "class": "measure"}
+{"id": "numbers-en-088", "op": "numbers", "lang": "en", "input": "It is minus five degrees outside.", "refs": ["It is -5 degrees outside.", "It is -5° outside."], "kind": "positive", "class": "measure"}
+{"id": "numbers-en-089", "op": "numbers", "lang": "en", "input": "The file is eight hundred megabytes.", "refs": ["The file is 800 MB.", "The file is 800 megabytes."], "kind": "positive", "class": "measure"}
+{"id": "numbers-en-090", "op": "numbers", "lang": "en", "input": "The tank holds fifty litres.", "refs": ["The tank holds 50 litres.", "The tank holds 50 L.", "The tank holds 50 l."], "kind": "positive", "class": "measure"}
+{"id": "numbers-en-091", "op": "numbers", "lang": "en", "input": "He is six feet two inches tall.", "refs": ["He is 6 feet 2 inches tall.", "He is 6 ft 2 in tall.", "He is 6'2\" tall."], "kind": "positive", "class": "measure"}
+{"id": "numbers-en-092", "op": "numbers", "lang": "en", "input": "The processor runs at three point two gigahertz.", "refs": ["The processor runs at 3.2 GHz.", "The processor runs at 3.2 gigahertz."], "kind": "positive", "class": "measure"}
+{"id": "numbers-en-093", "op": "numbers", "lang": "en", "input": "We drove three miles to the station.", "refs": ["We drove 3 miles to the station."], "kind": "positive", "class": "measure"}
+{"id": "numbers-en-094", "op": "numbers", "lang": "en", "input": "Add two teaspoons of salt.", "refs": ["Add 2 teaspoons of salt.", "Add 2 tsp of salt."], "kind": "positive", "class": "measure"}
+{"id": "numbers-en-095", "op": "numbers", "lang": "en", "input": "My number is five five five one two three four.", "refs": ["My number is 555-1234.", "My number is 555 1234.", "My number is 5551234."], "kind": "positive", "class": "phone"}
+{"id": "numbers-en-096", "op": "numbers", "lang": "en", "input": "Call zero two zero, seven nine four six, zero eight nine eight.", "refs": ["Call 020 7946 0898.", "Call 020-7946-0898.", "Call 02079460898."], "kind": "positive", "class": "phone"}
+{"id": "numbers-en-097", "op": "numbers", "lang": "en", "input": "The emergency number is nine one one.", "refs": ["The emergency number is 911."], "kind": "positive", "class": "phone"}
+{"id": "numbers-en-098", "op": "numbers", "lang": "en", "input": "Dial one eight hundred five five five oh one one two.", "refs": ["Dial 1-800-555-0112.", "Dial 1 800 555 0112.", "Dial 1800 555 0112."], "kind": "positive", "class": "phone"}
+{"id": "numbers-en-099", "op": "numbers", "lang": "en", "input": "The trip costs two hundred dollars and takes three days.", "refs": ["The trip costs $200 and takes 3 days."], "kind": "positive", "class": "mixed"}
+{"id": "numbers-en-100", "op": "numbers", "lang": "en", "input": "The hike is twelve kilometres and starts at six thirty am.", "refs": ["The hike is 12 km and starts at 6:30 am.", "The hike is 12 kilometres and starts at 6:30 am.", "The hike is 12 km and starts at 6:30 AM."], "kind": "positive", "class": "mixed"}
+{"id": "numbers-en-101", "op": "numbers", "lang": "en", "input": "One of the best films I have seen.", "refs": ["One of the best films I have seen."], "kind": "negative", "class": "idiom"}
+{"id": "numbers-en-102", "op": "numbers", "lang": "en", "input": "On second thought, let us stay home.", "refs": ["On second thought, let us stay home."], "kind": "negative", "class": "idiom"}
+{"id": "numbers-en-103", "op": "numbers", "lang": "en", "input": "I will be there in a couple of minutes.", "refs": ["I will be there in a couple of minutes."], "kind": "negative", "class": "idiom"}
+{"id": "numbers-en-104", "op": "numbers", "lang": "en", "input": "That was a one in a million chance.", "refs": ["That was a one in a million chance."], "kind": "negative", "class": "idiom"}
+{"id": "numbers-en-105", "op": "numbers", "lang": "en", "input": "It takes two to tango.", "refs": ["It takes two to tango."], "kind": "negative", "class": "idiom"}
+{"id": "numbers-en-106", "op": "numbers", "lang": "en", "input": "Two heads are better than one.", "refs": ["Two heads are better than one."], "kind": "negative", "class": "idiom"}
+{"id": "numbers-en-107", "op": "numbers", "lang": "en", "input": "We are back to square one.", "refs": ["We are back to square one."], "kind": "negative", "class": "idiom"}
+{"id": "numbers-en-108", "op": "numbers", "lang": "en", "input": "A picture is worth a thousand words.", "refs": ["A picture is worth a thousand words."], "kind": "negative", "class": "idiom"}
+{"id": "numbers-en-109", "op": "numbers", "lang": "en", "input": "At the eleventh hour we found a fix.", "refs": ["At the eleventh hour we found a fix."], "kind": "negative", "class": "idiom"}
+{"id": "numbers-en-110", "op": "numbers", "lang": "en", "input": "Three is a crowd.", "refs": ["Three is a crowd."], "kind": "negative", "class": "idiom"}
+{"id": "numbers-en-111", "op": "numbers", "lang": "en", "input": "One day I will visit Japan.", "refs": ["One day I will visit Japan."], "kind": "negative", "class": "idiom"}
+{"id": "numbers-en-112", "op": "numbers", "lang": "en", "input": "No one knows the answer.", "refs": ["No one knows the answer."], "kind": "negative", "class": "idiom"}
+{"id": "numbers-en-113", "op": "numbers", "lang": "en", "input": "Hold on, one second.", "refs": ["Hold on, one second."], "kind": "negative", "class": "idiom"}
+{"id": "numbers-en-114", "op": "numbers", "lang": "en", "input": "I have told you a thousand times.", "refs": ["I have told you a thousand times."], "kind": "negative", "class": "idiom"}
+{"id": "numbers-en-115", "op": "numbers", "lang": "en", "input": "Just one more thing.", "refs": ["Just one more thing."], "kind": "negative", "class": "idiom"}
+{"id": "numbers-en-116", "op": "numbers", "lang": "en", "input": "I am in two minds about it.", "refs": ["I am in two minds about it."], "kind": "negative", "class": "idiom"}
+{"id": "numbers-en-117", "op": "numbers", "lang": "en", "input": "On the one hand, it is cheap.", "refs": ["On the one hand, it is cheap."], "kind": "negative", "class": "idiom"}
+{"id": "numbers-en-118", "op": "numbers", "lang": "en", "input": "He felt like a million bucks.", "refs": ["He felt like a million bucks."], "kind": "negative", "class": "idiom"}
+{"id": "numbers-en-119", "op": "numbers", "lang": "en", "input": "She was dressed to the nines.", "refs": ["She was dressed to the nines."], "kind": "negative", "class": "idiom"}
+{"id": "numbers-en-120", "op": "numbers", "lang": "en", "input": "It is six of one, half a dozen of the other.", "refs": ["It is six of one, half a dozen of the other."], "kind": "negative", "class": "idiom"}
+{"id": "numbers-en-121", "op": "numbers", "lang": "en", "input": "They went the whole nine yards.", "refs": ["They went the whole nine yards."], "kind": "negative", "class": "idiom"}
+{"id": "numbers-en-122", "op": "numbers", "lang": "en", "input": "A dozen eggs, please.", "refs": ["A dozen eggs, please."], "kind": "negative", "class": "idiom"}
+{"id": "numbers-en-123", "op": "numbers", "lang": "en", "input": "She is in her thirties.", "refs": ["She is in her thirties."], "kind": "negative", "class": "idiom"}
+{"id": "numbers-en-124", "op": "numbers", "lang": "en", "input": "We are the twenty-somethings of this town.", "refs": ["We are the twenty-somethings of this town."], "kind": "negative", "class": "idiom"}
+{"id": "numbers-en-125", "op": "numbers", "lang": "en", "input": "The Fantastic Four is a classic comic.", "refs": ["The Fantastic Four is a classic comic."], "kind": "negative", "class": "title"}
+{"id": "numbers-en-126", "op": "numbers", "lang": "en", "input": "The Three Musketeers is on tonight.", "refs": ["The Three Musketeers is on tonight."], "kind": "negative", "class": "title"}
+{"id": "numbers-en-127", "op": "numbers", "lang": "en", "input": "Seven Samurai is my favourite film.", "refs": ["Seven Samurai is my favourite film."], "kind": "negative", "class": "title"}
+{"id": "numbers-en-128", "op": "numbers", "lang": "en", "input": "Henry the Eighth had six wives.", "refs": ["Henry the Eighth had six wives."], "kind": "negative", "class": "title"}
+{"id": "numbers-en-129", "op": "numbers", "lang": "en", "input": "I have two kids and a dog.", "refs": ["I have two kids and a dog."], "kind": "negative", "class": "small_number"}
+{"id": "numbers-en-130", "op": "numbers", "lang": "en", "input": "She owns three cats.", "refs": ["She owns three cats."], "kind": "negative", "class": "small_number"}
+{"id": "numbers-en-131", "op": "numbers", "lang": "en", "input": "We saw seven birds by the lake.", "refs": ["We saw seven birds by the lake."], "kind": "negative", "class": "small_number"}
+{"id": "numbers-en-132", "op": "numbers", "lang": "en", "input": "He ordered four coffees.", "refs": ["He ordered four coffees."], "kind": "negative", "class": "small_number"}
+{"id": "numbers-en-133", "op": "numbers", "lang": "en", "input": "There are five of us.", "refs": ["There are five of us."], "kind": "negative", "class": "small_number"}
+{"id": "numbers-en-134", "op": "numbers", "lang": "en", "input": "Only two students were absent.", "refs": ["Only two students were absent."], "kind": "negative", "class": "small_number"}
+{"id": "numbers-en-135", "op": "numbers", "lang": "en", "input": "I read six books this summer.", "refs": ["I read six books this summer."], "kind": "negative", "class": "small_number"}
+{"id": "numbers-en-136", "op": "numbers", "lang": "en", "input": "We stayed eight nights in Lisbon.", "refs": ["We stayed eight nights in Lisbon."], "kind": "negative", "class": "small_number"}
+{"id": "numbers-en-137", "op": "numbers", "lang": "en", "input": "This is the fifth time I have asked.", "refs": ["This is the fifth time I have asked."], "kind": "negative", "class": "ordinal_prose"}
+{"id": "numbers-en-138", "op": "numbers", "lang": "en", "input": "She came second in the race.", "refs": ["She came second in the race."], "kind": "negative", "class": "ordinal_prose"}
+{"id": "numbers-en-139", "op": "numbers", "lang": "en", "input": "It is my third attempt.", "refs": ["It is my third attempt."], "kind": "negative", "class": "ordinal_prose"}
+{"id": "numbers-en-140", "op": "numbers", "lang": "en", "input": "He was the first to arrive.", "refs": ["He was the first to arrive."], "kind": "negative", "class": "ordinal_prose"}
+{"id": "numbers-en-141", "op": "numbers", "lang": "en", "input": "The seventh floor has a nice view.", "refs": ["The seventh floor has a nice view."], "kind": "negative", "class": "ordinal_prose"}
+{"id": "numbers-en-142", "op": "numbers", "lang": "en", "input": "The meeting is at 3:30 pm and costs $25.", "refs": ["The meeting is at 3:30 pm and costs $25."], "kind": "negative", "class": "already_written"}
+{"id": "numbers-en-143", "op": "numbers", "lang": "en", "input": "We shipped 25 boxes yesterday.", "refs": ["We shipped 25 boxes yesterday."], "kind": "negative", "class": "already_written"}
+{"id": "numbers-en-144", "op": "numbers", "lang": "en", "input": "It rose by 12% in 2026.", "refs": ["It rose by 12% in 2026."], "kind": "negative", "class": "already_written"}
+{"id": "numbers-en-145", "op": "numbers", "lang": "en", "input": "The room is 4 m wide and 6 m long.", "refs": ["The room is 4 m wide and 6 m long."], "kind": "negative", "class": "already_written"}
+{"id": "numbers-en-146", "op": "numbers", "lang": "en", "input": "Call 911 immediately.", "refs": ["Call 911 immediately."], "kind": "negative", "class": "already_written"}
+{"id": "numbers-en-147", "op": "numbers", "lang": "en", "input": "The deadline is March 21, 2026.", "refs": ["The deadline is March 21, 2026."], "kind": "negative", "class": "already_written"}
+{"id": "numbers-en-148", "op": "numbers", "lang": "en", "input": "Pi is roughly 3.14.", "refs": ["Pi is roughly 3.14."], "kind": "negative", "class": "already_written"}
+{"id": "numbers-en-149", "op": "numbers", "lang": "en", "input": "Version 2.4.1 is out.", "refs": ["Version 2.4.1 is out."], "kind": "negative", "class": "already_written"}
+{"id": "numbers-en-150", "op": "numbers", "lang": "en", "input": "Page 204 has the diagram.", "refs": ["Page 204 has the diagram."], "kind": "negative", "class": "already_written"}
+{"id": "numbers-en-151", "op": "numbers", "lang": "en", "input": "She finished 23rd in the marathon.", "refs": ["She finished 23rd in the marathon."], "kind": "negative", "class": "already_written"}
+{"id": "numbers-en-152", "op": "numbers", "lang": "en", "input": "Dinner costs €15 per head.", "refs": ["Dinner costs €15 per head."], "kind": "negative", "class": "already_written"}
+{"id": "numbers-en-153", "op": "numbers", "lang": "en", "input": "I live at 42 Baker Street.", "refs": ["I live at 42 Baker Street."], "kind": "negative", "class": "already_written"}
+{"id": "numbers-en-154", "op": "numbers", "lang": "en", "input": "It was -5 °C this morning.", "refs": ["It was -5 °C this morning."], "kind": "negative", "class": "already_written"}
+{"id": "numbers-en-155", "op": "numbers", "lang": "en", "input": "The 2024 report is online.", "refs": ["The 2024 report is online."], "kind": "negative", "class": "already_written"}

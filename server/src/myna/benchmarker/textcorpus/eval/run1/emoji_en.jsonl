@@ -1,0 +1,78 @@
+{"id": "emoji-en-001", "op": "emoji", "lang": "en", "input": "Send the thumbs up emoji to the team.", "refs": ["Send the 👍 to the team.", "Send 👍 to the team."], "kind": "positive", "class": "article"}
+{"id": "emoji-en-002", "op": "emoji", "lang": "en", "input": "Great job thumbs up emoji", "refs": ["Great job 👍"], "kind": "positive", "class": "name"}
+{"id": "emoji-en-003", "op": "emoji", "lang": "en", "input": "Please add a trophy to the shelf.", "refs": ["Please add a trophy to the shelf."], "kind": "negative", "class": "negative"}
+{"id": "emoji-en-004", "op": "emoji", "lang": "en", "input": "Nice one, clap emoji.", "refs": ["Nice one, 👏."], "kind": "positive", "class": "shortcode"}
+{"id": "emoji-en-005", "op": "emoji", "lang": "en", "input": "Use a rocket emoji in the title.", "refs": ["Use a 🚀 in the title.", "Use 🚀 in the title."], "kind": "positive", "class": "article"}
+{"id": "emoji-en-006", "op": "emoji", "lang": "en", "input": "Pizza night is on Friday.", "refs": ["Pizza night is on Friday."], "kind": "negative", "class": "negative"}
+{"id": "emoji-en-007", "op": "emoji", "lang": "en", "input": "We shipped it, tada emoji!", "refs": ["We shipped it, 🎉!"], "kind": "positive", "class": "shortcode"}
+{"id": "emoji-en-008", "op": "emoji", "lang": "en", "input": "Send me an emoji.", "refs": ["Send me an emoji."], "kind": "negative", "class": "negative"}
+{"id": "emoji-en-009", "op": "emoji", "lang": "en", "input": "Let's get pizza emoji tonight.", "refs": ["Let's get 🍕 tonight."], "kind": "positive", "class": "name"}
+{"id": "emoji-en-010", "op": "emoji", "lang": "en", "input": "These are free emoji for everyone.", "refs": ["These are free emoji for everyone."], "kind": "negative", "class": "negative"}
+{"id": "emoji-en-011", "op": "emoji", "lang": "en", "input": "You won, trophy emoji!", "refs": ["You won, 🏆!"], "kind": "positive", "class": "name"}
+{"id": "emoji-en-012", "op": "emoji", "lang": "en", "input": "Fire in the hole!", "refs": ["Fire in the hole!"], "kind": "negative", "class": "negative"}
+{"id": "emoji-en-013", "op": "emoji", "lang": "en", "input": "Heart eyes emoji.", "refs": ["😍."], "kind": "positive", "class": "shortcode"}
+{"id": "emoji-en-014", "op": "emoji", "lang": "en", "input": "Thank you, pray emoji.", "refs": ["Thank you, 🙏."], "kind": "positive", "class": "shortcode"}
+{"id": "emoji-en-015", "op": "emoji", "lang": "en", "input": "Add an emoji picker to the settings page.", "refs": ["Add an emoji picker to the settings page."], "kind": "negative", "class": "negative"}
+{"id": "emoji-en-016", "op": "emoji", "lang": "en", "input": "I love emoji.", "refs": ["I love emoji."], "kind": "negative", "class": "negative"}
+{"id": "emoji-en-017", "op": "emoji", "lang": "en", "input": "Just kidding, winking face emoji.", "refs": ["Just kidding, 😉."], "kind": "positive", "class": "name"}
+{"id": "emoji-en-018", "op": "emoji", "lang": "en", "input": "Rocket Emoji launched.", "refs": ["🚀 launched."], "kind": "positive", "class": "case"}
+{"id": "emoji-en-019", "op": "emoji", "lang": "en", "input": "Well done, clapping hands emoji.", "refs": ["Well done, 👏."], "kind": "positive", "class": "name"}
+{"id": "emoji-en-020", "op": "emoji", "lang": "en", "input": "Cool, smiling face with sunglasses emoji.", "refs": ["Cool, 😎."], "kind": "positive", "class": "name"}
+{"id": "emoji-en-021", "op": "emoji", "lang": "en", "input": "Rolling on floor laughing emoji.", "refs": ["🤣."], "kind": "positive", "class": "shortcode"}
+{"id": "emoji-en-022", "op": "emoji", "lang": "en", "input": "Good night, sleeping face emoji.", "refs": ["Good night, 😴."], "kind": "positive", "class": "name"}
+{"id": "emoji-en-023", "op": "emoji", "lang": "en", "input": "No emoji in the subject line, please.", "refs": ["No emoji in the subject line, please."], "kind": "negative", "class": "negative"}
+{"id": "emoji-en-024", "op": "emoji", "lang": "en", "input": "Thumbs up emoji and fire emoji.", "refs": ["👍 and 🔥."], "kind": "positive", "class": "multiple"}
+{"id": "emoji-en-025", "op": "emoji", "lang": "en", "input": "Thumbs-Up Emoji", "refs": ["👍"], "kind": "positive", "class": "case"}
+{"id": "emoji-en-026", "op": "emoji", "lang": "en", "input": "Thumbs up emoji.", "refs": ["👍."], "kind": "positive", "class": "name"}
+{"id": "emoji-en-027", "op": "emoji", "lang": "en", "input": "That emoji is too small.", "refs": ["That emoji is too small."], "kind": "negative", "class": "negative"}
+{"id": "emoji-en-028", "op": "emoji", "lang": "en", "input": "FIRE EMOJI!", "refs": ["🔥!"], "kind": "positive", "class": "case"}
+{"id": "emoji-en-029", "op": "emoji", "lang": "en", "input": "Look at this, eyes emoji.", "refs": ["Look at this, 👀."], "kind": "positive", "class": "name"}
+{"id": "emoji-en-030", "op": "emoji", "lang": "en", "input": "Who's a good boy, dog face emoji.", "refs": ["Who's a good boy, 🐶."], "kind": "positive", "class": "name"}
+{"id": "emoji-en-031", "op": "emoji", "lang": "en", "input": "I said Red Heart Emoji, not blue.", "refs": ["I said ❤️, not blue."], "kind": "positive", "class": "case"}
+{"id": "emoji-en-032", "op": "emoji", "lang": "en", "input": "For you, wrapped gift emoji.", "refs": ["For you, 🎁."], "kind": "positive", "class": "name"}
+{"id": "emoji-en-033", "op": "emoji", "lang": "en", "input": "Pick your top emoji and share it.", "refs": ["Pick your top emoji and share it."], "kind": "negative", "class": "negative"}
+{"id": "emoji-en-034", "op": "emoji", "lang": "en", "input": "Emoji can look different on each phone.", "refs": ["Emoji can look different on each phone."], "kind": "negative", "class": "negative"}
+{"id": "emoji-en-035", "op": "emoji", "lang": "en", "input": "The emoji for fire looks like a flame.", "refs": ["The emoji for fire looks like a flame."], "kind": "negative", "class": "negative"}
+{"id": "emoji-en-036", "op": "emoji", "lang": "en", "input": "Thumbs up to the whole team, great work.", "refs": ["Thumbs up to the whole team, great work."], "kind": "negative", "class": "negative"}
+{"id": "emoji-en-037", "op": "emoji", "lang": "en", "input": "She works on the emoji committee.", "refs": ["She works on the emoji committee."], "kind": "negative", "class": "negative"}
+{"id": "emoji-en-038", "op": "emoji", "lang": "en", "input": "Rocket emoji, rocket emoji, rocket emoji.", "refs": ["🚀, 🚀, 🚀."], "kind": "positive", "class": "multiple"}
+{"id": "emoji-en-039", "op": "emoji", "lang": "en", "input": "Is the emoji set complete?", "refs": ["Is the emoji set complete?"], "kind": "negative", "class": "negative"}
+{"id": "emoji-en-040", "op": "emoji", "lang": "en", "input": "Let's celebrate, partying face emoji!", "refs": ["Let's celebrate, 🥳!"], "kind": "positive", "class": "name"}
+{"id": "emoji-en-041", "op": "emoji", "lang": "en", "input": "See you tomorrow, waving hand emoji.", "refs": ["See you tomorrow, 👋."], "kind": "positive", "class": "name"}
+{"id": "emoji-en-042", "op": "emoji", "lang": "en", "input": "Haha, face with tears of joy emoji.", "refs": ["Haha, 😂."], "kind": "positive", "class": "name"}
+{"id": "emoji-en-043", "op": "emoji", "lang": "en", "input": "He gave a thumbs up and smiled.", "refs": ["He gave a thumbs up and smiled."], "kind": "negative", "class": "negative"}
+{"id": "emoji-en-044", "op": "emoji", "lang": "en", "input": "I love it, red heart emoji!", "refs": ["I love it, ❤️!"], "kind": "positive", "class": "name"}
+{"id": "emoji-en-045", "op": "emoji", "lang": "en", "input": "Do you have a favourite emoji?", "refs": ["Do you have a favourite emoji?"], "kind": "negative", "class": "negative"}
+{"id": "emoji-en-046", "op": "emoji", "lang": "en", "input": "Thumbs up!", "refs": ["Thumbs up!"], "kind": "negative", "class": "negative"}
+{"id": "emoji-en-047", "op": "emoji", "lang": "en", "input": "Sorry to hear that, broken heart emoji.", "refs": ["Sorry to hear that, 💔."], "kind": "positive", "class": "name"}
+{"id": "emoji-en-048", "op": "emoji", "lang": "en", "input": "I think emoji are overused in email.", "refs": ["I think emoji are overused in email."], "kind": "negative", "class": "negative"}
+{"id": "emoji-en-049", "op": "emoji", "lang": "en", "input": "She sent me a heart and a rocket.", "refs": ["She sent me a heart and a rocket."], "kind": "negative", "class": "negative"}
+{"id": "emoji-en-050", "op": "emoji", "lang": "en", "input": "The rocket launched at noon.", "refs": ["The rocket launched at noon."], "kind": "negative", "class": "negative"}
+{"id": "emoji-en-051", "op": "emoji", "lang": "en", "input": "I wonder if we can have a laughing face emoji.", "refs": ["I wonder if we can have a 😆.", "I wonder if we can have 😆."], "kind": "positive", "class": "article"}
+{"id": "emoji-en-052", "op": "emoji", "lang": "en", "input": "Great job, thumbs up!", "refs": ["Great job, thumbs up!"], "kind": "negative", "class": "negative"}
+{"id": "emoji-en-053", "op": "emoji", "lang": "en", "input": "Add the fire emoji.", "refs": ["Add the 🔥.", "Add 🔥."], "kind": "positive", "class": "article"}
+{"id": "emoji-en-054", "op": "emoji", "lang": "en", "input": "Hmm, thinking face emoji.", "refs": ["Hmm, 🤔."], "kind": "positive", "class": "name"}
+{"id": "emoji-en-055", "op": "emoji", "lang": "en", "input": "Blorptastic emoji.", "refs": ["Blorptastic emoji."], "kind": "negative", "class": "negative"}
+{"id": "emoji-en-056", "op": "emoji", "lang": "en", "input": "Date night, pizza emoji then beer mug emoji.", "refs": ["Date night, 🍕 then 🍺."], "kind": "positive", "class": "multiple"}
+{"id": "emoji-en-057", "op": "emoji", "lang": "en", "input": "Which emoji did you use?", "refs": ["Which emoji did you use?"], "kind": "negative", "class": "negative"}
+{"id": "emoji-en-058", "op": "emoji", "lang": "en", "input": "Thumbs down emoji.", "refs": ["👎."], "kind": "positive", "class": "name"}
+{"id": "emoji-en-059", "op": "emoji", "lang": "en", "input": "Take a look at the new heart. Emoji are in the toolbar.", "refs": ["Take a look at the new heart. Emoji are in the toolbar."], "kind": "negative", "class": "negative"}
+{"id": "emoji-en-060", "op": "emoji", "lang": "en", "input": "Happy new year, party popper emoji and sparkles emoji!", "refs": ["Happy new year, 🎉 and ✨!"], "kind": "positive", "class": "multiple"}
+{"id": "emoji-en-061", "op": "emoji", "lang": "en", "input": "We shipped it, rocket emoji.", "refs": ["We shipped it, 🚀."], "kind": "positive", "class": "name"}
+{"id": "emoji-en-062", "op": "emoji", "lang": "en", "input": "Done, check mark button emoji.", "refs": ["Done, ✅."], "kind": "positive", "class": "name"}
+{"id": "emoji-en-063", "op": "emoji", "lang": "en", "input": "I bought a rocket. Emoji are my favourite.", "refs": ["I bought a rocket. Emoji are my favourite."], "kind": "negative", "class": "negative"}
+{"id": "emoji-en-064", "op": "emoji", "lang": "en", "input": "The word emoji comes from Japanese.", "refs": ["The word emoji comes from Japanese."], "kind": "negative", "class": "negative"}
+{"id": "emoji-en-065", "op": "emoji", "lang": "en", "input": "I need a new emoji for the team chat.", "refs": ["I need a new emoji for the team chat."], "kind": "negative", "class": "negative"}
+{"id": "emoji-en-066", "op": "emoji", "lang": "en", "input": "Perfect score, hundred points emoji.", "refs": ["Perfect score, 💯."], "kind": "positive", "class": "name"}
+{"id": "emoji-en-067", "op": "emoji", "lang": "en", "input": "Happy birthday birthday cake emoji!", "refs": ["Happy birthday 🎂!"], "kind": "positive", "class": "name"}
+{"id": "emoji-en-068", "op": "emoji", "lang": "en", "input": "Good morning, smile emoji.", "refs": ["Good morning, 😄."], "kind": "positive", "class": "shortcode"}
+{"id": "emoji-en-069", "op": "emoji", "lang": "en", "input": "An emoji is a small picture used in messages.", "refs": ["An emoji is a small picture used in messages."], "kind": "negative", "class": "negative"}
+{"id": "emoji-en-070", "op": "emoji", "lang": "en", "input": "Congratulations party popper emoji!", "refs": ["Congratulations 🎉!"], "kind": "positive", "class": "name"}
+{"id": "emoji-en-071", "op": "emoji", "lang": "en", "input": "The emoji keyboard is on the left.", "refs": ["The emoji keyboard is on the left."], "kind": "negative", "class": "negative"}
+{"id": "emoji-en-072", "op": "emoji", "lang": "en", "input": "So sad, crying face emoji.", "refs": ["So sad, 😢."], "kind": "positive", "class": "name"}
+{"id": "emoji-en-073", "op": "emoji", "lang": "en", "input": "Unicode added eleven new emoji this year.", "refs": ["Unicode added eleven new emoji this year."], "kind": "negative", "class": "negative"}
+{"id": "emoji-en-074", "op": "emoji", "lang": "en", "input": "Thanks so much, folded hands emoji.", "refs": ["Thanks so much, 🙏."], "kind": "positive", "class": "name"}
+{"id": "emoji-en-075", "op": "emoji", "lang": "en", "input": "That was hot, fire emoji.", "refs": ["That was hot, 🔥."], "kind": "positive", "class": "name"}
+{"id": "emoji-en-076", "op": "emoji", "lang": "en", "input": "Emoji are fun.", "refs": ["Emoji are fun."], "kind": "negative", "class": "negative"}
+{"id": "emoji-en-077", "op": "emoji", "lang": "en", "input": "I can't stop laughing, loudly crying face emoji.", "refs": ["I can't stop laughing, 😭."], "kind": "positive", "class": "name"}
+{"id": "emoji-en-078", "op": "emoji", "lang": "en", "input": "Reply with a smiling face emoji.", "refs": ["Reply with a ☺️.", "Reply with ☺️."], "kind": "positive", "class": "article"}
