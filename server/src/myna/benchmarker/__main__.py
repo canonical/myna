@@ -343,6 +343,22 @@ def build_parser() -> argparse.ArgumentParser:
 
     add_text_arguments(p_text)
 
+    p_pe = sub.add_parser(
+        "plugin-eval",
+        help="fetch, build, serve, grade and gate one text plugin (run via dev/plugin-pipeline.sh)",
+    )
+    from myna.benchmarker.plugin_eval import add_arguments as add_plugin_eval_arguments
+
+    add_plugin_eval_arguments(p_pe)
+
+    p_ps = sub.add_parser(
+        "plugin-scaffold",
+        help="write a translation plugin toml from Remote Settings and the vendor metadata",
+    )
+    from myna.benchmarker.plugin_scaffold import add_arguments as add_plugin_scaffold_arguments
+
+    add_plugin_scaffold_arguments(p_ps)
+
     p_tc = sub.add_parser(
         "build-text-corpus",
         help="regenerate the FLEURS slices of the text corpus and its sha256 pins",
@@ -492,6 +508,14 @@ def main() -> None:
         from myna.benchmarker.text_suite import cmd_text
 
         cmd_text(args)
+    elif args.command == "plugin-eval":
+        from myna.benchmarker.plugin_eval import cmd_plugin_eval
+
+        cmd_plugin_eval(args)
+    elif args.command == "plugin-scaffold":
+        from myna.benchmarker.plugin_scaffold import cmd_plugin_scaffold
+
+        cmd_plugin_scaffold(args)
     elif args.command == "build-text-corpus":
         from pathlib import Path
 
