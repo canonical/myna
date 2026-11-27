@@ -180,7 +180,7 @@ pub fn lines(chain: &Chain, ctx: &Context) -> Vec<Row> {
                     false,
                     row.subtitle.clone(),
                     None,
-                    (before.join(", "), after.join(", ")),
+                    (before.join("\n"), after.join("\n")),
                 ),
                 Fit::Skipped {
                     why,
@@ -446,6 +446,17 @@ mod chain_tests {
             !matches!(rows[1].standing, Standing::Preparing),
             "{:?}",
             rows[1].standing
+        );
+    }
+
+    #[test]
+    fn the_installed_route_is_taken_before_a_download_and_says_so_in_two_lines() {
+        let rows = lines_with(&BTreeMap::new(), &BTreeSet::new());
+        let second = &rows[1];
+        assert_eq!(second.standing, Standing::Ready);
+        assert_eq!(
+            second.place.inserted,
+            "Converts to Traditional first\nThrough English"
         );
     }
 }
