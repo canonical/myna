@@ -42,6 +42,8 @@ pub enum Fit {
         input: Option<String>,
         output: Option<String>,
         inserted: Vec<String>,
+        /// The script the first inserted converter writes.
+        converts: Option<Script>,
     },
     /// Skipped: the text there is not what it reads. `move_above` is the
     /// index of the earlier step that changed the language, when the step
@@ -276,16 +278,21 @@ impl<'a> World<'a> {
                         if legs > 1 {
                             inserted.push(gettextrs::gettext("Through English"));
                         }
-                        (Some(path.produces), inserted)
+                        let converts = path
+                            .hops
+                            .iter()
+                            .find(|hop| hop.inserted)
+                            .map(|hop| self.impls[hop.implementation].produces.script.clone());
+                        (Some(path.produces), inserted, converts)
                     }),
                     None => wanted(step).map(|solved| match solved {
-                        Step::Translate { to } => (Some(to), Vec::new()),
-                        _ => (None, Vec::new()),
+                        Step::Translate { to } => (Some(to), Vec::new(), None),
+                        _ => (None, Vec::new(), None),
                     }),
                 };
                 let input = at.as_ref().map(|t| t.language.clone());
                 match judged {
-                    Ok((produced, inserted)) => {
+                    Ok((produced, inserted, converts)) => {
                         if step.step == "translate" {
                             changed = Some((index, at.clone()));
                         }
@@ -294,6 +301,7 @@ impl<'a> World<'a> {
                             input,
                             output: at.as_ref().map(|t| t.language.clone()),
                             inserted,
+                            converts,
                         }
                     }
                     Err(why) => {

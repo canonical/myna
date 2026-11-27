@@ -109,7 +109,7 @@ fn script_row(inputs: &Inputs) -> Row {
     row.title = gettextrs::gettext("Chinese script");
     row.description =
         gettextrs::gettext("Types Chinese in the characters you choose. Other text is left alone.");
-    row.example = Some(arrow("\u{8f6f}\u{4ef6}", "\u{8edf}\u{9ad4}"));
+    row.example = Some(arrow(SIMPLIFIED, TRADITIONAL));
     row.details = vec![(
         gettextrs::gettext("Size"),
         gettextrs::gettext("Built in, nothing to install"),
@@ -233,20 +233,29 @@ fn translate_subtitle(inputs: &Inputs) -> (String, bool) {
     )
 }
 
+/// The static samples a step's example, and the editor's Try it, are built from.
+pub const SIMPLIFIED: &str = "\u{8f6f}\u{4ef6}";
+pub const TRADITIONAL: &str = "\u{8edf}\u{9ad4}";
+pub const FRENCH: &str = "Je pense que nous devrions y aller.";
+
+pub fn said() -> String {
+    gettextrs::gettext("um so I, I think we should go")
+}
+
+pub fn tidied() -> String {
+    gettextrs::gettext("So I think we should go.")
+}
+
 fn arrow(heard: &str, typed: &str) -> String {
     format!("\u{201c}{heard}\u{201d} \u{2192} \u{201c}{typed}\u{201d}")
 }
 
 fn example(entry: &Entry) -> Option<String> {
     match entry.step.id.as_str() {
-        "tidy" => Some(arrow(
-            &gettextrs::gettext("um so I, I think we should go"),
-            &gettextrs::gettext("So I think we should go."),
-        )),
-        TRANSLATE if entry.in_lang == "en" && entry.out_lang == "fr" => Some(arrow(
-            &gettextrs::gettext("I think we should go"),
-            "Je pense que nous devrions y aller.",
-        )),
+        "tidy" => Some(arrow(&said(), &tidied())),
+        TRANSLATE if entry.in_lang == "en" && entry.out_lang == "fr" => {
+            Some(arrow(&gettextrs::gettext("I think we should go"), FRENCH))
+        }
         _ => None,
     }
 }
