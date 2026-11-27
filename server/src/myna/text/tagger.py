@@ -1,8 +1,9 @@
 """The disfluency tagger: a MiniLM word tagger on ONNX Runtime.
 
-``myna-disfluency-en`` labels every whitespace-separated word KEEP, DELETE,
-KEEP_STRIP_COMMA or KEEP_CAPITALIZE. The client runs its own rules first and
-vets what this returns (``Check::ConservativeEdit``), so this only tags and
+``myna-disfluency`` labels every whitespace-separated word KEEP, DELETE,
+KEEP_STRIP_COMMA or KEEP_CAPITALIZE, in English, French, German and Spanish.
+The client runs its English rule first (never another language's) and vets
+what this returns (``Check::ConservativeEdit``), so this only tags and
 applies the tags. The shape of the model's inputs and the windowing are the
 contract its training run fixed (see ``text-snap/README.md``).
 """
@@ -23,6 +24,23 @@ from myna.text.protocol import Model, Params, declared
 KEEP, DELETE, STRIP, CAP = 0, 1, 2, 3
 STOPS = ".!?"
 CLOSERS = "\"')"
+#: Marks that open a sentence before its first letter: "¿puedes" is capitalised at the "p".
+OPENERS = "¿¡«\"'("
+
+
+def capitalised(word: str) -> str:
+    for i, c in enumerate(word):
+        if c not in OPENERS:
+            return word[:i] + c.upper() + word[i + 1 :]
+    return word
+
+
+def lower_start(word: str) -> bool:
+    for c in word:
+        if c not in OPENERS:
+            return c.islower()
+    return False
+
 
 #: Up to this many words go through the model in one pass.
 SINGLE = 80
@@ -54,15 +72,15 @@ def decode(words: Sequence[str], tags: Sequence[int]) -> str:
         if tag == STRIP and word.endswith(","):
             word = word[:-1]
         elif tag == CAP and word:
-            word = word[0].upper() + word[1:]
+            word = capitalised(word)
         if (
             opening
             and deleted_while_opening
             and word
-            and word[0].islower()
+            and lower_start(word)
             and not any(c.isupper() for c in word[1:])
         ):
-            word = word[0].upper() + word[1:]
+            word = capitalised(word)
         out.append(word)
         end = word.rstrip(CLOSERS)
         opening = bool(end) and end[-1] in STOPS
@@ -160,7 +178,8 @@ class TaggerModel(Model):
         self._dir = directory
         self.id = str(meta["id"])
         self.task = str(meta["task"])
-        self.covers = {"language": [str(meta["language"])]}
+        languages = meta.get("languages") or [meta["language"]]
+        self.covers = {"language": [str(language) for language in languages]}
         self.latency_ms = int(meta["latency_ms"])
         self.quality = float(meta["quality"])
         self.declared = declared(meta)

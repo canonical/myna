@@ -89,6 +89,13 @@ def validate(plugin: dict, source: str = "plugin") -> None:
         raise bad("curated must be a boolean")
     if not plugin["locales"] or not all(isinstance(x, str) for x in plugin["locales"]):
         raise bad("locales must be a non-empty list of language codes")
+    languages = plugin.get("languages")
+    if languages is not None and (
+        not isinstance(languages, list)
+        or plugin["language"] not in languages
+        or not all(isinstance(x, str) for x in languages)
+    ):
+        raise bad("languages must be a list of language codes that includes language")
     step = plugin.get("step", {})
     if not re.fullmatch(r"[a-z][a-z0-9-]*", step.get("id", "")):
         raise bad("step.id must be a kebab-case id")
@@ -174,6 +181,8 @@ def manifest_of(plugin: dict) -> dict:
         "params": plugin["params"] if "params" in plugin else [],
         "language": plugin["language"],
     }
+    if "languages" in plugin:
+        out["languages"] = plugin["languages"]
     if "to" in plugin:
         out["to"] = plugin["to"]
     out["latency_ms"] = m["latency_ms"]
@@ -213,7 +222,7 @@ def notice_of(plugin: dict) -> str:
 def catalog_entry(plugin: dict) -> dict:
     m = plugin["measured"]
     step = plugin["step"]
-    covers = {"language": plugin["language"]}
+    covers = {"language": plugin.get("languages", plugin["language"])}
     if "to" in plugin:
         covers["to"] = plugin["to"]
     entry = {
@@ -230,6 +239,7 @@ def catalog_entry(plugin: dict) -> dict:
         "covers": covers,
         "in_lang": plugin["language"],
         "out_lang": plugin.get("to", plugin["language"]),
+        **({"languages": plugin["languages"]} if "languages" in plugin else {}),
         "step": {
             "id": step["id"],
             "stage": step["stage"],

@@ -77,6 +77,14 @@ def test_decode_capitalises_what_now_opens_a_sentence():
     assert decode(["we", "uh", "go."], [KEEP, DELETE, KEEP]) == "we go."
 
 
+def test_decode_capitalises_after_an_opening_mark():
+    assert decode(["um", "¿puedes", "venir?"], [DELETE, KEEP, KEEP]) == "¿Puedes venir?"
+    assert decode(["eh,", "«bonjour»", "a."], [DELETE, KEEP, KEEP]) == "«Bonjour» a."
+    assert decode(["¿puedes", "venir?"], [CAP, KEEP]) == "¿Puedes venir?"
+    assert decode(["um", "¿Puedes", "venir?"], [DELETE, KEEP, KEEP]) == "¿Puedes venir?"
+    assert decode(["um", "¿", "venir?"], [DELETE, KEEP, KEEP]) == "¿ venir?"
+
+
 def test_pick_demands_tau_for_a_delete_and_falls_back_to_the_next_best():
     logits = np.array([[0.0, 2.0, 1.0, 0.0], [0.0, 9.0, 0.0, 0.0], [5.0, 0.0, 0.0, 0.0]])
 
@@ -159,6 +167,12 @@ def manifest(**extra):
         "tau": 0.8,
         **extra,
     }
+
+
+def test_a_manifest_listing_languages_covers_each_of_them(tmp_path):
+    model = TaggerModel(tmp_path, manifest(languages=["en", "fr", "de", "es"]))
+    assert model.capability()["covers"] == {"language": ["en", "fr", "de", "es"]}
+    assert TaggerModel(tmp_path, manifest()).capability()["covers"] == {"language": ["en"]}
 
 
 def test_the_model_loads_once_on_first_use_and_again_after_close(monkeypatch, tmp_path):

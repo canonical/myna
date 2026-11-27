@@ -103,7 +103,9 @@ def test_the_catalog_lists_every_plugin_with_the_ux_fields(snap_dir):
         assert step["label_key"] == f"step.{step['id']}.name"
         assert step["description_key"] == f"step.{step['id']}.description"
         assert step["example_key"] == f"step.{step['id']}.example"
-        assert entry["in_lang"] == entry["covers"]["language"]
+        read = entry["covers"]["language"]
+        assert entry["in_lang"] in (read if isinstance(read, list) else [read])
+        assert entry.get("languages", read) == read
         assert entry["out_lang"] == entry["covers"].get("to", entry["in_lang"])
         assert entry["installed_bytes"] == sum(f["bytes"] for f in entry["files"])
         assert entry["download_bytes"] > 0
@@ -209,6 +211,8 @@ def test_structural_rules(valid):
     broken(lambda p: p.update(entry_revision=0), "entry_revision")
     broken(lambda p: p.update(curated="yes"), "curated")
     broken(lambda p: p.update(locales=[]), "locales")
+    broken(lambda p: p.update(languages=["fr", "de"]), "languages")
+    broken(lambda p: p.update(languages="en"), "languages")
     broken(lambda p: p["step"].update(stage="anywhere"), "stage")
     broken(lambda p: p["step"].update(id="Bad Id"), "step.id")
     broken(lambda p: p["hardware"].pop("arch"), "hardware")
@@ -386,3 +390,12 @@ def test_the_shipped_gated_plugins_name_the_results_they_came_from():
         if "gate" in plugin:
             assert plugin["measured"]["gate"] == "pass" or plugin["measured"]["runs"] is True
             assert len(plugin["measured"]["results_sha256"]) == 64
+
+
+def test_a_plugin_for_several_languages_lists_them_everywhere(valid):
+    valid["languages"] = [valid["language"], "fr"]
+    gen.validate(valid)
+    assert gen.manifest_of(valid)["languages"] == [valid["language"], "fr"]
+    entry = gen.catalog_entry(valid)
+    assert entry["languages"] == entry["covers"]["language"] == [valid["language"], "fr"]
+    assert entry["in_lang"] == valid["language"]
