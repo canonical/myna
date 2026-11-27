@@ -386,6 +386,11 @@ impl ModelsSection {
             let Some(section) = section.upgrade() else {
                 return;
             };
+            // snapd is done: the row goes now, not after the rediscovery,
+            // or it shows Remove again for a moment.
+            if outcome.is_ok() {
+                section.drop_shown(&model.id);
+            }
             section.removing.replace(None);
             section.render();
             match outcome {
@@ -407,6 +412,18 @@ impl ModelsSection {
                 callback();
             }
         });
+    }
+
+    /// Take a removed model out of the list shown.
+    fn drop_shown(&self, id: &str) {
+        let Some(mut models) = self.shown.borrow().clone() else {
+            return;
+        };
+        models.speech.retain(|m| m.id != id);
+        models.text.retain(|m| m.id != id);
+        if self.patch(&models) {
+            self.shown.replace(Some(models));
+        }
     }
 
     fn toast_failure(&self, title: &str, error: &SystemConfiguratorError) {
