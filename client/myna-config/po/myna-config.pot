@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-27 03:39+0000\n"
+"POT-Creation-Date: 2026-11-27 02:00+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -337,54 +337,54 @@ msgstr ""
 msgid ", "
 msgstr ""
 
-#: src/chain_solve.rs:104
+#: src/chain_solve.rs:102
 msgid "Writes Simplified first"
 msgstr ""
 
-#: src/chain_solve.rs:105
+#: src/chain_solve.rs:103
 msgid "Writes Traditional first"
 msgstr ""
 
-#: src/chain_solve.rs:106
+#: src/chain_solve.rs:104
 msgid "Writes Traditional (Taiwan) first"
 msgstr ""
 
-#: src/chain_solve.rs:107
+#: src/chain_solve.rs:105
 msgid "Writes Traditional (Hong Kong) first"
 msgstr ""
 
-#: src/chain_solve.rs:108
+#: src/chain_solve.rs:106
 msgid "Converts the script first"
 msgstr ""
 
-#: src/chain_solve.rs:279 src/chains_view.rs:425
+#: src/chain_solve.rs:277
 msgid "Through English"
 msgstr ""
 
-#: src/chain_solve.rs:331
+#: src/chain_solve.rs:323
 msgid "Needs a language to translate to"
 msgstr ""
 
-#: src/chain_solve.rs:332
+#: src/chain_solve.rs:324
 msgid "Needs a script to write"
 msgstr ""
 
-#: src/chain_solve.rs:333
+#: src/chain_solve.rs:325
 msgid "The text is already in that language"
 msgstr ""
 
-#: src/chain_solve.rs:334
+#: src/chain_solve.rs:326
 msgid "Applies when the text is Chinese"
 msgstr ""
 
 #. TRANSLATORS: {language} is a language name, such as "English", or
 #. several separated by commas.
-#: src/chain_solve.rs:342
+#: src/chain_solve.rs:334
 msgid "Applies when the text is {language}"
 msgstr ""
 
 #. TRANSLATORS: {from} and {to} are language names, such as "فارسی" and "Français".
-#: src/chain_solve.rs:346 src/processing_steps.rs:389
+#: src/chain_solve.rs:338 src/processing_steps.rs:389
 msgid "No model translates {from} to {to} yet"
 msgstr ""
 
@@ -715,49 +715,24 @@ msgstr ""
 msgid "the {step} model"
 msgstr ""
 
-#: src/chains_view.rs:214
+#: src/chains_view.rs:209
 msgid "Not known to this version of Myna"
 msgstr ""
 
-#: src/chains_view.rs:280
-msgid "A new paragraph"
-msgstr ""
-
-#: src/chains_view.rs:281
-msgid "The middle of a sentence"
-msgstr ""
-
-#: src/chains_view.rs:282
-msgid "An address field"
-msgstr ""
-
-#. TRANSLATORS: a step of a chain that is switched off; {step} is its name.
-#: src/chains_view.rs:349
-msgid "{step} (off)"
-msgstr ""
-
 #. TRANSLATORS: a step of a chain that does not run where it stands.
-#: src/chains_view.rs:357 src/chains_view.rs:440
+#: src/chains_view.rs:273
 msgid "{step} (skipped)"
 msgstr ""
 
-#: src/chains_view.rs:393
-msgid "No example for this language yet"
-msgstr ""
-
-#: src/chains_view.rs:411
-msgid "Fitted to the field"
-msgstr ""
-
-#: src/chains_view.rs:447
+#: src/chains_view.rs:280
 msgid "No steps"
 msgstr ""
 
-#: src/chains_view.rs:457
+#: src/chains_view.rs:290
 msgid "Needs {what}"
 msgstr ""
 
-#: src/chains_view.rs:487
+#: src/chains_view.rs:319
 msgid "New chain"
 msgstr ""
 
@@ -774,11 +749,11 @@ msgstr ""
 msgid "opencc-jieba-rs (MIT); OpenCC conversion lists (Apache-2.0)"
 msgstr ""
 
-#: src/step_catalog.rs:120 src/step_catalog.rs:277 src/diagnostics.rs:731
+#: src/step_catalog.rs:120 src/step_catalog.rs:268 src/diagnostics.rs:731
 msgid "License"
 msgstr ""
 
-#: src/step_catalog.rs:187 src/processing_ui.rs:363 src/plugin_catalog.rs:280
+#: src/step_catalog.rs:187 src/processing_ui.rs:283 src/plugin_catalog.rs:280
 msgid "Translate"
 msgstr ""
 
@@ -794,143 +769,114 @@ msgid_plural "From {language} into {count} languages"
 msgstr[0] ""
 msgstr[1] ""
 
-#: src/step_catalog.rs:242 src/plugin_catalog.rs:279
+#: src/step_catalog.rs:243 src/plugin_catalog.rs:279
 msgid "um so I, I think we should go"
 msgstr ""
 
-#: src/step_catalog.rs:246
+#: src/step_catalog.rs:244
 msgid "So I think we should go."
 msgstr ""
 
-#: src/step_catalog.rs:257 src/plugin_catalog.rs:282
+#: src/step_catalog.rs:247 src/plugin_catalog.rs:282
 msgid "I think we should go"
 msgstr ""
 
-#: src/step_catalog.rs:265
+#: src/step_catalog.rs:256
 msgid "Download"
 msgstr ""
 
-#: src/step_catalog.rs:267
+#: src/step_catalog.rs:258
 msgid "Quality"
 msgstr ""
 
-#: src/step_catalog.rs:285
+#: src/step_catalog.rs:276
 msgid "Not measured on a benchmark yet"
 msgstr ""
 
-#: src/processing_ui.rs:142
+#: src/processing_ui.rs:95
 msgid "Name"
 msgstr ""
 
-#: src/processing_ui.rs:148
+#: src/processing_ui.rs:101
 msgid "Steps"
 msgstr ""
 
-#: src/processing_ui.rs:150
+#: src/processing_ui.rs:103
 msgid "They run top to bottom. Changes are saved as you make them."
 msgstr ""
 
-#: src/processing_ui.rs:154
+#: src/processing_ui.rs:107
 msgid "Add step…"
 msgstr ""
 
-#: src/processing_ui.rs:159 src/processing_ui.rs:772
+#: src/processing_ui.rs:112 src/processing_ui.rs:681
 msgid "Use this chain"
 msgstr ""
 
-#: src/processing_ui.rs:164
+#: src/processing_ui.rs:117
 msgid "Delete chain"
 msgstr ""
 
-#: src/processing_ui.rs:179
-msgid "Typing into"
-msgstr ""
-
-#: src/processing_ui.rs:186
-msgid "Try it"
-msgstr ""
-
-#: src/processing_ui.rs:188
-msgid "An example with this chain's steps. No model runs."
-msgstr ""
-
-#: src/processing_ui.rs:192
-msgid "You say"
-msgstr ""
-
-#: src/processing_ui.rs:193
-msgid "Myna types"
-msgstr ""
-
-#: src/processing_ui.rs:195
-msgid "Step by step"
-msgstr ""
-
-#: src/processing_ui.rs:216 src/myna_settings.rs:265
+#: src/processing_ui.rs:143 src/myna_settings.rs:265
 msgid "Chain"
 msgstr ""
 
-#: src/processing_ui.rs:339
+#: src/processing_ui.rs:259
 msgid "No chains yet"
 msgstr ""
 
-#: src/processing_ui.rs:341
+#: src/processing_ui.rs:261
 msgid "Myna types exactly what you say. Make a chain to change that."
 msgstr ""
 
-#: src/processing_ui.rs:346
+#: src/processing_ui.rs:266
 msgid "New chain…"
 msgstr ""
 
-#: src/processing_ui.rs:351
+#: src/processing_ui.rs:271
 msgid "Get more steps"
 msgstr ""
 
-#: src/processing_ui.rs:352
+#: src/processing_ui.rs:272
 msgid "Translation languages, clean-up, scripts"
 msgstr ""
 
-#: src/processing_ui.rs:357
+#: src/processing_ui.rs:277
 msgid "Add a step to the chain. A step that needs a model downloads it first."
 msgstr ""
 
-#: src/processing_ui.rs:362
+#: src/processing_ui.rs:282
 msgid "Add step"
 msgstr ""
 
-#: src/processing_ui.rs:466
+#: src/processing_ui.rs:386
 msgid "The change could not be saved."
 msgstr ""
 
-#. TRANSLATORS: a chain's sample result on the Processing page; {result} is a sentence.
-#: src/processing_ui.rs:565
-msgid "Types: {result}"
-msgstr ""
-
 #. TRANSLATORS: the accessible name of a chain's on/off switch; {name} is the chain's name.
-#: src/processing_ui.rs:573
+#: src/processing_ui.rs:491
 msgid "Use {name}"
 msgstr ""
 
 #. TRANSLATORS: the accessible name of a chain's delete button; {name} is the chain's name.
-#: src/processing_ui.rs:576
+#: src/processing_ui.rs:494
 msgid "Delete {name}"
 msgstr ""
 
-#: src/processing_ui.rs:729
+#: src/processing_ui.rs:638
 msgid "{name} deleted"
 msgstr ""
 
-#: src/processing_ui.rs:731
+#: src/processing_ui.rs:640
 msgid "Undo"
 msgstr ""
 
-#: src/processing_ui.rs:767
+#: src/processing_ui.rs:676
 msgid "Stop using"
 msgstr ""
 
 #. TRANSLATORS: said after a step moved; {step} is its name, {n} and {total} its new place.
-#: src/processing_ui.rs:889
+#: src/processing_ui.rs:771
 msgid "{step} moved to step {n} of {total}"
 msgstr ""
 
