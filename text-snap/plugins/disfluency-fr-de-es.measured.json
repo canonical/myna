@@ -1,0 +1,5 @@
+{
+  "latency_ms": 10,
+  "quality": 0.81,
+  "quality_source": "blind eval run2 tidy accuracy, mean of fr/de/es at tau 0.6 (2026-11-27); run3 0.76, break 0; synthetic corpora only, no real fr/de/es dictation measured"
+}

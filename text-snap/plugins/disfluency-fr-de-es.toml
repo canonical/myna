@@ -1,0 +1,89 @@
+# One plugin: dev/gen-plugins.py turns this into the snapcraft component,
+# models/disfluency-fr-de-es/{myna-text-model.json,NOTICE} and catalog.json.
+# Contract: .kb/text-plugin-contract.md.
+# The model reads English too, but English stays with disfluency-en.toml:
+# on real dictations this one deleted more content
+# (server/.kb/text-processing-evaluation.md).
+id = "myna-disfluency"
+component = "model-disfluency-fr-de-es"
+snap = "myna-text"
+kind = "disfluency-tagger"
+task = "text.cleanup"
+class = "edit"
+needs = "sentence"
+language = "fr"
+languages = ["fr", "de", "es"]
+tau = 0.6
+license = "Apache-2.0"
+attribution = "Canonical Ltd; fine-tuned from microsoft/Multilingual-MiniLM-L12-H384 (MIT)"
+source = "https://huggingface.co/microsoft/Multilingual-MiniLM-L12-H384"
+download_bytes = 45432832
+entry_revision = 1
+curated = true
+pin = "myna-disfluency mini-v3"
+locales = ["fr", "de", "es"]
+summary = "Disfluency tagger for French, German and Spanish (ONNX int8)"
+description = """\
+myna-disfluency, a multilingual MiniLM-L12 word tagger fine-tuned by
+Canonical (Apache-2.0) that marks fillers, repeats, restarted phrases and
+self-corrections for deletion in French, German and Spanish.
+About 51 MB."""
+notice = """\
+model-disfluency-fr-de-es: myna-disfluency, a multilingual disfluency tagger
+(English, French, German, Spanish) fine-tuned by Canonical Ltd, Apache-2.0
+(LICENSE in this component).
+
+Base model: microsoft/Multilingual-MiniLM-L12-H384 (MIT License, Copyright (c)
+Microsoft Corporation), https://huggingface.co/microsoft/Multilingual-MiniLM-L12-H384
+revision 6e8c1ec6b4ec4e3fc6eb7d2cd834fcd582b61daf. Its vocabulary is the
+XLM-RoBERTa SentencePiece vocabulary (FacebookAI/xlm-roberta-base, MIT License,
+revision e73636d4f797dec63c3081bb6ed5c7b0bb3f2089), pruned to the pieces the
+training text uses; tokenizer.json is that pruned tokenizer.
+
+Training text derives from the following. The disfluencies are synthetic:
+Canonical's own word lists and templates injected into the sentences (changes
+made: sentence extraction and injection).
+
+- English: SODA, Kim et al., https://huggingface.co/datasets/allenai/soda
+  (revision fdc848ab0183208ea7808206c91c724414d0a071) and Synthetic-Persona-Chat,
+  Jandaghi et al., Google, https://huggingface.co/datasets/google/Synthetic-Persona-Chat
+  (revision a520ad7f999ca7e6dfdc25fed9f5070bf6f87b42), both CC-BY-4.0:
+  https://creativecommons.org/licenses/by/4.0/
+- French, German, Spanish: sentences of the Tatoeba Project, https://tatoeba.org,
+  by its contributors, CC BY 2.0 FR (some sentences CC0 1.0):
+  https://creativecommons.org/licenses/by/2.0/fr/ . Exported on 2026-11-24 from
+  https://downloads.tatoeba.org/exports/per_language/ (fra, deu and spa
+  sentences.tsv.bz2, sha256 c9e91cc5a0640db7bfc4423fadf3985db42df08dafce4983d4c6b8c2cf7a4d3d,
+  e16c57e695bfeccccb455c305d262c5cbe2aa74a5c1e1edb725d53cf907309ac and
+  7872d2e66debfd8e73e96cc9bca9560a32cc914aee9c820649d7d3d5e7353f48).
+
+The model files, shipped as built, have these sha256:"""
+
+[[params]]
+name = "language"
+kind = "language"
+role = "source"
+required = false
+
+[step]
+id = "tidy"
+stage = "clean-up"
+
+[hardware]
+arch = ["amd64"]
+min_ram_mb = 512
+
+# The tagger is unpublished: staged from a training run's directory.
+[local]
+env = "MYNA_TAGGER_SRC"
+default = "~/myna-processing-graphs/artifacts/tagger/stage/myna-disfluency"
+
+[[files]]
+name = "tagger.onnx"
+sha256 = "740c4553a2137ff4340eb3a75dc6b65da55cf15289cda681e1313f4388d95ec7"
+bytes = 48553373
+
+[[files]]
+name = "tokenizer.json"
+sha256 = "a80a97d0fcf69a5b1f79067dfd9f89ff998c1b8e4114c2d956ae292b55d9a918"
+bytes = 2477578

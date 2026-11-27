@@ -1,0 +1,150 @@
+# Text-model inference snap (Myna): the processing graph's own small models.
+#
+# One strictly confined daemon, myna-text, serving myna-text-v1 (JSON lines
+# over a Unix socket) to the Myna daemon through the same inference-provider
+# content share the speech snaps use. It declares MYNA_ROLE=text in
+# provider.env, so it sits beside a speech snap on `myna:backend`.
+#
+# Models are components, found at run time (no modelctl: there are no engines
+# to choose between): MiniLM disfluency taggers on onnxruntime,
+# model-disfluency-en for English and model-disfluency-fr-de-es for the rest.
+# Translation lives in the myna-translation snap. Weights ship as components:
+# run ./dev/download-models.sh before packing. No `network` plug.
+name: myna-text
+base: core24
+adopt-info: version
+assumes:
+  - snapd2.68 # components support
+license: AGPL-3.0-or-later
+summary: Text cleanup models for Myna dictation
+description: |
+  Local, offline text models for Myna's dictation processing: removing
+  spoken disfluencies (English, French, German and Spanish). The daemon answers the Myna dictation service on a Unix domain socket; it has no
+  network access and no access to the microphone or any audio hardware.
+
+  Install a model component to offer its model:
+
+    sudo snap install --dangerous myna-text_*.snap
+    sudo snap install --dangerous myna-text+model-disfluency-en_*.comp
+    sudo snap install --dangerous myna-text+model-disfluency-fr-de-es_*.comp
+    sudo snap connect myna:backend myna-text:provider
+grade: devel
+confinement: strict
+compression: lzo
+
+platforms:
+  amd64:
+
+environment:
+  # Where the installed model components are mounted.
+  SNAP_COMPONENTS: /snap/$SNAP_INSTANCE_NAME/components/$SNAP_REVISION
+
+apps:
+  server:
+    command: bin/myna-text --socket $SNAP_COMMON/share/provider/text.sock --share-provider
+    daemon: simple
+    plugs:
+      # snapd's seccomp gates listen() behind this, even for Unix sockets.
+      # Models are components (no runtime download), so no `network`.
+      - network-bind
+      # onnxruntime enumerates /sys/bus/pci/devices when it creates its
+      # environment (device discovery, no switch to turn it off); without this
+      # the open is an AppArmor denial, harmless but a failure of the denial
+      # gate. Not auto-connected on a sideload: `snap connect
+      # myna-text:hardware-observe`.
+      - hardware-observe
+
+# The inference-provider content share: myna-text writes provider.env beside
+# the socket. Writable so the daemon can bind; see whisper-snap's snapcraft.yaml.
+slots:
+  provider:
+    interface: content
+    content: inference-provider
+    source:
+      write: [$SNAP_COMMON/share/provider]
+
+parts:
+  # The version dev/stage-version.sh resolved from git, from dev/prepare.sh.
+  version:
+    plugin: nil
+    source: version
+    parse-info: [version.metainfo.xml]
+
+  # LICENSE (AGPL-3.0-or-later) and NOTICE (third-party notices), staged into
+  # licenses/ by dev/stage-licenses.sh from dev/prepare.sh.
+  licenses:
+    plugin: dump
+    source: licenses
+    organize:
+      "*": usr/share/doc/myna-text/
+
+  # myna-text + onnxruntime + tokenizers in a venv. dev/prepare.sh stages the
+  # myna wheel and requirements.txt (exact versions and hashes, exported from
+  # server/uv.lock) into wheels/ before packing.
+  server-app:
+    plugin: python
+    # Persistent pip cache: the build VM is thrown away each run, but the
+    # project dir is bind-mounted, so this survives.
+    build-environment:
+      - PIP_CACHE_DIR: $CRAFT_PROJECT_DIR/.pip-cache
+      # pip's 15s default read timeout trips on a stalled chunk mid-wheel.
+      - PIP_TIMEOUT: "60"
+      - PIP_RETRIES: "10"
+    source: wheels
+    python-requirements:
+      - requirements.txt
+    python-packages:
+      - ./myna-0.0.0-py3-none-any.whl
+    build-packages:
+      - python3-venv
+    override-build: |
+      craftctl default
+      site=$(echo "$CRAFT_PART_INSTALL"/lib/python3.*/site-packages)
+      # onnxruntime itself stays - it is this snap's whole Python runtime.
+      export PRUNE_GATE="import onnxruntime, numpy, tokenizers, myna.text.cli; assert onnxruntime.InferenceSession"
+      "$CRAFT_PROJECT_DIR/dev/prune-runtime.sh" "$site" "$CRAFT_PART_INSTALL/bin/python3"
+      rm -f "$CRAFT_PART_INSTALL"/bin/pip* "$CRAFT_PART_INSTALL"/bin/onnxruntime_test
+
+  # catalog.json, generated from plugins/*.toml and staged into catalog/ by
+  # dev/prepare.sh: what Settings reads once the snap is installed.
+  catalog:
+    plugin: dump
+    source: catalog
+    organize:
+      catalog.json: share/myna-text/catalog.json
+
+  # Model weights as components. Populate components/ with
+  # ./dev/download-models.sh before packing; `prime: [-*]` keeps them out of
+  # the base. Whatever that stages is what ships.
+  model-components:
+    plugin: dump
+    source: components
+    # Craft only ever adds: a file DELETED from components/ survives in this
+    # part's stage and prime dirs and ships anyway; dropping one needs
+    # `snapcraft clean model-components` first.
+    organize:
+      # BEGIN generated by dev/gen-plugins.py, do not edit (organize)
+      "model-disfluency-en/*": (component/model-disfluency-en)/
+      "model-disfluency-fr-de-es/*": (component/model-disfluency-fr-de-es)/
+      # END generated by dev/gen-plugins.py (organize)
+    prime:
+      - -*
+
+components:
+  # BEGIN generated by dev/gen-plugins.py, do not edit (components)
+  model-disfluency-en:
+    type: standard
+    summary: English disfluency tagger (ONNX int8)
+    description: |
+      myna-disfluency-en, a MiniLM-L12 word tagger fine-tuned by Canonical
+      (Apache-2.0) that marks fillers, repeats and self-corrections for
+      deletion. About 46 MB.
+  model-disfluency-fr-de-es:
+    type: standard
+    summary: Disfluency tagger for French, German and Spanish (ONNX int8)
+    description: |
+      myna-disfluency, a multilingual MiniLM-L12 word tagger fine-tuned by
+      Canonical (Apache-2.0) that marks fillers, repeats, restarted phrases and
+      self-corrections for deletion in French, German and Spanish.
+      About 51 MB.
+  # END generated by dev/gen-plugins.py (components)

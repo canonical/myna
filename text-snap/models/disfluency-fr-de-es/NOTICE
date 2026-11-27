@@ -1,0 +1,32 @@
+model-disfluency-fr-de-es: myna-disfluency, a multilingual disfluency tagger
+(English, French, German, Spanish) fine-tuned by Canonical Ltd, Apache-2.0
+(LICENSE in this component).
+
+Base model: microsoft/Multilingual-MiniLM-L12-H384 (MIT License, Copyright (c)
+Microsoft Corporation), https://huggingface.co/microsoft/Multilingual-MiniLM-L12-H384
+revision 6e8c1ec6b4ec4e3fc6eb7d2cd834fcd582b61daf. Its vocabulary is the
+XLM-RoBERTa SentencePiece vocabulary (FacebookAI/xlm-roberta-base, MIT License,
+revision e73636d4f797dec63c3081bb6ed5c7b0bb3f2089), pruned to the pieces the
+training text uses; tokenizer.json is that pruned tokenizer.
+
+Training text derives from the following. The disfluencies are synthetic:
+Canonical's own word lists and templates injected into the sentences (changes
+made: sentence extraction and injection).
+
+- English: SODA, Kim et al., https://huggingface.co/datasets/allenai/soda
+  (revision fdc848ab0183208ea7808206c91c724414d0a071) and Synthetic-Persona-Chat,
+  Jandaghi et al., Google, https://huggingface.co/datasets/google/Synthetic-Persona-Chat
+  (revision a520ad7f999ca7e6dfdc25fed9f5070bf6f87b42), both CC-BY-4.0:
+  https://creativecommons.org/licenses/by/4.0/
+- French, German, Spanish: sentences of the Tatoeba Project, https://tatoeba.org,
+  by its contributors, CC BY 2.0 FR (some sentences CC0 1.0):
+  https://creativecommons.org/licenses/by/2.0/fr/ . Exported on 2026-11-24 from
+  https://downloads.tatoeba.org/exports/per_language/ (fra, deu and spa
+  sentences.tsv.bz2, sha256 c9e91cc5a0640db7bfc4423fadf3985db42df08dafce4983d4c6b8c2cf7a4d3d,
+  e16c57e695bfeccccb455c305d262c5cbe2aa74a5c1e1edb725d53cf907309ac and
+  7872d2e66debfd8e73e96cc9bca9560a32cc914aee9c820649d7d3d5e7353f48).
+
+The model files, shipped as built, have these sha256:
+
+  tagger.onnx     740c4553a2137ff4340eb3a75dc6b65da55cf15289cda681e1313f4388d95ec7
+  tokenizer.json  a80a97d0fcf69a5b1f79067dfd9f89ff998c1b8e4114c2d956ae292b55d9a918
