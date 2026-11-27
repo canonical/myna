@@ -18,7 +18,9 @@ SHELL := /bin/bash
 # backends they cover; a new one has to be added there by hand, and nothing
 # fails when it is forgotten. Derive them from here, or check them against it.
 BACKENDS := whisper parakeet funasr nemotron indicconformer fake
-SNAPS := $(BACKENDS) myna
+# myna-text and myna-translation are no speech backends (no bench or sweep
+# target applies to them), but they are built and packed like one.
+SNAPS := $(BACKENDS) text translation myna
 
 # Conventions, with the exceptions stated once each:
 #
@@ -63,7 +65,7 @@ help: ## List targets, grouped as in this file
 preflight: check test coverage-gate ## Everything CI blocks a merge on: check + test + the patch gate
 
 .PHONY: check
-check: lint-client lint-server lint-snaps lint-shell lint-workflows lint-client-deps i18n-check ## Static gates (CI `check` job)
+check: lint-client lint-server lint-snaps lint-plugins lint-shell lint-workflows lint-client-deps i18n-check ## Static gates (CI `check` job)
 
 .PHONY: test
 test: test-client test-server test-extension test-noble ## Every blocking suite (CI runs test-client/test-server instrumented, in `coverage`)
@@ -77,16 +79,21 @@ coverage: cov-client cov-server cov-extension exercise deadcode cov-patch ## Cov
 # What CI runs: the measured suites and the gate, none of the reports read
 # only by a person, who runs `coverage` locally for those.
 .PHONY: coverage-gate
+coverage-gate: coverage-measure cov-patch ## The patch gate alone over the measured suites
+
+# CI splits the gate: `coverage` measures, `patch-coverage` grades once the
+# e2e matrix has added what the suites executed (e2e-tests/coverage-export.sh).
 #
 # The Python suite runs beside the Rust one: it barely competes with the
 # compile, and serially it added its whole run to CI's longest job. Its lines
 # carry a [py-cov] prefix, as the two logs interleave.
-coverage-gate: ## The patch gate alone over the measured suites (CI `coverage` job)
+.PHONY: coverage-measure
+coverage-measure: ## The suites and the exercise instrumented, merged exports only (CI `coverage` job)
 	@set -o pipefail; { $(WS) py-cov 2>&1 | sed -u 's/^/[py-cov] /'; } & py=$$!; \
 	$(WS) cov --no-reports; rust=$$?; \
 	wait $$py; python=$$?; \
 	[ $$rust = 0 ] && [ $$python = 0 ]
-	$(MAKE) exercise cov-patch
+	$(MAKE) exercise
 
 .PHONY: spread
 spread: spread-build ## Confined e2e suite in a local KVM VM (CI `spread` job; needs prebuilt snaps)
@@ -132,6 +139,10 @@ lint-client-deps: ## Unused Cargo dependencies (machete) + ban/licence policy (d
 .PHONY: lint-snaps
 lint-snaps: ## Validate snap engine/runtime/model manifests with modelctl lint-package
 	./dev/lint-packages.sh
+
+.PHONY: lint-plugins
+lint-plugins: ## Fail if a text snap's generated plugin files drift from plugins/*.toml
+	python3 dev/gen-plugins.py --check text-snap translation-snap
 
 .PHONY: lint-shell
 lint-shell: ## shellcheck every dev, snap and hook script
@@ -228,6 +239,13 @@ COV_BASE ?= origin/main
 .PHONY: cov-patch
 cov-patch: ## Patch-coverage gate on the lines this branch changes (COV_BASE=origin/main)
 	$(WS) patch-cov --base $(COV_BASE)
+
+# The same gate outside the workshop, over exports already on disk: CI's
+# `patch-coverage` job, and a worktree, whose gitdir the workshop cannot see.
+# Needs diff-cover on PATH.
+.PHONY: cov-patch-host
+cov-patch-host: ## The patch gate on the host, over the exports on disk (CI `patch-coverage` job)
+	python3 dev/patch_cov.py --base $(COV_BASE)
 
 # Mutation testing is scoped on purpose: a whole-workspace run is hours, a
 # crate or a module is minutes. Use it to grade a suite you have just written
@@ -339,15 +357,33 @@ install-desktop: ## Install the Myna Settings desktop entry + icons for this use
 
 # The settings app, run from the workspace. Needs `make install-schema` first:
 # unpackaged, it reads the host's schema copy, not the snap's.
+#
+# A GUI started from a confined shell inherits that shell's AppArmor label
+# (a Ptyxis or terminal snap, or an agent's own shell), and the myna snap's
+# daemon profile then refuses its D-Bus calls: Settings shows no model, no
+# Install button and every language as not installed, while the daemon answers
+# fine from an unconfined shell. systemd --user is unconfined, so a confined
+# shell is handed over to it rather than launched from.
 .PHONY: run-config
 run-config: ## Launch Myna Settings (myna-config) from the workspace
-	cd client && cargo run -p myna-config
+	cd client && cargo build -q -p myna-config
+	@label=$$(cat /proc/self/attr/current); \
+	if [ "$$label" = "unconfined" ]; then \
+		exec $(CURDIR)/client/target/debug/myna-config; \
+	else \
+		echo "== this shell is confined ($$label): launching under systemd --user, which is not"; \
+		systemd-run --user --collect --unit=myna-config-review \
+			--working-directory=$(CURDIR)/client \
+			$(CURDIR)/client/target/debug/myna-config; \
+		echo "== log: journalctl --user -u myna-config-review"; \
+	fi
 
 ##@ Snaps
 
 # What the store carries, and where publish-<snap> releases a fresh build and
-# its components.
-PUBLISHED := $(filter-out fake,$(SNAPS))
+# its components. text and translation are left out: their first uploads wait
+# for Charles (the tagger has no public home yet; store enablement).
+PUBLISHED := $(filter-out fake text translation,$(SNAPS))
 CHANNEL ?= latest/edge
 
 define snap_rule
@@ -473,21 +509,61 @@ bench-keywords: ## Keyword recall and false hits, sent vs not, against an in-tre
 
 ##@ Desktop e2e and lab hardware (CI `e2e` and `testflinger` workflows)
 
-# Myna Settings driven through AT-SPI on a fresh GNOME or Xubuntu desktop LXD VM. The
-# first run provisions the VM (cloud image, desktop, edge snaps, snapshots);
-# later runs restore a snapshot per suite. See e2e-tests/AGENTS.md. The
-# dictation suite also needs the fake backend snap: `make snap-fake` first.
+# Myna Settings driven through AT-SPI on a GNOME, Xubuntu or Kubuntu desktop LXD
+# VM. One command, no variables to remember: `make e2e E2E_RELEASE=resolute
+# SUITES=chains` builds the snaps this tree needs if they are missing, uses the
+# provisioned base (or provisions it), and runs the suites. See
+# e2e-tests/AGENTS.md for the fleet: one base per release and desktop, two
+# snapshots, copies per run.
+#
 # E2E_VM_MEMORY (default 6GiB, what CI gives the guest) sizes the VM, e.g.
-# `make e2e E2E_VM_MEMORY=4GiB` on a laptop; E2E_MYNA_SNAP=PATH tests the
-# snap `make snap-myna` built instead of the store's edge one.
+# `make e2e E2E_VM_MEMORY=4GiB` on a laptop.
+# E2E_JOBS=N runs N suites at once, each in its own VM copy (default 1).
 E2E_RELEASE ?= noble
 E2E_DESKTOP ?= gnome
 SUITES ?=
+# The snaps a run drives must be this tree's: the store's edge revision does
+# not carry the settings HEAD writes, and a suite that tested it would pass or
+# fail for the wrong reason. Each is rebuilt when the source it is built from
+# changed since its last build (e2e-tests/tree-stamp.sh, uncommitted changes
+# included), never because a commit touched only tests or docs. The newest
+# file is the one a run drives, unless E2E_MYNA_SNAP or E2E_FAKE_SNAP names
+# one (CI builds them from this tree in jobs of their own).
+E2E_MYNA_SNAP_FILE := $(firstword $(shell ls -t myna-snap/myna_*_amd64.snap 2>/dev/null))
+E2E_FAKE_SNAP_FILE := $(firstword $(shell ls -t fake-snap/myna-fake-backend_*_amd64.snap 2>/dev/null))
+E2E_MYNA_SOURCE := client myna-snap ':!client/*/tests'
+E2E_FAKE_SOURCE := fake-snap server/src server/pyproject.toml
+
+.PHONY: e2e-snaps
+e2e-snaps: ## The snaps an e2e run drives, rebuilt only when their source moved
+	@stamp=$$(e2e-tests/tree-stamp.sh $(E2E_MYNA_SOURCE)); \
+	if [ -n "$$E2E_MYNA_SNAP" ]; then echo "== the myna snap given: $$E2E_MYNA_SNAP"; \
+	elif [ -z "$(E2E_MYNA_SNAP_FILE)" ] || [ "$$(cat myna-snap/.e2e-stamp 2>/dev/null)" != "$$stamp" ]; then \
+	    echo "== the myna snap is not this tree's: building"; $(MAKE) snap-myna && echo "$$stamp" > myna-snap/.e2e-stamp; \
+	fi
+	@stamp=$$(e2e-tests/tree-stamp.sh $(E2E_FAKE_SOURCE)); \
+	if [ -n "$$E2E_FAKE_SNAP" ]; then echo "== the fake backend snap given: $$E2E_FAKE_SNAP"; \
+	elif [ -z "$(E2E_FAKE_SNAP_FILE)" ] || [ "$$(cat fake-snap/.e2e-stamp 2>/dev/null)" != "$$stamp" ]; then \
+	    echo "== the fake backend snap is not this tree's: building"; $(MAKE) snap-fake && echo "$$stamp" > fake-snap/.e2e-stamp; \
+	fi
 
 .PHONY: e2e
-e2e: ## Settings and dictation suites in an LXD desktop VM (E2E_RELEASE=noble, E2E_DESKTOP=gnome|xubuntu, SUITES=all, E2E_VM_MEMORY=6GiB)
+e2e: e2e-snaps ## Suite(s) in a desktop VM (E2E_RELEASE, E2E_DESKTOP, SUITES), building and provisioning what is missing
 	$(TIMED) e2e-tests/vm/provision.sh --release $(E2E_RELEASE) --desktop $(E2E_DESKTOP)
+	E2E_MYNA_SNAP=$${E2E_MYNA_SNAP:-$(CURDIR)/$$(ls -t myna-snap/myna_*_amd64.snap | head -1)} \
+	E2E_FAKE_SNAP=$${E2E_FAKE_SNAP:-$(CURDIR)/$$(ls -t fake-snap/myna-fake-backend_*_amd64.snap | head -1)} \
+	TAGS="$(TAGS)" \
 	e2e-tests/run-suite.sh --release $(E2E_RELEASE) --desktop $(E2E_DESKTOP) $(SUITES)
+
+E2E_BASE ?= origin/main
+TAGS ?=
+
+.PHONY: e2e-changed
+e2e-changed: ## The suites for what this branch changed (E2E_BASE=origin/main)
+	@tags=$$(e2e-tests/changed-tags.sh $(E2E_BASE) | sort -u | paste -sd, -); \
+	if [ -z "$$tags" ]; then echo "== no e2e tag for this diff"; exit 0; fi; \
+	echo "== tags: $$tags"; \
+	$(MAKE) e2e TAGS="$$tags"
 
 # A copy of the e2e VM running this tree's snap and deb, to try by hand; the
 # e2e VMs are untouched. See dev/try-desktop.sh --help and e2e-tests/README.md.

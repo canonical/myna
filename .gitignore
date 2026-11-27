@@ -56,6 +56,14 @@ parakeet-snap/wheels/
 parakeet-snap/wheelhouse-cuda/
 parakeet-snap/*.snap
 parakeet-snap/*.comp
+text-snap/components/model-*/
+text-snap/wheels/
+text-snap/*.snap
+text-snap/*.comp
+translation-snap/components/model-*/
+translation-snap/wheels/
+translation-snap/*.snap
+translation-snap/*.comp
 # Coverage artifacts (feature 006)
 client/target/coverage/
 server/.coverage*
@@ -88,3 +96,7 @@ server/mutants/
 # CI only: tells the pins SDK to fetch through the runner apt cache
 # (.github/actions/apt-cache).
 .workshop/pins/apt-proxy
+*-snap/catalog/
+
+# e2e-tests/tree-stamp.sh of the source the e2e snaps were built from.
+.e2e-stamp
