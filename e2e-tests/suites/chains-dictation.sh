@@ -99,7 +99,7 @@ step 5 "dictating Farsi: Translate into Français through English"
 FA_SAID="فکر می‌کنم الان باید برویم."
 fresh_chain fa "$FA_SAID"
 shot waitfor:General tab:Processing "click:New chain…" "click:Add step…" "click:Translate" \
-    "waitfor:Search languages" "click:Search languages" "type:Afrikaans" \
+    "waitfor:Search languages" "click:Search languages" "type:Swahili" \
     "waitfor:No language matches" shot:shots/chains-dictation/05-refused.png \
     || { echo "refused language failed" >&2; FAILED=1; }
 shot waitfor:General tab:Processing "click:$CHAIN" "click:Add step…" "click:Translate" \

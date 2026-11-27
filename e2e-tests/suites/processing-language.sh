@@ -51,7 +51,7 @@ shot waitfor:General tab:Processing "click:$CHAIN" "click:Add step…" "click:Tr
 
 step 3 "a language no model reaches from here is not listed"
 shot waitfor:General tab:Processing "click:$CHAIN" "click:Add step…" "click:Translate" \
-    "waitfor:Search languages" "click:Search languages" "type:Afrikaans" \
+    "waitfor:Search languages" "click:Search languages" "type:Swahili" \
     "waitfor:No language matches" shot:shots/processing-language/03-refused.png \
     || { echo "refused language failed" >&2; FAILED=1; }
 
