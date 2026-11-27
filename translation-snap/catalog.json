@@ -3758,7 +3758,7 @@
         "description_key": "step.translate.description",
         "example_key": "step.translate.example"
       },
-      "download_bytes": 19558400,
+      "download_bytes": 19562496,
       "installed_bytes": 22177813,
       "quality": {
         "value": 0.628,
