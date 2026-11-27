@@ -15,8 +15,6 @@ use crate::chain_solve::{why_text, Fit, Why, World};
 use crate::languages::Source;
 use crate::plugin_catalog::Entry;
 use crate::processing_steps::{self as steps, Moves, Offered, Place, Row, Standing, TRANSLATE};
-use crate::step_catalog::{self, FRENCH, SIMPLIFIED, TRADITIONAL};
-use myna_core::graph::Script;
 
 /// What every step judgement needs besides the chain.
 pub struct Context<'a> {
@@ -54,8 +52,6 @@ pub struct Card {
     pub steps: String,
     /// What it needs installed before every step runs, if anything.
     pub needs: Option<String>,
-    /// What it types for its sample, in a new paragraph.
-    pub result: String,
 }
 
 /// How many translations of `steps` no model, installed or offered, can do.
@@ -178,7 +174,6 @@ pub fn lines(chain: &Chain, ctx: &Context) -> Vec<Row> {
                     input,
                     output,
                     inserted,
-                    ..
                 } => (
                     written(step, input.as_deref(), output.as_deref()),
                     false,
@@ -263,168 +258,6 @@ pub fn lines(chain: &Chain, ctx: &Context) -> Vec<Row> {
         .collect()
 }
 
-/// What the text is typed into, for Try it.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum Field {
-    #[default]
-    NewParagraph,
-    MidSentence,
-    Address,
-}
-
-impl Field {
-    pub const ALL: [Field; 3] = [Field::NewParagraph, Field::MidSentence, Field::Address];
-
-    pub fn label(self) -> String {
-        match self {
-            Field::NewParagraph => gettextrs::gettext("A new paragraph"),
-            Field::MidSentence => gettextrs::gettext("The middle of a sentence"),
-            Field::Address => gettextrs::gettext("An address field"),
-        }
-    }
-
-    /// The sample as the field takes it. The daemon's own fit reads the
-    /// field; the samples only need the capital and the closing mark.
-    fn fit(self, text: &str) -> String {
-        let lower = |text: &str| {
-            let mut chars = text.chars();
-            chars
-                .next()
-                .map(|c| c.to_lowercase().chain(chars).collect())
-                .unwrap_or_default()
-        };
-        match self {
-            Field::NewParagraph => text.to_owned(),
-            Field::MidSentence => lower(text),
-            Field::Address => lower(text.trim_end_matches(['.', '!', '?'])),
-        }
-    }
-}
-
-/// One line of Try it's step by step: what ran and the sample after it.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct TraceLine {
-    pub title: String,
-    pub text: String,
-    /// Why the sample did not change, when it is not simply that the step skipped.
-    pub note: Option<String>,
-}
-
-/// A chain run on a static sample, no model called.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Trace {
-    pub heard: String,
-    pub typed: String,
-    pub lines: Vec<TraceLine>,
-}
-
-fn script_sample(script: &Script) -> &'static str {
-    match script {
-        Script::Known(s) if s == "Hans" => SIMPLIFIED,
-        _ => TRADITIONAL,
-    }
-}
-
-/// `chain` on the catalog's own examples, in its order: the steps the solver
-/// skips are marked and leave the sample alone, the converters it inserts
-/// are lines of their own, and the field's fit comes last.
-pub fn trace(chain: &Chain, field: Field, ctx: &Context) -> Trace {
-    let rows = lines(chain, ctx);
-    let fitted = World::new(ctx.catalog, ctx.daemon).fits(&chain.steps, ctx.language);
-    let chinese = ctx
-        .language
-        .is_some_and(|l| myna_core::chains::primary_language(l) == "zh");
-    let heard = if chinese {
-        SIMPLIFIED.to_owned()
-    } else {
-        step_catalog::said()
-    };
-    let mut text = heard.clone();
-    let mut out: Vec<TraceLine> = Vec::new();
-    for ((step, row), fit) in chain.steps.iter().zip(&rows).zip(&fitted) {
-        let mut note = None;
-        let title = match fit {
-            Fit::Off => {
-                // TRANSLATORS: a step of a chain that is switched off; {step} is its name.
-                gettextrs::gettext("{step} (off)").replace("{step}", &row.title)
-            }
-            Fit::Unknown => {
-                note = Some(row.subtitle.clone());
-                row.title.clone()
-            }
-            Fit::Skipped { why, .. } => {
-                note = Some(why_text(why));
-                gettextrs::gettext("{step} (skipped)").replace("{step}", &row.title)
-            }
-            Fit::Runs {
-                input,
-                output,
-                inserted,
-                converts,
-            } => {
-                for label in inserted {
-                    if let Some(script) = converts.as_ref().filter(|_| *label != pivot()) {
-                        if text == SIMPLIFIED || text == TRADITIONAL {
-                            text = script_sample(script).to_owned();
-                        }
-                    }
-                    out.push(TraceLine {
-                        title: label.clone(),
-                        text: text.clone(),
-                        note: None,
-                    });
-                }
-                match step.step.as_str() {
-                    "tidy" if text == step_catalog::said() => text = step_catalog::tidied(),
-                    "script" if text == SIMPLIFIED || text == TRADITIONAL => {
-                        let simplified =
-                            step.params.get("mode").map(String::as_str) == Some("simplified");
-                        text = if simplified { SIMPLIFIED } else { TRADITIONAL }.to_owned();
-                    }
-                    "translate" => {
-                        let pair = (
-                            input.as_deref().unwrap_or("en"),
-                            output.as_deref().unwrap_or_default(),
-                        );
-                        match pair {
-                            ("en", "fr") => text = FRENCH.to_owned(),
-                            ("zh", "en") => text = "software".to_owned(),
-                            _ => {
-                                note = Some(gettextrs::gettext("No example for this language yet"))
-                            }
-                        }
-                    }
-                    _ => {}
-                }
-                row.title.clone()
-            }
-        };
-        out.push(TraceLine {
-            title,
-            text: text.clone(),
-            note,
-        });
-    }
-    let typed = field.fit(&text);
-    if typed != text {
-        out.push(TraceLine {
-            title: gettextrs::gettext("Fitted to the field"),
-            text: typed.clone(),
-            note: Some(field.label()),
-        });
-    }
-    Trace {
-        heard,
-        typed,
-        lines: out,
-    }
-}
-
-/// The inserted line that is a pivot through English, not a script converter.
-fn pivot() -> String {
-    gettextrs::gettext("Through English")
-}
-
 /// Every saved chain, for the page's list.
 pub fn cards(chains: &[Chain], active: Option<&str>, ctx: &Context) -> Vec<Card> {
     chains
@@ -465,7 +298,6 @@ pub fn cards(chains: &[Chain], active: Option<&str>, ctx: &Context) -> Vec<Card>
                 active: active == Some(chain.id.as_str()),
                 steps,
                 needs,
-                result: trace(chain, Field::NewParagraph, ctx).typed,
             }
         })
         .collect()
@@ -521,44 +353,5 @@ mod tests {
         };
         assert_eq!(new_name(&[]), "New chain");
         assert_eq!(new_name(&[named("New chain")]), "New chain 2");
-    }
-
-    #[test]
-    fn the_field_has_the_last_word_on_a_sample() {
-        let said = "So I think we should go.";
-        assert_eq!(Field::NewParagraph.fit(said), said);
-        assert_eq!(Field::MidSentence.fit(said), "so I think we should go.");
-        assert_eq!(Field::Address.fit(said), "so I think we should go");
-    }
-
-    #[test]
-    fn a_trace_follows_the_chain_and_marks_what_does_not_run() {
-        let (installing, preparing) = (BTreeMap::new(), BTreeSet::new());
-        let ctx = Context {
-            language: Some("zh"),
-            catalog: &[],
-            daemon: None,
-            installing: &installing,
-            preparing: &preparing,
-            locales: &[],
-        };
-        let chain = |steps: Vec<ChainStep>| Chain {
-            id: "c".into(),
-            name: "c".into(),
-            steps,
-        };
-        let none = trace(&chain(Vec::new()), Field::NewParagraph, &ctx);
-        assert_eq!(none.heard, SIMPLIFIED);
-        assert_eq!(none.typed, SIMPLIFIED);
-        assert!(none.lines.is_empty());
-        let script = ChainStep::new("script").with("mode", "traditional");
-        let ran = trace(&chain(vec![script.clone()]), Field::NewParagraph, &ctx);
-        assert_eq!(ran.typed, TRADITIONAL);
-        assert_eq!(ran.lines.len(), 1);
-        let mut off = script;
-        off.on = false;
-        let paused = trace(&chain(vec![off]), Field::NewParagraph, &ctx);
-        assert_eq!(paused.typed, SIMPLIFIED);
-        assert!(paused.lines[0].title.ends_with("(off)"));
     }
 }
