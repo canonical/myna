@@ -11,7 +11,7 @@ Read the top-level `.kb/agents.md` file before continuing below.
 1. **Few-shot small models (0.27-1.7B) lose.** They trail the rules or the shipped tagger everywhere and alter 5-40% of clean sentences. Only Qwen3-4B few-shot is good (tidy 88-93, numbers 81-89, run 1) at 2-3.5 s, outside the budget.
 2. **Fine-tuned (LoRA) Qwen3 wins on accuracy** for tidy, numbers, addresses and non-English commands, but no fine-tuned arm passes the break gate (0-6% of clean sentences altered), the numbers arms change digits (6-19 per 1000) and they cost 150-800 ms where rules cost microseconds.
 3. **What passes the gates and is fast:**
-   - tidy: the word tagger (one 49 MB int8 model for en/fr/de/es, 2-6 ms, damage 0). English ships today as `myna-disfluency-en`; the multilingual one is a follow-up.
+   - tidy: the word tagger (one 49 MB int8 model for en/fr/de/es, 2-6 ms, damage 0). It ships as `myna-disfluency` in the `model-disfluency-en` component, see [the multilingual tagger](#the-multilingual-tagger).
    - numbers in fr/de/es: text2num (MIT Rust crate) plus a small convention pass.
    - everything else in English: the rules.
 4. **Shipped as a result (DECISIONS 10):** the first release offers Tidy, Translate and Chinese script. Commands, emoji, snippets, casing, addresses, numbers, profanity, typography and Keep the original were removed from the tree and return per language when their research task lands. The rules that were measured are linked [below](#the-deleted-steps).
@@ -53,7 +53,7 @@ No laptop-class measurement exists yet.
 
 | op | tier 1 (default, fast, gated) | tier 2 (optional, measured) | why |
 |---|---|---|---|
-| tidy | multilingual tagger, one model for en/fr/de/es | LoRA 0.6B/1.7B behind ConservativeEdit, once the laptop p95 is known | Tagger damage is 0 by construction at 2-6 ms. Next: add phrase restarts and "actually" repairs to the generator, retrain, rescore on run 2. |
+| tidy | multilingual tagger, one model for en/fr/de/es | LoRA 0.6B/1.7B behind ConservativeEdit, once the laptop p95 is known | Tagger damage is 0 by construction at 2-6 ms. Shipped; see [the multilingual tagger](#the-multilingual-tagger) for the retrained numbers. |
 | numbers | en: rules; fr/de/es: text2num plus a per-language convention pass (it/pt/nl untested) | none until a digit-multiset verifier rejects LoRA's digit slips | Digit changes are the unrecoverable class. |
 | addresses | per-language word tables (point/arobase, Punkt/at, punto/arroba) in a closed grammar | LoRA as a challenger behind an address verifier | LoRA's 93-96% shows the task is learnable; the deterministic grammar was only tried in English. |
 | commands | per-language phrase tables in a closed grammar | none | Destructive commands stay deterministic; LoRA at 93-98% shows the phrase sets are small and regular. |
@@ -88,7 +88,7 @@ Cross-run table, run 1 against run 2 for every arm and cell: `file:///home/charl
 
 ## Rules for changing this
 
-- A change to a file under `textcorpus/eval/` is a change to the benchmark: regenerate `textcorpus/eval/SHA256SUMS` with `text_corpus.write_eval_sums()` and record why in the commit body. Never edit run 2 to make an arm pass; add a run 3 instead.
+- A change to a file under `textcorpus/eval/` is a change to the benchmark: regenerate `textcorpus/eval/SHA256SUMS` with `text_corpus.write_eval_sums()` and record why in the commit body. Never edit run 2 or run 3 to make an arm pass; add a run 4 instead.
 - Report run 2 (blind) numbers, with the break and damage columns, for any model arm; accuracy alone hides a model that alters clean text.
 - Quote a latency only with the load of the machine it ran on.
 
@@ -126,8 +126,8 @@ The 212 rows of the run 2 report reproduce byte for byte from the raw outputs wi
 | arm | what | status in the tree |
 |---|---|---|
 | rules | the Rust rule steps, driven through a bridge crate | removed (see below); tidy's English rule `disfluency.rs` stays |
-| tagger | `myna-disfluency-en`, MiniLM-L12 word tagger, int8 ONNX, tau 0.9 | ships; `text/tagger.py` |
-| tagger-multi | one 49 MB int8 tagger for en/fr/de/es (600k examples) | not shipped; recipe in the workstream |
+| tagger | the English-only MiniLM-L12 word tagger, int8 ONNX, tau 0.9 | replaced by tagger-multi |
+| tagger-multi | `myna-disfluency`, one 49 MB int8 tagger for en/fr/de/es (600k examples), tau 0.6 | ships; `text/tagger.py` |
 | text2num (+conv) | MIT Rust crate, threshold 10, a per-language post-pass for currency, percent and clock time | not shipped |
 | NeMo ITN | NeMo-text-processing WFST grammars (Apache-2.0), Python and pynini (413 MB stack) | measured only; grammars 15.7 MB for four languages |
 | LoRA | Qwen3 0.6B or 1.7B, one adapter per operation (tidy, numbers, addresses, commands) trained on synthetic data | not shipped; recipe in the workstream |
@@ -136,12 +136,43 @@ The 212 rows of the run 2 report reproduce byte for byte from the raw outputs wi
 Training recipes, the data generators and the leakage checks stay outside the repository:
 
 - LoRA: `file:///home/charles/myna-processing-graphs/bench/smallmodel/lora/`
-- multilingual tagger: `file:///home/charles/myna-processing-graphs/bench/smallmodel/tagger_multi/`
+- multilingual tagger: `file:///home/charles/myna-processing-graphs/bench/smallmodel/tagger_multi/` (v3 run: `chain3.sh`, reports in `results/run2b-tidy-report.md` and `results/run3-report.md`)
 - text2num: `file:///home/charles/myna-processing-graphs/bench/smallmodel/text2num/`
 - NeMo ITN: `file:///home/charles/myna-processing-graphs/bench/smallmodel/nemo_itn/`
 - the original run script, prompts and the hour-by-hour log: `file:///home/charles/myna-processing-graphs/bench/smallmodel/` (`TIMELINE.md`)
 
 The raw per-item outputs of both runs (52 MB) were on `chug:/var/tmp/smallmodel/run1` and `run2`; they are scratch space. Put them in `--results` directories to rescore them.
+
+## The multilingual tagger
+
+`myna-disfluency` (component `model-disfluency-en`, which keeps its store name) is the v3 retrain of the one-model tagger: Multilingual-MiniLM-L12-H384 with its vocabulary pruned to the pieces en/fr/de/es text uses, 4 word tags, the English decode plus capitalisation after opening marks (`¿puedes` becomes `¿Puedes`). Recipe unchanged from v2 (600k examples, 2 epochs, lr 1e-4, batch 64, 42 minutes on chug's RTX 3050) except the generator, which gained the classes both blind runs missed:
+
+- phrase restarts: the first, sometimes partial, copy of a 3-7 word phrase is deleted, with or without a comma or a filler between the copies;
+- repairs marked by the language's "actually" family (actually / or rather, plutôt / ou plutôt / en fait, eigentlich / besser gesagt, mejor dicho / más bien / en realidad) over a wrong span of 1-5 words;
+- hard negatives that use those words as content ("Il fait plutôt froid", "Das ist eigentlich einfach").
+
+Dev exact match at tau 0.9: en 94.9, fr 98.0, de 97.8, es 96.0 (v2: 94.7, 94.3, 95.1, 92.0), held-out clean break 0-1%.
+
+Scores, shipped configuration (English with its rule first, the others bare), tau 0.6, acc / pos / keep / break %, damage 0 everywhere, 1 thread p50 5 ms, p95 7-9 ms on a shared box:
+
+| lang | run 2 (blind) v2 | run 2 v3 | run 3 (blind, fresh) v2 | run 3 v3 |
+|---|---|---|---|---|
+| en | 87.3 / 82.5 / 95.7 / 1 | 87.3 / 82.5 / 95.7 / 1 | 75.0 / 75.0 / 75.0 / 1 | **81.2** / 80.6 / 83.3 / 1 |
+| fr | 81.7 / 82.1 / 81.0 / 0 | **85.0** / 84.6 / 85.7 / 0 | 68.8 / 66.7 / 75.0 / 0 | **75.0** / 69.4 / 91.7 / 0 |
+| de | 78.3 / 69.2 / 95.2 / 2 | 80.0 / 71.8 / 95.2 / 0 | 68.8 / 61.1 / 91.7 / 2 | **81.2** / 77.8 / 91.7 / 0 |
+| es | 76.7 / 76.9 / 76.2 / 0 | 76.7 / 76.9 / 76.2 / 0 | 58.3 / 52.8 / 75.0 / 0 | **72.9** / 69.4 / 83.3 / 0 |
+
+No language regresses on either corpus. Run 2 was not tuned on; run 3 (48 items per language, 12 phrase restarts, 12 "actually" repairs, 8 mixed, 4 multi-sentence, 12 negatives) was written by a separate author that saw no training code and no score, and a leak check found no input or reference of it in the training data. Per class on run 3 (v2 to v3, correct out of 12): "actually" repairs en 8 to 9, fr 9 to 9, de 7 to 10, es 5 to 10; phrase restarts 10-11 to 11-12. Mixed items (a filler plus a repair or stutter in one sentence) are still weak in fr/de/es at 2-3 of 8.
+
+Decisions behind the numbers:
+
+- **tau 0.6.** On run 2 the two values tie in every language; on run 3, 0.6 beats 0.9 by 2-4 points in all four (en 77.1 to 81.2, fr 70.8 to 75.0, de 79.2 to 81.2, es 70.8 to 72.9) with the same break. That is the one choice run 3 informed.
+- **No rule before the tagger outside English.** On run 2 bare beats rule-first by 3-12 points (fr 85.0 against 73.3, de 80.0 against 71.7) because the per-language rule rewrites the negatives (keep 48-67% against 76-95%). Run 3 is the exception: it has fewer negatives (12 of 48), so rule-first scores 4 points higher on its positives in fr, de and es (79.2, 85.4, 77.1) while keep stays 25 points lower. The tree has no per-language rule anyway (`disfluency.rs` reads English and pauses only), so the daemon runs the English rule for English and nothing before the tagger elsewhere.
+- **One model, not four.** Unchanged from the v1 comparison.
+
+Reproduce: `myna-bench text --eval run2 --op tidy --arm rules=identity --arm tagger:<component dir>:0.6`, and `--eval run3` for the fresh slice. `tagger:` and `socket:` read all four languages, bare; English with its rule first is `rules` composed by the daemon, so add `--lang en` and compare against the numbers above only for fr/de/es. Raw outputs of the v2/v3 comparison were on `chug:/var/tmp/smallmodel/run2b` and `run3`, the model in `chug:/var/tmp/tm_data/model3`, the training data in `chug:/var/tmp/tm_data/gen3`.
+
+Caveats specific to this run: run 3 shares its author's blind spots with the generator's design (both follow the classes named in the task), its negatives are few, and it used up its blindness on the tau choice. No native speaker has read the outputs; the sheets for that are `file:///home/charles/myna-processing-graphs/design/tidy-spot-check-en.md` (and `-fr`, `-de`, `-es`). The English rule still deletes a repeated list item it should keep ("left, right, left, right, left" loses the second pair), which is the rule's, not the tagger's.
 
 ## The deleted steps
 
@@ -233,15 +264,15 @@ Custom terms that need a legal decision, not treated as free: Gemma 3 and Functi
 
 ## Rerunning
 
-`myna-bench text --eval run1|run2` (`server/src/myna/benchmarker/text_eval.py`) scores arms per operation on these corpora and needs no network, snap or root for the built-in arms. Arm specs are in the module docstring.
+`myna-bench text --eval run1|run2|run3` (`server/src/myna/benchmarker/text_eval.py`) scores arms per operation on these corpora and needs no network, snap or root for the built-in arms. Arm specs are in the module docstring.
 
 ```
-  # English tidy: the tagger directly, against the identity baseline
-myna-bench text --eval run2 --op tidy --lang en \
-    --arm rules=identity --arm tagger:/path/to/disfluency-en:0.9
+  # the tagger directly, against the identity baseline (run3 is the blind tidy slice)
+myna-bench text --eval run3 --op tidy \
+    --arm rules=identity --arm tagger:/path/to/model-disfluency-en:0.6
   # the same tagger through a running myna-text daemon
-myna-bench text --eval run2 --op tidy --lang en \
-    --arm rules=identity --arm socket:/path/to/myna-text.sock:myna-disfluency-en
+myna-bench text --eval run3 --op tidy \
+    --arm rules=identity --arm socket:/path/to/myna-text.sock:myna-disfluency
   # any OpenAI-compatible endpoint (llama-server), few-shot or the bare LoRA task prompt
 myna-bench text --eval run2 --arm rules=identity --arm 'openai:http://127.0.0.1:8080#qwen3-0.6b'
 myna-bench text --eval run2 --arm rules=identity --arm 'lora=openai:http://127.0.0.1:8081#q17mt#task'
