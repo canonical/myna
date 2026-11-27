@@ -114,6 +114,27 @@ ALLOWED: tuple[Allowed, ...] = (
         "GTK before f4206d04 takes a snap for unsandboxed and registers it with"
         " the portal, ignoring the error",
     ),
+    Allowed(
+        {
+            "subject": r"snap\.myna-text\.server",
+            "operation": "open",
+            "name": r"/sys/(bus/pci/devices/|devices/pci[^ ]*/vendor)",
+        },
+        "onnxruntime scans PCI devices at start; the store does not auto-connect"
+        " myna-text:hardware-observe yet, and the server starts inside Settings'"
+        " install, before any connect (delete once the store grants it)",
+    ),
+    Allowed(
+        {
+            "subject": r"snap\.myna\.myna",
+            "operation": "connect",
+            "name": r"/var/snap/myna-(text|translation)/common/share/provider/text\.sock",
+        },
+        "`snap connect myna:backend <text snap>:provider` remounts the share, the daemon"
+        " exits and systemd restarts it before snapd replaces snap.myna.myna's profile"
+        " with the new connect rule; it reads the provider as unavailable and binds it"
+        " at its next start",
+    ),
 )
 
 
