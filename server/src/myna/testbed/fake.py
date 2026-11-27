@@ -54,6 +54,33 @@ def default_script() -> tuple[ScriptStep, ...]:
     )
 
 
+# How far apart the segments of a ``|``-separated transcript arrive: long
+# enough for a suite to look at the field between two of them.
+SEGMENT_GAP_SECONDS = 1.0
+
+
+def script_saying(text: str) -> tuple[ScriptStep, ...]:
+    """A session that hears ``text``: the E2E suites dictate French, Chinese
+    or Farsi through it without a model or audio of that language. ``|``
+    separates segments, which arrive ``SEGMENT_GAP_SECONDS`` apart, so a
+    suite sees text that a chain holds back while the dictation goes on."""
+    segments = [segment.strip() for segment in text.split("|") if segment.strip()]
+    steps = [
+        ScriptStep(0.0, TranscriptionProgress(phase=PHASE_PREPARING)),
+        ScriptStep(0.05, TranscriptionProgress(phase=PHASE_READY)),
+    ]
+    for i, segment in enumerate(segments):
+        steps.append(
+            ScriptStep(0.05 if i == 0 else SEGMENT_GAP_SECONDS, TranscriptionFinal(text=segment))
+        )
+        # A streaming engine keeps reporting progress after a segment, and
+        # the client flushes its finals on that boundary, not on the next
+        # final: without it every segment would wait for the stop.
+        if len(segments) > 1:
+            steps.append(ScriptStep(0.05, TranscriptionProgress()))
+    return tuple(steps)
+
+
 def streaming_script() -> tuple[ScriptStep, ...]:
     """The default script with one unstable hypothesis ahead of the first
     committed segment, as a streaming engine sends: what a client in streaming

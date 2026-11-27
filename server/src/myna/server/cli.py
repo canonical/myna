@@ -63,8 +63,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--share-provider",
         action="store_true",
-        help="write provider.env (SNAP_NAME, SNAP_INSTANCE_NAME, UNIX_SOCKET) beside the "
-        "socket for the inference-provider content interface; needs the snap environment",
+        help="write provider.env (SNAP_NAME, SNAP_INSTANCE_NAME, UNIX_SOCKET, MYNA_ROLE) "
+        "beside the socket for the inference-provider content interface; needs the snap "
+        "environment",
     )
     parser.add_argument("--preload", action="store_true", help="load the model at startup")
     parser.add_argument(
@@ -73,6 +74,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="enable streaming mode (progressive committed segments; "
         "whisper/parakeet/nemotron/indicconformer; "
         "fake: one unstable hypothesis ahead of the first segment)",
+    )
+    parser.add_argument(
+        "--transcript",
+        default="",
+        help="fake: hear this text as one segment instead of the default script",
     )
     parser.add_argument(
         "--stream-cadence-s",
@@ -193,9 +199,10 @@ def build_adapter(args: argparse.Namespace) -> Adapter:
         # wire so transport/contract clients (e.g. the Rust orchestrator) can
         # integration-test without a GPU or model. See myna.testbed.fake. It
         # takes keywords (and ignores them) so those clients cover that too.
-        from myna.testbed.fake import FakeAdapter
+        from myna.testbed.fake import FakeAdapter, script_saying
 
-        return FakeAdapter(streaming=args.streaming, keywords=True)
+        script = script_saying(args.transcript) if args.transcript else None
+        return FakeAdapter(script=script, streaming=args.streaming, keywords=True)
 
     if args.adapter == "whisper":
         from myna.testbed.whisper import (

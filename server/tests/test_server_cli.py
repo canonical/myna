@@ -62,6 +62,43 @@ def test_fake_adapter_streams_only_with_streaming():
     assert streaming.capabilities().streaming is True
 
 
+def test_the_fake_says_a_transcript_it_is_given():
+    from myna.core.events import TranscriptionFinal
+    from myna.testbed.fake import script_saying
+
+    fake = build_adapter(parse("--adapter", "fake", "--transcript", "Bonjour à tous."))
+    finals = [s.event.text for s in fake._script if isinstance(s.event, TranscriptionFinal)]
+    assert finals == ["Bonjour à tous."]
+    assert fake._script == script_saying("Bonjour à tous.")
+    segmented = script_saying("One.| Two. |Three.")
+    finals = [s for s in segmented if isinstance(s.event, TranscriptionFinal)]
+    assert [s.event.text for s in finals] == ["One.", "Two.", "Three."]
+    assert [s.delay_seconds for s in finals] == [0.05, 1.0, 1.0]
+
+
+def test_a_given_transcript_keeps_the_readiness_the_client_waits_for():
+    from myna.core import PHASE_PREPARING, PHASE_READY, TranscriptionFinal, TranscriptionProgress
+    from myna.testbed.fake import ScriptStep, script_saying
+
+    assert script_saying("Bonjour.") == (
+        ScriptStep(0.0, TranscriptionProgress(phase=PHASE_PREPARING)),
+        ScriptStep(0.05, TranscriptionProgress(phase=PHASE_READY)),
+        ScriptStep(0.05, TranscriptionFinal(text="Bonjour.")),
+    )
+    default = build_adapter(parse("--adapter", "fake"))
+    assert [s.event.text for s in default._script if isinstance(s.event, TranscriptionFinal)] == [
+        "The quick brown fox",
+        "jumps over the lazy dog.",
+    ]
+
+
+def test_an_empty_transcript_is_the_default_script():
+    from myna.testbed.fake import default_script
+
+    fake = build_adapter(parse("--adapter", "fake", "--transcript", ""))
+    assert fake._script == default_script()
+
+
 def test_the_served_fake_takes_keywords_so_wire_clients_can_cover_them():
     assert build_adapter(parse("--adapter", "fake")).capabilities().keywords is True
 
@@ -236,7 +273,10 @@ async def test_share_provider_writes_provider_env_before_binding(tmp_path, monke
 
     assert await _serve_until_bound(args, monkeypatch) == [True]
     assert (socket.parent / "provider.env").read_text() == (
-        "SNAP_NAME=myna-whisper\nSNAP_INSTANCE_NAME=myna-whisper_dev\nUNIX_SOCKET=myna.sock\n"
+        "SNAP_NAME=myna-whisper\n"
+        "SNAP_INSTANCE_NAME=myna-whisper_dev\n"
+        "UNIX_SOCKET=myna.sock\n"
+        "MYNA_ROLE=speech\n"
     )
 
 

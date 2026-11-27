@@ -7,9 +7,12 @@ import pytest
 from myna.server import provider_env
 
 
-def test_render_is_exactly_the_three_contract_lines():
+def test_render_is_exactly_the_four_contract_lines():
     assert provider_env.render("myna-whisper", "myna-whisper_dev", "myna.sock") == (
-        "SNAP_NAME=myna-whisper\nSNAP_INSTANCE_NAME=myna-whisper_dev\nUNIX_SOCKET=myna.sock\n"
+        "SNAP_NAME=myna-whisper\n"
+        "SNAP_INSTANCE_NAME=myna-whisper_dev\n"
+        "UNIX_SOCKET=myna.sock\n"
+        "MYNA_ROLE=speech\n"
     )
 
 
@@ -46,7 +49,10 @@ def test_share_writes_beside_the_socket_from_the_snap_environment(tmp_path):
 
     assert written == socket.parent / "provider.env"
     assert written.read_text() == (
-        "SNAP_NAME=myna-parakeet\nSNAP_INSTANCE_NAME=myna-parakeet\nUNIX_SOCKET=myna.sock\n"
+        "SNAP_NAME=myna-parakeet\n"
+        "SNAP_INSTANCE_NAME=myna-parakeet\n"
+        "UNIX_SOCKET=myna.sock\n"
+        "MYNA_ROLE=speech\n"
     )
 
 
@@ -58,7 +64,7 @@ def test_share_rewrites_into_an_existing_share_directory_on_restart(tmp_path):
     provider_env.share(socket, {"SNAP_NAME": "new", "SNAP_INSTANCE_NAME": "new_x"})
 
     assert (socket.parent / "provider.env").read_text() == (
-        "SNAP_NAME=new\nSNAP_INSTANCE_NAME=new_x\nUNIX_SOCKET=myna.sock\n"
+        "SNAP_NAME=new\nSNAP_INSTANCE_NAME=new_x\nUNIX_SOCKET=myna.sock\nMYNA_ROLE=speech\n"
     )
 
 
@@ -74,3 +80,14 @@ def test_share_refuses_to_guess_a_missing_snap_identity(tmp_path, missing):
         provider_env.share(tmp_path / "myna.sock", {k: v for k, v in environ.items() if v})
 
     assert list(tmp_path.iterdir()) == []
+
+
+def test_a_text_provider_declares_its_own_role(tmp_path):
+    socket = tmp_path / "text.sock"
+
+    environ = {"SNAP_NAME": "myna-text", "SNAP_INSTANCE_NAME": "myna-text"}
+    written = provider_env.share(socket, environ, role="text")
+
+    assert written.read_text() == (
+        "SNAP_NAME=myna-text\nSNAP_INSTANCE_NAME=myna-text\nUNIX_SOCKET=text.sock\nMYNA_ROLE=text\n"
+    )
