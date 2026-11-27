@@ -16,9 +16,11 @@ out="$snap_dir/licenses"
 
 rm -rf "$out"
 mkdir -p "$out"
-cp "$repo_root/LICENSE" "$out/LICENSE"
+# install -m, not cp: a checkout made under umask 077 is 0600, and the snap
+# must not ship licence texts its users cannot read.
+install -m 0644 "$repo_root/LICENSE" "$out/LICENSE"
 # Licence texts of third-party data compiled into a binary (see NOTICE).
-cp "$repo_root"/third-party-licenses/* "$out/"
+install -m 0644 "$repo_root"/third-party-licenses/* "$out/"
 {
     cat "$repo_root/NOTICE"
     if [ -f "$snap_dir/NOTICE" ]; then
@@ -26,4 +28,5 @@ cp "$repo_root"/third-party-licenses/* "$out/"
         cat "$snap_dir/NOTICE"
     fi
 } > "$out/NOTICE"
+chmod 0644 "$out/NOTICE"
 echo "staged licenses/ into $out"
