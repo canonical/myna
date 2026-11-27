@@ -81,8 +81,15 @@ if [ -z "$BINARY" ]; then
     # series. A worktree's .git does not resolve inside the workshop, so the
     # version is staged the way snap packaging does it.
     echo "== building myna-config in myna-noble"
+    # One staged by hand (a worktree's gates need it too) is put back after,
+    # but this build reports HEAD's version, not whatever it held.
+    PREV_VERSION=$(cat "$REPO/client/.version" 2>/dev/null || true)
     "$REPO/dev/version.sh" > "$REPO/client/.version"
-    trap 'rm -f "$REPO/client/.version"' EXIT
+    if [ -n "$PREV_VERSION" ]; then
+        trap 'printf "%s\n" "$PREV_VERSION" > "$REPO/client/.version"' EXIT
+    else
+        trap 'rm -f "$REPO/client/.version"' EXIT
+    fi
     # Instrumented builds keep their own target dir. Counter relocation is
     # what lets continuous mode (%c in LLVM_PROFILE_FILE, lib.sh) write
     # profiles as the app runs: a suite that kills the app still counts.
