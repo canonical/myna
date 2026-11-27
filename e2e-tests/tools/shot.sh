@@ -66,8 +66,10 @@ polkit.addRule(function(action, subject) {
         action.id == "com.canonical.Myna.Config.apply-plan" ||
         action.id == "com.canonical.Myna.Config.set-up" ||
         (action.id == "org.freedesktop.policykit.exec" &&
-         action.lookup("program") == "$PWD/myna-config"))
+         action.lookup("program") == "$PWD/myna-config")) {
+        polkit.spawn(["logger", "-t", "myna-e2e-polkit", action.id]);
         return polkit.Result.$result;
+    }
     return polkit.Result.NOT_HANDLED;
 });
 RULES
@@ -88,7 +90,9 @@ if [ -n "$monitor" ]; then
 fi
 
 export MODE=$mode DISPLAY_MODE=$display
-[ -z "$lang" ] || export LANG=$lang
+# LANGUAGE and LC_* outrank LANG in gettext, and the login environment sets
+# LANGUAGE, which left the app in English whatever --lang said.
+[ -z "$lang" ] || { export LANG=$lang; unset LANGUAGE LC_ALL LC_MESSAGES; }
 if [ "$display" = real ]; then runner=(bash -s --); else runner=(xvfb-run -a -s "-screen 0 1100x800x24" bash -s --); fi
 "${runner[@]}" "$@" <<'INNER'
 export GDK_BACKEND=x11 GSETTINGS_SCHEMA_DIR=$PWD/schemas
@@ -101,6 +105,12 @@ if [ "$DISPLAY_MODE" = xvfb ]; then
     export GTK_IM_MODULE=gtk-im-context-simple
     # Without a compositor GTK paints popover and dialog shadows opaque black.
     xcompmgr -n 2>/dev/null & comp=$!
+fi
+if [ "$DISPLAY_MODE" = real ]; then
+    # The pointer stays where the last run's last click left it; over the new
+    # window it raises a tooltip, which the driver can take for the window.
+    read -r w h < <(xdotool getdisplaygeometry)
+    xdotool mousemove $((w - 1)) $((h - 1))
 fi
 ./myna-config >> out/app.log 2>&1 &
 pid=$!

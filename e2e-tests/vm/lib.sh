@@ -21,6 +21,15 @@ export E2E_VM_CPUS=${E2E_VM_CPUS:-3}
 # Which desktop the VM runs; scripts take --desktop to override.
 export E2E_DESKTOP=${E2E_DESKTOP:-gnome}
 
+# The pool the e2e VMs live on, when there is a copy-on-write one: a per-suite
+# copy and a stage snapshot are then deltas, where on `dir` each is a full
+# 20 GiB disk. Three provisioned VMs on `dir` once held 460 GB of snapshots.
+# Create it once: lxc storage create e2e zfs source=/var/snap/lxd/common/lxd/disks/e2e.img size=180GiB
+if [ -z "${E2E_POOL:-}" ] && lxc storage list --format csv -c n 2>/dev/null | grep -qx e2e; then
+    E2E_POOL=e2e
+fi
+export E2E_POOL
+
 # The GNOME VM keeps its historical name so existing VMs and snapshots stay
 # valid; every other desktop is named after itself, so they coexist.
 vm_name() {
@@ -68,8 +77,12 @@ on_vm() {
         xubuntu) display=(--env DISPLAY=:0 --env XAUTHORITY=/home/ubuntu/.Xauthority) ;;
         kde) display=(--env WAYLAND_DISPLAY=wayland-0 --env XDG_SESSION_TYPE=wayland --env XDG_CURRENT_DESKTOP=KDE) ;;
     esac
+    # An instrumented build (run-suite.sh, E2E_COVERAGE) writes its profiles
+    # into out/, which run-suite.sh pulls; %c writes them as the app runs.
+    local cov=()
+    [ -z "${E2E_COVERAGE:-}" ] || cov=(--env "LLVM_PROFILE_FILE=/home/ubuntu/myna-shot/out/prof/%c%p-%m.profraw")
     lxc exec "$vm" --user 1000 --group 1000 --cwd /home/ubuntu \
-        --env HOME=/home/ubuntu --env USER=ubuntu \
+        --env HOME=/home/ubuntu --env USER=ubuntu "${cov[@]}" \
         --env XDG_RUNTIME_DIR=/run/user/1000 \
         --env DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus \
         "${display[@]}" -- bash -c "$*"

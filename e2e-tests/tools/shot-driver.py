@@ -12,6 +12,8 @@ Runs inside the e2e VM under xvfb-run (DISPLAY set). Steps are argv words:
   gone:<name>          wait (<=60 s) until no showing widget has that name
   checked:<name>       wait (<=60 s) until the widget with that name is checked
                        (use "name@radio button": a list item shares the name)
+  unchecked:<name>     wait (<=60 s) until it is not; absent counts, so pair
+                       it with a waitfor of the row that holds it
   waittext:<name>=<s>  wait (<=60 s) until the widget ("name@text") has text
                        containing s (a value or report that settles later)
   wait:<seconds>       sleep
@@ -24,14 +26,19 @@ Runs inside the e2e VM under xvfb-run (DISPLAY set). Steps are argv words:
   burst:<prefix>:<interval>:<max_s>[:<name>]
                        screenshot <prefix>-NNN.png every <interval> s, for at
                        most <max_s> s or until a widget named <name> shows
-  dump                 print the showing accessible tree (name/role) to stdout
+  dump                 print the showing accessible tree (name/role/checked)
+                       to stdout
   blur                 open a stand-in window (xmessage) and give it focus
   refocus              give the app's window focus again, close the stand-in
   sh:<command>         run a shell command on the box (e.g. sudo snap ...)
 
-Names match exactly first, then as a case-insensitive substring. Any name
-may carry a role filter, "name@role" (e.g. "Backend@combo box"); `dump`
-prints the roles.
+Names match exactly. "~name" matches the first name containing it,
+ignoring case, for a name that carries a value the suite cannot know (a
+size, a count); a substring otherwise also finds "New chain 2" for "New
+chain". Any name may carry a role filter, "name@role" (e.g. "Backend@combo
+box"); `dump` prints the roles. A wait that times out lists the showing
+names that come closest, and leaves failure.png and failure-tree.txt (the
+screen and the showing accessible tree) in OUT_DIR.
 """
 
 import os
@@ -90,9 +97,14 @@ def name_of(node):
 
 
 def find(name, roles=None):
+    return next(iter(find_all(name, roles)), None)
+
+
+def find_all(name, roles=None):
+    """Every showing widget `name` (exact, or "~substring") names."""
     root = app()
     if root is None:
-        return None
+        return []
     nodes = [n for n, _ in walk(root) if showing(n)]
     if roles:
         # A node can vanish mid-walk when the app rebuilds that part.
@@ -103,14 +115,72 @@ def find(name, roles=None):
                 return None
 
         nodes = [n for n in nodes if role_of(n) in roles]
-    for n in nodes:
-        if name_of(n) == name:
-            return n
-    low = name.lower()
-    for n in nodes:
-        if low in name_of(n).lower():
-            return n
-    return None
+    if name.startswith("~"):
+        low = name[1:].lower()
+        return [n for n in nodes if low in name_of(n).lower()]
+    return [n for n in nodes if name_of(n) == name]
+
+
+def settled(spec, node):
+    """`node`, or the one match left once a page transition is over. While
+    a navigation view slides, the page going and the page coming both show:
+    the editor's Translate step and the catalog's Translate row, say. Two
+    names that stay alike after 2 s are a real pair; the first is it."""
+    name, _, role = spec.rpartition("@") if "@" in spec else (spec, "", "")
+    deadline = time.monotonic() + 2.0
+    while time.monotonic() < deadline:
+        found = outermost(find_all(name, (role,) if role else None))
+        if len(found) <= 1:
+            return found[0] if found else node
+        time.sleep(0.1)
+    return node
+
+
+def outermost(nodes):
+    """`nodes` less those inside another of them: a row and the title label
+    in it share a name, and are one place to click."""
+
+    def ancestors(node):
+        seen = []
+        try:
+            parent = node.get_parent()
+            while parent is not None:
+                seen.append(parent)
+                parent = parent.get_parent()
+        except Exception:
+            pass
+        return seen
+
+    return [n for n in nodes if not any(a in nodes for a in ancestors(n))]
+
+
+def near_misses(name):
+    """The showing names that share a word with `name`, for a timeout."""
+    root = app()
+    if root is None:
+        return []
+    words = {w for w in name.lstrip("~").lower().split() if len(w) > 1}
+    names = {name_of(n) for n, _ in walk(root) if showing(n)}
+    return sorted(n for n in names if words & set(n.lower().split()))[:10]
+
+
+def fail(message):
+    """Exit on a timed-out wait, leaving what the screen and the a11y tree
+    held at that moment next to the shots (failure.png, failure-tree.txt)."""
+    try:
+        os.makedirs(OUT_DIR, exist_ok=True)
+        subprocess.run(
+            ["import", "-window", "root", os.path.join(OUT_DIR, "failure.png")],
+            check=False,
+            timeout=20,
+        )
+        with open(os.path.join(OUT_DIR, "failure-tree.txt"), "w") as out:
+            root = app()
+            for n, depth in walk(root) if root is not None else []:
+                out.write("  " * depth + f"[{n.get_role_name()}] {name_of(n)!r}\n")
+    except Exception as err:
+        print(f"shot-driver: could not record the failure: {err}", flush=True)
+    sys.exit(message)
 
 
 def wait_for(name, timeout=30.0, roles=None):
@@ -123,7 +193,10 @@ def wait_for(name, timeout=30.0, roles=None):
         if node is not None:
             return node
         time.sleep(0.2)
-    sys.exit(f"shot-driver: no showing widget named {name!r} after {timeout}s")
+    fail(
+        f"shot-driver: no showing widget named {name!r} after {timeout}s;"
+        f" showing: {near_misses(name)}"
+    )
 
 
 def text_of(node):
@@ -139,7 +212,7 @@ def wait_until(what, probe, timeout=60.0):
     deadline = time.monotonic() + timeout
     while not probe():
         if time.monotonic() > deadline:
-            sys.exit(f"shot-driver: {what} not true after {timeout}s")
+            fail(f"shot-driver: {what} not true after {timeout}s")
         time.sleep(0.2)
 
 
@@ -149,12 +222,17 @@ def find_spec(spec):
     return find(name, (role,) if role else None)
 
 
-def is_checked(spec):
-    node = find_spec(spec)
+def checked(node):
+    """Whether AT-SPI reports CHECKED for the node (a switch, a radio, a
+    toggle button)."""
     try:
         return node is not None and node.get_state_set().contains(Atspi.StateType.CHECKED)
     except Exception:
         return False
+
+
+def is_checked(spec):
+    return checked(find_spec(spec))
 
 
 def window_content():
@@ -163,19 +241,28 @@ def window_content():
     draws its shadow inside the X window and says how wide it is in
     _GTK_FRAME_EXTENTS (left, right, top, bottom); with none the property is
     absent and the content fills the window."""
-    wid = subprocess.run(
+    wids = subprocess.run(
         ["xdotool", "search", "--sync", "--onlyvisible", "--pid", str(PID)],
         capture_output=True,
         text=True,
         check=True,
-    ).stdout.split()[0]
-    geo = subprocess.run(
-        ["xdotool", "getwindowgeometry", "--shell", wid],
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout
-    vals = dict(line.split("=", 1) for line in geo.split())
+    ).stdout.split()
+
+    def geometry(wid):
+        geo = subprocess.run(
+            ["xdotool", "getwindowgeometry", "--shell", wid],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+        return dict(line.split("=", 1) for line in geo.split())
+
+    # The app's own window is its largest: a tooltip or a popover the
+    # pointer raised is a visible window of the same pid too.
+    wid, vals = max(
+        ((w, geometry(w)) for w in wids),
+        key=lambda found: int(found[1]["WIDTH"]) * int(found[1]["HEIGHT"]),
+    )
     shadow = subprocess.run(
         ["xprop", "-id", wid, "_GTK_FRAME_EXTENTS"], capture_output=True, text=True
     ).stdout
@@ -207,7 +294,11 @@ def x_click(node):
     if (at := centre()) is None:
         return False
     ox, oy, width, height = window_content()
-    for _ in range(40):
+    # One notch first to learn how far the wheel moves this page, then
+    # as many notches as the distance takes: a long page (a hundred rows)
+    # is a thousand pixels away, and each look at the tree is slow.
+    notches = 1
+    for _ in range(12):
         cx, cy = at
         if 0 <= cx < width and 0 <= cy < height:
             break
@@ -221,13 +312,19 @@ def x_click(node):
                 str(x),
                 str(oy + height // 2),
                 "click",
+                "--repeat",
+                str(notches),
                 "5" if cy >= height else "4",
             ],
             check=True,
         )
         time.sleep(0.1)
+        before = cy
         if (at := centre()) is None:
             return False
+        moved = abs(before - at[1])
+        if moved:
+            notches = max(1, round(abs(at[1] - height // 2) * notches / moved))
     else:
         sys.exit(
             f"shot-driver: {name_of(node)!r} stays outside the window ({at} in {width}x{height})"
@@ -289,7 +386,8 @@ def dump():
     for n, depth in walk(root):
         description = n.get_description() or ""
         suffix = f" ({description!r})" if description else ""
-        print("  " * depth + f"[{n.get_role_name()}] {name_of(n)!r}{suffix}")
+        state = " checked" if checked(n) else ""
+        print("  " * depth + f"[{n.get_role_name()}] {name_of(n)!r}{suffix}{state}")
 
 
 def main(steps):
@@ -306,7 +404,7 @@ def main(steps):
             node = wait_for(arg, roles=("toggle button", "button", "page tab", "radio button"))
             x_click(node) or do_action(node)
         elif verb == "click":
-            node = wait_for(arg)
+            node = settled(arg, wait_for(arg))
             x_click(node) or do_action(node)
         elif verb == "scrollat":
             # scrollat:<x>,<y>[#clicks]: wheel down at root coordinates
@@ -341,10 +439,12 @@ def main(steps):
             name, _, role = arg.rpartition("@") if "@" in arg else (arg, "", "")
             while find(name, (role,) if role else None) is not None:
                 if time.monotonic() > deadline:
-                    sys.exit(f"shot-driver: {arg!r} still showing after 60s")
+                    fail(f"shot-driver: {arg!r} still showing after 60s")
                 time.sleep(0.2)
         elif verb == "checked":
             wait_until(f"{arg!r} checked", lambda arg=arg: is_checked(arg))
+        elif verb == "unchecked":
+            wait_until(f"{arg!r} unchecked", lambda arg=arg: not is_checked(arg))
         elif verb == "waittext":
             name, _, want = arg.partition("=")
             wait_until(

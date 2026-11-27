@@ -22,9 +22,9 @@ text asserted in a GTK field on the real desktop session.
 
 Needs LXD with KVM and the `myna-noble` workshop (`workshop launch
 myna-noble`), which builds the binary. The first run provisions the VM
-(about 15 minutes) and snapshots its states, `bare`, `components-only`,
-`installed`, `localized` and, with the fake backend built, `dictation`; every
-suite then restores the one its `# snapshot:` header names. Artifacts (app and
+(about 15 minutes) and leaves two snapshots, `bare` (a machine with no Myna) and
+`ready` (everything installed); every suite restores the one its `# snapshot:`
+header names. Artifacts (app and
 polkit logs, the journal, burst frames) land in
 `e2e-tests/.run/artifacts/<release>-<suite>/` (`<desktop>-<release>-<suite>`
 for Xubuntu and Kubuntu, whose VMs are `myna-e2e-<desktop>-<release>`).
@@ -41,7 +41,7 @@ by hand with `python3 -I e2e-tests/tools/contact-sheet.py --current A
 ## Trying a branch by hand
 
 `make try-desktop` is for a person, not a suite: a persistent desktop VM
-(`myna-try-<desktop>-<release>`, a copy of the e2e VM's `installed` snapshot,
+(`myna-try-<desktop>-<release>`, a copy of the e2e VM's `ready` snapshot,
 so the e2e VMs are never touched) running the myna snap and myna-config deb
 built from `HEAD`, with the host's microphone and speakers.
 

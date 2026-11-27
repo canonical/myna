@@ -20,6 +20,10 @@
 #                    connected to myna:backend. Needs the snap built: `make
 #                    snap-fake`, or E2E_FAKE_SNAP=PATH; without it the stage
 #                    is skipped.
+#   chains           dictation plus the French, Farsi and Simplified Chinese
+#                    language packs (Settings runs in each) and the fake
+#                    snap installed again, so a dictation snapshot taken with
+#                    an older one still hears a given transcript.
 #
 # Everything up to `rig` is independent of the tree under test, and is what
 # image.sh publishes; `dictation` is the only stage that is not.
@@ -27,20 +31,25 @@
 # run-suite.sh copies one per suite and leaves the VM itself untouched;
 # reprovision on a new edge revision or a stale image with --force.
 #
-# Usage: provision.sh --release noble|resolute|stonking [--desktop gnome|xubuntu|kde] [--force]
+# Usage: provision.sh --release noble|resolute|stonking [--desktop gnome|xubuntu|kde]
+#        [--force] [--keep-stages]
+#   --keep-stages  keep the six stage snapshots as well as the three a suite
+#                  runs from: they are this script's resume cache, and on a
+#                  copy-on-write pool they cost their deltas. Delete by hand.
 set -euo pipefail
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=e2e-tests/vm/lib.sh
 source "$HERE/lib.sh"
 
-RELEASE='' FORCE=''
+RELEASE='' FORCE='' KEEP_STAGES=''
 while [ $# -gt 0 ]; do
     case $1 in
         --release) RELEASE=$2; shift 2 ;;
         --desktop) E2E_DESKTOP=$2; shift 2 ;;
         --force) FORCE=1; shift ;;
-        -h|--help) sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        --keep-stages) KEEP_STAGES=1; shift ;;
+        -h|--help) sed -n '2,38p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "unknown option $1" >&2; exit 2 ;;
     esac
 done
@@ -58,9 +67,19 @@ if ! lxc info "$VM" >/dev/null 2>&1; then
         -c limits.cpu="$E2E_VM_CPUS" -c limits.memory="$E2E_VM_MEMORY" -d root,size=20GiB \
         -c cloud-init.user-data="$(user_data)"
 fi
+# Each of the three states a suite runs from is built only when missing, so a
+# base can be completed (an existing one gains `seeded`) without booting the
+# stages again.
+if snapshots "$VM" | grep -qx ready; then
+    echo "== $VM: ready is there, no stages to run"
+    STAGES=0
+else
+    STAGES=1
+fi
+
 # The display manager only starts from the next boot, the first stage's. A
 # run that died before that stage finishes the first boot here.
-if ! snapshots "$VM" | grep -qx bare; then
+if [ "$STAGES" = 1 ] && ! snapshots "$VM" | grep -qx bare; then
     lxc start "$VM" 2>/dev/null || true
     wait_booted "$VM"
     # A suite's copy is a new instance to cloud-init, which would run the
@@ -88,21 +107,21 @@ stage() {
     lxc snapshot "$VM" "$name"
 }
 
-stage bare true
-stage components-only '
+[ "$STAGES" = 0 ] || stage bare true
+[ "$STAGES" = 0 ] || stage components-only '
     sudo snap set system experimental.user-daemons=true
     sudo snap install --edge myna
     sudo snap install --edge myna-parakeet'
 # What Settings runs to make IBus KWin's input method; Xfce and GNOME have one.
 IM_ON=''
 [ "$E2E_DESKTOP" != kde ] || IM_ON='timeout 60 ibus start --type kde-wayland'
-stage installed "
+[ "$STAGES" = 0 ] || stage installed "
     sudo snap install --edge myna-whisper
     sudo snap connect myna:backend myna-parakeet:provider
     systemctl --user restart snap.myna.myna.service
     systemctl --user is-active snap.myna.myna.service
     $IM_ON"
-stage localized '
+[ "$STAGES" = 0 ] || stage localized '
     sudo apt-get update -q
     sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q \
         language-pack-sv-base language-pack-zh-hans-base'
@@ -114,7 +133,7 @@ FAKE_SNAP=${E2E_FAKE_SNAP:-$(find "$HERE/../../fake-snap" -maxdepth 1 -name 'myn
 push_fake_snap() { lxc file push --uid 1000 --gid 1000 "$FAKE_SNAP" "$VM/home/ubuntu/myna-fake-backend.snap"; }
 # The rig's packages and PipeWire microphone need nothing from the tree, so
 # they sit before the fake backend and ship in the published image.
-stage rig '
+[ "$STAGES" = 0 ] || stage rig '
     sudo apt-get update -qq
     sudo apt-get install -y gir1.2-gtk-4.0
     # A null sink whose monitor, through a loopback, is a source of the class
@@ -163,15 +182,67 @@ CONF
     systemctl --user restart pipewire pipewire-pulse wireplumber'
 
 if [ -n "$FAKE_SNAP" ]; then
-    stage dictation '
+    [ "$STAGES" = 0 ] || stage dictation '
     sudo snap install --dangerous myna-fake-backend.snap
     rm myna-fake-backend.snap
     sudo snap disconnect myna:backend
     sudo snap connect myna:backend myna-fake-backend:provider
     systemctl --user restart snap.myna.myna.service
     systemctl --user is-active snap.myna.myna.service' push_fake_snap
+    [ "$STAGES" = 0 ] || stage chains '
+    sudo apt-get update -qq
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q \
+        language-pack-fr-base language-pack-fa-base language-pack-zh-hans-base
+    # The packs ship translations, not the locales: without these setlocale
+    # fails and a GTK app stays in English whatever LANG says.
+    sudo locale-gen fr_FR.UTF-8 fa_IR.UTF-8 zh_CN.UTF-8
+    sudo snap install --dangerous myna-fake-backend.snap
+    rm myna-fake-backend.snap
+    snap connections myna | grep -q "myna:backend.*myna-fake-backend:provider"
+    systemctl --user restart snap.myna.myna.service
+    systemctl --user is-active snap.myna.myna.service' push_fake_snap
 else
     echo "== no fake backend snap (make snap-fake, or E2E_FAKE_SNAP): skipping stage dictation"
+fi
+
+# The states a suite runs from. `bare` is a machine with no Myna (onboarding
+# installs onto it); `ready` has the snaps, the locales and the fake backend
+# but no text components, which is what an install-path suite needs; `seeded`
+# has the components too, so a page or dictation suite pays no store time.
+# The stage snapshots above exist so a failed provision can resume; they are
+# not for suites. On `dir` each is a full 20 GiB disk, so three provisioned
+# VMs once took 460 GB of snapshots, which is what a copy-on-write pool
+# (E2E_POOL) is for. `rig` stays, being what image.sh publishes.
+[ "$STAGES" = 0 ] || lxc snapshot "$VM" ready
+if snapshots "$VM" | grep -qx seeded; then
+    echo "== $VM: seeded is there, no components to install"
+else
+    echo "== stage seeded: the text components the page and dictation suites use"
+    lxc start "$VM"
+    wait_ready "$VM"
+    wait_snapd_idle "$VM"
+    on_vm "$VM" 'set -e
+sudo snap install --edge myna-text+model-disfluency-en
+sudo snap install --edge myna-translation+model-translate-en-fr+model-translate-fr-en+model-translate-fa-en+model-translate-en-zh-hans+model-translate-zh-hant-en
+# The components are installed, not connected: Settings connects a text snap
+# when it installs one, and the daemon only binds a provider it is connected
+# to. The speech plug takes several slots, so the fake backend stays.
+sudo snap connect myna:backend myna-text:provider 2>/dev/null || true
+sudo snap connect myna:backend myna-translation:provider 2>/dev/null || true
+systemctl --user restart snap.myna.myna.service
+systemctl --user is-active snap.myna.myna.service'
+    wait_snapd_idle "$VM"
+    snapd_cache_save "$VM"
+    stop_vm "$VM"
+    lxc snapshot "$VM" seeded
+fi
+if [ -z "$KEEP_STAGES" ]; then
+    for name in $(snapshots "$VM"); do
+        case $name in
+            bare|rig|ready|seeded) ;;
+            *) lxc delete "$VM/$name" ;;
+        esac
+    done
 fi
 
 echo "== $VM provisioned; snapshots:"

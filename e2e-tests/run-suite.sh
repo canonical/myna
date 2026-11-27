@@ -9,9 +9,18 @@
 #                  myna-noble workshop
 # E2E_VM_MEMORY=4GiB sizes the guest (default 6GiB, what CI gives it);
 # E2E_VM_CPUS its vCPUs (default 3).
+# E2E_JOBS=N runs up to N suites at once, each in its own copy (default 1,
+# what CI runs; each copy takes E2E_VM_MEMORY). A parallel suite's output
+# goes to its artifacts' run.log, and its lines reach the terminal prefixed.
 # E2E_MYNA_SNAP=PATH installs that myna snap (`make snap-myna`) over the
 # store's edge one in each run, keeping its connections (not on a machine
 # that has none yet, nor for a suite headed `# myna: store`).
+# E2E_FAKE_SNAP=PATH does the same for the fake backend (`make snap-fake`)
+# wherever the snapshot has one.
+# E2E_COVERAGE=1 builds the binaries with coverage instrumentation, and
+# after the run writes what the suites executed to
+# client/target/coverage/e2e-<tag>.cobertura.xml for dev/patch_cov.py.
+# Not with --binary: the export needs the build's own objects.
 # A suite headed `# requires: VAR` is skipped unless VAR is set.
 # Suites live in suites/; none given runs them all. The build also yields
 # myna-hud-host (the Xfce HUD supervisor, which the dictation suite starts the
@@ -38,36 +47,75 @@ done
 check_release "$REL"
 check_desktop
 VM=$(vm_name "$REL")
+# A suite is a file in suites/ that is not shared code (`lib.sh`,
+# `chains-lib.sh`). TAGS narrows the run to the suites carrying one of them:
+# `TAGS=processing` is the Processing page, `TAGS=dictation` what reaches the
+# field. SUITES names files and wins when both are given.
+wanted() { # FILE
+    local tags
+    tags=$(sed -n 's/^# tags: //p' "$1")
+    [ -n "${TAGS:-}" ] || return 0
+    local tag
+    for tag in ${TAGS//,/ }; do
+        case ", $tags," in *" $tag,"*) return 0 ;; esac
+    done
+    return 1
+}
 if [ ${#SUITES[@]} = 0 ]; then
     for f in "$HERE"/suites/*.sh; do
-        [ "${f##*/}" = lib.sh ] || SUITES+=("$(basename "$f" .sh)")
+        case ${f##*/} in *-lib.sh|lib.sh) continue ;; esac
+        wanted "$f" && SUITES+=("$(basename "$f" .sh)")
     done
+    [ ${#SUITES[@]} -gt 0 ] || { echo "no suite carries TAGS=$TAGS" >&2; exit 2; }
 fi
 # Artifacts of the GNOME runs keep their release-only names.
 TAG=$REL; [ "$E2E_DESKTOP" = gnome ] || TAG=$E2E_DESKTOP-$REL
 REPO=$(git -C "$HERE" rev-parse --show-toplevel)
 
+if [ -n "${E2E_COVERAGE:-}" ] && [ -n "$BINARY" ]; then
+    echo "E2E_COVERAGE needs the binary run-suite builds, not --binary" >&2
+    exit 2
+fi
 if [ -z "$BINARY" ]; then
     # The binary is built once on the GTK 4.14/adw 1.5 floor and runs on every
     # series. A worktree's .git does not resolve inside the workshop, so the
     # version is staged the way snap packaging does it.
     echo "== building myna-config in myna-noble"
+    # One staged by hand (a worktree's gates need it too) is put back after,
+    # but this build reports HEAD's version, not whatever it held.
+    PREV_VERSION=$(cat "$REPO/client/.version" 2>/dev/null || true)
     "$REPO/dev/version.sh" > "$REPO/client/.version"
-    trap 'rm -f "$REPO/client/.version"' EXIT
+    if [ -n "$PREV_VERSION" ]; then
+        trap 'printf "%s\n" "$PREV_VERSION" > "$REPO/client/.version"' EXIT
+    else
+        trap 'rm -f "$REPO/client/.version"' EXIT
+    fi
+    # Instrumented builds keep their own target dir. Counter relocation is
+    # what lets continuous mode (%c in LLVM_PROFILE_FILE, lib.sh) write
+    # profiles as the app runs: a suite that kills the app still counts.
+    TARGET=target ENV=''
+    if [ -n "${E2E_COVERAGE:-}" ]; then
+        TARGET=target-cov
+        ENV='RUSTFLAGS="-C instrument-coverage -C llvm-args=-runtime-counter-relocation"'
+    fi
     # shellcheck disable=SC2016 # expands in the workshop
     (cd "$REPO" && workshop exec myna-noble -- bash -c \
-        'export CARGO_TARGET_DIR=$HOME/target; cd /project/client && cargo build --release -q -p myna-config --bin myna-config --bin myna-hud-host')
+        "export CARGO_TARGET_DIR=\$HOME/$TARGET $ENV; cd /project/client && cargo build --release -q -p myna-config --bin myna-config --bin myna-hud-host")
     BINARY=$RUN_DIR/myna-config
     mkdir -p "$RUN_DIR"
+    # Through a temporary name: another desktop's run on this host may be
+    # pushing the file this one replaces.
     for bin in myna-config myna-hud-host; do
-        (cd "$REPO" && workshop exec myna-noble -- cat /home/workshop/target/release/$bin) > "$RUN_DIR/$bin"
+        (cd "$REPO" && workshop exec myna-noble -- cat "/home/workshop/$TARGET/release/$bin") > "$RUN_DIR/$bin.$$"
+        mv "$RUN_DIR/$bin.$$" "$RUN_DIR/$bin"
     done
 fi
 
-# One run of $SUITE from $SNAP into $ARTIFACTS; sets src, and rc on denials.
+# One run of $SUITE from $SNAP into $ARTIFACTS; sets src.
 attempt() {
     echo "== $SUITE: from $VM/$SNAP"
-    RUN=$VM-run
+    # One copy per suite, so suites can run side by side.
+    RUN=$VM-run-$SUITE
     lxc delete --force "$RUN" 2>/dev/null || true
     lxc copy "$VM/$SNAP" "$RUN" -c limits.cpu="$E2E_VM_CPUS" -c limits.memory="$E2E_VM_MEMORY"
     lxc start "$RUN"
@@ -93,12 +141,26 @@ attempt() {
         lxc exec "$RUN" -- snap install --dangerous /root/myna.snap
         on_vm "$RUN" 'systemctl --user start snap.myna.myna.service'
     fi
+    # The fake backend is this tree's too, when given: a suite's script (a
+    # transcript in segments) is only as new as the snap that plays it. Over
+    # the provisioned one, so its connection stays.
+    if [ -n "${E2E_FAKE_SNAP:-}" ] && lxc exec "$RUN" -- snap list myna-fake-backend >/dev/null 2>&1; then
+        lxc file push "$E2E_FAKE_SNAP" "$RUN/root/myna-fake-backend.snap"
+        lxc exec "$RUN" -- snap install --dangerous /root/myna-fake-backend.snap
+    fi
 
     on_vm "$RUN" 'mkdir -p myna-shot/schemas'
     HUD_HOST=$(dirname "$BINARY")/myna-hud-host
     [ -e "$HUD_HOST" ] || HUD_HOST=''
     lxc file push --uid 1000 --gid 1000 --mode 0755 "$BINARY" ${HUD_HOST:+"$HUD_HOST"} "$HERE"/tools/* "$RUN/home/ubuntu/myna-shot/"
     lxc file push --uid 1000 --gid 1000 "$REPO"/client/data/glib-2.0/schemas/*.gschema.xml "$RUN/home/ubuntu/myna-shot/schemas/"
+    # The catalog snapshots the deb installs (myna-config-deb/debian/rules),
+    # which Settings lists text steps from before a text snap is installed.
+    # Root-owned as the deb leaves them: `push -p` makes its directories 0750
+    # and owned by the caller's uid, which only chance makes the VM's user.
+    lxc exec "$RUN" -- install -d -m 0755 /usr/share/myna-config/catalog
+    lxc file push --uid 0 --gid 0 --mode 0644 "$REPO"/text-snap/catalog.json "$RUN/usr/share/myna-config/catalog/myna-text.json"
+    lxc file push --uid 0 --gid 0 --mode 0644 "$REPO"/translation-snap/catalog.json "$RUN/usr/share/myna-config/catalog/myna-translation.json"
 
     # The guest's CPU time against the host's, to lay lost capture against.
     on_vm "$RUN" 'mkdir -p myna-shot/out'
@@ -106,13 +168,21 @@ attempt() {
     "$HERE"/tools/cpu-sample.sh "$ARTIFACTS/cpu-host.log" & sampler=$!
 
     src=0
-    VM=$RUN REL=$REL DESKTOP=$E2E_DESKTOP bash "$FILE" || src=$?
-    echo "== $SUITE rc=$src"
+    started=$(date +%s)
+    # Stamped, so `tools/breakdown.py` says where the suite's time went; the
+    # suite itself reports its steps, which is all the bookkeeping it needs.
+    VM=$RUN REL=$REL DESKTOP=$E2E_DESKTOP bash "$FILE" 2>&1 \
+        | "$HERE"/tools/stamp.sh | tee "$ARTIFACTS/suite.log" || src=$?
+    took=$(( $(date +%s) - started ))
+    echo "== $SUITE rc=$src in ${took}s"
     kill "$sampler"
 
     lxc file pull -r "$RUN/home/ubuntu/myna-shot/out" "$ARTIFACTS/" || true
     if [ -d "$ARTIFACTS/out/shots/$SUITE" ]; then
         mkdir -p "$RUN_DIR/artifacts/screenshots"
+        # Another desktop's run of the suite on this host may have put its
+        # own there since this one started; mv would nest into it and fail.
+        rm -rf "$RUN_DIR/artifacts/screenshots/$SUITE"
         mv "$ARTIFACTS/out/shots/$SUITE" "$RUN_DIR/artifacts/screenshots/$SUITE"
     fi
     lxc exec "$RUN" -- journalctl -b --no-pager -o short-precise > "$ARTIFACTS/journal.log" || true
@@ -120,25 +190,23 @@ attempt() {
     # The copy booted for this suite, so its whole boot is the suite's window.
     if ! python3 -I "$REPO/tests/lib/apparmor_denials.py" "$ARTIFACTS/journal.log"; then
         echo "== $SUITE: AppArmor denials"
-        rc=1
+        src=1
+    fi
+    # A GTK or libadwaita critical is a bug in Settings even when every
+    # widget it asserts ends up right.
+    if grep -- '-CRITICAL \*\*' "$ARTIFACTS/out/app.log" 2>/dev/null; then
+        echo "== $SUITE: Settings logged a critical"
+        src=1
     fi
 }
 
-rc=0
-for SUITE in "${SUITES[@]}"; do
+# One suite, start to end; its status is the subshell's.
+run_one() {
     FILE=$HERE/suites/$SUITE.sh
     SNAP=$(sed -n 's/^# snapshot: //p' "$FILE")
-    NEEDS=$(sed -n 's/^# requires: //p' "$FILE")
-    if [ -n "$NEEDS" ] && [ -z "${!NEEDS:-}" ]; then
-        echo "== $SUITE: skipped, $NEEDS is not set"
-        continue
-    fi
-    snapshots "$VM" | grep -qx "$SNAP" \
-        || { echo "$VM lacks snapshot $SNAP; run vm/provision.sh --release $REL --desktop $E2E_DESKTOP" >&2; exit 1; }
     ARTIFACTS=$RUN_DIR/artifacts/$TAG-$SUITE
     rm -rf "$ARTIFACTS" "$RUN_DIR/artifacts/screenshots/$SUITE"; mkdir -p "$ARTIFACTS"
-
-    started=$EPOCHSECONDS
+    local started=$EPOCHSECONDS
     attempt
     # A virtual runner's host stops the vCPUs for tens of milliseconds now
     # and then, longer than a graph cycle, and capture loses audio and ends
@@ -152,7 +220,71 @@ for SUITE in "${SUITES[@]}"; do
         attempt
     fi
     "$REPO/dev/timed.sh" --record "e2e suite $SUITE" "$((EPOCHSECONDS - started))" "$src"
-    [ "$src" = 0 ] || rc=1
+    if [ -s "$ARTIFACTS/suite.log" ]; then
+        python3 -I "$HERE"/tools/breakdown.py "$ARTIFACTS/suite.log" || true
+    fi
+    return "$src"
+}
+
+# Every suite is checked before any VM starts.
+RUNNABLE=()
+for SUITE in "${SUITES[@]}"; do
+    FILE=$HERE/suites/$SUITE.sh
+    SNAP=$(sed -n 's/^# snapshot: //p' "$FILE")
+    NEEDS=$(sed -n 's/^# requires: //p' "$FILE")
+    if [ -n "$NEEDS" ] && [ -z "${!NEEDS:-}" ]; then
+        echo "== $SUITE: skipped, $NEEDS is not set"
+        continue
+    fi
+    snapshots "$VM" | grep -qx "$SNAP" \
+        || { echo "$VM lacks snapshot $SNAP; run vm/provision.sh --release $REL --desktop $E2E_DESKTOP" >&2; exit 1; }
+    # A suite that is not out to test the store's snap needs this tree's: the
+    # store's edge revision does not carry the settings a newer tree writes
+    # (`snap run myna.config set chains` fails with "No such key"), and running
+    # it anyway tests the wrong daemon silently.
+    if [ -z "${E2E_MYNA_SNAP:-}" ] && [ "$SNAP" != bare ] && ! grep -qx '# myna: store' "$FILE"; then
+        echo "== $SUITE: needs E2E_MYNA_SNAP (the snap \`make snap-myna\` built); refusing to test the store's edge one" >&2
+        exit 2
+    fi
+    RUNNABLE+=("$SUITE")
 done
+
+# Each suite runs as a job, which keeps `set -e` in force inside it (a
+# function called from `||` would run with it off). One job at a time writes
+# straight to the terminal; side by side, each keeps its own log.
+JOBS=${E2E_JOBS:-1}
+rc=0 FAILED=()
+declare -A PIDS=()
+reap() {
+    local pid
+    wait -n -p pid "${!PIDS[@]}" || { rc=1; FAILED+=("${PIDS[$pid]}"); }
+    unset "PIDS[$pid]"
+}
+mkdir -p "$RUN_DIR/artifacts"
+for SUITE in "${RUNNABLE[@]}"; do
+    while [ ${#PIDS[@]} -ge "$JOBS" ]; do reap; done
+    if [ "$JOBS" -le 1 ]; then
+        run_one &
+    else
+        run_one > >(tee "$RUN_DIR/artifacts/$TAG-$SUITE.run.log" | sed -u "s/^/[$SUITE] /") 2>&1 &
+    fi
+    PIDS[$!]=$SUITE
+done
+while [ ${#PIDS[@]} -gt 0 ]; do reap; done
+[ ${#FAILED[@]} = 0 ] || echo "== failed: ${FAILED[*]}"
+# This run's suites only: artifacts/ keeps earlier runs' too, from other
+# builds. A lost-audio first attempt ran the same build and counts.
+if [ -n "${E2E_COVERAGE:-}" ]; then
+    PROF=$REPO/client/target/e2e-prof-$TAG
+    rm -rf "$PROF"; mkdir -p "$PROF" "$REPO/client/target/coverage"
+    for SUITE in "${RUNNABLE[@]}"; do
+        for d in "$RUN_DIR/artifacts/$TAG-$SUITE" "$RUN_DIR/artifacts/$TAG-$SUITE-lost-audio"; do
+            if [ -d "$d/out/prof" ]; then cp "$d"/out/prof/*.profraw "$PROF/"; fi
+        done
+    done
+    (cd "$REPO" && workshop exec myna-noble -- /project/e2e-tests/coverage-export.sh \
+        "/project/client/target/e2e-prof-$TAG" "/project/client/target/coverage/e2e-$TAG.cobertura.xml" "$(git -C "$REPO" rev-parse HEAD:client)" \
+        /home/workshop/target-cov/release/myna-config /home/workshop/target-cov/release/myna-hud-host) || rc=1
+fi
 echo "== artifacts in $RUN_DIR/artifacts"
 exit $rc
