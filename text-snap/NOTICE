@@ -4,10 +4,12 @@ Third-party notices for the myna-text snap
 Model components
 ----------------
 
-model-disfluency-en: a MiniLM-based disfluency tagger fine-tuned by Canonical
-Ltd (Apache-2.0) from Microsoft's MiniLM-L12-H384-uncased (MIT) on text
-derived from SODA and Synthetic-Persona-Chat (both CC-BY-4.0). The component
-carries the full attribution (NOTICE) and the Apache-2.0 text (LICENSE).
+model-disfluency-en: a multilingual MiniLM-based disfluency tagger fine-tuned
+by Canonical Ltd (Apache-2.0) from Microsoft's Multilingual-MiniLM-L12-H384
+(MIT, with XLM-RoBERTa's MIT vocabulary) on text derived from SODA and
+Synthetic-Persona-Chat (both CC-BY-4.0) for English and from Tatoeba sentences
+(CC BY 2.0 FR) for French, German and Spanish. The component carries the full
+attribution (NOTICE) and the Apache-2.0 text (LICENSE).
 
 Runtimes
 --------

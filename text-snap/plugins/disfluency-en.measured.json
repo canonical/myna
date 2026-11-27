@@ -1,5 +1,5 @@
 {
   "latency_ms": 10,
-  "quality": 0.95,
-  "quality_source": "carried over from the shipped manifest; replaced by plugin-eval-publish-pipeline results"
+  "quality": 0.82,
+  "quality_source": "blind eval run2 tidy accuracy, mean of en/fr/de/es at the shipped settings (2026-11-27); run3 0.78, break 0-1%, damage 0"
 }

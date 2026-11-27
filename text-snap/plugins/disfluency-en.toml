@@ -1,7 +1,9 @@
 # One plugin: dev/gen-plugins.py turns this into the snapcraft component,
 # models/disfluency-en/{myna-text-model.json,NOTICE} and catalog.json.
 # Contract: .kb/text-plugin-contract.md.
-id = "myna-disfluency-en"
+# The component keeps its English-only name so the store's component and the
+# e2e provisioning keep working; it serves four languages (see `languages`).
+id = "myna-disfluency"
 component = "model-disfluency-en"
 snap = "myna-text"
 kind = "disfluency-tagger"
@@ -9,38 +11,50 @@ task = "text.cleanup"
 class = "edit"
 needs = "sentence"
 language = "en"
-tau = 0.9
+languages = ["en", "fr", "de", "es"]
+tau = 0.6
 license = "Apache-2.0"
-attribution = "Canonical Ltd; fine-tuned from microsoft/MiniLM-L12-H384-uncased (MIT)"
-source = "https://huggingface.co/microsoft/MiniLM-L12-H384-uncased"
-download_bytes = 42848256
-entry_revision = 1
+attribution = "Canonical Ltd; fine-tuned from microsoft/Multilingual-MiniLM-L12-H384 (MIT)"
+source = "https://huggingface.co/microsoft/Multilingual-MiniLM-L12-H384"
+download_bytes = 45432832
+entry_revision = 2
 curated = true
-pin = "myna-disfluency-en l12c"
-locales = ["en"]
-summary = "English disfluency tagger (ONNX int8)"
+pin = "myna-disfluency mini-v3"
+locales = ["en", "fr", "de", "es"]
+summary = "Disfluency tagger for English, French, German and Spanish (ONNX int8)"
 description = """\
-myna-disfluency-en, a MiniLM-L12 word tagger fine-tuned by Canonical
-(Apache-2.0) that marks fillers, repeats and self-corrections for
-deletion. About 46 MB."""
+myna-disfluency, a multilingual MiniLM-L12 word tagger fine-tuned by
+Canonical (Apache-2.0) that marks fillers, repeats, restarted phrases and
+self-corrections for deletion in English, French, German and Spanish.
+About 51 MB."""
 notice = """\
-model-disfluency-en: myna-disfluency-en, a disfluency tagger fine-tuned by
-Canonical Ltd, Apache-2.0 (LICENSE in this component).
+model-disfluency-en: myna-disfluency, a multilingual disfluency tagger
+(English, French, German, Spanish) fine-tuned by Canonical Ltd, Apache-2.0
+(LICENSE in this component).
 
-Base model: microsoft/MiniLM-L12-H384-uncased (MIT License, Copyright (c)
-Microsoft Corporation), https://huggingface.co/microsoft/MiniLM-L12-H384-uncased
-revision 44acabbec0ef496f6dbc93adadea57f376b7c0ec.
+Base model: microsoft/Multilingual-MiniLM-L12-H384 (MIT License, Copyright (c)
+Microsoft Corporation), https://huggingface.co/microsoft/Multilingual-MiniLM-L12-H384
+revision 6e8c1ec6b4ec4e3fc6eb7d2cd834fcd582b61daf. Its vocabulary is the
+XLM-RoBERTa SentencePiece vocabulary (FacebookAI/xlm-roberta-base, MIT License,
+revision e73636d4f797dec63c3081bb6ed5c7b0bb3f2089), pruned to the pieces the
+training text uses; tokenizer.json is that pruned tokenizer.
 
-Training text derives from (CC-BY-4.0; changes made: sentence extraction and
-synthetic disfluency injection):
+Training text derives from the following. The disfluencies are synthetic:
+Canonical's own word lists and templates injected into the sentences (changes
+made: sentence extraction and injection).
 
-- SODA, Kim et al., https://huggingface.co/datasets/allenai/soda
-  (revision fdc848ab0183208ea7808206c91c724414d0a071)
-- Synthetic-Persona-Chat, Jandaghi et al., Google,
-  https://huggingface.co/datasets/google/Synthetic-Persona-Chat
-  (revision a520ad7f999ca7e6dfdc25fed9f5070bf6f87b42)
-
-CC-BY-4.0: https://creativecommons.org/licenses/by/4.0/
+- English: SODA, Kim et al., https://huggingface.co/datasets/allenai/soda
+  (revision fdc848ab0183208ea7808206c91c724414d0a071) and Synthetic-Persona-Chat,
+  Jandaghi et al., Google, https://huggingface.co/datasets/google/Synthetic-Persona-Chat
+  (revision a520ad7f999ca7e6dfdc25fed9f5070bf6f87b42), both CC-BY-4.0:
+  https://creativecommons.org/licenses/by/4.0/
+- French, German, Spanish: sentences of the Tatoeba Project, https://tatoeba.org,
+  by its contributors, CC BY 2.0 FR (some sentences CC0 1.0):
+  https://creativecommons.org/licenses/by/2.0/fr/ . Exported on 2026-11-24 from
+  https://downloads.tatoeba.org/exports/per_language/ (fra, deu and spa
+  sentences.tsv.bz2, sha256 c9e91cc5a0640db7bfc4423fadf3985db42df08dafce4983d4c6b8c2cf7a4d3d,
+  e16c57e695bfeccccb455c305d262c5cbe2aa74a5c1e1edb725d53cf907309ac and
+  7872d2e66debfd8e73e96cc9bca9560a32cc914aee9c820649d7d3d5e7353f48).
 
 The model files, shipped as built, have these sha256:"""
 
@@ -61,14 +75,14 @@ min_ram_mb = 512
 # The tagger is unpublished: staged from a training run's directory.
 [local]
 env = "MYNA_TAGGER_SRC"
-default = "~/myna-processing-graphs/artifacts/tagger/stage/myna-disfluency-en"
+default = "~/myna-processing-graphs/artifacts/tagger/stage/myna-disfluency"
 
 [[files]]
 name = "tagger.onnx"
-sha256 = "66f63787da3fe7f63c7288250b872cf977d77b4a9019409cc723f69956054c3d"
-bytes = 46114205
+sha256 = "740c4553a2137ff4340eb3a75dc6b65da55cf15289cda681e1313f4388d95ec7"
+bytes = 48553373
 
 [[files]]
 name = "tokenizer.json"
-sha256 = "851ca67100d372ca3ae031a6abd168f53489eebfd7d89523f35c5c9b4d372c3c"
-bytes = 711649
+sha256 = "a80a97d0fcf69a5b1f79067dfd9f89ff998c1b8e4114c2d956ae292b55d9a918"
+bytes = 2477578

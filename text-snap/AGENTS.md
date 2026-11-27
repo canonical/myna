@@ -15,6 +15,7 @@ One strictly confined snap, no `network` plug, serving `myna-text-v1` to the Myn
 - Never hand-edit `models/*/myna-text-model.json`, `models/*/NOTICE`, `catalog.json` or the marked blocks of `snap/snapcraft.yaml`: edit `plugins/*.toml` and run `dev/gen-plugins.py .` (`make lint-plugins` fails on drift).
 - The declared `latency_ms` and `quality` come from `plugins/*.measured.json`. They are measurements (see `README.md`), re-measure before changing them.
 - Every build input is pinned: the Python wheels by hash (`dev/prepare.sh` exports `server/uv.lock`) and the tagger by sha256. Moving one is a commit.
+- `model-disfluency-en` serves English, French, German and Spanish (`languages` in its toml). It keeps the English-only component name because the store's component and the e2e provisioning use it; renaming it (the convention would be `model-disfluency-en-fr-de-es`) means registering the new name first.
 - Pack with `umask 022`: a 077 shell leaves files in local snaps unreadable to the daemon.
 - `MYNA_TAGGER_SRC` is the only way to stage the tagger until it is published; publishing it, and the snap, is Charles' call.
 
