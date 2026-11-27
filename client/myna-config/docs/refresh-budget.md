@@ -56,7 +56,9 @@ test box.
 
 Apart from that step and a running apply there is **no background poll**. Refreshes are triggered
 by (a) startup, (b) selecting the Backend or Diagnostics tab, (c) a user tap on the diagnostics *Refresh* button, (d) explicit
-apply/switch operations, and (e) the settings window regaining focus. User-initiated diagnostics refreshes are debounced by
+apply/switch operations, (e) the settings window regaining focus, and (f) a `PropertiesChanged` signal on the dictation
+interface for a property Settings shows. Its `Get` is per property: `GetAll` would hand Settings the dictated text
+(`DraftText`, `DraftTail`) published beside them, which it never reads. User-initiated diagnostics refreshes are debounced by
 `diagnostics::REFRESH_DEBOUNCE` (250 ms).
 
 The app-probe cap does not truncate the raw `snap info` command list. Discovery

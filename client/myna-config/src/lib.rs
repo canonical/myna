@@ -10,10 +10,15 @@ pub mod apply_plan;
 pub mod backend_apply;
 pub mod backend_controller;
 pub mod backend_ui;
+pub mod chain_notice;
+pub mod chain_solve;
+pub mod chains_view;
 pub mod command;
 pub mod diagnostics;
 pub mod domain;
 pub mod hud_host;
+pub mod installed_models;
+pub mod languages;
 pub mod list_editor_ui;
 pub mod machine;
 pub mod markup;
@@ -24,13 +29,17 @@ pub mod onboarding_ui;
 pub mod operation_gate;
 pub mod performance;
 pub mod platform;
+pub mod plugin_catalog;
+pub mod plugin_install;
 pub mod ports;
 pub mod presentation;
+pub mod processing_steps;
 pub mod shortcut;
 pub mod shortcut_ui;
 pub mod snap_changes;
 pub mod snap_install;
 pub mod sound_preview;
+pub mod step_catalog;
 pub mod ui;
 
 pub const APP_ID: &str = "com.canonical.Myna.Config";
@@ -87,11 +96,15 @@ pub fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Command, Str
 }
 
 pub fn init_i18n() {
-    let mut domain = gettextrs::TextDomain::new(GETTEXT_DOMAIN);
-    if let Ok(directory) = std::env::var("MYNA_CONFIG_LOCALEDIR") {
-        if !directory.is_empty() {
-            domain = domain.push(directory);
-        }
+    // A gettext localedir, as bindtextdomain takes it:
+    // `<dir>/<lang>/LC_MESSAGES/myna-config.mo`. TextDomain::push wants the
+    // directory above `locale/` instead, which the name does not say.
+    if let Some(directory) = std::env::var_os("MYNA_CONFIG_LOCALEDIR").filter(|d| !d.is_empty()) {
+        gettextrs::setlocale(gettextrs::LocaleCategory::LcAll, "");
+        let _ = gettextrs::bindtextdomain(GETTEXT_DOMAIN, std::path::PathBuf::from(directory));
+        let _ = gettextrs::bind_textdomain_codeset(GETTEXT_DOMAIN, "UTF-8");
+        let _ = gettextrs::textdomain(GETTEXT_DOMAIN);
+        return;
     }
-    let _ = domain.init();
+    let _ = gettextrs::TextDomain::new(GETTEXT_DOMAIN).init();
 }

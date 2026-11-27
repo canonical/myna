@@ -714,6 +714,7 @@ mod tests {
         InstalledSnap {
             name: name.to_owned(),
             version: "1".to_owned(),
+            ..Default::default()
         }
     }
 

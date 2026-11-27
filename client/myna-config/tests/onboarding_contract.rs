@@ -12,6 +12,7 @@ fn snap(name: &str) -> InstalledSnap {
     InstalledSnap {
         name: name.to_owned(),
         version: "1".to_owned(),
+        ..Default::default()
     }
 }
 

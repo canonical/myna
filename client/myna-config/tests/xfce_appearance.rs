@@ -26,6 +26,16 @@ fn the_desktops_theme_comes_from_xfconf() {
         eprintln!("skipped: set MYNA_CONFIG_GTK_TESTS=1 under Xvfb");
         return;
     }
+    // A Wayland session keeps WAYLAND_DISPLAY even under xvfb-run, and GTK
+    // then paints on the developer's compositor instead of Xvfb - and reads
+    // that session's portal, which is why such a run disagrees with CI. The
+    // login session's runtime dir is what makes it the real desktop: a
+    // headless compositor (dev/headless-gtk.sh) runs on a private one.
+    let desktop_compositor = std::env::var_os("WAYLAND_DISPLAY").is_some()
+        && std::env::var("XDG_RUNTIME_DIR").is_ok_and(|dir| dir.starts_with("/run/user/"));
+    if desktop_compositor {
+        panic!("GTK tests would open windows on this desktop; run dev/headless-gtk.sh (--wayland for the Wayland backend)");
+    }
     gtk4::init().expect("display");
     the_themes_name_in_xfconf_says_dark_and_high_contrast();
     a_change_of_theme_is_heard_until_the_watch_is_dropped();

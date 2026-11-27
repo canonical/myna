@@ -858,6 +858,8 @@ fn onboarding_probe() -> glib::ExitCode {
     // A machine whose snaps cannot be read fails to finish setting up, says
     // so, and stays on the component step.
     let installed = [crate::diagnostics::InstalledSnap {
+        components: Vec::new(),
+        installed_size: 0,
         name: crate::onboarding::MYNA_SNAP.to_owned(),
         version: "1".to_owned(),
     }];
@@ -898,6 +900,8 @@ fn onboarding_probe() -> glib::ExitCode {
     // Dismissing it is the user's answer, not a failure: nothing to report,
     // and Next asks again. A refusal is reported.
     let installed = [crate::diagnostics::InstalledSnap {
+        components: Vec::new(),
+        installed_size: 0,
         name: crate::onboarding::MYNA_SNAP.to_owned(),
         version: "1".to_owned(),
     }];
@@ -980,6 +984,8 @@ fn onboarding_probe() -> glib::ExitCode {
     // A machine with everything installed walks to the end, and Done
     // closes the application.
     let installed = [crate::diagnostics::InstalledSnap {
+        components: Vec::new(),
+        installed_size: 0,
         name: crate::onboarding::MYNA_SNAP.to_owned(),
         version: "1".to_owned(),
     }];
@@ -1900,6 +1906,8 @@ fn onboarding_control_probe() -> glib::ExitCode {
         return glib::ExitCode::FAILURE;
     };
     let installed = [crate::diagnostics::InstalledSnap {
+        components: Vec::new(),
+        installed_size: 0,
         name: crate::onboarding::MYNA_SNAP.to_owned(),
         version: "1".to_owned(),
     }];
@@ -2671,6 +2679,8 @@ impl ProbeMachine {
         snaps
             .iter()
             .map(|(name, version)| crate::diagnostics::InstalledSnap {
+        components: Vec::new(),
+        installed_size: 0,
                 name: (*name).to_owned(),
                 version: (*version).to_owned(),
             })
@@ -5842,6 +5852,7 @@ fn ready_page(
         let group = match plan.placement {
             Placement::Dictation => &dictation,
             Placement::ActiveModel => model_settings,
+            Placement::ProcessingRecord => continue,
         };
         let widget_name = (plan.placement == Placement::ActiveModel)
             .then(|| crate::backend_ui::client_setting_widget_name(&plan.key));

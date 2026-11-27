@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use myna_core::language::ModelFamily;
+use myna_core::provider_env::DeclaredRole;
 use serde::Deserialize;
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -228,7 +229,97 @@ pub enum ActiveBackendState {
 pub struct ConnectionSnapshot {
     backends: Vec<BackendIdentity>,
     active_state: ActiveBackendState,
+    text_providers: Vec<BackendIdentity>,
+    text_offers: Vec<TextOffer>,
     strays: Vec<BackendIdentity>,
+}
+
+/// One model a text-model snap carries, as its component's manifest says.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TextModel {
+    task: String,
+    language: String,
+    to: Option<String>,
+    license: String,
+    attribution: String,
+}
+
+impl TextModel {
+    pub fn new(task: impl Into<String>, language: impl Into<String>, to: Option<String>) -> Self {
+        Self {
+            task: task.into(),
+            language: language.into(),
+            to,
+            license: String::new(),
+            attribution: String::new(),
+        }
+    }
+
+    /// The licence and credit the model's manifest declares.
+    pub fn with_credit(
+        mut self,
+        license: impl Into<String>,
+        attribution: impl Into<String>,
+    ) -> Self {
+        self.license = license.into();
+        self.attribution = attribution.into();
+        self
+    }
+
+    pub fn license(&self) -> &str {
+        &self.license
+    }
+
+    pub fn attribution(&self) -> &str {
+        &self.attribution
+    }
+
+    /// What the model does, as the daemon names tasks: `text.cleanup`.
+    pub fn task(&self) -> &str {
+        &self.task
+    }
+
+    /// The language it works on.
+    pub fn language(&self) -> &str {
+        &self.language
+    }
+
+    /// The language it translates into, for a translation model.
+    pub fn to(&self) -> Option<&str> {
+        self.to.as_deref()
+    }
+}
+
+/// A text-model snap that Diagnostics describes: one that declares itself for
+/// text, or any non-speech provider `myna:backend` is connected to.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TextOffer {
+    identity: BackendIdentity,
+    connected: bool,
+    models: Vec<TextModel>,
+}
+
+impl TextOffer {
+    pub fn new(identity: BackendIdentity, connected: bool, models: Vec<TextModel>) -> Self {
+        Self {
+            identity,
+            connected,
+            models,
+        }
+    }
+
+    pub fn identity(&self) -> &BackendIdentity {
+        &self.identity
+    }
+
+    pub fn connected(&self) -> bool {
+        self.connected
+    }
+
+    /// The models its installed components provide.
+    pub fn models(&self) -> &[TextModel] {
+        &self.models
+    }
 }
 
 impl ConnectionSnapshot {
@@ -236,12 +327,52 @@ impl ConnectionSnapshot {
         Self {
             backends,
             active_state,
+            text_providers: Vec::new(),
+            text_offers: Vec::new(),
             strays: Vec::new(),
         }
     }
 
-    /// Slots `myna:backend` is connected to that are no model: an LLM's
-    /// provider, or a slot whose content id changed under the connection.
+    pub fn with_text_offers(mut self, offers: Vec<TextOffer>) -> Self {
+        self.text_offers = offers;
+        self
+    }
+
+    /// Reads the models each text offer's snap carries.
+    pub fn reading_text_models(
+        mut self,
+        read: impl Fn(&BackendIdentity) -> Vec<TextModel>,
+    ) -> Self {
+        for offer in &mut self.text_offers {
+            offer.models = read(&offer.identity);
+        }
+        self
+    }
+
+    /// The text-model snaps Diagnostics describes, connected or not.
+    pub fn text_offers(&self) -> &[TextOffer] {
+        &self.text_offers
+    }
+
+    pub fn with_companions(
+        mut self,
+        text_providers: Vec<BackendIdentity>,
+        strays: Vec<BackendIdentity>,
+    ) -> Self {
+        self.text_providers = text_providers;
+        self.strays = strays;
+        self
+    }
+
+    /// Non-speech `inference-provider` slots connected to `myna:backend`
+    /// (`MYNA_ROLE=text` snaps and third-party LLM providers), preserved across
+    /// speech model switches.
+    pub fn text_providers(&self) -> &[BackendIdentity] {
+        &self.text_providers
+    }
+
+    /// Slots `myna:backend` is connected to whose content id is not
+    /// [`PROVIDER_CONTENT_ID`] (stale connections disconnected on switch).
     pub fn strays(&self) -> &[BackendIdentity] {
         &self.strays
     }
@@ -261,6 +392,11 @@ pub const PROVIDER_CONTENT_ID: &str = "inference-provider";
 /// The `task` slot attribute of a provider that transcribes speech. Other
 /// inference snaps, LLMs such as gemma4, share [`PROVIDER_CONTENT_ID`].
 pub const SPEECH_TO_TEXT_TASK: &str = "speech-to-text";
+
+/// Myna's published speech snaps that are no [`ModelFamily`] Settings offers
+/// to install. Their store revisions predate `MYNA_ROLE=speech`, so without
+/// this a connected one passes for an LLM companion.
+const OTHER_SPEECH_SNAPS: &[&str] = &["myna-nemotron"];
 
 /// One content slot as `GET /v2/connections?select=all&interface=content`
 /// lists it: its own attributes and the plugs connected to it.
@@ -288,15 +424,58 @@ pub struct ContentConnections {
     slots: Vec<ContentSlot>,
 }
 
+impl ContentConnections {
+    pub fn slots(&self) -> &[ContentSlot] {
+        &self.slots
+    }
+}
+
 impl ContentSlot {
-    /// A [`PROVIDER_CONTENT_ID`] slot of a known Myna family's snap, or one
-    /// whose `task` is [`SPEECH_TO_TEXT_TASK`]. The store rejects the
-    /// attribute, so only the unpublished fake backend carries it.
-    fn is_model(&self) -> bool {
-        let attribute = |key: &str| self.attrs.get(key).and_then(serde_json::Value::as_str);
-        attribute("content") == Some(PROVIDER_CONTENT_ID)
-            && (attribute("task") == Some(SPEECH_TO_TEXT_TASK)
-                || ModelFamily::from_snap_name(&self.snap).is_some())
+    pub fn snap_name(&self) -> &str {
+        &self.snap
+    }
+
+    pub fn slot_name(&self) -> &str {
+        &self.slot
+    }
+
+    pub fn is_inference_provider(&self) -> bool {
+        self.attr_str("content") == Some(PROVIDER_CONTENT_ID)
+    }
+
+    pub fn share_source_dirs(&self) -> impl Iterator<Item = &str> {
+        let list = |key: &str| {
+            self.attrs
+                .get("source")
+                .and_then(|src| src.get(key))
+                .and_then(serde_json::Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(serde_json::Value::as_str)
+        };
+        list("write").chain(list("read"))
+    }
+
+    fn attr_str(&self, key: &str) -> Option<&str> {
+        self.attrs.get(key).and_then(serde_json::Value::as_str)
+    }
+
+    /// A [`PROVIDER_CONTENT_ID`] slot for speech: explicitly `MYNA_ROLE=speech`
+    /// in `provider.env`, or without `MYNA_ROLE` a known Myna speech family or
+    /// `task: speech-to-text` (carried by the unpublished fake backend).
+    fn is_speech_model(&self, declared: Option<DeclaredRole>) -> bool {
+        if !self.is_inference_provider() {
+            return false;
+        }
+        match declared {
+            Some(DeclaredRole::Speech) => true,
+            Some(DeclaredRole::Text | DeclaredRole::Other) => false,
+            None => {
+                self.attr_str("task") == Some(SPEECH_TO_TEXT_TASK)
+                    || ModelFamily::from_snap_name(&self.snap).is_some()
+                    || OTHER_SPEECH_SNAPS.contains(&self.snap.as_str())
+            }
+        }
     }
 
     fn feeds_myna(&self) -> bool {
@@ -306,28 +485,45 @@ impl ContentSlot {
     }
 }
 
-/// The models on the machine and the ones `myna:backend` is connected to.
+/// The speech models on the machine, the ones `myna:backend` is connected to,
+/// connected non-speech `inference-provider` companions, and stale strays.
 ///
 /// A slot's content id is its own attribute, never the plug's: snapd keeps a
 /// connection across a refresh that changed the plug's content id.
 pub fn connection_snapshot(connections: &ContentConnections) -> ConnectionSnapshot {
+    connection_snapshot_with_roles(connections, &BTreeMap::new())
+}
+
+pub fn connection_snapshot_with_roles(
+    connections: &ContentConnections,
+    roles: &BTreeMap<(String, String), DeclaredRole>,
+) -> ConnectionSnapshot {
     let mut discovered = BTreeSet::new();
     let mut connected = BTreeSet::new();
+    let mut text_providers = BTreeSet::new();
+    let mut text_offers = BTreeSet::new();
     let mut strays = BTreeSet::new();
     for slot in &connections.slots {
         let backend = BackendIdentity::new(&slot.snap, &slot.slot);
-        match (slot.is_model(), slot.feeds_myna()) {
-            (true, true) => {
-                connected.insert(backend.clone());
-                discovered.insert(backend);
-            }
-            (true, false) => {
-                discovered.insert(backend);
-            }
-            (false, true) => {
+        let declared = roles.get(&(slot.snap.clone(), slot.slot.clone())).copied();
+        if !slot.is_inference_provider() {
+            if slot.feeds_myna() {
                 strays.insert(backend);
             }
-            (false, false) => {}
+            continue;
+        }
+        if slot.is_speech_model(declared) {
+            if slot.feeds_myna() {
+                connected.insert(backend.clone());
+            }
+            discovered.insert(backend);
+        } else {
+            if declared == Some(DeclaredRole::Text) || slot.feeds_myna() {
+                text_offers.insert((backend.clone(), slot.feeds_myna()));
+            }
+            if slot.feeds_myna() {
+                text_providers.insert(backend);
+            }
         }
     }
 
@@ -340,6 +536,11 @@ pub fn connection_snapshot(connections: &ContentConnections) -> ConnectionSnapsh
     ConnectionSnapshot {
         backends: discovered.into_iter().collect(),
         active_state,
+        text_providers: text_providers.into_iter().collect(),
+        text_offers: text_offers
+            .into_iter()
+            .map(|(backend, connected)| TextOffer::new(backend, connected, Vec::new()))
+            .collect(),
         strays: strays.into_iter().collect(),
     }
 }

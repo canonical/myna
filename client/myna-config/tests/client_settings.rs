@@ -9,9 +9,10 @@ use gio::glib;
 use myna_config::adapters::client_settings::GioClientSettings;
 use myna_config::domain::{ClientSettingValue, SettingRange};
 use myna_config::myna_settings::{
-    widget_plan, MynaSettingsController, PersistenceWriter, WidgetKind,
+    past_dictation, widget_plan, MynaSettingsController, PersistenceWriter, Placement, WidgetKind,
 };
 use myna_config::ports::{ClientSettings, ClientSettingsError};
+use myna_core::history::Skip;
 
 const SCHEMA_ID: &str = "com.canonical.Myna.Dictation";
 static NEXT_DIR: AtomicUsize = AtomicUsize::new(0);
@@ -98,11 +99,20 @@ fn enumerates_the_real_schema_and_its_metadata() {
     let adapter =
         GioClientSettings::open_with_source(&source, files.0.join("settings/keyfile")).unwrap();
 
+    // The chain keys have their own page, not rows.
+    let stored = myna_core::chains::KEYS;
     let settings = adapter.list().unwrap();
-    assert_eq!(settings.len(), expected.len());
+    assert_eq!(settings.len(), expected.len() - stored.len());
     assert!(expected
         .iter()
+        .filter(|key| !stored.contains(&key.as_str()))
         .all(|key| settings.iter().any(|setting| setting.key().as_str() == key)));
+    assert!(!settings
+        .iter()
+        .any(|setting| setting.key().as_str() == "chinese-script"));
+    assert!(!settings
+        .iter()
+        .any(|setting| stored.contains(&setting.key().as_str())));
 
     let streaming = settings
         .iter()
@@ -463,13 +473,162 @@ fn non_writable_keys_reject_set_without_claiming_success() {
 }
 
 #[test]
+fn a_past_dictation_shows_what_was_heard_only_when_it_differs() {
+    let entry = |heard: &str, typed: &str| myna_core::history::Entry {
+        time: 1,
+        heard: heard.into(),
+        typed: typed.into(),
+        ..Default::default()
+    };
+    let changed = past_dictation(&entry("um so I think ", "So I think."));
+    assert_eq!(changed.typed, "So I think.");
+    assert_eq!(changed.detail, "Heard: um so I think");
+    assert!(changed.made_by.is_empty(), "an older record says no more");
+    let same = past_dictation(&entry("So I think. ", "So I think."));
+    assert_eq!(same.detail, "Typed as heard");
+}
+
+#[test]
+fn a_past_dictation_says_why_it_was_not_typed() {
+    use myna_core::history::Outcome;
+    for (outcome, said) in [
+        (Outcome::FocusLost, "Not typed: focus left the field"),
+        (Outcome::Refused, "Not typed: the field refused it"),
+        (Outcome::Discarded, "Not typed: the dictation was cancelled"),
+        (Outcome::Empty, "Nothing to type"),
+    ] {
+        let lost = myna_core::history::Entry {
+            time: 1,
+            heard: "hello".into(),
+            outcome: Some(outcome),
+            ..Default::default()
+        };
+        let shown = past_dictation(&lost);
+        assert_eq!(shown.detail, said, "{outcome:?}");
+        assert_eq!(shown.typed, "hello", "what was heard is what is left");
+    }
+}
+
+#[test]
+fn a_past_dictation_says_what_made_it() {
+    let step =
+        |task: &str, model: Option<&str>, ms, skipped: Option<Skip>| myna_core::history::Step {
+            task: task.into(),
+            model: model.map(Into::into),
+            ms,
+            skipped,
+        };
+    let entry = myna_core::history::Entry {
+        time: 1,
+        heard: "um bonjour".into(),
+        typed: "Bonjour.".into(),
+        chain: Some("tidy-french".into()),
+        steps: vec![
+            step("text.cleanup", Some("fdt-small"), 4, None),
+            step("text.translate", None, 1000, Some(Skip::Timeout)),
+            step("text.summarise", Some("gemma"), 7, None),
+        ],
+        speech_model: Some("parakeet-tdt".into()),
+        version: Some("0.3.3+git22".into()),
+        ..Default::default()
+    };
+    let made_by: Vec<(String, String)> = past_dictation(&entry).made_by;
+    let pair = |label: &str, value: &str| (label.to_owned(), value.to_owned());
+    assert_eq!(
+        made_by,
+        [
+            pair("Speech model", "parakeet-tdt"),
+            pair("Processing", "A French translation"),
+            pair("Tidying", "fdt-small, 4 ms"),
+            pair("Translation", "Not used (1000 ms): the model was too slow"),
+            pair("text.summarise", "gemma, 7 ms"),
+            pair("Myna version", "0.3.3+git22"),
+        ]
+    );
+    let named = myna_core::history::Entry {
+        chain_id: Some("chain-1".into()),
+        chain_name: Some("Tidy then French".into()),
+        ..entry
+    };
+    assert_eq!(
+        past_dictation(&named).made_by[1],
+        pair("Chain", "Tidy then French")
+    );
+}
+
+#[test]
+fn a_past_dictation_shows_the_wait_after_the_stop() {
+    let entry = myna_core::history::Entry {
+        heard: "hi".into(),
+        typed: "Hi.".into(),
+        asr_tail_ms: Some(120),
+        inject_ms: Some(3),
+        dead_air_ms: Some(480),
+        ..Default::default()
+    };
+    assert_eq!(
+        past_dictation(&entry).made_by,
+        [(
+            "Wait after you stopped".to_owned(),
+            "480 ms (120 ms to hear, 3 ms to type)".to_owned()
+        )]
+    );
+    let older = myna_core::history::Entry::default();
+    assert!(past_dictation(&older).made_by.is_empty());
+}
+
+#[test]
+fn a_dictation_lost_with_the_focus_shows_what_can_be_recovered() {
+    let entry = myna_core::history::Entry {
+        heard: " um hello there ".into(),
+        outcome: Some(myna_core::history::Outcome::FocusLost),
+        ..Default::default()
+    };
+    let shown = past_dictation(&entry);
+    assert_eq!(shown.typed, "um hello there");
+    assert_eq!(shown.detail, "Not typed: focus left the field");
+}
+
+#[test]
+fn every_reason_a_step_was_not_used_reads_differently() {
+    use Skip::*;
+    let all = [
+        NoModel,
+        Refused,
+        Timeout,
+        Empty,
+        NewWord,
+        TooManyDropped,
+        LongDrop,
+        DroppedNegation,
+        OddLength,
+        Other,
+    ];
+    let shown: std::collections::HashSet<String> = all
+        .into_iter()
+        .map(|why| {
+            let entry = myna_core::history::Entry {
+                steps: vec![myna_core::history::Step {
+                    task: "text.cleanup".into(),
+                    skipped: Some(why),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            };
+            past_dictation(&entry).made_by[0].1.clone()
+        })
+        .collect();
+    assert_eq!(shown.len(), all.len(), "{shown:?}");
+}
+
+#[test]
 fn headless_widget_smoke_covers_every_real_schema_key() {
     let files = TestFiles::new("widget-smoke");
     let adapter = open_adapter(&files);
 
     let plans: Vec<_> = adapter.list().unwrap().iter().map(widget_plan).collect();
 
-    assert_eq!(plans.len(), 7);
+    assert_eq!(plans.len(), 8);
     assert!(plans.iter().any(|plan| plan.kind == WidgetKind::Choice));
     let vocabulary = plans
         .iter()
@@ -489,10 +648,24 @@ fn headless_widget_smoke_covers_every_real_schema_key() {
     );
     let switch = plans
         .iter()
-        .find(|plan| plan.kind == WidgetKind::Switch)
-        .expect("sounds is a boolean");
-    assert_eq!(switch.key, "sounds");
+        .find(|plan| plan.key == "sounds")
+        .expect("sounds is listed");
+    assert_eq!(switch.kind, WidgetKind::Switch);
     assert_eq!(switch.title, "Sounds on start, stop and error");
+    assert!(
+        plans.iter().all(|plan| plan.key != "processing-chain"),
+        "the steps have their own page"
+    );
+    assert!(
+        plans.iter().all(|plan| plan.key != "chinese-script"),
+        "Chinese script is a step, not a row"
+    );
+    let record = plans
+        .iter()
+        .find(|plan| plan.key == "processing-history")
+        .expect("processing-history is listed");
+    assert_eq!(record.kind, WidgetKind::Switch);
+    assert_eq!(record.placement, Placement::ProcessingRecord);
     assert!(plans.iter().any(|plan| plan.kind == WidgetKind::Text));
     let number = plans
         .iter()
@@ -564,4 +737,68 @@ fn sounds_are_a_boolean_that_defaults_on() {
         adapter.set("silence-timeout", ClientSettingValue::Boolean(true)),
         Err(ClientSettingsError::InvalidValue { key, .. }) if key == "silence-timeout"
     ));
+}
+
+/// A chain written by anyone wakes whoever watches the steps, and is no
+/// row's change.
+#[test]
+fn a_change_to_the_stored_steps_wakes_the_watchers_and_no_row() {
+    let context = glib::MainContext::new();
+    context
+        .with_thread_default(|| {
+            let files = TestFiles::new("views-notify");
+            let source = real_schema_source(&files);
+            let path = files.0.join("settings/keyfile");
+            let observed = Arc::new(std::sync::Mutex::new(Vec::new()));
+            let reader = GioClientSettings::open_with_source(&source, &path).unwrap();
+            let _subscription = reader
+                .subscribe({
+                    let observed = Arc::clone(&observed);
+                    Box::new(move |change| observed.lock().unwrap().push(change))
+                })
+                .unwrap();
+            let woken = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+            let watch = reader.watch_steps({
+                let woken = Arc::clone(&woken);
+                move || {
+                    woken.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                }
+            });
+            let writer = GioClientSettings::open_with_source(&source, &path).unwrap();
+            let mut processing = writer.processing();
+            processing.chains.push(myna_core::chains::Chain {
+                id: "c".into(),
+                name: "C".into(),
+                steps: vec![myna_core::chains::ChainStep::new("script").with("mode", "simplified")],
+            });
+            writer.set_processing(&processing).unwrap();
+
+            let deadline = Instant::now() + Duration::from_secs(5);
+            while woken.load(std::sync::atomic::Ordering::SeqCst) == 0 && Instant::now() < deadline
+            {
+                while context.iteration(false) {}
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            // Settle: a second wake for the same edit would arrive by now.
+            let settle = Instant::now() + Duration::from_millis(300);
+            while Instant::now() < settle {
+                while context.iteration(false) {}
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            assert!(observed.lock().unwrap().is_empty());
+            assert_eq!(woken.load(std::sync::atomic::Ordering::SeqCst), 1);
+
+            // A dropped watch hears no more.
+            drop(watch);
+            let mut processing = writer.processing();
+            processing.chains[0].name = "Renamed".into();
+            writer.set_processing(&processing).unwrap();
+            let settle = Instant::now() + Duration::from_millis(300);
+            while Instant::now() < settle {
+                while context.iteration(false) {}
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            assert_eq!(woken.load(std::sync::atomic::Ordering::SeqCst), 1);
+        })
+        .unwrap();
 }

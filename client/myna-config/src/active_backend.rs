@@ -38,18 +38,19 @@ impl SwitchPlan {
         }
 
         let connected = connected_backends(snapshot);
-        let operations = if connected.as_slice() == [selected.clone()] {
-            Vec::new()
-        } else {
-            let mut operations = connected
-                .iter()
-                .chain(snapshot.strays())
-                .map(|backend| privileged_snap_request("disconnect", backend.slot()))
-                .collect::<Vec<_>>();
-            operations.push(privileged_snap_request("connect", selected.slot()));
-            operations.push(myna_restart_request());
-            operations
-        };
+        let operations =
+            if connected.as_slice() == [selected.clone()] && snapshot.strays().is_empty() {
+                Vec::new()
+            } else {
+                let mut operations = connected
+                    .iter()
+                    .chain(snapshot.strays())
+                    .map(|backend| privileged_snap_request("disconnect", backend.slot()))
+                    .collect::<Vec<_>>();
+                operations.push(privileged_snap_request("connect", selected.slot()));
+                operations.push(myna_restart_request());
+                operations
+            };
         Ok(Self {
             baseline: snapshot.clone(),
             selected,

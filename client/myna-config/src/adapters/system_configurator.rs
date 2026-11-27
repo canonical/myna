@@ -16,10 +16,12 @@ use crate::domain::CommandResult;
 #[cfg(test)]
 use crate::ports::FailedStep;
 use crate::ports::{
-    SetUpPlan, SystemConfigurator, SystemConfiguratorError, SystemConfiguratorFailure,
+    PluginSetUp, SetUpPlan, SystemConfigurator, SystemConfiguratorError, SystemConfiguratorFailure,
 };
 use crate::snap_changes::ChangeInProgress;
-use crate::snap_install::{install_request, STORE_ERROR_PREFIX};
+use crate::snap_install::{
+    components_request, install_request, remove_request, STORE_ERROR_PREFIX,
+};
 
 /// Fixed plug reference the direct snapd adapter is willing to send. Any
 /// switch step whose typed target does not match these exact allowlists is
@@ -205,6 +207,51 @@ impl SystemConfigurator for PkexecSystemConfigurator {
             .map_err(|error| snapd_error_to_system_error(install_request(snap), error))
     }
 
+    async fn remove_snap(
+        &self,
+        snap: &str,
+        cancellation: CancellationToken,
+    ) -> Result<Option<String>, SystemConfiguratorError> {
+        self.snapd
+            .remove_snap(snap, cancellation)
+            .await
+            .map_err(|error| snapd_error_to_system_error(remove_request(snap), error))
+    }
+
+    async fn change_components(
+        &self,
+        snap: &str,
+        components: &[String],
+        install: bool,
+        cancellation: CancellationToken,
+    ) -> Result<Option<String>, SystemConfiguratorError> {
+        self.snapd
+            .change_components(snap, components, install, cancellation)
+            .await
+            .map_err(|error| snapd_error_to_system_error(components_request(snap, install), error))
+    }
+
+    async fn set_up_plugin(
+        &self,
+        plan: &PluginSetUp,
+        cancellation: CancellationToken,
+    ) -> Result<(), SystemConfiguratorError> {
+        let operations: Vec<CommandRequest> = plugin_set_up_arguments(plan)
+            .into_iter()
+            .map(|arguments| CommandRequest::new("snap".to_owned(), arguments))
+            .collect();
+        execute_plan(
+            self.runner.as_ref(),
+            &self.executor,
+            PlanKind::SetUp,
+            &operations,
+            cancellation,
+        )
+        .await
+        .map(|_| ())
+        .map_err(|failure| failure.into_parts().1)
+    }
+
     async fn snap_change(
         &self,
         change_id: &str,
@@ -231,6 +278,24 @@ fn set_up_arguments(plan: &SetUpPlan) -> Vec<Vec<String>> {
         .connect
         .map(|snap| words(&["connect", "myna:backend", &format!("{snap}:provider")]));
     flag.into_iter().chain(installs).chain(connect).collect()
+}
+
+/// The `snap` arguments of a plugin's set-up: one install naming every
+/// component, then the connect.
+fn plugin_set_up_arguments(plan: &PluginSetUp) -> Vec<Vec<String>> {
+    let spec = std::iter::once(plan.snap.as_str())
+        .chain(plan.components.iter().map(String::as_str))
+        .collect::<Vec<_>>()
+        .join("+");
+    let mut steps = vec![vec!["install".to_owned(), "--edge".to_owned(), spec]];
+    if plan.connect {
+        steps.push(vec![
+            "connect".to_owned(),
+            "myna:backend".to_owned(),
+            format!("{}:provider", plan.snap),
+        ]);
+    }
+    steps
 }
 
 /// How a report names a snapd request: method, path and what it asks for.
@@ -919,6 +984,63 @@ mod tests {
         }
     }
 
+    #[test]
+    fn a_plugin_set_up_is_one_install_naming_components_and_one_connect() {
+        for snap in ["myna-text", "myna-translation"] {
+            let plan = PluginSetUp {
+                snap: snap.to_owned(),
+                components: vec!["model-a".to_owned(), "model-b-c".to_owned()],
+                connect: true,
+            };
+            let arguments = plugin_set_up_arguments(&plan);
+            assert_eq!(
+                arguments,
+                [
+                    vec!["install", "--edge", &format!("{snap}+model-a+model-b-c")],
+                    vec!["connect", "myna:backend", &format!("{snap}:provider")],
+                ]
+            );
+            let operations: Vec<CommandRequest> = arguments
+                .into_iter()
+                .map(|arguments| CommandRequest::new("snap".to_owned(), arguments))
+                .collect();
+            assert!(apply_plan::encode_plan(PlanKind::SetUp, &operations).is_ok());
+            let connected = PluginSetUp {
+                connect: false,
+                ..plan
+            };
+            assert_eq!(plugin_set_up_arguments(&connected).len(), 1);
+        }
+    }
+
+    #[test]
+    fn a_plugin_set_up_runs_through_one_pkexec() {
+        let plan = PluginSetUp {
+            snap: "myna-translation".to_owned(),
+            components: vec!["model-translate-en-fr".to_owned()],
+            connect: true,
+        };
+        let operations: Vec<CommandRequest> = plugin_set_up_arguments(&plan)
+            .into_iter()
+            .map(|arguments| CommandRequest::new("snap".to_owned(), arguments))
+            .collect();
+        let runner = FakeCommandRunner::scripted([Ok(CommandOutput::new(
+            Some(0),
+            plan_output(&operations, None),
+            "",
+        ))]);
+        let adapter = PkexecSystemConfigurator::new(Arc::new(runner.clone()))
+            .with_executor("/opt/myna/bin/myna-config");
+        block_on(adapter.set_up_plugin(&plan, CancellationToken::new())).unwrap();
+        let calls = runner.calls();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].executable(), "pkexec");
+        assert_eq!(
+            calls[0].arguments()[2],
+            apply_plan::encode_plan(PlanKind::SetUp, &operations).unwrap()
+        );
+    }
+
     /// The flag, installs and connect are three snapd actions, three
     /// prompts as the user; as root through one pkexec they are one.
     #[test]
@@ -1293,6 +1415,24 @@ mod tests {
             _cancellation: CancellationToken,
         ) -> Result<Option<String>, SnapdError> {
             unreachable!("no switch installs a snap")
+        }
+
+        async fn remove_snap(
+            &self,
+            _snap: &str,
+            _cancellation: CancellationToken,
+        ) -> Result<Option<String>, SnapdError> {
+            unreachable!("no switch removes a snap")
+        }
+
+        async fn change_components(
+            &self,
+            _snap: &str,
+            _components: &[String],
+            _install: bool,
+            _cancellation: CancellationToken,
+        ) -> Result<Option<String>, SnapdError> {
+            unreachable!("no switch changes components")
         }
 
         async fn change(

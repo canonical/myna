@@ -301,6 +301,11 @@ pub struct DaemonReport {
     pub input: Option<InputReport>,
     /// `None` when nothing has failed, or the daemon predates the property.
     pub last_error: Option<LastError>,
+    /// `None` on a daemon older than the properties.
+    pub chain: Option<crate::chain_notice::ChainState>,
+    /// The steps switched on in the settings store, as `tidy, translate=fr`;
+    /// `None` when none is.
+    pub steps: Option<String>,
 }
 
 const DICTATION_BUS: &str = "com.canonical.Myna.Dictation";
@@ -316,33 +321,168 @@ pub fn daemon_report() -> Option<DaemonReport> {
     use gio::glib::variant::ToVariant;
 
     let connection = gio::bus_get_sync(gio::BusType::Session, gio::Cancellable::NONE).ok()?;
-    let reply = connection
-        .call_sync(
-            Some(DICTATION_BUS),
-            DICTATION_PATH,
-            "org.freedesktop.DBus.Properties",
-            "GetAll",
-            Some(&(DICTATION_BUS,).to_variant()),
+    let call = |bus: &str, path: &str, interface: &str, method: &str, parameters| {
+        connection.call_sync(
+            Some(bus),
+            path,
+            interface,
+            method,
+            Some(&parameters),
             None,
             gio::DBusCallFlags::NONE,
             1_000,
             gio::Cancellable::NONE,
         )
-        .ok()?;
-    Some(parse_daemon_report(&reply.child_value(0)))
+    };
+    // One cheap question first: with no owner the property reads would each
+    // fail on their own.
+    let owner = call(
+        "org.freedesktop.DBus",
+        "/org/freedesktop/DBus",
+        "org.freedesktop.DBus",
+        "NameHasOwner",
+        (DICTATION_BUS,).to_variant(),
+    )
+    .ok()?;
+    if !owner.get::<bool>().unwrap_or(false) {
+        return None;
+    }
+    // `GetAll` would deliver the dictated text the daemon publishes beside
+    // these properties, which Settings must never read.
+    let get = |name: &str| {
+        call(
+            DICTATION_BUS,
+            DICTATION_PATH,
+            "org.freedesktop.DBus.Properties",
+            "Get",
+            (DICTATION_BUS, name).to_variant(),
+        )
+        .ok()
+        .and_then(|reply| reply.child_value(0).as_variant())
+    };
+    let mut report = parse_daemon_report(&get);
+    let settings = myna_core::Settings::load();
+    let catalog = crate::plugin_catalog::load(
+        std::path::Path::new(crate::plugin_catalog::SNAPSHOT_DIR),
+        std::path::Path::new("/snap"),
+    )
+    .entries;
+    report.steps = steps_line(&settings);
+    report.chain = report
+        .chain
+        .map(|state| state.as_asked(&translations(&settings, &catalog)));
+    Some(report)
 }
 
-/// Read a `GetAll` reply's `a{sv}`. A property this daemon does not publish is
-/// absent, never an error: a Settings app newer than the daemon is normal.
-fn parse_daemon_report(all: &gio::glib::Variant) -> DaemonReport {
-    let properties = gio::glib::VariantDict::new(Some(all));
-    // VariantDict lookup unboxes the value from GetAll's a{sv} reply.
-    let drops = properties
-        .lookup::<u64>("AudioDroppedNotActive")
-        .ok()
-        .flatten()
+/// The properties Settings follows live: a dictation's `DraftText` changes
+/// must not wake it.
+const FOLLOWED: [&str; 11] = [
+    "State",
+    "InstalledSteps",
+    "Chains",
+    "ActiveChain",
+    "ChainStatus",
+    "ChainMissing",
+    "ChainMissingRequests",
+    "LastError",
+    "LastErrorTime",
+    "LastErrorDetail",
+    "AudioDroppedNotActive",
+];
+
+/// Whether a `PropertiesChanged` signal carries a property Settings follows.
+pub(crate) fn followed_change(params: &gio::glib::Variant) -> bool {
+    let changed = gio::glib::VariantDict::new(Some(&params.child_value(1)));
+    FOLLOWED
+        .iter()
+        .any(|name| changed.lookup::<String>(name).ok().flatten().is_some())
+}
+
+/// Call `on_change` whenever the daemon publishes one of [`FOLLOWED`], for as
+/// long as the session bus lives: the Processing banner and Diagnostics follow
+/// the daemon by signal, not by polling.
+pub fn watch_daemon(on_change: impl Fn() + 'static) {
+    if let Ok(connection) = gio::bus_get_sync(gio::BusType::Session, gio::Cancellable::NONE) {
+        follow_daemon(&connection, std::rc::Rc::new(on_change));
+    }
+}
+
+/// Follow the daemon on `connection`: each change to one of [`FOLLOWED`], and
+/// its arrival and departure. A restarted daemon signals no change for the
+/// values it starts with, so its arrival is a change too.
+///
+/// `PropertiesChanged` is the standard interface's signal, matched by its
+/// object path and the interface named in its first argument, from any
+/// sender: a subscription naming the well-known name misses what a new
+/// owner emits before the connection has learned who owns it.
+pub(crate) fn follow_daemon(connection: &gio::DBusConnection, on_change: std::rc::Rc<dyn Fn()>) {
+    let on_signal = on_change.clone();
+    // The deprecated form keeps the subscription until the connection goes.
+    #[allow(deprecated)]
+    connection.signal_subscribe(
+        None,
+        Some("org.freedesktop.DBus.Properties"),
+        Some("PropertiesChanged"),
+        Some(DICTATION_PATH),
+        Some(DICTATION_BUS),
+        gio::DBusSignalFlags::NONE,
+        move |_, _, _, _, _, params| {
+            if followed_change(params) {
+                on_signal();
+            }
+        },
+    );
+    let on_owner = on_change.clone();
+    // Never unwatched: dropping the id leaves the watch in place.
+    gio::bus_watch_name_on_connection(
+        connection,
+        DICTATION_BUS,
+        gio::BusNameWatcherFlags::NONE,
+        move |_, _, _| on_owner(),
+        move |_, _| on_change(),
+    );
+}
+
+/// The active chain's translations that run, as (from, to), judged the way
+/// the editor's badges are.
+fn translations(
+    settings: &myna_core::Settings,
+    catalog: &[crate::plugin_catalog::Entry],
+) -> Vec<(String, String)> {
+    use crate::chain_solve::{Fit, World};
+    let Some(chain) = settings.processing.active() else {
+        return Vec::new();
+    };
+    let language = match crate::languages::Source::of_setting(
+        settings.language.as_deref().unwrap_or_default(),
+    ) {
+        crate::languages::Source::One(code) => Some(code),
+        crate::languages::Source::Unknown => None,
+    };
+    chain
+        .steps
+        .iter()
+        .zip(World::new(catalog, None).fits(&chain.steps, language.as_deref()))
+        .filter_map(|(step, fit)| match fit {
+            Fit::Runs {
+                input: Some(from),
+                output: Some(to),
+                ..
+            } if step.step == "translate" => Some((from, to)),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Read the properties a report needs. A property this daemon does not
+/// publish is absent, never an error: a Settings app newer than the daemon is
+/// normal.
+fn parse_daemon_report(get: &dyn Fn(&str) -> Option<gio::glib::Variant>) -> DaemonReport {
+    let read = |name: &str| get(name);
+    let drops = read("AudioDroppedNotActive")
+        .and_then(|value| value.get::<u64>())
         .map(|not_active| AudioDrops { not_active });
-    let level = |name: &str| properties.lookup::<f64>(name).ok().flatten();
+    let level = |name: &str| read(name).and_then(|value| value.get::<f64>());
     let input = match (
         level("InputOffset"),
         level("InputNoiseFloor"),
@@ -364,8 +504,8 @@ fn parse_daemon_report(all: &gio::glib::Variant) -> DaemonReport {
         }
         _ => None,
     };
-    let text = |name: &str| properties.lookup::<String>(name).ok().flatten();
-    let time = properties.lookup::<i64>("LastErrorTime").ok().flatten();
+    let text = |name: &str| read(name).and_then(|value| value.get::<String>());
+    let time = read("LastErrorTime").and_then(|value| value.get::<i64>());
     let last_error = match (text("LastError"), time) {
         (Some(headline), Some(usec)) if !headline.is_empty() && usec > 0 => Some(LastError {
             headline,
@@ -378,7 +518,33 @@ fn parse_daemon_report(all: &gio::glib::Variant) -> DaemonReport {
         drops,
         input,
         last_error,
+        chain: crate::chain_notice::ChainState::parse(
+            &text("ChainStatus").unwrap_or_default(),
+            &text("ChainMissing").unwrap_or_default(),
+            &text("ChainMissingRequests").unwrap_or_default(),
+        ),
+        steps: None,
     }
+}
+
+/// The active chain's steps that are on, with their parameters, in the
+/// order they run.
+fn steps_line(settings: &myna_core::Settings) -> Option<String> {
+    let steps: Vec<String> = settings
+        .processing
+        .active()?
+        .steps
+        .iter()
+        .filter(|step| step.on)
+        .map(|step| {
+            let values: Vec<&str> = step.params.values().map(String::as_str).collect();
+            match values.as_slice() {
+                [] => step.step.clone(),
+                values => format!("{}={}", step.step, values.join("/")),
+            }
+        })
+        .collect();
+    (!steps.is_empty()).then(|| steps.join(", "))
 }
 
 fn local_time(usec: i64) -> String {
@@ -394,12 +560,19 @@ mod tests {
     use super::*;
     use gio::glib::variant::ToVariant;
 
-    fn reply(properties: &[(&str, gio::glib::Variant)]) -> gio::glib::Variant {
-        let dict = gio::glib::VariantDict::new(None);
-        for (name, value) in properties {
-            dict.insert_value(name, value);
+    fn reply(
+        properties: &[(&str, gio::glib::Variant)],
+    ) -> impl Fn(&str) -> Option<gio::glib::Variant> {
+        let properties: Vec<(String, gio::glib::Variant)> = properties
+            .iter()
+            .map(|(name, value)| ((*name).to_owned(), value.clone()))
+            .collect();
+        move |name| {
+            properties
+                .iter()
+                .find(|(have, _)| have == name)
+                .map(|(_, value)| value.clone())
         }
-        dict.end()
     }
 
     /// A daemon that predates the properties reads as "nothing to report",
@@ -408,6 +581,47 @@ mod tests {
     fn an_older_daemon_has_no_last_error_and_no_drop_count() {
         let report = parse_daemon_report(&reply(&[("State", "idle".to_variant())]));
         assert_eq!(report, DaemonReport::default());
+    }
+
+    /// Settings with `ids` as the steps of the active chain; `params` are
+    /// `<step>.<param>` keys, as the flat form used to carry them.
+    fn settings_with(ids: &[&str], params: &[(&str, &str)]) -> myna_core::Settings {
+        use myna_core::chains::ChainStep;
+        let mut settings = myna_core::Settings::default();
+        let steps = ids
+            .iter()
+            .map(|id| ChainStep {
+                step: (*id).to_owned(),
+                on: true,
+                params: params
+                    .iter()
+                    .filter_map(|(key, value)| {
+                        let (step, name) = key.split_once('.')?;
+                        (step == *id).then(|| (name.to_owned(), (*value).to_owned()))
+                    })
+                    .collect(),
+            })
+            .collect();
+        let id = settings.processing.add("c", steps);
+        settings.processing.activate(Some(&id));
+        settings
+    }
+
+    #[test]
+    fn the_steps_line_names_each_step_with_its_parameters() {
+        assert_eq!(steps_line(&settings_with(&[], &[])), None);
+        assert_eq!(
+            steps_line(&settings_with(
+                &["tidy", "translate", "script"],
+                &[
+                    ("translate.to", "fr"),
+                    ("script.mode", "simplified"),
+                    ("x.y", "z")
+                ]
+            )),
+            Some("tidy, translate=fr, script=simplified".to_owned())
+        );
+        assert_eq!(steps_line(&myna_core::Settings::default()), None);
     }
 
     #[test]
@@ -433,6 +647,24 @@ mod tests {
         assert_eq!(last.headline, "Model not running");
         assert_eq!(last.detail, "x is connected");
         assert!(last.at.starts_with("2025-"), "{}", last.at);
+    }
+
+    #[test]
+    fn the_chain_status_is_read_with_its_missing_tasks() {
+        use crate::chain_notice::ChainState;
+        let report = parse_daemon_report(&reply(&[
+            ("ChainStatus", "degraded".to_variant()),
+            ("ChainMissing", "text.translate".to_variant()),
+        ]));
+        assert_eq!(
+            report.chain,
+            Some(ChainState::Degraded(vec!["text.translate".into()]))
+        );
+        let report = parse_daemon_report(&reply(&[
+            ("ChainStatus", "".to_variant()),
+            ("ChainMissing", "".to_variant()),
+        ]));
+        assert_eq!(report.chain, None);
     }
 
     #[test]

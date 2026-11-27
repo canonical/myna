@@ -18,7 +18,7 @@ use myna_config::ports::{
     FailedStep, SystemConfigurator, SystemConfiguratorError, SystemConfiguratorFailure,
 };
 use myna_config::snap_changes::{parse_change, ChangeInProgress};
-use myna_config::snap_install::{follow_change, install, ChangeFailure, Follow};
+use myna_config::snap_install::{follow_change, install, remove, ChangeFailure, Follow};
 
 type Started = Result<Option<String>, SystemConfiguratorError>;
 
@@ -26,6 +26,7 @@ type Started = Result<Option<String>, SystemConfiguratorError>;
 struct Snapd {
     started: Rc<RefCell<VecDeque<Started>>>,
     installs: Rc<RefCell<Vec<String>>>,
+    removes: Rc<RefCell<Vec<String>>>,
     reads: Rc<RefCell<VecDeque<Result<ChangeInProgress, String>>>>,
 }
 
@@ -99,6 +100,18 @@ impl SystemConfigurator for Snapd {
             .borrow_mut()
             .pop_front()
             .expect("no more installs")
+    }
+
+    async fn remove_snap(
+        &self,
+        snap: &str,
+        _cancellation: CancellationToken,
+    ) -> Result<Option<String>, SystemConfiguratorError> {
+        self.removes.borrow_mut().push(snap.to_owned());
+        self.started
+            .borrow_mut()
+            .pop_front()
+            .expect("no more removes")
     }
 
     async fn snap_change(
@@ -365,4 +378,64 @@ fn an_install_whose_follow_is_cancelled_is_cancelled() {
     }));
 
     assert_eq!(outcome, Err(SystemConfiguratorError::Cancelled));
+}
+
+fn removed(ready: bool) -> serde_json::Value {
+    serde_json::json!({"id": "12", "kind": "remove-snap", "ready": ready,
+        "status": if ready { "Done" } else { "Doing" },
+        "summary": "Remove \"myna-whisper\" snap", "tasks": []})
+}
+
+#[test]
+fn a_remove_follows_its_change_to_the_end() {
+    let snapd = Snapd::starting(Ok(Some("12".to_owned())))
+        .then(removed(false))
+        .then(removed(true));
+
+    let outcome = block_on(remove(
+        &snapd,
+        "myna-whisper",
+        &follow(CancellationToken::new()),
+    ));
+
+    assert_eq!(outcome, Ok(()));
+    assert_eq!(*snapd.removes.borrow(), ["myna-whisper"]);
+    assert!(snapd.reads.borrow().is_empty(), "read until ready");
+}
+
+/// Removed elsewhere since the last read: no change to follow.
+#[test]
+fn removing_a_snap_that_is_gone_reads_no_change() {
+    let snapd = Snapd::starting(Ok(None));
+
+    let outcome = block_on(remove(
+        &snapd,
+        "myna-whisper",
+        &follow(CancellationToken::new()),
+    ));
+
+    assert_eq!(outcome, Ok(()));
+}
+
+#[test]
+fn a_failed_remove_names_its_request() {
+    let mut change = removed(true);
+    change["status"] = "Error".into();
+    change["err"] = "cannot remove: busy".into();
+    let snapd = Snapd::starting(Ok(Some("12".to_owned()))).then(change);
+
+    let outcome = block_on(remove(
+        &snapd,
+        "myna-whisper",
+        &follow(CancellationToken::new()),
+    ));
+
+    assert_eq!(
+        outcome,
+        Err(SystemConfiguratorError::snapd_execution(
+            "POST /v2/snaps/myna-whisper (remove)",
+            Some(202),
+            "cannot remove: busy",
+        ))
+    );
 }

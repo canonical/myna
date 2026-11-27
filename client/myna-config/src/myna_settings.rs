@@ -31,6 +31,8 @@ pub enum Placement {
     Dictation,
     /// The Model tab, and only while the active backend takes the setting.
     ActiveModel,
+    /// The Processing tab: the record of what was done.
+    ProcessingRecord,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -158,13 +160,14 @@ pub fn widget_plan(metadata: &ClientSettingMetadata) -> WidgetPlan {
         writable: metadata.writable(),
         placement: match metadata.key().as_str() {
             myna_core::settings::KEY_LANGUAGE => Placement::ActiveModel,
+            myna_core::settings::KEY_PROCESSING_HISTORY => Placement::ProcessingRecord,
             _ => Placement::Dictation,
         },
     }
 }
 
 /// The Dictation group's order; any other key follows, in the adapter's order.
-const DICTATION_ORDER: [&str; 6] = [
+const DICTATION_ORDER: [&str; 7] = [
     KEY_STREAMING_MODE,
     myna_core::settings::KEY_HUD_STYLE,
     myna_core::settings::KEY_SOUNDS,
@@ -172,6 +175,8 @@ const DICTATION_ORDER: [&str; 6] = [
     myna_core::settings::KEY_SILENCE_TIMEOUT,
     // Last: a row that opens a page of its own.
     myna_core::settings::KEY_VOCABULARY,
+    // The Processing tab.
+    myna_core::settings::KEY_PROCESSING_HISTORY,
 ];
 
 fn display_rank(key: &str) -> usize {
@@ -202,7 +207,124 @@ pub fn choice_display_label(choice: &str) -> String {
         "drop" => gettextrs::gettext("Water"),
         "radio" => gettextrs::gettext("Radio"),
         "koto" => gettextrs::gettext("Strings"),
+        "exact" => gettextrs::gettext("Exactly what I say"),
+        "tidy" => gettextrs::gettext("A tidied version"),
+        "tidy-french" => gettextrs::gettext("A French translation"),
+        // Translators: keep the Chinese in brackets; it names the script in
+        // that script.
+        "simplified" => gettextrs::gettext("Simplified (简体)"),
+        "traditional" => gettextrs::gettext("Traditional (繁體)"),
+        "traditional-taiwan" => gettextrs::gettext("Traditional, Taiwan (繁體)"),
+        "traditional-hongkong" => gettextrs::gettext("Traditional, Hong Kong (繁體)"),
         unknown => unknown.to_owned(),
+    }
+}
+
+/// A recorded dictation as the Processing tab lists it: what was typed, under
+/// it what was heard when that differs, and, shown when the row is opened,
+/// what did the work, as label and value.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PastDictation {
+    pub typed: String,
+    pub detail: String,
+    pub made_by: Vec<(String, String)>,
+}
+
+/// How many recorded dictations a page of the list builds, newest first.
+pub const PAST_DICTATIONS_PAGE: usize = 20;
+
+/// The most recorded dictations the list reads from the record.
+pub const PAST_DICTATIONS_READ: usize = 1000;
+
+pub fn past_dictation(entry: &myna_core::history::Entry) -> PastDictation {
+    use myna_core::history::Outcome;
+    let not_typed = match entry.outcome {
+        Some(Outcome::FocusLost) => Some(gettextrs::gettext("Not typed: focus left the field")),
+        Some(Outcome::Refused) => Some(gettextrs::gettext("Not typed: the field refused it")),
+        Some(Outcome::Discarded) => {
+            Some(gettextrs::gettext("Not typed: the dictation was cancelled"))
+        }
+        Some(Outcome::Empty) => Some(gettextrs::gettext("Nothing to type")),
+        Some(Outcome::Typed) | None => None,
+    };
+    let lost = not_typed.is_some();
+    let detail = if let Some(why) = not_typed {
+        why
+    } else if entry.heard.trim() == entry.typed.trim() {
+        gettextrs::gettext("Typed as heard")
+    } else {
+        gettextrs::gettext("Heard: {heard}").replace("{heard}", entry.heard.trim())
+    };
+    let mut made_by = Vec::new();
+    if let Some(model) = &entry.speech_model {
+        made_by.push((gettextrs::gettext("Speech model"), model.clone()));
+    }
+    // The saved chain's name as it was then; an older record names only
+    // the steps.
+    match (&entry.chain_name, &entry.chain) {
+        (Some(name), _) => made_by.push((gettextrs::gettext("Chain"), name.clone())),
+        (None, Some(chain)) => made_by.push((
+            gettextrs::gettext("Processing"),
+            choice_display_label(chain),
+        )),
+        (None, None) => {}
+    }
+    for step in &entry.steps {
+        let label = match step.task.as_str() {
+            "text.cleanup" => gettextrs::gettext("Tidying"),
+            "text.translate" => gettextrs::gettext("Translation"),
+            task => task.to_owned(),
+        };
+        // Translators: how long a step took, in milliseconds.
+        let took = gettextrs::gettext("{ms} ms").replace("{ms}", &step.ms.to_string());
+        let ran = match &step.model {
+            Some(model) => format!("{model}, {took}"),
+            None => took,
+        };
+        let value = match &step.skipped {
+            // Translators: a step whose result was not used, how it ran and why.
+            Some(why) => gettextrs::gettext("Not used ({ran}): {why}")
+                .replace("{ran}", &ran)
+                .replace("{why}", &skip_reason(*why)),
+            None => ran,
+        };
+        made_by.push((label, value));
+    }
+    if let Some(dead_air) = entry.dead_air_ms {
+        // Translators: the wait after you stopped speaking until the text
+        // appeared, then how much of it was hearing and typing, in ms.
+        let wait = gettextrs::gettext("{total} ms ({heard} ms to hear, {typed} ms to type)")
+            .replace("{total}", &dead_air.to_string())
+            .replace("{heard}", &entry.asr_tail_ms.unwrap_or(0).to_string())
+            .replace("{typed}", &entry.inject_ms.unwrap_or(0).to_string());
+        made_by.push((gettextrs::gettext("Wait after you stopped"), wait));
+    }
+    if let Some(version) = &entry.version {
+        made_by.push((gettextrs::gettext("Myna version"), version.clone()));
+    }
+    // What was said is all there is to recover when nothing was typed.
+    let shown = if lost { &entry.heard } else { &entry.typed };
+    PastDictation {
+        typed: shown.trim().to_owned(),
+        detail,
+        made_by,
+    }
+}
+
+/// Why a step's answer was not used, in the user's words.
+fn skip_reason(why: myna_core::history::Skip) -> String {
+    use myna_core::history::Skip;
+    match why {
+        Skip::NoModel => gettextrs::gettext("no model was reachable"),
+        Skip::Refused => gettextrs::gettext("the model could not answer"),
+        Skip::Timeout => gettextrs::gettext("the model was too slow"),
+        Skip::Empty => gettextrs::gettext("the answer was empty"),
+        Skip::NewWord => gettextrs::gettext("the answer added or moved words"),
+        Skip::TooManyDropped => gettextrs::gettext("the answer left out too much"),
+        Skip::LongDrop => gettextrs::gettext("the answer left out too many words in a row"),
+        Skip::DroppedNegation => gettextrs::gettext("the answer left out a “not”"),
+        Skip::OddLength => gettextrs::gettext("the answer was far shorter or longer"),
+        Skip::Other => gettextrs::gettext("for a reason this version does not know"),
     }
 }
 

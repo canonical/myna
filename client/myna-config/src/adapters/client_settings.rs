@@ -10,7 +10,11 @@ use crate::domain::{
 use crate::ports::{
     ClientSettings, ClientSettingsCallback, ClientSettingsError, ClientSettingsSubscription,
 };
+use myna_core::chains::Processing;
 use myna_core::settings::SCHEMA_ID;
+
+/// The chain keys, which have their own page and no row of their own.
+const STORED_KEYS: [&str; 2] = myna_core::chains::KEYS;
 
 #[derive(Debug)]
 pub struct GioClientSettings {
@@ -56,6 +60,56 @@ impl GioClientSettings {
         Ok(Self { schema, settings })
     }
 
+    /// The saved chains and the active one.
+    pub fn processing(&self) -> Processing {
+        Processing::read(&self.settings)
+    }
+
+    /// Store `processing` in one apply.
+    pub fn set_processing(&self, processing: &Processing) -> Result<(), ClientSettingsError> {
+        for key in STORED_KEYS {
+            self.ensure_writable(key)?;
+        }
+        processing
+            .write(&self.settings)
+            .map_err(|error| ClientSettingsError::InvalidValue {
+                key: myna_core::chains::KEY_CHAINS.to_owned(),
+                message: error.to_string(),
+            })
+    }
+
+    /// Call `callback` once per change to the chains or the active chain,
+    /// however many of them changed together, until the returned value is
+    /// dropped.
+    pub fn watch_steps(
+        &self,
+        callback: impl Fn() + 'static,
+    ) -> Box<dyn ClientSettingsSubscription> {
+        let last = std::cell::RefCell::new(self.processing());
+        let handler = myna_core::chains::on_change_event(&self.settings, move |settings| {
+            let now = Processing::read(settings);
+            if now != *last.borrow() {
+                last.replace(now);
+                callback();
+            }
+        });
+        Box::new(GioSubscription {
+            settings: self.settings.clone(),
+            handler: Some(handler),
+        })
+    }
+
+    /// The `language` setting; empty when the model decides.
+    pub fn language(&self) -> String {
+        if self.schema.has_key(myna_core::settings::KEY_LANGUAGE) {
+            self.settings
+                .string(myna_core::settings::KEY_LANGUAGE)
+                .to_string()
+        } else {
+            String::new()
+        }
+    }
+
     fn schema_key(&self, key: &str) -> Result<gio::SettingsSchemaKey, ClientSettingsError> {
         if !self.schema.has_key(key) {
             return Err(ClientSettingsError::UnknownKey {
@@ -93,7 +147,9 @@ impl GioClientSettings {
 impl ClientSettings for GioClientSettings {
     fn list(&self) -> Result<Vec<ClientSettingMetadata>, ClientSettingsError> {
         let mut keys = self.schema.list_keys();
-        keys.retain(|key| holds(&self.schema.key(key).value_type()));
+        keys.retain(|key| {
+            holds(&self.schema.key(key).value_type()) && !STORED_KEYS.contains(&key.as_str())
+        });
         keys.sort();
         keys.iter().map(|key| self.metadata(key)).collect()
     }
@@ -155,7 +211,7 @@ impl ClientSettings for GioClientSettings {
         let settings = self.settings.clone();
         let schema = self.schema.clone();
         let handler = settings.connect_changed(None, move |settings, key| {
-            if !schema.has_key(key) {
+            if STORED_KEYS.contains(&key) || !schema.has_key(key) {
                 return;
             }
             let schema_key = schema.key(key);

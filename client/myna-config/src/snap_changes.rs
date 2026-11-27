@@ -175,6 +175,17 @@ pub fn pending_install<'a>(
         .find(|change| change.kind == "install-snap" && names(&change.summary, &[snap]))
 }
 
+/// The install a component request of `snap` runs as, whichever snapd calls
+/// it (`install-snap` or `install-component`).
+pub fn pending_component_install<'a>(
+    changes: &'a [ChangeInProgress],
+    snap: &str,
+) -> Option<&'a ChangeInProgress> {
+    changes
+        .iter()
+        .find(|change| change.kind.starts_with("install") && names(&change.summary, &[snap]))
+}
+
 /// The `result` of a changes listing, without the changes snapd has
 /// finished: `select=in-progress` still lists a held one, `Hold` and ready.
 pub fn parse_changes(result: serde_json::Value) -> Result<Vec<ChangeInProgress>, String> {

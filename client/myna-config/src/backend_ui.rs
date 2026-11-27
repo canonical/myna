@@ -2146,6 +2146,7 @@ impl BackendUi {
         };
         DiagnosticInput {
             inventory_complete: self.inventory_complete.get(),
+            text_providers: Vec::new(),
             system,
             machine,
             daemon,

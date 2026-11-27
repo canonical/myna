@@ -184,6 +184,202 @@ fn discovers_installed_connected_and_unconnected_backends_once() {
 }
 
 #[test]
+fn discovery_reads_myna_role_from_provider_env_to_partition_speech_and_text_snaps() {
+    let dir =
+        std::env::temp_dir().join(format!("myna-config-role-discovery-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let write_env = |snap: &str, sub: &str, body: &str| {
+        let target = dir.join(snap).join(sub);
+        std::fs::create_dir_all(&target).unwrap();
+        std::fs::write(target.join("provider.env"), body).unwrap();
+    };
+    write_env(
+        "myna-nemotron",
+        "common/share/provider",
+        "SNAP_NAME=myna-nemotron\nSNAP_INSTANCE_NAME=myna-nemotron\nUNIX_SOCKET=myna.sock\nMYNA_ROLE=speech\n",
+    );
+    write_env(
+        "myna-text",
+        "common/share/provider",
+        "SNAP_NAME=myna-text\nSNAP_INSTANCE_NAME=myna-text\nUNIX_SOCKET=text.sock\nMYNA_ROLE=text\n",
+    );
+
+    let connections: ContentConnections = serde_json::from_value(serde_json::json!({
+        "slots": [
+            {
+                "snap": "myna-nemotron",
+                "slot": "provider",
+                "interface": "content",
+                "attrs": {
+                    "content": "inference-provider",
+                    "source": { "write": ["$SNAP_COMMON/share/provider"] }
+                },
+                "connections": [{ "snap": "myna", "plug": "backend" }]
+            },
+            {
+                "snap": "myna-text",
+                "slot": "provider",
+                "interface": "content",
+                "attrs": {
+                    "content": "inference-provider",
+                    "source": { "write": ["$SNAP_COMMON/share/provider"] }
+                },
+                "connections": [{ "snap": "myna", "plug": "backend" }]
+            },
+            {
+                "snap": "gemma4",
+                "slot": "provider",
+                "interface": "content",
+                "attrs": {
+                    "content": "inference-provider",
+                    "source": { "read": ["$SNAP_COMMON/share/provider"] }
+                },
+                "connections": [{ "snap": "myna", "plug": "backend" }]
+            }
+        ]
+    }))
+    .unwrap();
+
+    let runner = FakeCommandRunner::default();
+    let snapd = Arc::new(FakeSnapd::answering(Ok(Vec::new()), Ok(connections)));
+    let repository = SnapBackendRepository::with_snap_root(Arc::new(runner.clone()), snapd, &dir);
+
+    let discovered =
+        block_on(repository.discover(CancellationToken::new())).expect("discovery succeeds");
+    let _ = std::fs::remove_dir_all(&dir);
+
+    assert_eq!(
+        discovered.backends(),
+        &[BackendIdentity::new("myna-nemotron", "provider")]
+    );
+    assert_eq!(
+        discovered.active_state(),
+        ActiveBackendState::Connected(BackendIdentity::new("myna-nemotron", "provider"))
+    );
+    assert_eq!(
+        discovered.text_providers(),
+        &[
+            BackendIdentity::new("gemma4", "provider"),
+            BackendIdentity::new("myna-text", "provider"),
+        ]
+    );
+    assert!(discovered.strays().is_empty());
+    assert!(runner.calls().is_empty());
+}
+
+/// A text-model snap as snapd mounts it: `current` names the revision and
+/// every installed component sits under `components/<revision>/`, with its
+/// manifest in it. A component that is not installed has no directory.
+#[test]
+fn discovery_lists_the_models_a_text_snap_has_installed() {
+    let dir = std::env::temp_dir().join(format!("myna-config-text-offers-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let write = |path: &str, body: &str| {
+        let file = dir.join(path);
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(file, body).unwrap();
+    };
+    let share = "common/share/provider/provider.env";
+    write(
+        &format!("data/myna-text/{share}"),
+        "SNAP_NAME=myna-text\nMYNA_ROLE=text\n",
+    );
+    write(
+        &format!("data/idle-text/{share}"),
+        "SNAP_NAME=idle-text\nMYNA_ROLE=text\n",
+    );
+    write(
+        &format!("data/odd-text/{share}"),
+        "SNAP_NAME=odd-text\nMYNA_ROLE=text\n",
+    );
+    write(
+        "mount/escape/components/model-x/myna-text-model.json",
+        r#"{"task":"text.cleanup","language":"en"}"#,
+    );
+    std::fs::create_dir_all(dir.join("mount/odd-text")).unwrap();
+    std::os::unix::fs::symlink("../escape", dir.join("mount/odd-text/current")).unwrap();
+    write(
+        "mount/myna-text/components/x1/model-translate-en-fr/myna-text-model.json",
+        r#"{"kind":"translate","id":"bergamot-base-memory-en-fr","task":"text.translate","language":"en","to":"fr","license":"MPL-2.0","attribution":"Mozilla"}"#,
+    );
+    write(
+        "mount/myna-text/components/x1/model-disfluency-en/myna-text-model.json",
+        r#"{"kind":"disfluency-tagger","id":"myna-disfluency-en","task":"text.cleanup","language":"en","tau":0.9}"#,
+    );
+    write(
+        "mount/myna-text/components/x1/model-broken/myna-text-model.json",
+        "not json",
+    );
+    std::fs::create_dir_all(dir.join("mount/myna-text/components/x0/model-old")).unwrap();
+    std::os::unix::fs::symlink("x1", dir.join("mount/myna-text/current")).unwrap();
+    let slot = |snap: &str, connected: bool| {
+        serde_json::json!({
+            "snap": snap,
+            "slot": "provider",
+            "interface": "content",
+            "attrs": {
+                "content": "inference-provider",
+                "source": { "write": ["$SNAP_COMMON/share/provider"] }
+            },
+            "connections": if connected {
+                serde_json::json!([{ "snap": "myna", "plug": "backend" }])
+            } else {
+                serde_json::json!([])
+            }
+        })
+    };
+    let connections: ContentConnections = serde_json::from_value(serde_json::json!({
+        "slots": [slot("myna-text", true), slot("idle-text", false), slot("odd-text", false)]
+    }))
+    .unwrap();
+    let snapd = Arc::new(FakeSnapd::answering(Ok(Vec::new()), Ok(connections)));
+    let repository = SnapBackendRepository::with_snap_root(
+        Arc::new(FakeCommandRunner::default()),
+        snapd,
+        dir.join("data"),
+    )
+    .with_mount_root(dir.join("mount"));
+
+    let discovered =
+        block_on(repository.discover(CancellationToken::new())).expect("discovery succeeds");
+    let _ = std::fs::remove_dir_all(&dir);
+
+    let offers = discovered.text_offers();
+    assert_eq!(offers.len(), 3, "{offers:?}");
+    let idle = &offers[0];
+    assert_eq!(
+        idle.identity(),
+        &BackendIdentity::new("idle-text", "provider")
+    );
+    assert!(!idle.connected());
+    assert!(idle.models().is_empty());
+    let text = &offers[1];
+    assert_eq!(
+        text.identity(),
+        &BackendIdentity::new("myna-text", "provider")
+    );
+    assert!(text.connected());
+    let models: Vec<_> = text
+        .models()
+        .iter()
+        .map(|model| (model.task(), model.language(), model.to()))
+        .collect();
+    assert_eq!(
+        models,
+        [
+            ("text.cleanup", "en", None),
+            ("text.translate", "en", Some("fr"))
+        ]
+    );
+    let credit: Vec<_> = text
+        .models()
+        .iter()
+        .map(|model| (model.license(), model.attribution()))
+        .collect();
+    assert_eq!(credit, [("", ""), ("MPL-2.0", "Mozilla")]);
+}
+
+#[test]
 fn no_installed_backends_is_a_successful_empty_discovery() {
     let (repository, _, _) = snapd_repository(FakeSnapd::answering(
         Ok(Vec::new()),
@@ -725,4 +921,81 @@ fn every_read_surface_can_fail_without_discarding_the_others() {
             "only {expected_surface:?} should fail"
         );
     }
+}
+
+#[test]
+fn provider_role_discovery_expands_snap_data_and_rejects_escaping_paths() {
+    let dir = std::env::temp_dir().join(format!("myna-config-role-edge-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let data_dir = dir.join("custom-speech").join("current/share");
+    std::fs::create_dir_all(&data_dir).unwrap();
+    std::fs::write(data_dir.join("provider.env"), "MYNA_ROLE=speech\n").unwrap();
+    let bare_common = dir.join("bare-speech").join("common");
+    std::fs::create_dir_all(&bare_common).unwrap();
+    std::fs::write(bare_common.join("provider.env"), "MYNA_ROLE=speech\n").unwrap();
+    // Outside snap dir: must never be read via ../ traversal.
+    std::fs::write(dir.join("provider.env"), "MYNA_ROLE=speech\n").unwrap();
+
+    let connections: ContentConnections = serde_json::from_value(serde_json::json!({
+        "slots": [
+            {
+                "snap": "custom-speech",
+                "slot": "provider",
+                "attrs": {
+                    "content": "inference-provider",
+                    "source": { "read": ["$SNAP_DATA/share"] }
+                },
+                "connections": [{ "snap": "myna", "plug": "backend" }]
+            },
+            {
+                "snap": "bare-speech",
+                "slot": "provider",
+                "attrs": {
+                    "content": "inference-provider",
+                    "source": { "write": ["$SNAP_COMMON"] }
+                },
+                "connections": []
+            },
+            {
+                "snap": "escaping-slot",
+                "slot": "provider",
+                "attrs": {
+                    "content": "inference-provider",
+                    "source": { "write": ["$SNAP_COMMON/../..", "/etc"] }
+                },
+                "connections": [{ "snap": "myna", "plug": "backend" }]
+            },
+            {
+                "snap": "../bad-snap",
+                "slot": "provider",
+                "attrs": {
+                    "content": "inference-provider",
+                    "source": { "write": ["$SNAP_COMMON"] }
+                },
+                "connections": [{ "snap": "myna", "plug": "backend" }]
+            }
+        ]
+    }))
+    .unwrap();
+
+    let runner = FakeCommandRunner::default();
+    let snapd = Arc::new(FakeSnapd::answering(Ok(Vec::new()), Ok(connections)));
+    let repository = SnapBackendRepository::with_snap_root(Arc::new(runner), snapd, &dir);
+    let discovered = block_on(repository.discover(CancellationToken::new())).unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+
+    assert_eq!(
+        discovered.backends(),
+        &[
+            BackendIdentity::new("bare-speech", "provider"),
+            BackendIdentity::new("custom-speech", "provider"),
+        ]
+    );
+    assert_eq!(
+        discovered.text_providers(),
+        &[
+            BackendIdentity::new("../bad-snap", "provider"),
+            BackendIdentity::new("escaping-slot", "provider"),
+        ]
+    );
 }

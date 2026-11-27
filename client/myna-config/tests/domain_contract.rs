@@ -130,17 +130,19 @@ fn connections_discover_a_provider_whose_slot_is_not_named_provider() {
 }
 
 #[test]
-fn connections_count_only_providers_that_transcribe_speech() {
-    // gemma4, an LLM inference snap, shares the same content id with no task;
-    // a connection to it is no model at all.
+fn connections_preserve_text_and_llm_providers_instead_of_marking_them_stray() {
+    // gemma4 and myna-text share the inference-provider content id; connected
+    // alongside or without a speech model, they are preserved text providers,
+    // never listed as speech models and never disconnected as strays.
     let snapshot = snapshot_of(json!([
         slot("gemma4", "provider", provider(), true),
+        slot("myna-text", "provider", provider(), true),
         slot("community-asr", "provider", speech_provider(), false),
         slot(
             "other-llm",
             "provider",
             json!({ "content": "inference-provider", "task": "text-generation" }),
-            false,
+            true,
         ),
     ]));
     assert_eq!(
@@ -149,9 +151,14 @@ fn connections_count_only_providers_that_transcribe_speech() {
     );
     assert_eq!(snapshot.active_state(), ActiveBackendState::Disconnected);
     assert_eq!(
-        snapshot.strays(),
-        &[BackendIdentity::new("gemma4", "provider")]
+        snapshot.text_providers(),
+        &[
+            BackendIdentity::new("gemma4", "provider"),
+            BackendIdentity::new("myna-text", "provider"),
+            BackendIdentity::new("other-llm", "provider"),
+        ]
     );
+    assert!(snapshot.strays().is_empty());
 }
 
 #[test]
@@ -162,6 +169,23 @@ fn connections_count_a_published_myna_model_without_a_task() {
         snapshot.active_state(),
         ActiveBackendState::Connected(BackendIdentity::new("myna-funasr", "provider"))
     );
+}
+
+/// Nemotron is no family Settings offers to install, but it is a Myna speech
+/// model: the store's revisions predate `MYNA_ROLE=speech` in provider.env
+/// (48d42907), and connected it must not pass for an LLM companion.
+#[test]
+fn connections_count_published_nemotron_as_speech_without_a_role() {
+    let snapshot = snapshot_of(json!([slot("myna-nemotron", "provider", provider(), true)]));
+    assert_eq!(
+        snapshot.backends(),
+        &[BackendIdentity::new("myna-nemotron", "provider")]
+    );
+    assert_eq!(
+        snapshot.active_state(),
+        ActiveBackendState::Connected(BackendIdentity::new("myna-nemotron", "provider"))
+    );
+    assert!(snapshot.text_providers().is_empty());
 }
 
 #[test]

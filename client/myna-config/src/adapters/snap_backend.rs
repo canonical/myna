@@ -1,7 +1,9 @@
 use std::collections::BTreeMap;
+use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
+use myna_core::provider_env::{parse_env, DeclaredRole, PROVIDER_ENV_FILENAME};
 
 use crate::adapters::snapd_client::{SnapdError, SnapdReads};
 use crate::command::{
@@ -9,17 +11,25 @@ use crate::command::{
 };
 use crate::diagnostics::InstalledSnap;
 use crate::domain::{
-    connection_snapshot, parse_engine_options, parse_model_options, parse_modelctl_config,
-    parse_status, BackendIdentity, BackendSnapshot, BackendSurface, BackendSurfaceError,
-    ConnectionSnapshot, ParseError,
+    connection_snapshot_with_roles, parse_engine_options, parse_model_options,
+    parse_modelctl_config, parse_status, BackendIdentity, BackendSnapshot, BackendSurface,
+    BackendSurfaceError, ConnectionSnapshot, ContentConnections, ContentSlot, ParseError,
+    TextModel,
 };
 use crate::ports::BackendRepository;
 
+const DEFAULT_SNAP_ROOT: &str = "/var/snap";
+const DEFAULT_MOUNT_ROOT: &str = "/snap";
+/// The manifest a text-model component carries at its root.
+const TEXT_MODEL_MANIFEST: &str = "myna-text-model.json";
 const MAX_MODELCTL_CANDIDATES: usize = 4;
 
 pub struct SnapBackendRepository {
     runner: Arc<dyn CommandRunner>,
     snapd: Arc<dyn SnapdReads>,
+    snap_root: PathBuf,
+    /// Where snapd mounts each snap and its components.
+    mount_root: Option<PathBuf>,
     modelctl_cache: Mutex<ModelctlCache>,
 }
 
@@ -42,11 +52,27 @@ enum ModelctlResolution {
 
 impl SnapBackendRepository {
     pub fn new(runner: Arc<dyn CommandRunner>, snapd: Arc<dyn SnapdReads>) -> Self {
+        Self::with_snap_root(runner, snapd, DEFAULT_SNAP_ROOT).with_mount_root(DEFAULT_MOUNT_ROOT)
+    }
+
+    pub fn with_snap_root(
+        runner: Arc<dyn CommandRunner>,
+        snapd: Arc<dyn SnapdReads>,
+        snap_root: impl Into<PathBuf>,
+    ) -> Self {
         Self {
             runner,
             snapd,
+            snap_root: snap_root.into(),
+            mount_root: None,
             modelctl_cache: Mutex::new(ModelctlCache::default()),
         }
+    }
+
+    /// Where snapd mounts snaps, `/snap`. Left unset, no text model is found.
+    pub fn with_mount_root(mut self, mount_root: impl Into<PathBuf>) -> Self {
+        self.mount_root = Some(mount_root.into());
+        self
     }
 
     async fn command(
@@ -267,11 +293,34 @@ impl BackendRepository for SnapBackendRepository {
         &self,
         cancellation: CancellationToken,
     ) -> Result<ConnectionSnapshot, BackendSurfaceError> {
-        self.snapd
+        let connections = self
+            .snapd
             .content_connections(cancellation)
             .await
-            .map(|connections| connection_snapshot(&connections))
-            .map_err(|error| snapd_error(BackendSurface::Connections, error))
+            .map_err(|error| snapd_error(BackendSurface::Connections, error))?;
+        if !connections
+            .slots()
+            .iter()
+            .any(ContentSlot::is_inference_provider)
+        {
+            return Ok(connection_snapshot_with_roles(
+                &connections,
+                &BTreeMap::new(),
+            ));
+        }
+        let snap_root = self.snap_root.clone();
+        let mount_root = self.mount_root.clone();
+        gio::spawn_blocking(move || {
+            snapshot_reading_provider_roles(&connections, &snap_root, mount_root.as_deref())
+        })
+        .await
+        .map_err(|_| {
+            BackendSurfaceError::new(
+                BackendSurface::Connections,
+                "provider role discovery task panicked",
+                "",
+            )
+        })
     }
 
     async fn read_snapshot(
@@ -325,6 +374,105 @@ impl BackendRepository for SnapBackendRepository {
         }
         self.discover(cancellation).await
     }
+}
+
+fn snapshot_reading_provider_roles(
+    connections: &ContentConnections,
+    snap_root: &Path,
+    mount_root: Option<&Path>,
+) -> ConnectionSnapshot {
+    let mut roles = BTreeMap::new();
+    for slot in connections.slots() {
+        if !slot.is_inference_provider() {
+            continue;
+        }
+        if let Some(role) = read_slot_role(snap_root, slot) {
+            roles.insert(
+                (slot.snap_name().to_owned(), slot.slot_name().to_owned()),
+                role,
+            );
+        }
+    }
+    connection_snapshot_with_roles(connections, &roles).reading_text_models(|backend| {
+        mount_root.map_or_else(Vec::new, |root| read_text_models(root, backend.snap_name()))
+    })
+}
+
+/// The models a text snap has installed: each component's manifest, under
+/// the revision `current` points at. A component that is not installed has no
+/// directory, and one whose manifest does not read is not a model.
+fn read_text_models(mount_root: &Path, snap: &str) -> Vec<TextModel> {
+    if !is_single_normal_component(snap) {
+        return Vec::new();
+    }
+    let snap_dir = mount_root.join(snap);
+    let Ok(revision) = std::fs::read_link(snap_dir.join("current")) else {
+        return Vec::new();
+    };
+    if !is_single_normal_component(&revision.to_string_lossy()) {
+        return Vec::new();
+    }
+    let Ok(components) = std::fs::read_dir(snap_dir.join("components").join(revision)) else {
+        return Vec::new();
+    };
+    let mut models: Vec<TextModel> = components
+        .filter_map(Result::ok)
+        .filter_map(|component| {
+            let text = std::fs::read_to_string(component.path().join(TEXT_MODEL_MANIFEST)).ok()?;
+            let manifest: serde_json::Value = serde_json::from_str(&text).ok()?;
+            let field = |key: &str| manifest.get(key)?.as_str().map(str::to_owned);
+            Some(
+                TextModel::new(field("task")?, field("language")?, field("to")).with_credit(
+                    field("license").unwrap_or_default(),
+                    field("attribution").unwrap_or_default(),
+                ),
+            )
+        })
+        .collect();
+    models.sort_by(|a, b| (a.task(), a.language(), a.to()).cmp(&(b.task(), b.language(), b.to())));
+    models
+}
+
+fn read_slot_role(snap_root: &Path, slot: &ContentSlot) -> Option<DeclaredRole> {
+    let snap = slot.snap_name();
+    if !is_single_normal_component(snap) {
+        return None;
+    }
+    for raw in slot.share_source_dirs() {
+        let Some(dir) = expand_snap_share_dir(snap_root, snap, raw) else {
+            continue;
+        };
+        let Ok(text) = std::fs::read_to_string(dir.join(PROVIDER_ENV_FILENAME)) else {
+            continue;
+        };
+        if let Some(env) = parse_env(&text) {
+            if let Some(role) = DeclaredRole::from_env(&env) {
+                return Some(role);
+            }
+        }
+    }
+    None
+}
+
+fn expand_snap_share_dir(snap_root: &Path, snap: &str, source: &str) -> Option<PathBuf> {
+    let (base, rest) = if let Some(rest) = source.strip_prefix("$SNAP_COMMON") {
+        (snap_root.join(snap).join("common"), rest)
+    } else {
+        let rest = source.strip_prefix("$SNAP_DATA")?;
+        (snap_root.join(snap).join("current"), rest)
+    };
+    if rest.is_empty() {
+        return Some(base);
+    }
+    let rel = Path::new(rest.strip_prefix('/')?);
+    rel.components()
+        .all(|c| matches!(c, Component::Normal(_) | Component::CurDir))
+        .then(|| base.join(rel))
+}
+
+fn is_single_normal_component(name: &str) -> bool {
+    let mut components = Path::new(name).components();
+    matches!(components.next(), Some(Component::Normal(_))) && components.next().is_none()
 }
 
 fn parse_snap_commands(output: &str, snap: &str) -> Vec<String> {

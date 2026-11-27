@@ -20,6 +20,17 @@ pub fn install_request(snap: &str) -> String {
     format!("POST /v2/snaps/{snap} (install, {INSTALL_CHANNEL})")
 }
 
+/// How a failure report names the request that removes `snap`.
+pub fn remove_request(snap: &str) -> String {
+    format!("POST /v2/snaps/{snap} (remove)")
+}
+
+/// How a failure report names the request that changes components of `snap`.
+pub fn components_request(snap: &str, install: bool) -> String {
+    let action = if install { "install" } else { "remove" };
+    format!("POST /v2/snaps/{snap} ({action} components)")
+}
+
 /// How every store error line starts in the journal.
 pub const STORE_ERROR_PREFIX: &str = "myna-config: store: ";
 
@@ -128,17 +139,43 @@ async fn install_once(
     };
     follow_change(configurator, &change_id, expected_bytes, follow, report)
         .await
-        .map_err(|failure| match failure {
-            ChangeFailure::Cancelled => SystemConfiguratorError::Cancelled,
-            ChangeFailure::Failed(message) => {
-                SystemConfiguratorError::snapd_execution(install_request(snap), Some(202), message)
-            }
-            ChangeFailure::Unreadable(message) => SystemConfiguratorError::snapd_execution(
-                format!("GET /v2/changes/{change_id}"),
-                None,
-                message,
-            ),
-        })
+        .map_err(|failure| change_error(install_request(snap), &change_id, failure))
+}
+
+/// Remove `snap`, components and all, as the user, and follow the change to
+/// its end.
+pub async fn remove(
+    configurator: &dyn SystemConfigurator,
+    snap: &str,
+    follow: &Follow<'_>,
+) -> Result<(), SystemConfiguratorError> {
+    let Some(change_id) = configurator
+        .remove_snap(snap, follow.cancellation.clone())
+        .await?
+    else {
+        return Ok(());
+    };
+    follow_change(configurator, &change_id, 0, follow, &|_| {})
+        .await
+        .map_err(|failure| change_error(remove_request(snap), &change_id, failure))
+}
+
+fn change_error(
+    request: String,
+    change_id: &str,
+    failure: ChangeFailure,
+) -> SystemConfiguratorError {
+    match failure {
+        ChangeFailure::Cancelled => SystemConfiguratorError::Cancelled,
+        ChangeFailure::Failed(message) => {
+            SystemConfiguratorError::snapd_execution(request, Some(202), message)
+        }
+        ChangeFailure::Unreadable(message) => SystemConfiguratorError::snapd_execution(
+            format!("GET /v2/changes/{change_id}"),
+            None,
+            message,
+        ),
+    }
 }
 
 /// Follow change `change_id` until snapd is done with it, whoever started it.

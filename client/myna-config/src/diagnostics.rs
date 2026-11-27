@@ -43,10 +43,36 @@ const SENSITIVE_KEY_SUBSTRINGS: &[&str] = &[
 ];
 
 /// One installed snap as `GET /v2/snaps` lists it.
-#[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Deserialize)]
 pub struct InstalledSnap {
     pub name: String,
     pub version: String,
+    /// Bytes on disk of the snap itself, components apart.
+    #[serde(rename = "installed-size", default)]
+    pub installed_size: u64,
+    /// Every component the snap declares, installed or not.
+    #[serde(default)]
+    pub components: Vec<SnapComponent>,
+}
+
+/// One component of a snap as `GET /v2/snaps` lists it.
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Deserialize)]
+pub struct SnapComponent {
+    pub name: String,
+    #[serde(default)]
+    pub summary: String,
+    /// Bytes on disk; snapd names it only for an installed component.
+    #[serde(rename = "installed-size", default)]
+    pub installed_size: u64,
+    /// When it was installed; snapd names it only for an installed one.
+    #[serde(rename = "install-date", default)]
+    pub install_date: Option<String>,
+}
+
+impl SnapComponent {
+    pub fn installed(&self) -> bool {
+        self.install_date.is_some()
+    }
 }
 
 /// Per-backend diagnostic summary.
@@ -61,6 +87,16 @@ pub struct BackendDiagnostic {
     pub memory: Option<ProcessMemory>,
     /// One already-worded sentence per problem. Never a command line.
     pub problems: Vec<String>,
+}
+
+/// A text-model snap: what it carries and whether Myna uses it.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct TextProviderDiagnostic {
+    pub snap_name: String,
+    pub version: String,
+    pub connected: bool,
+    /// What its installed components provide.
+    pub models: Vec<crate::domain::TextModel>,
 }
 
 /// Connection state rendered in diagnostics.
@@ -90,6 +126,7 @@ pub struct DiagnosticInput {
     /// claiming a clock it did not measure.
     pub performance: Option<PerformanceFacts>,
     pub backends: Vec<BackendDiagnostic>,
+    pub text_providers: Vec<TextProviderDiagnostic>,
     pub problems: Vec<String>,
 }
 
@@ -565,6 +602,16 @@ fn render_body(
                     &input_summary(input),
                 );
             }
+            if let Some(chain) = &report.chain {
+                field(
+                    &mut out,
+                    &gettextrs::gettext("Processing"),
+                    &chain.summary(),
+                );
+            }
+            if let Some(steps) = &report.steps {
+                field(&mut out, &gettextrs::gettext("Processing steps"), steps);
+            }
             field(
                 &mut out,
                 &gettextrs::gettext("Last error"),
@@ -643,6 +690,53 @@ fn render_body(
                 &memory_summary(memory),
             );
         }
+        if backend.connection == DiagnosticConnection::NotConnected {
+            for problem in &backend.problems {
+                field(&mut out, &gettextrs::gettext("Note"), problem);
+            }
+        }
+    }
+
+    out.push('\n');
+    out.push_str(&gettextrs::gettext("Text models"));
+    out.push_str(":\n");
+    if input.text_providers.is_empty() {
+        out.push_str("  ");
+        out.push_str(&gettextrs::gettext("(none)"));
+        out.push('\n');
+    }
+    let chain = input
+        .daemon_report
+        .as_ref()
+        .and_then(|report| report.chain.as_ref());
+    for provider in &input.text_providers {
+        out.push_str("  ");
+        out.push_str(&provider.snap_name);
+        if !provider.version.is_empty() {
+            out.push(' ');
+            out.push_str(&provider.version);
+        }
+        out.push_str(" - ");
+        out.push_str(&diagnostic_connection_label(if provider.connected {
+            DiagnosticConnection::Connected
+        } else {
+            DiagnosticConnection::NotConnected
+        }));
+        out.push('\n');
+        if !provider.models.is_empty() {
+            let models: Vec<String> = provider.models.iter().map(text_model_summary).collect();
+            field(&mut out, &gettextrs::gettext("Models"), &models.join(", "));
+            for model in &provider.models {
+                if let Some(credit) = text_model_credit(model) {
+                    field(&mut out, &gettextrs::gettext("License"), &credit);
+                }
+            }
+        }
+        field(
+            &mut out,
+            &gettextrs::gettext("Status"),
+            &text_provider_status(provider, chain),
+        );
     }
 
     out.push('\n');
@@ -659,12 +753,25 @@ fn render_body(
         ),
         _ => gettextrs::gettext("IBus is not set up, so Myna cannot type. Set up Dictation to turn it on."),
     });
+    // A model that is not connected cannot break dictation, so what it failed
+    // to answer stays on its own entry above.
+    let in_use: Vec<String> = input
+        .backends
+        .iter()
+        .filter(|backend| backend.connection != DiagnosticConnection::NotConnected)
+        .flat_map(|backend| {
+            backend
+                .problems
+                .iter()
+                .map(|problem| format!("{}: {problem}", backend.snap_name))
+        })
+        .collect();
     let problems: Vec<&String> = input
         .problems
         .iter()
         .chain(not_connected.as_ref())
         .chain(no_input_method.as_ref())
-        .chain(input.backends.iter().flat_map(|backend| &backend.problems))
+        .chain(&in_use)
         .collect();
     if problems.is_empty() {
         out.push_str("  ");
@@ -694,6 +801,66 @@ fn render_body(
     }
 
     out
+}
+
+/// The licence and credit a model declares, one line, or `None` when it
+/// declares neither.
+fn text_model_credit(model: &crate::domain::TextModel) -> Option<String> {
+    let (license, credit) = (model.license(), model.attribution());
+    if license.is_empty() && credit.is_empty() {
+        return None;
+    }
+    let summary = text_model_summary(model);
+    Some(match (credit.is_empty(), license.is_empty()) {
+        (false, false) => format!("{summary}: {credit} ({license})"),
+        (false, true) => format!("{summary}: {credit}"),
+        _ => format!("{summary}: {license}"),
+    })
+}
+
+/// "text cleanup (English)", "translation (English to Français)".
+fn text_model_summary(model: &crate::domain::TextModel) -> String {
+    let language = |code: &str| {
+        myna_core::language::endonym(code)
+            .unwrap_or(code)
+            .to_owned()
+    };
+    let task = crate::chain_notice::word(model.task());
+    match model.to() {
+        Some(to) => {
+            // TRANSLATORS: {task} is a kind of text model such as "translation", {from} and {to} are language names.
+            let frame = gettextrs::gettext("{task} ({from} to {to})");
+            frame
+                .replace("{task}", &task)
+                .replace("{from}", &language(model.language()))
+                .replace("{to}", &language(to))
+        }
+        None => {
+            // TRANSLATORS: {task} is a kind of text model such as "text cleanup", {language} the language it works on.
+            let frame = gettextrs::gettext("{task} ({language})");
+            frame
+                .replace("{task}", &task)
+                .replace("{language}", &language(model.language()))
+        }
+    }
+}
+
+/// Whether Myna can use the snap, in the daemon's own words once it is
+/// connected: the daemon alone knows whether the chosen chain found its models.
+fn text_provider_status(
+    provider: &TextProviderDiagnostic,
+    chain: Option<&crate::chain_notice::ChainState>,
+) -> String {
+    if !provider.connected {
+        return gettextrs::gettext("not connected");
+    }
+    if provider.models.is_empty() {
+        return gettextrs::gettext("connected, but no model is installed");
+    }
+    match chain {
+        Some(chain) => chain.summary(),
+        None => gettextrs::gettext("connected"),
+    }
 }
 
 /// One frequency class: what one loaded core reached against what the
@@ -1195,6 +1362,7 @@ mod tests {
             installed_snaps: vec![InstalledSnap {
                 name: "myna".into(),
                 version: "0.1.0".into(),
+                ..Default::default()
             }],
             backends: vec![BackendDiagnostic {
                 snap_name: "myna-parakeet".into(),
@@ -1217,6 +1385,163 @@ mod tests {
         assert!(report.copy_text().contains("Problems:\n  (none)"));
     }
 
+    fn text_input(
+        connected: bool,
+        models: Vec<crate::domain::TextModel>,
+        chain: Option<crate::chain_notice::ChainState>,
+    ) -> String {
+        let mut input = running_daemon(None);
+        input.daemon_report.as_mut().unwrap().chain = chain;
+        input.text_providers = vec![TextProviderDiagnostic {
+            snap_name: "myna-text".into(),
+            version: "0.3.3".into(),
+            connected,
+            models,
+        }];
+        present_diagnostics(input).copy_text()
+    }
+
+    fn cleanup_and_translation() -> Vec<crate::domain::TextModel> {
+        use crate::domain::TextModel;
+        vec![
+            TextModel::new("text.cleanup", "en", None),
+            TextModel::new("text.translate", "en", Some("fr".into())),
+        ]
+    }
+
+    #[test]
+    fn a_connected_text_snap_lists_its_models_and_says_it_is_ready() {
+        use crate::chain_notice::ChainState;
+        let text = text_input(true, cleanup_and_translation(), Some(ChainState::Ready));
+        let section = text.split("Text models:\n").nth(1).unwrap_or_default();
+        assert!(
+            section.starts_with("  myna-text 0.3.3 - Connected\n"),
+            "{text}"
+        );
+        assert_eq!(
+            field_value(section, "Models"),
+            Some("text cleanup (English), translation (English to Français)"),
+            "{text}"
+        );
+        assert_eq!(field_value(section, "Status"), Some("ready"), "{text}");
+    }
+
+    #[test]
+    fn a_model_that_declares_credit_has_its_license_listed() {
+        use crate::domain::TextModel;
+        let models = vec![
+            TextModel::new("text.translate", "en", Some("fr".into()))
+                .with_credit("MPL-2.0", "Mozilla and contributors"),
+            TextModel::new("text.cleanup", "en", None).with_credit("Apache-2.0", ""),
+            TextModel::new("text.rewrite", "en", None).with_credit("", "Someone"),
+            TextModel::new("text.other", "en", None),
+        ];
+        let text = text_input(true, models, None);
+        let section = text.split("Text models:\n").nth(1).unwrap_or_default();
+        for line in [
+            "translation (English to Français): Mozilla and contributors (MPL-2.0)",
+            "text cleanup (English): Apache-2.0",
+            ": Someone",
+        ] {
+            assert!(section.contains(line), "{line} in {section}");
+        }
+        assert_eq!(section.matches("License").count(), 3, "{section}");
+    }
+
+    #[test]
+    fn a_text_snap_says_why_it_is_not_ready() {
+        use crate::chain_notice::ChainState;
+        let status = |connected, models, chain| {
+            let text = text_input(connected, models, chain);
+            let section = text.split("Text models:\n").nth(1).unwrap_or_default();
+            field_value(section, "Status")
+                .unwrap_or_default()
+                .to_owned()
+        };
+        assert_eq!(
+            status(false, cleanup_and_translation(), None),
+            "not connected"
+        );
+        assert_eq!(
+            status(true, Vec::new(), Some(ChainState::Ready)),
+            "connected, but no model is installed"
+        );
+        assert_eq!(
+            status(true, cleanup_and_translation(), Some(ChainState::Restart)),
+            "restart dictation to use a new model"
+        );
+        assert_eq!(
+            status(
+                true,
+                cleanup_and_translation(),
+                Some(ChainState::Degraded(vec!["text.translate".into()]))
+            ),
+            "missing a model for translation"
+        );
+        assert_eq!(status(true, cleanup_and_translation(), None), "connected");
+    }
+
+    #[test]
+    fn no_text_snap_reads_as_none() {
+        let text = present_diagnostics(running_daemon(None)).copy_text();
+        assert!(text.contains("Text models:\n  (none)"), "{text}");
+    }
+
+    fn backend_with_problem(connection: DiagnosticConnection) -> DiagnosticInput {
+        DiagnosticInput {
+            inventory_complete: true,
+            installed_snaps: vec![InstalledSnap {
+                name: "myna".into(),
+                version: "0.1.0".into(),
+                ..Default::default()
+            }],
+            backends: vec![
+                BackendDiagnostic {
+                    snap_name: "myna-parakeet".into(),
+                    connection: DiagnosticConnection::Connected,
+                    ..BackendDiagnostic::default()
+                },
+                BackendDiagnostic {
+                    snap_name: "myna-indicconformer".into(),
+                    connection,
+                    problems: vec!["Available engines: permission denied".into()],
+                    ..BackendDiagnostic::default()
+                },
+            ],
+            ..DiagnosticInput::default()
+        }
+    }
+
+    /// A model nobody dictates through cannot break dictation: what it
+    /// failed to answer belongs on its own entry, not among the problems of a
+    /// healthy install.
+    #[test]
+    fn an_unused_models_failure_is_not_a_problem_of_the_install() {
+        let text = present_diagnostics(backend_with_problem(DiagnosticConnection::NotConnected))
+            .copy_text();
+        assert!(text.contains("Problems:\n  (none)"), "{text}");
+        let entry = text
+            .split("myna-indicconformer")
+            .nth(1)
+            .and_then(|rest| rest.split("\n\n").next())
+            .unwrap_or_default();
+        assert!(
+            entry.contains("Available engines: permission denied"),
+            "{text}"
+        );
+    }
+
+    /// The model in use does matter, and the problem names whose it is.
+    #[test]
+    fn the_connected_models_failure_is_a_problem_naming_the_model() {
+        let text =
+            present_diagnostics(backend_with_problem(DiagnosticConnection::Connected)).copy_text();
+        assert!(
+            text.contains("Problems:\n  myna-indicconformer: Available engines: permission denied"),
+            "{text}"
+        );
+    }
+
     #[test]
     fn a_problem_is_one_sentence_and_blocks_the_ready_state() {
         let report = present_diagnostics(DiagnosticInput {
@@ -1236,6 +1561,7 @@ mod tests {
             installed_snaps: vec![InstalledSnap {
                 name: "myna".into(),
                 version: "0.1.0".into(),
+                ..Default::default()
             }],
             backends: vec![BackendDiagnostic {
                 snap_name: "myna-parakeet".into(),
@@ -1309,6 +1635,7 @@ mod tests {
             installed_snaps: vec![InstalledSnap {
                 name: "myna".into(),
                 version: "0.1.0".into(),
+                ..Default::default()
             }],
             machine: Some(MachineFacts {
                 cpu: "amd64 AuthenticAMD, avx2".into(),
@@ -1329,6 +1656,8 @@ mod tests {
                     snr_db: Some(31),
                 })),
                 last_error: None,
+                chain: None,
+                steps: None,
             }),
             extension: Some(ExtensionReport::Known {
                 state: "active".into(),
@@ -1351,10 +1680,17 @@ mod tests {
                 }),
                 problems: Vec::new(),
             }],
+            text_providers: vec![TextProviderDiagnostic {
+                snap_name: "myna-text".into(),
+                version: "0.1.0".into(),
+                connected: true,
+                models: Vec::new(),
+            }],
             problems: Vec::new(),
         });
         let text = report.copy_text();
 
+        assert!(text.contains("myna-text 0.1.0 - Connected"), "{text}");
         assert!(text.contains("avx2"), "{text}");
         assert!(text.contains("gfx1152"), "{text}");
         // The peak is the point: idle residency says nothing about whether
@@ -1387,6 +1723,7 @@ mod tests {
             installed_snaps: vec![InstalledSnap {
                 name: "myna".into(),
                 version: "0.1.0".into(),
+                ..Default::default()
             }],
             daemon: Some(ProcessMemory {
                 pid: 42,
@@ -1397,6 +1734,8 @@ mod tests {
                 drops: None,
                 input: None,
                 last_error,
+                chain: None,
+                steps: None,
             }),
             ..DiagnosticInput::default()
         }
@@ -1489,6 +1828,37 @@ mod tests {
         assert_eq!(
             field_value(&text, "Last error"),
             Some("Model not connected (/nonexistent/share: no model snap is connected; cannot reach the model: /run/user/1000/snap.myna/backend/provider/myna.sock), 2026-10-01 09:30:00"),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn the_processing_chain_status_is_listed_when_the_daemon_publishes_it() {
+        let mut daemon = running_daemon(None);
+        let text = present_diagnostics(daemon.clone()).copy_text();
+        assert_eq!(field_value(&text, "Processing"), None, "{text}");
+        daemon.daemon_report.as_mut().unwrap().chain =
+            Some(crate::chain_notice::ChainState::Degraded(vec![
+                "text.translate".into(),
+            ]));
+        let text = present_diagnostics(daemon).copy_text();
+        assert_eq!(
+            field_value(&text, "Processing"),
+            Some("missing a model for translation"),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn the_enabled_steps_are_listed_when_any_is_on() {
+        let mut daemon = running_daemon(None);
+        let text = present_diagnostics(daemon.clone()).copy_text();
+        assert_eq!(field_value(&text, "Processing steps"), None, "{text}");
+        daemon.daemon_report.as_mut().unwrap().steps = Some("tidy, translate=fr".into());
+        let text = present_diagnostics(daemon).copy_text();
+        assert_eq!(
+            field_value(&text, "Processing steps"),
+            Some("tidy, translate=fr"),
             "{text}"
         );
     }

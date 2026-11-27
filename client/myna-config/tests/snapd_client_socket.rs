@@ -629,10 +629,12 @@ fn backend_switches_reach_snapd_and_restart_only_the_user_service() {
     for (models, connected, selected) in [
         (vec!["new"], vec![], "new"),
         (vec!["new"], vec!["stray"], "new"),
+        (vec!["new"], vec!["gemma4"], "new"),
+        (vec!["old", "new"], vec!["old", "gemma4"], "new"),
         (vec!["old", "new"], vec!["old"], "new"),
         (vec!["old", "new", "third"], vec!["old", "new"], "third"),
         (vec!["old", "new"], vec!["old", "new"], "new"),
-        (vec!["new"], vec!["new"], "new"),
+        (vec!["new"], vec!["new", "gemma4"], "new"),
     ] {
         let slots: Vec<_> = models
             .iter()
@@ -642,8 +644,14 @@ fn backend_switches_reach_snapd_and_restart_only_the_user_service() {
             .into_iter()
             .map(|snap| serde_json::json!({
                 "snap": snap, "slot": "provider",
-                "attrs": {"content": "inference-provider",
-                          "task": if models.contains(&snap) { Some("speech-to-text") } else { None }},
+                "attrs": if snap == "stray" {
+                    serde_json::json!({"content": "ubustt-socket"})
+                } else {
+                    serde_json::json!({
+                        "content": "inference-provider",
+                        "task": if models.contains(&snap) { Some("speech-to-text") } else { None }
+                    })
+                },
                 "connections": if connected.contains(&snap) {
                     serde_json::json!([{"snap": "myna", "plug": "backend"}])
                 } else { serde_json::json!([]) },
@@ -652,11 +660,16 @@ fn backend_switches_reach_snapd_and_restart_only_the_user_service() {
         let snapshot = connection_snapshot(
             &serde_json::from_value(serde_json::json!({"slots": slots})).unwrap(),
         );
-        let noop = connected == [selected];
+        let disconnecting: Vec<&str> = connected
+            .iter()
+            .copied()
+            .filter(|snap| models.contains(snap) || *snap == "stray")
+            .collect();
+        let noop = disconnecting == [selected];
         let requests: Vec<_> = if noop {
             Vec::new()
         } else {
-            connected
+            disconnecting
                 .iter()
                 .map(|snap| ("disconnect", *snap))
                 .chain([("connect", selected)])
@@ -865,11 +878,40 @@ fn the_installed_snaps_are_read_as_json() {
     let snaps = block_on(fake.client().installed_snaps(CancellationToken::new())).unwrap();
 
     let names: Vec<_> = snaps.iter().map(|snap| snap.name.as_str()).collect();
-    assert_eq!(names, ["myna-parakeet", "myna-whisper", "myna", "snapd"]);
-    assert_eq!(snaps[2].version, "0.2.1");
+    // snapd lists them in a different order on every read, so the client
+    // sorts them: a reader comparing two reads must not see a change.
+    assert_eq!(names, ["myna", "myna-parakeet", "myna-whisper", "snapd"]);
+    assert_eq!(snaps[0].version, "0.2.1");
     let calls = fake.calls.lock().unwrap().clone();
     assert_eq!(calls.len(), 1);
     assert!(calls[0].starts_with("GET /v2/snaps HTTP/1.1\r\n"));
+}
+
+#[test]
+fn an_installed_snap_reads_its_size_and_installed_components() {
+    let fake = answering(
+        "GET /v2/snaps ",
+        sync_result(
+            r#"[{"name":"myna-translation","version":"0.3.3","installed-size":27983872,
+                "components":[
+                  {"name":"model-translate-en-it","type":"standard","summary":"English to Italian",
+                   "installed-size":33607680,"install-date":"2026-11-23T22:52:13Z"},
+                  {"name":"model-translate-af-en","type":"standard","summary":"Afrikaans to English",
+                   "download-size":31000000}]},
+               {"name":"snapd","version":"2.78"}]"#,
+        ),
+    );
+
+    let snaps = block_on(fake.client().installed_snaps(CancellationToken::new())).unwrap();
+
+    assert_eq!(snaps[0].installed_size, 27_983_872);
+    let components = &snaps[0].components;
+    assert_eq!(components.len(), 2);
+    assert!(components[0].installed());
+    assert_eq!(components[0].installed_size, 33_607_680);
+    assert!(!components[1].installed(), "declared, not installed");
+    assert_eq!(snaps[1].installed_size, 0);
+    assert!(snaps[1].components.is_empty());
 }
 
 #[test]
@@ -1086,6 +1128,87 @@ fn an_install_prompt_may_outlast_a_request() {
     );
 }
 
+#[test]
+fn removing_a_snap_hands_back_its_change() {
+    let fake = FakeSnapd::start(vec![step(
+        "POST /v2/snaps/myna-whisper ",
+        http_body(202, "Accepted", CHANGE_12_ACCEPTED),
+        None,
+    )]);
+
+    let started = block_on(
+        fake.client()
+            .remove_snap("myna-whisper", CancellationToken::new()),
+    );
+
+    assert_eq!(started, Ok(Some("12".to_owned())));
+    let calls = fake.calls.lock().unwrap().clone();
+    assert_eq!(calls.len(), 1, "{calls:?}");
+    assert!(calls[0].starts_with("POST /v2/snaps/myna-whisper HTTP/1.1\r\n"));
+    assert!(calls[0].contains("X-Allow-Interaction: true\r\n"));
+    assert!(calls[0].ends_with("\r\n\r\n{\"action\":\"remove\"}"));
+}
+
+/// Removed elsewhere between the last read and the click: nothing to do.
+#[test]
+fn removing_a_removed_snap_has_no_change_to_follow() {
+    let fake = FakeSnapd::start(vec![step(
+        "POST /v2/snaps/myna-whisper ",
+        http_body(
+            400,
+            "Bad Request",
+            r#"{"type":"error","status-code":400,"result":{"message":"snap \"myna-whisper\" is not installed","kind":"snap-not-installed","value":"myna-whisper"}}"#,
+        ),
+        None,
+    )]);
+
+    assert_eq!(
+        block_on(
+            fake.client()
+                .remove_snap("myna-whisper", CancellationToken::new())
+        ),
+        Ok(None)
+    );
+}
+
+#[test]
+fn a_snap_name_outside_the_grammar_is_never_removed() {
+    let fake = FakeSnapd::start(Vec::new());
+
+    let refused = block_on(
+        fake.client()
+            .remove_snap("../v2/logout", CancellationToken::new()),
+    );
+
+    assert!(
+        matches!(refused, Err(SnapdError::Transport { .. })),
+        "{refused:?}"
+    );
+    assert!(fake.calls.lock().unwrap().is_empty());
+}
+
+#[test]
+fn a_dismissed_prompt_cancels_a_remove() {
+    let fake = FakeSnapd::start(vec![step(
+        "POST /v2/snaps/myna-whisper ",
+        http_body(
+            403,
+            "Forbidden",
+            r#"{"type":"error","status-code":403,"result":{"message":"cancelled","kind":"auth-cancelled"}}"#,
+        ),
+        None,
+    )]);
+    let configurator = PkexecSystemConfigurator::with_snapd_client(
+        Arc::new(FakeCommandRunner::default()),
+        Arc::new(fake.client()),
+    );
+
+    assert_eq!(
+        block_on(configurator.remove_snap("myna-whisper", CancellationToken::new())),
+        Err(SystemConfiguratorError::Cancelled)
+    );
+}
+
 /// Installed elsewhere between the last read and the click: nothing to do.
 #[test]
 fn installing_an_installed_snap_has_no_change_to_follow() {
@@ -1272,5 +1395,91 @@ fn an_unreadable_change_reaches_the_follower_as_text() {
     assert!(
         matches!(&read, Err(message) if message.contains("cannot find change")),
         "{read:?}"
+    );
+}
+
+const COMPONENT_CHANGE: &str = "POST /v2/snaps/myna-translation ";
+
+#[test]
+fn components_are_installed_and_removed_in_one_request_each_naming_them() {
+    for (install, action) in [(true, "install"), (false, "remove")] {
+        let fake = FakeSnapd::start(vec![step(
+            COMPONENT_CHANGE,
+            http_body(202, "Accepted", CHANGE_12_ACCEPTED),
+            None,
+        )]);
+        let components = vec![
+            "model-translate-en-fr".to_owned(),
+            "model-translate-fr-en".to_owned(),
+        ];
+        let started = block_on(fake.client().change_components(
+            "myna-translation",
+            &components,
+            install,
+            CancellationToken::new(),
+        ));
+        assert_eq!(started, Ok(Some("12".to_owned())));
+        let calls = fake.calls.lock().unwrap().clone();
+        assert_eq!(calls.len(), 1, "{calls:?}");
+        assert!(calls[0].contains("X-Allow-Interaction: true\r\n"));
+        assert!(calls[0].ends_with(&format!(
+            "\r\n\r\n{{\"action\":\"{action}\",\"components\":[\"model-translate-en-fr\",\"model-translate-fr-en\"]}}"
+        )));
+    }
+}
+
+#[test]
+fn a_component_request_never_leaves_components_unnamed_or_oddly_named() {
+    let fake = FakeSnapd::start(Vec::new());
+    for components in [
+        vec![],
+        vec!["translate-en-fr".to_owned()],
+        vec!["model-".to_owned()],
+        vec!["model-A".to_owned()],
+        vec!["model-a\",\"x".to_owned()],
+    ] {
+        let refused = block_on(fake.client().change_components(
+            "myna-translation",
+            &components,
+            true,
+            CancellationToken::new(),
+        ));
+        assert!(
+            matches!(refused, Err(SnapdError::Transport { .. })),
+            "{components:?}: {refused:?}"
+        );
+    }
+    let refused = block_on(fake.client().change_components(
+        "../v2/logout",
+        &["model-a".to_owned()],
+        true,
+        CancellationToken::new(),
+    ));
+    assert!(matches!(refused, Err(SnapdError::Transport { .. })));
+    assert!(fake.calls.lock().unwrap().is_empty());
+}
+
+#[test]
+fn a_sideloaded_snap_is_refused_by_snapd_and_the_reason_is_kept() {
+    let fake = FakeSnapd::start(vec![step(
+        COMPONENT_CHANGE,
+        http_body(
+            400,
+            "Bad Request",
+            r#"{"type":"error","status-code":400,"result":{"message":"cannot install components for a snap that is unknown to the store"}}"#,
+        ),
+        None,
+    )]);
+    let refused = block_on(fake.client().change_components(
+        "myna-translation",
+        &["model-a".to_owned()],
+        true,
+        CancellationToken::new(),
+    ));
+    assert!(
+        refused
+            .as_ref()
+            .is_err_and(|e| e.to_string().contains("unknown to the store")),
+        "{refused:?}"
     );
 }
