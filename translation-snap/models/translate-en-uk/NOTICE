@@ -1,0 +1,17 @@
+model-translate-en-uk: the Firefox Translations English to Ukrainian student
+model "base-memory" (version 2.2), Copyright Mozilla and contributors,
+licensed under the Mozilla Public License 2.0 (LICENSE in this component).
+
+Source: Mozilla's Firefox Translations models,
+https://github.com/mozilla/firefox-translations-models (the files themselves
+are served from the Remote Settings collection "translations-models" of
+https://firefox.settings.services.mozilla.com). The model files are shipped
+unmodified; their sha256 are:
+
+  model.enuk.intgemm.alphas.bin  ed8bb4a811e1c45a259e91052080d25e5c8b4e2df0e59cb1521c04a57855ef97
+  lex.50.50.enuk.s2t.bin         dbfd4f8dc95da9c575164f7fc95ef00a2fb5f7d9f51b656559f99eeebdb57c87
+  vocab.enuk.spm                 4dd6a91feff71e745395dcc0d52f885848ca0d843d5f70628ca51b3be1b70b45
+
+config.yml and myna-text-model.json are Canonical's own (AGPL-3.0-or-later).
+The runtime that executes the model, bergamot-translator (MPL-2.0), and its
+bundled libraries are noted in the myna-translation snap's NOTICE.

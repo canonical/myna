@@ -1,0 +1,21 @@
+{
+  "contract": 2,
+  "kind": "translate",
+  "id": "bergamot-base-memory-en-fi",
+  "task": "text.translate",
+  "class": "translate",
+  "needs": "dictation",
+  "params": [
+    {"name": "language", "kind": "language", "role": "source", "required": true},
+    {"name": "to", "kind": "language", "role": "target", "required": true}
+  ],
+  "language": "en",
+  "to": "fi",
+  "latency_ms": 20,
+  "quality": 0.61,
+  "config": "config.yml",
+  "license": "MPL-2.0",
+  "attribution": "Mozilla and contributors, Firefox Translations (base-memory 2.0)",
+  "download_bytes": 32169984,
+  "source": "https://github.com/mozilla/firefox-translations-models"
+}

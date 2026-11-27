@@ -1,0 +1,17 @@
+model-translate-bg-en: the Firefox Translations Bulgarian to English student
+model "base-memory" (version 2.0), Copyright Mozilla and contributors,
+licensed under the Mozilla Public License 2.0 (LICENSE in this component).
+
+Source: Mozilla's Firefox Translations models,
+https://github.com/mozilla/firefox-translations-models (the files themselves
+are served from the Remote Settings collection "translations-models" of
+https://firefox.settings.services.mozilla.com). The model files are shipped
+unmodified; their sha256 are:
+
+  model.bgen.intgemm.alphas.bin  78f7e6e1435cc2d4a29cf597f493187fe29ddb9ce9d3766c287e2e6d37052d01
+  lex.50.50.bgen.s2t.bin         e661dfdd88aa9ff9606f237a60c910d97c2e710960199589579f628c5d8aa899
+  vocab.bgen.spm                 4bafad5fcc0e771ed82233d1e99d69dcb96487b430702f7e688615c8a61f3df4
+
+config.yml and myna-text-model.json are Canonical's own (AGPL-3.0-or-later).
+The runtime that executes the model, bergamot-translator (MPL-2.0), and its
+bundled libraries are noted in the myna-translation snap's NOTICE.

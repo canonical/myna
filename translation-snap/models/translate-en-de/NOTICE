@@ -1,0 +1,17 @@
+model-translate-en-de: the Firefox Translations English to German student
+model "base-memory" (version 2.1), Copyright Mozilla and contributors,
+licensed under the Mozilla Public License 2.0 (LICENSE in this component).
+
+Source: Mozilla's Firefox Translations models,
+https://github.com/mozilla/firefox-translations-models (the files themselves
+are served from the Remote Settings collection "translations-models" of
+https://firefox.settings.services.mozilla.com). The model files are shipped
+unmodified; their sha256 are:
+
+  model.ende.intgemm.alphas.bin  8df29d9494d19f47fd5d97c6a73474c6f657e9f81c1a607c431d02befdf3810f
+  lex.50.50.ende.s2t.bin         7ed39f1cffbd68a27ddf05bbfe068de2060f1d7e69f1a20e27ae923551dd7393
+  vocab.ende.spm                 69f730becafa48e3bb2c244eab66456877c08959a02f2bd5519b5a3088b62f9c
+
+config.yml and myna-text-model.json are Canonical's own (AGPL-3.0-or-later).
+The runtime that executes the model, bergamot-translator (MPL-2.0), and its
+bundled libraries are noted in the myna-translation snap's NOTICE.

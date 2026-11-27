@@ -1,0 +1,17 @@
+model-translate-ja-en: the Firefox Translations Japanese to English student
+model "base" (version 2.0), Copyright Mozilla and contributors,
+licensed under the Mozilla Public License 2.0 (LICENSE in this component).
+
+Source: Mozilla's Firefox Translations models,
+https://github.com/mozilla/firefox-translations-models (the files themselves
+are served from the Remote Settings collection "translations-models" of
+https://firefox.settings.services.mozilla.com). The model files are shipped
+unmodified; their sha256 are:
+
+  model.jaen.intgemm.alphas.bin  a9bf800679bba570520e1161d7b4fbfcb957add32ca35812134add85689752ad
+  lex.50.50.jaen.s2t.bin         8f858a72fcbaa476c582577b04d6f5f89d645d2335b0b4a794c2706d4b1f75ff
+  vocab.jaen.spm                 5cb217758bae05877bb3f0c2f612e4e7c1e4cb03c10db11f4a47098d7ae62919
+
+config.yml and myna-text-model.json are Canonical's own (AGPL-3.0-or-later).
+The runtime that executes the model, bergamot-translator (MPL-2.0), and its
+bundled libraries are noted in the myna-translation snap's NOTICE.

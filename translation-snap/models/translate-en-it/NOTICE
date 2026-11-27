@@ -1,0 +1,17 @@
+model-translate-en-it: the Firefox Translations English to Italian student
+model "base-memory" (version 2.1), Copyright Mozilla and contributors,
+licensed under the Mozilla Public License 2.0 (LICENSE in this component).
+
+Source: Mozilla's Firefox Translations models,
+https://github.com/mozilla/firefox-translations-models (the files themselves
+are served from the Remote Settings collection "translations-models" of
+https://firefox.settings.services.mozilla.com). The model files are shipped
+unmodified; their sha256 are:
+
+  model.enit.intgemm.alphas.bin  248f47568788ecc351da7e5e07064d4153b4f71e011364ae2c931ffeec4d1cc2
+  lex.50.50.enit.s2t.bin         8b21914804625b2777dae7fdb636eb78f02a3eb8b7bceaa50f29ac740961da93
+  vocab.enit.spm                 3ef0211d4ae6db21440892f180f2019fe2bfc110a330ffa9d2eca9665e4f2bc5
+
+config.yml and myna-text-model.json are Canonical's own (AGPL-3.0-or-later).
+The runtime that executes the model, bergamot-translator (MPL-2.0), and its
+bundled libraries are noted in the myna-translation snap's NOTICE.

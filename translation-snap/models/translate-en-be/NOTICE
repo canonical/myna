@@ -1,0 +1,17 @@
+model-translate-en-be: the Firefox Translations English to Belarusian student
+model (version 2.0), Copyright Mozilla and contributors,
+licensed under the Mozilla Public License 2.0 (LICENSE in this component).
+
+Source: Mozilla's Firefox Translations models,
+https://github.com/mozilla/firefox-translations-models (the files themselves
+are served from the Remote Settings collection "translations-models" of
+https://firefox.settings.services.mozilla.com). The model files are shipped
+unmodified; their sha256 are:
+
+  model.enbe.intgemm.alphas.bin  88fb3a6e2cc4b936313596eef445a548e63e1ca3ef0dfa54b88229c3ce877116
+  lex.50.50.enbe.s2t.bin         992bd4fe0c88dc5693515c5e872459c32bc43329db775d3d3349d480449354ec
+  vocab.enbe.spm                 19981e67e5359fef1cd6c08a868a42c17b010f1c62bfbf48037d7be55c0e2756
+
+config.yml and myna-text-model.json are Canonical's own (AGPL-3.0-or-later).
+The runtime that executes the model, bergamot-translator (MPL-2.0), and its
+bundled libraries are noted in the myna-translation snap's NOTICE.

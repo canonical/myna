@@ -1,0 +1,17 @@
+model-translate-en-mr: the Firefox Translations English to Marathi student
+model (version 2.0), Copyright Mozilla and contributors,
+licensed under the Mozilla Public License 2.0 (LICENSE in this component).
+
+Source: Mozilla's Firefox Translations models,
+https://github.com/mozilla/firefox-translations-models (the files themselves
+are served from the Remote Settings collection "translations-models" of
+https://firefox.settings.services.mozilla.com). The model files are shipped
+unmodified; their sha256 are:
+
+  model.enmr.intgemm.alphas.bin  1520f77c2f1c703b6148e4452b376ac28aec1e63c467eedec8a986864827ce8c
+  lex.50.50.enmr.s2t.bin         5f343589941c5445e9c27ee2d5329b6da65867590a4df79c09532aeef379bca9
+  vocab.enmr.spm                 f71f279069e19a9a9317fd4fcbdffa6b2c621ee6fcaa369a92046fb7fb572735
+
+config.yml and myna-text-model.json are Canonical's own (AGPL-3.0-or-later).
+The runtime that executes the model, bergamot-translator (MPL-2.0), and its
+bundled libraries are noted in the myna-translation snap's NOTICE.

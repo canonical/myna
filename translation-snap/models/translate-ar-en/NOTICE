@@ -1,0 +1,17 @@
+model-translate-ar-en: the Firefox Translations Arabic to English student
+model "base-memory" (version 2.2), Copyright Mozilla and contributors,
+licensed under the Mozilla Public License 2.0 (LICENSE in this component).
+
+Source: Mozilla's Firefox Translations models,
+https://github.com/mozilla/firefox-translations-models (the files themselves
+are served from the Remote Settings collection "translations-models" of
+https://firefox.settings.services.mozilla.com). The model files are shipped
+unmodified; their sha256 are:
+
+  model.aren.intgemm.alphas.bin  7b7af0282dc5f4d8805b9a298c2fa828967e3f09ca10f1942ebeea0b2cfc12fa
+  lex.50.50.aren.s2t.bin         4b45f14dbea40d368093a13563fc1ca48457ee70c1291c82b206f3baff210081
+  vocab.aren.spm                 51b4ee3f828d10015464523d0b4f5a6c086b0b2a9bde716a581001cf6c260366
+
+config.yml and myna-text-model.json are Canonical's own (AGPL-3.0-or-later).
+The runtime that executes the model, bergamot-translator (MPL-2.0), and its
+bundled libraries are noted in the myna-translation snap's NOTICE.

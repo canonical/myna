@@ -1,0 +1,17 @@
+model-translate-en-fa: the Firefox Translations English to Persian student
+model "tiny" (version 1.1), Copyright Mozilla and contributors,
+licensed under the Mozilla Public License 2.0 (LICENSE in this component).
+
+Source: Mozilla's Firefox Translations models,
+https://github.com/mozilla/firefox-translations-models (the files themselves
+are served from the Remote Settings collection "translations-models" of
+https://firefox.settings.services.mozilla.com). The model files are shipped
+unmodified; their sha256 are:
+
+  model.enfa.intgemm.alphas.bin  456ad3952bcc59d208c76baba4dcef340ee4239416bd760d6fec27f9a16228f8
+  lex.50.50.enfa.s2t.bin         8542e7fb2bfa3a11b89f8392b8adb0dbbf863cd34569488b7c4535a91c3ae6b4
+  vocab.enfa.spm                 6435d3d9d766159fe192ab90892540b438ad7adb7ab4ea4049f68d0b4cdea3bd
+
+config.yml and myna-text-model.json are Canonical's own (AGPL-3.0-or-later).
+The runtime that executes the model, bergamot-translator (MPL-2.0), and its
+bundled libraries are noted in the myna-translation snap's NOTICE.

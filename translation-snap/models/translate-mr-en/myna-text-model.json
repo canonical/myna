@@ -1,0 +1,21 @@
+{
+  "contract": 2,
+  "kind": "translate",
+  "id": "bergamot-mozilla-mr-en",
+  "task": "text.translate",
+  "class": "translate",
+  "needs": "dictation",
+  "params": [
+    {"name": "language", "kind": "language", "role": "source", "required": true},
+    {"name": "to", "kind": "language", "role": "target", "required": true}
+  ],
+  "language": "mr",
+  "to": "en",
+  "latency_ms": 20,
+  "quality": 0.0,
+  "config": "config.yml",
+  "license": "MPL-2.0",
+  "attribution": "Mozilla and contributors, Firefox Translations (version 2.0)",
+  "download_bytes": 31940608,
+  "source": "https://github.com/mozilla/firefox-translations-models"
+}

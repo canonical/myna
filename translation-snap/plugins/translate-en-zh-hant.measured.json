@@ -1,0 +1,7 @@
+{
+  "latency_ms": 15,
+  "quality": 0.0,
+  "quality_source": "not measured: no FLEURS slice for zh-Hant; served 200 English sentences; quality not measured by the vendor",
+  "gate": "pass",
+  "results_sha256": "f8dc9b9eec1db91eb08108748094dfc00916fb6777bb6b3a4e68591eb63f5f43"
+}

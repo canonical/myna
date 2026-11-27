@@ -1,0 +1,17 @@
+model-translate-kn-en: the Firefox Translations Kannada to English student
+model "tiny" (version 1.0), Copyright Mozilla and contributors,
+licensed under the Mozilla Public License 2.0 (LICENSE in this component).
+
+Source: Mozilla's Firefox Translations models,
+https://github.com/mozilla/firefox-translations-models (the files themselves
+are served from the Remote Settings collection "translations-models" of
+https://firefox.settings.services.mozilla.com). The model files are shipped
+unmodified; their sha256 are:
+
+  model.knen.intgemm.alphas.bin  49e8d3bd794b098047f7b177d9d0e6d3e49ac798c2b75bc132149cb46c5bfbfd
+  lex.50.50.knen.s2t.bin         aa50a74f15e9ef8cf27a5b905c17037bd9d67883afde71b34c4138f9507fedfc
+  vocab.knen.spm                 d729397a42dba5801f330927a9956527161d6e0711b59fcea7cd2e862e6f36cc
+
+config.yml and myna-text-model.json are Canonical's own (AGPL-3.0-or-later).
+The runtime that executes the model, bergamot-translator (MPL-2.0), and its
+bundled libraries are noted in the myna-translation snap's NOTICE.

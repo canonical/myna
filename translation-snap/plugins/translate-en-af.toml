@@ -1,0 +1,83 @@
+# One plugin: dev/gen-plugins.py turns this into the snapcraft component,
+# models/translate-en-af/{myna-text-model.json,NOTICE} and catalog.json.
+# config.yml stays hand-written. Contract: .kb/text-plugin-contract.md.
+# Scaffolded by myna-bench plugin-scaffold: download_bytes is the file sum
+# until the component is packed, spot_check is for a native speaker to add.
+id = "bergamot-mozilla-en-af"
+component = "model-translate-en-af"
+snap = "myna-translation"
+kind = "translate"
+task = "text.translate"
+class = "translate"
+needs = "dictation"
+language = "en"
+to = "af"
+config = "config.yml"
+license = "MPL-2.0"
+attribution = "Mozilla and contributors, Firefox Translations (version 2.0)"
+source = "https://github.com/mozilla/firefox-translations-models"
+download_bytes = 33144832
+entry_revision = 1
+curated = true
+pin = "mozilla firefox-translations en-af mozilla 2.0"
+locales = ["en"]
+summary = "English to Afrikaans translation (Firefox Translations)"
+description = """\
+Mozilla's Firefox Translations English to Afrikaans student model
+(MPL-2.0), run by bergamot-translator. About 36 MB."""
+notice = """\
+model-translate-en-af: the Firefox Translations English to Afrikaans student
+model (version 2.0), Copyright Mozilla and contributors,
+licensed under the Mozilla Public License 2.0 (LICENSE in this component).
+
+Source: Mozilla's Firefox Translations models,
+https://github.com/mozilla/firefox-translations-models (the files themselves
+are served from the Remote Settings collection "translations-models" of
+https://firefox.settings.services.mozilla.com). The model files are shipped
+unmodified; their sha256 are:"""
+notice_tail = """\
+config.yml and myna-text-model.json are Canonical's own (AGPL-3.0-or-later).
+The runtime that executes the model, bergamot-translator (MPL-2.0), and its
+bundled libraries are noted in the myna-translation snap's NOTICE."""
+
+[[params]]
+name = "language"
+kind = "language"
+role = "source"
+required = true
+
+[[params]]
+name = "to"
+kind = "language"
+role = "target"
+required = true
+
+# DECISIONS 7.4: Mozilla published no FLORES COMET for this pair
+# (quality not measured): the 0.40 chrF floor and the spot check apply.
+[gate]
+
+[step]
+id = "translate"
+stage = "translate"
+
+[hardware]
+arch = ["amd64"]
+min_ram_mb = 512
+
+[[files]]
+name = "model.enaf.intgemm.alphas.bin"
+sha256 = "afc1dcb25774e61f513fe722e037744a18c23063ba799bb01f5cdec5cc79b502"
+bytes = 31561787
+url = "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/20260831143343--ff4582bd-2cc8-4b84-856c-c34434d8c376--bf1692b0-711d-4a8f-a4bb-6dbbf570312c.bin"
+
+[[files]]
+name = "lex.50.50.enaf.s2t.bin"
+sha256 = "591e3465c6e5e8920e911cae36e1d92c61abe92b2d5ef9bf2f1d8b5825bba20f"
+bytes = 3193340
+url = "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/20260831143334--a5b4cc20-b5f5-4af7-aaf2-604612bdf57e--9c2f64d1-8eb1-4dd3-96d1-aff79842bc26.bin"
+
+[[files]]
+name = "vocab.enaf.spm"
+sha256 = "8d19c43df2142696227eb3462c6693bbc8c62cbd47b9a7372f86df2698864438"
+bytes = 809195
+url = "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/20260831143345--ec36146d-a3db-4fea-a08f-b9af89bd9789--2a0374f0-4539-4477-ad1e-642dc951f217.spm"

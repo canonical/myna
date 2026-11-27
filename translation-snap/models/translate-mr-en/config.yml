@@ -1,0 +1,17 @@
+# Paths are relative to this file. Beam 1: both Firefox students lose chrF at
+# beam 4 (tiny collapses), and beam 1 is the fastest.
+models: [model.mren.intgemm.alphas.bin]
+vocabs: [vocab.mren.spm, vocab.mren.spm]
+shortlist: [lex.50.50.mren.s2t.bin, false]
+beam-size: 1
+normalize: 1.0
+word-penalty: 0
+max-length-break: 128
+mini-batch-words: 1024
+workspace: 128
+max-length-factor: 2.0
+skip-cost: true
+cpu-threads: 1
+quiet: true
+quiet-translation: true
+gemm-precision: int8shiftAlphaAll

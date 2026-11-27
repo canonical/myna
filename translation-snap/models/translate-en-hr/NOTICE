@@ -1,0 +1,17 @@
+model-translate-en-hr: the Firefox Translations English to Croatian student
+model "tiny" (version 1.0), Copyright Mozilla and contributors,
+licensed under the Mozilla Public License 2.0 (LICENSE in this component).
+
+Source: Mozilla's Firefox Translations models,
+https://github.com/mozilla/firefox-translations-models (the files themselves
+are served from the Remote Settings collection "translations-models" of
+https://firefox.settings.services.mozilla.com). The model files are shipped
+unmodified; their sha256 are:
+
+  model.enhr.intgemm.alphas.bin  29ba32235778da3e38cfeb0d7f36eaf8dc37c961ff8651d86f7cae7e29e97d88
+  lex.50.50.enhr.s2t.bin         b811d67aca11e12e6bd956c1b4a1e74c6162d71e9ac259bfff415fbb90c3f666
+  vocab.enhr.spm                 7b75fe5ee12743c787a393489d8810adc3ca6cefe0142e8993227dd125d224b3
+
+config.yml and myna-text-model.json are Canonical's own (AGPL-3.0-or-later).
+The runtime that executes the model, bergamot-translator (MPL-2.0), and its
+bundled libraries are noted in the myna-translation snap's NOTICE.

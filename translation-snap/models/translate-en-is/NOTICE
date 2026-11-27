@@ -1,0 +1,17 @@
+model-translate-en-is: the Firefox Translations English to Icelandic student
+model "base-memory" (version 2.0), Copyright Mozilla and contributors,
+licensed under the Mozilla Public License 2.0 (LICENSE in this component).
+
+Source: Mozilla's Firefox Translations models,
+https://github.com/mozilla/firefox-translations-models (the files themselves
+are served from the Remote Settings collection "translations-models" of
+https://firefox.settings.services.mozilla.com). The model files are shipped
+unmodified; their sha256 are:
+
+  model.enis.intgemm.alphas.bin  459626236a49158aa555facd23e5f594e2f8416f4ebad32e0548af94c5b1ae0c
+  lex.50.50.enis.s2t.bin         4927d2bed702141b4ddd8a5e7034b27fb17312fdb7e3cc5f455ccf2e2f6670e0
+  vocab.enis.spm                 61b2ea10edbe4cc61e36c833cacc2f55778ed9ca860cd382729060634d4b0adb
+
+config.yml and myna-text-model.json are Canonical's own (AGPL-3.0-or-later).
+The runtime that executes the model, bergamot-translator (MPL-2.0), and its
+bundled libraries are noted in the myna-translation snap's NOTICE.

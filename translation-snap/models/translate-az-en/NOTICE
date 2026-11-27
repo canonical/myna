@@ -1,0 +1,17 @@
+model-translate-az-en: the Firefox Translations Azerbaijani to English student
+model (version 2.1), Copyright Mozilla and contributors,
+licensed under the Mozilla Public License 2.0 (LICENSE in this component).
+
+Source: Mozilla's Firefox Translations models,
+https://github.com/mozilla/firefox-translations-models (the files themselves
+are served from the Remote Settings collection "translations-models" of
+https://firefox.settings.services.mozilla.com). The model files are shipped
+unmodified; their sha256 are:
+
+  model.azen.intgemm.alphas.bin  21d16602a6b21738d2f750e918bc369b01d83e3d11d4ad1f9ce0a9c99599f50c
+  lex.50.50.azen.s2t.bin         d534a8a29537e2539cac09d23360f27291765a030d424e108b9b0cabaa593672
+  vocab.azen.spm                 9ae0beed517ad39a95b4e1ae95be4ddfdeba8b004139886d40a3a50874e16aa6
+
+config.yml and myna-text-model.json are Canonical's own (AGPL-3.0-or-later).
+The runtime that executes the model, bergamot-translator (MPL-2.0), and its
+bundled libraries are noted in the myna-translation snap's NOTICE.

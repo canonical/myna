@@ -1,0 +1,17 @@
+model-translate-pt-en: the Firefox Translations Portuguese to English student
+model "base-memory" (version 2.0), Copyright Mozilla and contributors,
+licensed under the Mozilla Public License 2.0 (LICENSE in this component).
+
+Source: Mozilla's Firefox Translations models,
+https://github.com/mozilla/firefox-translations-models (the files themselves
+are served from the Remote Settings collection "translations-models" of
+https://firefox.settings.services.mozilla.com). The model files are shipped
+unmodified; their sha256 are:
+
+  model.pten.intgemm.alphas.bin  7b854f1ec5a485dd33efd7c1bc01dd7d5a57f566957c5e47722af333f0ce9157
+  lex.50.50.pten.s2t.bin         2685d8b6530be92a4db4cc61f15a097eb114552be15cb6c1699e9d2d99d24470
+  vocab.pten.spm                 d9f46182823d5bbc84201252b2dfcac28f63e561f0ec827ed858f241864c9def
+
+config.yml and myna-text-model.json are Canonical's own (AGPL-3.0-or-later).
+The runtime that executes the model, bergamot-translator (MPL-2.0), and its
+bundled libraries are noted in the myna-translation snap's NOTICE.

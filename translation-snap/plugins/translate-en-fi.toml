@@ -1,0 +1,84 @@
+# One plugin: dev/gen-plugins.py turns this into the snapcraft component,
+# models/translate-en-fi/{myna-text-model.json,NOTICE} and catalog.json.
+# config.yml stays hand-written. Contract: .kb/text-plugin-contract.md.
+# Scaffolded by myna-bench plugin-scaffold: download_bytes is the file sum
+# until the component is packed, spot_check is for a native speaker to add.
+id = "bergamot-base-memory-en-fi"
+component = "model-translate-en-fi"
+snap = "myna-translation"
+kind = "translate"
+task = "text.translate"
+class = "translate"
+needs = "dictation"
+language = "en"
+to = "fi"
+config = "config.yml"
+license = "MPL-2.0"
+attribution = "Mozilla and contributors, Firefox Translations (base-memory 2.0)"
+source = "https://github.com/mozilla/firefox-translations-models"
+download_bytes = 32169984
+entry_revision = 1
+curated = true
+pin = "mozilla firefox-translations en-fi base-memory 2.0"
+locales = ["en"]
+summary = "English to Finnish translation (Firefox Translations base-memory)"
+description = """\
+Mozilla's Firefox Translations English to Finnish student model
+(MPL-2.0), run by bergamot-translator. About 36 MB."""
+notice = """\
+model-translate-en-fi: the Firefox Translations English to Finnish student
+model "base-memory" (version 2.0), Copyright Mozilla and contributors,
+licensed under the Mozilla Public License 2.0 (LICENSE in this component).
+
+Source: Mozilla's Firefox Translations models,
+https://github.com/mozilla/firefox-translations-models (the files themselves
+are served from the Remote Settings collection "translations-models" of
+https://firefox.settings.services.mozilla.com). The model files are shipped
+unmodified; their sha256 are:"""
+notice_tail = """\
+config.yml and myna-text-model.json are Canonical's own (AGPL-3.0-or-later).
+The runtime that executes the model, bergamot-translator (MPL-2.0), and its
+bundled libraries are noted in the myna-translation snap's NOTICE."""
+
+[[params]]
+name = "language"
+kind = "language"
+role = "source"
+required = true
+
+[[params]]
+name = "to"
+kind = "language"
+role = "target"
+required = true
+
+# DECISIONS 7.4: vendor COMET is Mozilla's FLORES figure from the model's
+# metadata.json (models/base-memory/enfi/metadata.json); no section 5 floor.
+[gate]
+vendor_comet = 0.9087
+
+[step]
+id = "translate"
+stage = "translate"
+
+[hardware]
+arch = ["amd64"]
+min_ram_mb = 512
+
+[[files]]
+name = "model.enfi.intgemm.alphas.bin"
+sha256 = "88b0caa4cc6980d632801cb2b1950748f1dc43ad2ac83678917ad86c720b5cdd"
+bytes = 31561787
+url = "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/b23aac5b-1f93-407d-be1a-aff19bcd86b4.bin"
+
+[[files]]
+name = "lex.50.50.enfi.s2t.bin"
+sha256 = "26e95a87f87e4b0fa9a35524cf9fea691204504453877ba4ac81ccc66af1488c"
+bytes = 3490092
+url = "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/a32029c0-5216-49a3-ba89-8f48c29e7188.bin"
+
+[[files]]
+name = "vocab.enfi.spm"
+sha256 = "6a866911427f2916609ae89c7f2f04a78de3fdd8aa183039ecba986635d4f246"
+bytes = 818770
+url = "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/f98de766-1b61-4245-83f3-0d300232ebe4.spm"

@@ -1,0 +1,17 @@
+model-translate-da-en: the Firefox Translations Danish to English student
+model "tiny" (version 1.0), Copyright Mozilla and contributors,
+licensed under the Mozilla Public License 2.0 (LICENSE in this component).
+
+Source: Mozilla's Firefox Translations models,
+https://github.com/mozilla/firefox-translations-models (the files themselves
+are served from the Remote Settings collection "translations-models" of
+https://firefox.settings.services.mozilla.com). The model files are shipped
+unmodified; their sha256 are:
+
+  model.daen.intgemm.alphas.bin  2c1ace24220c905404bbb1de14bfeda8a391ef8d6c56f3b193a9d3e340d99b12
+  lex.50.50.daen.s2t.bin         e5f50fba646e0d3cedf2957575aa84c3bdca6798ce32ccd63c956fc043d774a3
+  vocab.daen.spm                 b9392fcd9c53b802628d33a160f6eb52ca3d25a07ec9e015ab93b6bd5c7e8033
+
+config.yml and myna-text-model.json are Canonical's own (AGPL-3.0-or-later).
+The runtime that executes the model, bergamot-translator (MPL-2.0), and its
+bundled libraries are noted in the myna-translation snap's NOTICE.

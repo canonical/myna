@@ -1,0 +1,17 @@
+model-translate-id-en: the Firefox Translations Indonesian to English student
+model "tiny" (version 1.0), Copyright Mozilla and contributors,
+licensed under the Mozilla Public License 2.0 (LICENSE in this component).
+
+Source: Mozilla's Firefox Translations models,
+https://github.com/mozilla/firefox-translations-models (the files themselves
+are served from the Remote Settings collection "translations-models" of
+https://firefox.settings.services.mozilla.com). The model files are shipped
+unmodified; their sha256 are:
+
+  model.iden.intgemm.alphas.bin  eeed3d8c2c78ec7011b31b2419e1d2dfdf2a7cc0ee0dbb1fcd164c934cb5d328
+  lex.50.50.iden.s2t.bin         7a543087d4e9c1fe2f6b6f735b5e31aeadab80235e734c0388278722042ee3a2
+  vocab.iden.spm                 a2dd1462abd17cccbbf3fefc562131f06b293f8ff6a5efad73ebb0176810d835
+
+config.yml and myna-text-model.json are Canonical's own (AGPL-3.0-or-later).
+The runtime that executes the model, bergamot-translator (MPL-2.0), and its
+bundled libraries are noted in the myna-translation snap's NOTICE.
