@@ -155,13 +155,17 @@ pub struct Plan {
     pub output: Tongue,
 }
 
-/// Downloads, then model hops, then latency, then lost quality, then hops.
-type Cost = (u32, u32, u32, u32, u32);
+/// Downloads, then model hops, then converter hops, then latency, then lost
+/// quality, then hops. Converters rank above the measurements so a model
+/// that writes the wanted script itself beats a model plus a converter,
+/// whatever either one measured.
+type Cost = (u32, u32, u32, u32, u32, u32);
 
 fn cost(imp: &Implementation) -> Cost {
     (
         u32::from(!imp.installed),
         u32::from(imp.kind != Kind::Transcode),
+        u32::from(imp.kind == Kind::Transcode),
         imp.latency_ms,
         1000u32.saturating_sub(imp.quality),
         1,
@@ -169,7 +173,14 @@ fn cost(imp: &Implementation) -> Cost {
 }
 
 fn add(a: Cost, b: Cost) -> Cost {
-    (a.0 + b.0, a.1 + b.1, a.2 + b.2, a.3 + b.3, a.4 + b.4)
+    (
+        a.0 + b.0,
+        a.1 + b.1,
+        a.2 + b.2,
+        a.3 + b.3,
+        a.4 + b.4,
+        a.5 + b.5,
+    )
 }
 
 type Found = (Cost, Vec<usize>, Tongue);
@@ -183,7 +194,7 @@ fn reach(
     goal: impl Fn(&Tongue) -> bool,
 ) -> Option<Found> {
     let mut heap = BinaryHeap::new();
-    heap.push(Reverse(((0, 0, 0, 0, 0), start.clone(), Vec::new())));
+    heap.push(Reverse(((0, 0, 0, 0, 0, 0), start.clone(), Vec::new())));
     let mut seen = HashSet::new();
     while let Some(Reverse((c, at, path))) = heap.pop() {
         if !seen.insert(at.clone()) {
@@ -354,6 +365,33 @@ mod tests {
         let plan = solve(&to("en"), &t("zh-Hans"), &impls);
         assert!(matches!(plan.steps[0], Outcome::Runs(_)));
         assert_eq!(ids(&plan, 0, &impls), ["opencc-zh-Hant", "zh-Hant-en"]);
+    }
+
+    /// The catalog's English to Chinese pair: Simplified measured (chrF
+    /// 0.339), Traditional not measured, which the daemon reads as quality 0.
+    fn english_to_chinese(hans: bool, hant: bool) -> Vec<Implementation> {
+        let mut impls = opencc();
+        let mut en_hans = imp("en-zh-Hans", Kind::Translate, "en", "zh-Hans", hans);
+        (en_hans.latency_ms, en_hans.quality) = (30, 339);
+        let mut en_hant = imp("en-zh-Hant", Kind::Translate, "en", "zh-Hant", hant);
+        (en_hant.latency_ms, en_hant.quality) = (30, 0);
+        impls.extend([en_hans, en_hant]);
+        impls
+    }
+
+    #[test]
+    fn english_reaches_traditional_directly_whatever_the_models_measured() {
+        let impls = english_to_chinese(true, true);
+        let plan = solve(&to("zh-Hant"), &t("en"), &impls);
+        assert_eq!(ids(&plan, 0, &impls), ["en-zh-Hant"]);
+    }
+
+    #[test]
+    fn english_reaches_traditional_through_the_simplified_model_when_only_it_is_installed() {
+        let impls = english_to_chinese(true, false);
+        let plan = solve(&to("zh-Hant"), &t("en"), &impls);
+        assert!(matches!(&plan.steps[0], Outcome::Runs(p) if p.hops[1].inserted));
+        assert_eq!(ids(&plan, 0, &impls), ["en-zh-Hans", "opencc-zh-Hant"]);
     }
 
     #[test]
