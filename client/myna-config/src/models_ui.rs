@@ -19,6 +19,7 @@ use crate::markup::escape_markup;
 use crate::plugin_catalog::Entry;
 use crate::plugin_install::{self, Failure};
 use crate::ports::{DictationDaemon, SystemConfigurator, SystemConfiguratorError};
+use crate::ui::InstallControl;
 
 pub struct Deps {
     pub configurator: Rc<dyn SystemConfigurator>,
@@ -43,8 +44,11 @@ struct ModelRow {
     /// libadwaita critical.
     group: adw::PreferencesGroup,
     row: adw::ActionRow,
-    remove: Option<gtk::Button>,
-    spinner: gtk::Spinner,
+    /// What the row shows now, to patch it when only that changed.
+    model: Model,
+    /// Remove, then "Removing…" with a spinner: the Install control of
+    /// Install more models. `None` on the model in use.
+    control: Option<InstallControl>,
 }
 
 type Callback = RefCell<Option<Box<dyn Fn()>>>;
@@ -65,6 +69,15 @@ pub struct ModelsSection {
     on_add_text: Callback,
     on_removed: Callback,
     cancellation: CancellationToken,
+}
+
+/// "Translation · 33 MB": what a model is and what it takes on disk.
+fn subtitle(model: &Model) -> String {
+    // TRANSLATORS: {kind} says what a model is, such as "Translation" or "Speech recognition", and {size} its size on disk, such as "729 MB". The spaces around the dot are no-break spaces.
+    let frame = gettextrs::gettext("{kind}\u{a0}·\u{a0}{size}");
+    frame
+        .replace("{kind}", &model.kind)
+        .replace("{size}", &glib::format_size(model.bytes))
 }
 
 fn add_row(title: &str) -> adw::ActionRow {
@@ -172,7 +185,9 @@ impl ModelsSection {
             })
         };
         if self.shown.borrow().as_ref() != Some(&models) {
-            self.rebuild(&models);
+            if !self.patch(&models) {
+                self.rebuild(&models);
+            }
             self.shown.replace(Some(models));
         }
         self.render();
@@ -204,6 +219,48 @@ impl ModelsSection {
         cached.clone().unwrap_or_default()
     }
 
+    /// Bring the rows to `models` without rebuilding any that stay, when
+    /// the change is only models gone or a shown detail changed: a removal
+    /// then costs the other rows no redraw. False when a row would have to
+    /// be added or changed what it offers; the caller rebuilds.
+    fn patch(&self, models: &Models) -> bool {
+        let wanted: Vec<&Model> = models.speech.iter().chain(&models.text).collect();
+        let mut rows = self.rows.borrow_mut();
+        let mut next = wanted.iter().peekable();
+        for row in rows.iter() {
+            let kept = next.next_if(|m| m.id == row.id);
+            if kept.is_some_and(|m| m.in_use != row.model.in_use) {
+                return false;
+            }
+        }
+        if next.next().is_some() {
+            return false;
+        }
+        rows.retain(|row| {
+            let Some(model) = wanted.iter().find(|m| m.id == row.id) else {
+                row.group.remove(&row.row);
+                return false;
+            };
+            if **model != row.model {
+                row.row.set_title(&escape_markup(&model.title));
+                let subtitle = subtitle(model);
+                row.row.set_subtitle(&escape_markup(&subtitle));
+                row.row
+                    .update_property(&[gtk::accessible::Property::Description(&subtitle)]);
+            }
+            true
+        });
+        for (row, model) in rows.iter_mut().zip(&wanted) {
+            row.model = (*model).clone();
+        }
+        // TRANSLATORS: {size} is a size on disk, such as "5.2 GB".
+        let frame = gettextrs::gettext("Models use {size} of disk in all.");
+        self.speech_group.set_description(Some(
+            &frame.replace("{size}", &glib::format_size(models.total())),
+        ));
+        true
+    }
+
     fn rebuild(self: &Rc<Self>, models: &Models) {
         for model in self.rows.take() {
             model.group.remove(&model.row);
@@ -232,41 +289,31 @@ impl ModelsSection {
     }
 
     fn model_row(self: &Rc<Self>, model: &Model, group: &adw::PreferencesGroup) -> ModelRow {
-        // TRANSLATORS: {kind} says what a model is, such as "Translation" or "Speech recognition", and {size} its size on disk, such as "729 MB". The spaces around the dot are no-break spaces.
-        let frame = gettextrs::gettext("{kind}\u{a0}·\u{a0}{size}");
-        let subtitle = frame
-            .replace("{kind}", &model.kind)
-            .replace("{size}", &glib::format_size(model.bytes));
+        let subtitle = subtitle(model);
         let row = adw::ActionRow::builder()
             .title(escape_markup(&model.title))
             .subtitle(escape_markup(&subtitle))
             .build();
         row.update_property(&[gtk::accessible::Property::Description(&subtitle)]);
-        let spinner = gtk::Spinner::builder()
-            .valign(gtk::Align::Center)
-            .visible(false)
-            .build();
-        row.add_suffix(&spinner);
-        let remove = if model.in_use {
+        let control = if model.in_use {
             let label = gtk::Label::builder()
                 .label(gettextrs::gettext("In use"))
                 .valign(gtk::Align::Center)
+                .halign(gtk::Align::End)
+                .xalign(1.0)
+                .width_request(136)
                 .css_classes(["dim-label"])
                 .build();
             row.add_suffix(&label);
             None
         } else {
-            let button = gtk::Button::builder()
-                .label(gettextrs::gettext("Remove"))
-                .valign(gtk::Align::Center)
-                .css_classes(["flat"])
-                .build();
-            button.reset_relation(gtk::AccessibleRelation::LabelledBy);
-            button.update_property(&[gtk::accessible::Property::Label(
+            let control = InstallControl::new();
+            control.show_offer(
+                &gettextrs::gettext("Remove"),
                 // TRANSLATORS: {model} names a model, such as "Whisper" or "English to Italiano".
                 &gettextrs::gettext("Remove {model}").replace("{model}", &model.title),
-            )]);
-            button.connect_clicked({
+            );
+            control.button().connect_clicked({
                 let section = Rc::downgrade(self);
                 let id = model.id.clone();
                 move |_| {
@@ -275,15 +322,15 @@ impl ModelsSection {
                     }
                 }
             });
-            row.add_suffix(&button);
-            Some(button)
+            row.add_suffix(&control);
+            Some(control)
         };
         ModelRow {
             id: model.id.clone(),
             group: group.clone(),
             row,
-            remove,
-            spinner,
+            model: model.clone(),
+            control,
         }
     }
 
@@ -296,11 +343,22 @@ impl ModelsSection {
         let blocked = self.blocked();
         for model in self.rows.borrow().iter() {
             let this = removing.as_deref() == Some(model.id.as_str());
-            model.spinner.set_visible(this);
-            model.spinner.set_spinning(this);
-            if let Some(button) = &model.remove {
-                button.set_visible(!this);
-                button.set_sensitive(!blocked);
+            let Some(control) = &model.control else {
+                continue;
+            };
+            if this {
+                control.show_installing(None);
+                control
+                    .progress()
+                    .label
+                    .set_label(&gettextrs::gettext("Removing…"));
+            } else {
+                control.show_offer(
+                    &gettextrs::gettext("Remove"),
+                    // TRANSLATORS: {model} names a model, such as "Whisper" or "English to Italiano".
+                    &gettextrs::gettext("Remove {model}").replace("{model}", &model.model.title),
+                );
+                control.button().set_sensitive(!blocked);
             }
         }
     }
@@ -619,7 +677,10 @@ pub(crate) mod tests {
             .iter()
             .find(|r| r.row.title() == title)
             .unwrap_or_else(|| panic!("no row {title}"));
-        (found.row.clone(), found.remove.clone())
+        (
+            found.row.clone(),
+            found.control.as_ref().map(InstallControl::button),
+        )
     }
 
     fn toasts(rig: &Rig) -> usize {
@@ -679,6 +740,31 @@ pub(crate) mod tests {
             rig.section.show(&found(false));
             let (after, _) = row(&rig, "Whisper");
             assert_eq!(before, after);
+        });
+    }
+
+    #[test]
+    fn a_removed_model_leaves_only_its_own_row() {
+        crate::ui::on_gtk_thread(|| {
+            let rig = rig("idle", Ok(Some("9".into())));
+            let (parakeet, _) = row(&rig, "Parakeet");
+            let (text, _) = row(&rig, "model-translate-en-it summary");
+            let mut after = found(false);
+            let kept: &'static [InstalledSnap] = Box::leak(
+                after
+                    .snaps
+                    .iter()
+                    .filter(|s| s.name != "myna-whisper")
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .into_boxed_slice(),
+            );
+            after.snaps = kept;
+            rig.section.show(&after);
+            assert_eq!(rig.section.rows.borrow().len(), 2);
+            assert_eq!(row(&rig, "Parakeet").0, parakeet);
+            assert_eq!(row(&rig, "model-translate-en-it summary").0, text);
+            assert!(parakeet.parent().is_some() && text.parent().is_some());
         });
     }
 
