@@ -153,7 +153,7 @@ shot waitfor:General tab:Processing "click:New chain…" "click:Add step…" "cl
 switch_on
 assert_dict "the daemon's chain status is ready" "$READY"
 shot waitfor:General tab:Processing "click:$CHAIN" "waitfor:ZH → EN" \
-    "waitfor:Writes Traditional first" shot:shots/chains-dictation/07-chinese-english.png \
+    "waitfor:Converts to Traditional first" shot:shots/chains-dictation/07-chinese-english.png \
     || { echo "chinese to english editor failed" >&2; FAILED=1; }
 dictate
 assert_dict "English is in the field, no Chinese" \

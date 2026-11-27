@@ -169,17 +169,18 @@ pub fn lines(chain: &Chain, ctx: &Context) -> Vec<Row> {
         .zip(rows)
         .enumerate()
         .map(|(index, ((step, fit), mut row))| {
-            let (badge, skipped, subtitle, fix, inserted) = match &fit {
+            let (badge, skipped, subtitle, fix, (inserted, inserted_after)) = match &fit {
                 Fit::Runs {
                     input,
                     output,
-                    inserted,
+                    before,
+                    after,
                 } => (
                     written(step, input.as_deref(), output.as_deref()),
                     false,
                     row.subtitle.clone(),
                     None,
-                    inserted.join(", "),
+                    (before.join(", "), after.join(", ")),
                 ),
                 Fit::Skipped {
                     why,
@@ -193,7 +194,7 @@ pub fn lines(chain: &Chain, ctx: &Context) -> Vec<Row> {
                         true,
                         why_text(why),
                         fix,
-                        String::new(),
+                        (String::new(), String::new()),
                     )
                 }
                 Fit::Off => (
@@ -201,14 +202,14 @@ pub fn lines(chain: &Chain, ctx: &Context) -> Vec<Row> {
                     false,
                     row.description.clone(),
                     None,
-                    String::new(),
+                    (String::new(), String::new()),
                 ),
                 Fit::Unknown => (
                     String::new(),
                     true,
                     gettextrs::gettext("Not known to this version of Myna"),
                     None,
-                    String::new(),
+                    (String::new(), String::new()),
                 ),
             };
             let keeps = |to: usize| {
@@ -251,6 +252,7 @@ pub fn lines(chain: &Chain, ctx: &Context) -> Vec<Row> {
                 skipped,
                 moves,
                 inserted,
+                inserted_after,
             };
             row.subtitle = subtitle;
             row

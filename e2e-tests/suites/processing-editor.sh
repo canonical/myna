@@ -12,6 +12,7 @@
 #   4. a step's own switch pauses only that step
 #   5. the step's input badge and picker, and the picker under it at 360 px
 #   6. a translation of Chinese shows the converter the solver puts first
+#   7. English to Traditional Chinese shows no conversion
 set -uo pipefail
 # shellcheck source=e2e-tests/suites/lib.sh
 source "$(dirname "$0")/lib.sh"
@@ -78,8 +79,18 @@ step 6 "a translation of Chinese shows the converter the solver puts first"
 assert_on "a chain translating to English is saved, for Chinese dictation" \
     "snap run myna.config set chains \"[('zh', 'Chinese to English', [('translate', true, {'to': 'en'})])]\" && snap run myna.config set language zh"
 shot waitfor:General tab:Processing "click:Chinese to English" \
-    "waitfor:Writes Traditional first" shot:shots/processing-editor/06-inserted.png \
+    "waitfor:Converts to Traditional first" shot:shots/processing-editor/06-inserted.png \
     || { echo "inserted converter failed" >&2; FAILED=1; }
+
+step 7 "English to Traditional Chinese needs no conversion of either text"
+# The Traditional model writes the script itself, so the solver adds no
+# converter before or after it.
+assert_on "a chain translating to Traditional Chinese is saved, for English dictation" \
+    "snap run myna.config set chains \"[('en', 'English to Traditional', [('translate', true, {'to': 'zh-Hant'})])]\" && snap run myna.config set language en"
+shot waitfor:General tab:Processing "click:English to Traditional" \
+    "waitfor:Translate to" "gone:Converts to Traditional first" "gone:Then converts to Traditional" \
+    shot:shots/processing-editor/07-no-conversion.png \
+    || { echo "english to traditional editor failed" >&2; FAILED=1; }
 
 evidence editor
 suite_status

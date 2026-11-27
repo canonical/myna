@@ -712,6 +712,7 @@ impl StepsPage {
             editor.steps.remove(&widgets.inserted);
             editor.steps.remove(&widgets.row);
             editor.steps.remove(&widgets.detail);
+            editor.steps.remove(&widgets.inserted_after);
         }
         if editor.add_row.parent().is_some() {
             editor.steps.remove(&editor.add_row);
@@ -722,6 +723,7 @@ impl StepsPage {
             editor.steps.add(&widgets.inserted);
             editor.steps.add(&widgets.row);
             editor.steps.add(&widgets.detail);
+            editor.steps.add(&widgets.inserted_after);
             built.push(widgets);
         }
         editor.steps.add(&editor.add_row);

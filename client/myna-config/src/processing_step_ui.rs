@@ -19,9 +19,11 @@ use super::processing_ui::{describe, name, Focus, StepsPage};
 
 /// One step in the editor.
 pub(crate) struct LineWidgets {
-    /// What the solver runs before the step, such as "Writes Traditional
-    /// first": dimmed, with nothing to change.
+    /// What the solver runs before the step, such as "Converts to
+    /// Traditional first": dimmed, with nothing to change.
     pub(crate) inserted: adw::ActionRow,
+    /// What it runs after the step, such as "Then converts to Traditional".
+    pub(crate) inserted_after: adw::ActionRow,
     pub(crate) row: adw::ActionRow,
     /// "Skipped", shown while the text at the step's place does not suit it.
     pub(crate) skipped: gtk::Label,
@@ -154,6 +156,12 @@ pub(crate) fn show_step(widgets: &LineWidgets, line: &Row, total: usize, narrow:
     widgets
         .inserted
         .set_visible(!line.place.inserted.is_empty());
+    widgets
+        .inserted_after
+        .set_title(&escape_markup(&line.place.inserted_after));
+    widgets
+        .inserted_after
+        .set_visible(!line.place.inserted_after.is_empty());
     widgets.row.set_title(&escape_markup(&line.title));
     widgets.row.set_subtitle(&escape_markup(&line.subtitle));
     // TRANSLATORS: a step's place in its chain, read by screen readers: "Step 2 of 3".
@@ -389,14 +397,17 @@ impl LineWidgets {
             ],
         );
         let (detail, control, fix) = line_detail(&picker);
-        let inserted = adw::ActionRow::builder()
-            .css_classes(["skipped-step"])
-            .activatable(false)
-            .selectable(false)
-            .visible(false)
-            .build();
+        let inserted_row = || {
+            adw::ActionRow::builder()
+                .css_classes(["skipped-step"])
+                .activatable(false)
+                .selectable(false)
+                .visible(false)
+                .build()
+        };
         Self {
-            inserted,
+            inserted: inserted_row(),
+            inserted_after: inserted_row(),
             row,
             skipped,
             detail,

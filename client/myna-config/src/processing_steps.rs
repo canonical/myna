@@ -172,8 +172,10 @@ pub struct Place {
     pub skipped: bool,
     /// Which moves keep every translation of the chain doable.
     pub moves: Moves,
-    /// What the solver runs first for this step, such as "Writes Traditional first".
+    /// What the solver runs before this step, such as "Converts to Traditional first".
     pub inserted: String,
+    /// What it runs after the step, such as "Then converts to Traditional".
+    pub inserted_after: String,
 }
 
 /// The moves of a step that leave no translation without a model.

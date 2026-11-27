@@ -36,12 +36,13 @@ pub enum Why {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Fit {
     /// Runs, reading text in `input` and leaving it in `output` (`None`
-    /// when the language is not known). `inserted` names the converters
-    /// the solver put before it.
+    /// when the language is not known). `before` and `after` say what the
+    /// solver put around it: converters, and a pivot through English.
     Runs {
         input: Option<String>,
         output: Option<String>,
-        inserted: Vec<String>,
+        before: Vec<String>,
+        after: Vec<String>,
     },
     /// Skipped: the text there is not what it reads. `move_above` is the
     /// index of the earlier step that changed the language, when the step
@@ -96,14 +97,29 @@ fn wanted(step: &ChainStep) -> Result<Step, Why> {
     }
 }
 
-fn written_first(script: &Script) -> String {
+/// A converter's output script in the user's words, for a row above the
+/// step (`first`) or below it.
+fn converts_to(script: &Script, first: bool) -> String {
     use gettextrs::gettext;
-    match script {
-        Script::Known(s) if s == "Hans" => gettext("Writes Simplified first"),
-        Script::Known(s) if s == "Hant" => gettext("Writes Traditional first"),
-        Script::Known(s) if s == "Hant-TW" => gettext("Writes Traditional (Taiwan) first"),
-        Script::Known(s) if s == "Hant-HK" => gettext("Writes Traditional (Hong Kong) first"),
-        _ => gettext("Converts the script first"),
+    match (script, first) {
+        (Script::Known(s), true) if s == "Hans" => gettext("Converts to Simplified first"),
+        (Script::Known(s), true) if s == "Hant" => gettext("Converts to Traditional first"),
+        (Script::Known(s), true) if s == "Hant-TW" => {
+            gettext("Converts to Traditional (Taiwan) first")
+        }
+        (Script::Known(s), true) if s == "Hant-HK" => {
+            gettext("Converts to Traditional (Hong Kong) first")
+        }
+        (_, true) => gettext("Converts the script first"),
+        (Script::Known(s), false) if s == "Hans" => gettext("Then converts to Simplified"),
+        (Script::Known(s), false) if s == "Hant" => gettext("Then converts to Traditional"),
+        (Script::Known(s), false) if s == "Hant-TW" => {
+            gettext("Then converts to Traditional (Taiwan)")
+        }
+        (Script::Known(s), false) if s == "Hant-HK" => {
+            gettext("Then converts to Traditional (Hong Kong)")
+        }
+        (_, false) => gettext("Then converts the script"),
     }
 }
 
@@ -260,32 +276,42 @@ impl<'a> World<'a> {
                 }
                 let judged = match &at {
                     Some(here) => self.judge(step, here).map(|path| {
-                        let mut inserted: Vec<String> = path
+                        let model = path
                             .hops
                             .iter()
-                            .filter(|hop| hop.inserted)
-                            .map(|hop| {
-                                written_first(&self.impls[hop.implementation].produces.script)
-                            })
-                            .collect();
+                            .position(|hop| !hop.inserted)
+                            .unwrap_or(path.hops.len());
+                        let says = |hops: &[graph::Hop], first| {
+                            hops.iter()
+                                .filter(|hop| hop.inserted)
+                                .map(|hop| {
+                                    converts_to(
+                                        &self.impls[hop.implementation].produces.script,
+                                        first,
+                                    )
+                                })
+                                .collect::<Vec<String>>()
+                        };
+                        let mut before = says(&path.hops[..model], true);
+                        let after = says(&path.hops[model..], false);
                         let legs = path
                             .hops
                             .iter()
                             .filter(|hop| self.impls[hop.implementation].kind == Kind::Translate)
                             .count();
                         if legs > 1 {
-                            inserted.push(gettextrs::gettext("Through English"));
+                            before.push(gettextrs::gettext("Through English"));
                         }
-                        (Some(path.produces), inserted)
+                        (Some(path.produces), before, after)
                     }),
                     None => wanted(step).map(|solved| match solved {
-                        Step::Translate { to } => (Some(to), Vec::new()),
-                        _ => (None, Vec::new()),
+                        Step::Translate { to } => (Some(to), Vec::new(), Vec::new()),
+                        _ => (None, Vec::new(), Vec::new()),
                     }),
                 };
                 let input = at.as_ref().map(|t| t.language.clone());
                 match judged {
-                    Ok((produced, inserted)) => {
+                    Ok((produced, before, after)) => {
                         if step.step == "translate" {
                             changed = Some((index, at.clone()));
                         }
@@ -293,7 +319,8 @@ impl<'a> World<'a> {
                         Fit::Runs {
                             input,
                             output: at.as_ref().map(|t| t.language.clone()),
-                            inserted,
+                            before,
+                            after,
                         }
                     }
                     Err(why) => {
