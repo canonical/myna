@@ -57,6 +57,7 @@ translate_en_<l>, the other pair slices
   Pair input: translate_en_it data/it_it/test.tsv sha256 af1a6d7295547d283441e2ea2e6f24f41d9b26098b47fe3d588930cd053c7b08
   Pair input: translate_en_ja data/ja_jp/test.tsv sha256 5dd9643511437414681ad3f23508596c621cdf78978724a09f1f06fefe9d300b
   Pair input: translate_en_kn data/kn_in/test.tsv sha256 a8ab2c4e019adecf236a27f1806d2fc7448a59a2021da1f13e7f79afbc824371
+  Pair input: translate_en_ko data/ko_kr/test.tsv sha256 cf2f7c8765f6203e3c46ef620d5e936d3f331b6e8865455557777dd1347517f5
   Pair input: translate_en_lt data/lt_lt/test.tsv sha256 e16787ad3c60d7a67680096a7bd78d849e54fd2d8f6fa048f41c4527f03960c5
   Pair input: translate_en_lv data/lv_lv/test.tsv sha256 3207f996478a7176bf1fe08bc01646f63fad6e59acad2b861c1e7bc994fa5e94
   Pair input: translate_en_ml data/ml_in/test.tsv sha256 3a419576fd330b890c923f8fa3844e376f34c4ca504ad2d4f056e2615c6feba4
