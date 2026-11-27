@@ -155,6 +155,20 @@ fn offered(ctx: &Context) -> Vec<Implementation> {
     let models = |task: &'static str| ctx.models.iter().filter(move |c| c.capability.task == task);
     let english = Tongue::new("en", Script::Unspecified);
     out.push(imp(graph::Kind::Tidy, english.clone(), english, 0, 0));
+    for c in models("text.cleanup") {
+        for language in covers(c, "language") {
+            let tongue = Tongue::new(
+                &myna_core::chains::primary_language(&language),
+                Script::Unspecified,
+            );
+            let held = out
+                .iter()
+                .any(|i| i.kind == graph::Kind::Tidy && i.accepts == tongue);
+            if !held {
+                out.push(imp(graph::Kind::Tidy, tongue.clone(), tongue, 0, 0));
+            }
+        }
+    }
     for c in models("text.translate") {
         let ms = u32::try_from(c.capability.latency_ms.unwrap_or(0)).unwrap_or(u32::MAX);
         let quality = (c.capability.quality.unwrap_or(0.0) * 1000.0) as u32;
@@ -291,18 +305,24 @@ fn path_ops(
                 ops.push(ask(request, Check::Usable));
             }
             graph::Kind::Tidy => {
-                let language = if ctx.language.is_some() {
-                    Lang::En
-                } else {
-                    Lang::Any
-                };
-                ops.push(Op::Rule {
-                    rule: Rule::Disfluency(language),
-                });
+                // The rules are English's; the tagger reads the other
+                // languages as they were heard (the per-language rule
+                // before it costs about 10 points).
+                if imp.accepts.language == "en" {
+                    let language = if ctx.language.is_some() {
+                        Lang::En
+                    } else {
+                        Lang::Any
+                    };
+                    ops.push(Op::Rule {
+                        rule: Rule::Disfluency(language),
+                    });
+                }
                 ops.push(Op::Rule {
                     rule: Rule::Vocabulary,
                 });
-                ops.push(ask(Request::cleanup(None), Check::ConservativeEdit));
+                let language = ctx.language.map(|_| imp.accepts.language.clone());
+                ops.push(ask(Request::cleanup(language), Check::ConservativeEdit));
             }
         }
     }
@@ -350,6 +370,30 @@ mod tests {
             }))
             .unwrap(),
         }
+    }
+
+    fn cleaner(languages: &[&str]) -> Candidate {
+        Candidate {
+            socket: "/s".into(),
+            share: "myna-text".into(),
+            capability: serde_json::from_value(serde_json::json!({
+                "id": "tidy", "task": "text.cleanup",
+                "covers": {"language": languages}, "latency_ms": 5,
+            }))
+            .unwrap(),
+        }
+    }
+
+    fn tidy_ops(language: &str, models: &[Candidate]) -> (Vec<Op>, &'static str) {
+        let c = compile(
+            &spec(&["tidy"]),
+            &Context {
+                language: Some(language),
+                models,
+                ..Context::default()
+            },
+        );
+        (c.graph.ops().to_vec(), states(&c)[0])
     }
 
     fn compiled(ids: &[&str], language: Option<&str>, pairs: &[(&str, &str)]) -> Compiled {
@@ -456,5 +500,48 @@ mod tests {
         let c = compiled(&["shout", "tidy", "shout", "whisper"], None, &[]);
         assert_eq!(states(&c), ["unknown", "on", "unknown", "unknown"]);
         assert_eq!(c.graph, preset_graph(ProcessingChain::TIDY));
+    }
+
+    #[test]
+    fn tidy_reads_the_languages_a_cleanup_model_covers() {
+        let models = [cleaner(&["en", "fr", "de", "es"])];
+        for language in ["fr", "de", "es"] {
+            let (ops, state) = tidy_ops(language, &models);
+            assert_eq!(state, "on", "{language}");
+            let rules = ops
+                .iter()
+                .filter(|op| {
+                    matches!(
+                        op,
+                        Op::Rule {
+                            rule: Rule::Disfluency(_)
+                        }
+                    )
+                })
+                .count();
+            assert_eq!(
+                rules, 0,
+                "no disfluency rule before the tagger in {language}"
+            );
+            let asked = ops.iter().find_map(|op| match op {
+                Op::Ask { request, .. } => Some(request.params["language"].clone()),
+                _ => None,
+            });
+            assert_eq!(asked, Some(language.into()));
+        }
+        let (ops, state) = tidy_ops("en", &models);
+        assert_eq!(state, "on");
+        assert!(ops.contains(&Op::Rule {
+            rule: Rule::Disfluency(Lang::En)
+        }));
+        assert_eq!(tidy_ops("it", &models).1, "n/a");
+    }
+
+    #[test]
+    fn tidy_stays_english_only_without_a_model_for_the_language() {
+        let english_only = [cleaner(&["en"])];
+        assert_eq!(tidy_ops("fr", &english_only).1, "n/a");
+        assert_eq!(tidy_ops("fr", &[]).1, "n/a");
+        assert_eq!(tidy_ops("en", &[]).1, "on");
     }
 }

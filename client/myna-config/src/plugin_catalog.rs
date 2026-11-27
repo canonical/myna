@@ -49,6 +49,9 @@ pub struct Entry {
     pub in_lang: String,
     #[serde(default)]
     pub out_lang: String,
+    /// Every language a model reads, when it is more than `in_lang`.
+    #[serde(default)]
+    pub languages: Vec<String>,
     #[serde(default)]
     pub download_bytes: u64,
     #[serde(default)]

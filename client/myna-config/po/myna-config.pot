@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-26 23:56+0000\n"
+"POT-Creation-Date: 2026-11-27 02:00+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -357,33 +357,34 @@ msgstr ""
 msgid "Converts the script first"
 msgstr ""
 
-#: src/chain_solve.rs:250
+#: src/chain_solve.rs:277
 msgid "Through English"
 msgstr ""
 
-#: src/chain_solve.rs:296
+#: src/chain_solve.rs:323
 msgid "Needs a language to translate to"
 msgstr ""
 
-#: src/chain_solve.rs:297
+#: src/chain_solve.rs:324
 msgid "Needs a script to write"
 msgstr ""
 
-#: src/chain_solve.rs:298
+#: src/chain_solve.rs:325
 msgid "The text is already in that language"
 msgstr ""
 
-#: src/chain_solve.rs:299
+#: src/chain_solve.rs:326
 msgid "Applies when the text is Chinese"
 msgstr ""
 
-#. TRANSLATORS: {language} is a language name, such as "English".
-#: src/chain_solve.rs:302
+#. TRANSLATORS: {language} is a language name, such as "English", or
+#. several separated by commas.
+#: src/chain_solve.rs:334
 msgid "Applies when the text is {language}"
 msgstr ""
 
 #. TRANSLATORS: {from} and {to} are language names, such as "فارسی" and "Français".
-#: src/chain_solve.rs:307 src/processing_steps.rs:389
+#: src/chain_solve.rs:338 src/processing_steps.rs:389
 msgid "No model translates {from} to {to} yet"
 msgstr ""
 
@@ -752,7 +753,7 @@ msgstr ""
 msgid "License"
 msgstr ""
 
-#: src/step_catalog.rs:187 src/processing_ui.rs:283 src/plugin_catalog.rs:277
+#: src/step_catalog.rs:187 src/processing_ui.rs:283 src/plugin_catalog.rs:280
 msgid "Translate"
 msgstr ""
 
@@ -768,7 +769,7 @@ msgid_plural "From {language} into {count} languages"
 msgstr[0] ""
 msgstr[1] ""
 
-#: src/step_catalog.rs:243 src/plugin_catalog.rs:276
+#: src/step_catalog.rs:243 src/plugin_catalog.rs:279
 msgid "um so I, I think we should go"
 msgstr ""
 
@@ -776,7 +777,7 @@ msgstr ""
 msgid "So I think we should go."
 msgstr ""
 
-#: src/step_catalog.rs:247 src/plugin_catalog.rs:279
+#: src/step_catalog.rs:247 src/plugin_catalog.rs:282
 msgid "I think we should go"
 msgstr ""
 
@@ -1100,15 +1101,15 @@ msgstr ""
 msgid "Finish dictating, then try again."
 msgstr ""
 
-#: src/plugin_catalog.rs:272
+#: src/plugin_catalog.rs:275
 msgid "Tidy up speech"
 msgstr ""
 
-#: src/plugin_catalog.rs:274
+#: src/plugin_catalog.rs:277
 msgid "Removes filler words and false starts, and fixes case and punctuation."
 msgstr ""
 
-#: src/plugin_catalog.rs:278
+#: src/plugin_catalog.rs:281
 msgid "Types your dictation in another language."
 msgstr ""
 

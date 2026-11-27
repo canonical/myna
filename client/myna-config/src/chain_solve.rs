@@ -23,8 +23,8 @@ pub enum Why {
     NoTarget,
     NoScript,
     AlreadyInTarget,
-    /// Tidy reads this language only.
-    OnlyFor(String),
+    /// Tidy reads these languages only.
+    OnlyFor(Vec<String>),
     NotChinese,
     NoModel {
         from: String,
@@ -135,11 +135,25 @@ impl<'a> World<'a> {
                 continue;
             }
             let accepts = Tongue::parse(&entry.in_lang);
+            let installed = daemon.is_some_and(|d| d.offers(&entry.model));
+            if kind == Kind::Tidy && !entry.languages.is_empty() {
+                for language in &entry.languages {
+                    let reads = Tongue::parse(language);
+                    world.impls.push(model(
+                        entry.id.clone(),
+                        kind,
+                        reads.clone(),
+                        reads,
+                        installed,
+                    ));
+                    world.entries.push(Some(entry));
+                }
+                continue;
+            }
             let produces = match kind {
                 Kind::Translate => Tongue::parse(&entry.out_lang),
                 _ => accepts.clone(),
             };
-            let installed = daemon.is_some_and(|d| d.offers(&entry.model));
             world
                 .impls
                 .push(model(entry.id.clone(), kind, accepts, produces, installed));
@@ -179,13 +193,18 @@ impl<'a> World<'a> {
         match plan.steps.remove(0) {
             Outcome::Runs(path) | Outcome::Needs(path) => Ok(path),
             Outcome::Skipped(_) => Err(match solved {
-                Step::Tidy => Why::OnlyFor(
-                    self.impls
-                        .iter()
-                        .find(|i| i.kind == Kind::Tidy)
-                        .map_or("en", |i| i.accepts.language.as_str())
-                        .to_owned(),
-                ),
+                Step::Tidy => {
+                    let mut read: Vec<String> = Vec::new();
+                    for i in self.impls.iter().filter(|i| i.kind == Kind::Tidy) {
+                        if !read.contains(&i.accepts.language) {
+                            read.push(i.accepts.language.clone());
+                        }
+                    }
+                    if read.is_empty() {
+                        read.push("en".to_owned());
+                    }
+                    Why::OnlyFor(read)
+                }
                 Step::Script { .. } => Why::NotChinese,
                 Step::Translate { to } => Why::NoModel {
                     from: at.language.clone(),
@@ -305,10 +324,14 @@ pub fn why_text(why: &Why) -> String {
         Why::NoScript => gettext("Needs a script to write"),
         Why::AlreadyInTarget => gettext("The text is already in that language"),
         Why::NotChinese => gettext("Applies when the text is Chinese"),
-        Why::OnlyFor(language) => {
-            // TRANSLATORS: {language} is a language name, such as "English".
-            gettext("Applies when the text is {language}")
-                .replace("{language}", &crate::languages::language_in_text(language))
+        Why::OnlyFor(languages) => {
+            let names: Vec<String> = languages
+                .iter()
+                .map(|l| crate::languages::language_in_text(l))
+                .collect();
+            // TRANSLATORS: {language} is a language name, such as "English", or
+            // several separated by commas.
+            gettext("Applies when the text is {language}").replace("{language}", &names.join(", "))
         }
         Why::NoModel { from, to } => {
             // TRANSLATORS: {from} and {to} are language names, such as "فارسی" and "Français".
@@ -316,5 +339,50 @@ pub fn why_text(why: &Why) -> String {
                 .replace("{from}", &crate::languages::language_in_text(from))
                 .replace("{to}", &crate::languages::language_in_text(to))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tidy(languages: &[&str]) -> Entry {
+        serde_json::from_value(serde_json::json!({
+            "id": "model-tidy", "snap": "myna-text", "component": "model-tidy",
+            "model": "m-tidy", "task": "text.cleanup", "in_lang": "en", "languages": languages,
+            "step": {
+                "id": "tidy", "stage": "clean-up", "label_key": "step.tidy.name",
+                "description_key": "step.tidy.description", "example_key": "step.tidy.example",
+            },
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn a_multilingual_tidy_model_serves_each_of_its_languages() {
+        let catalog = [tidy(&["en", "fr", "de", "es"])];
+        let world = World::new(&catalog, None);
+        let step = ChainStep::new("tidy");
+        for language in ["en", "fr", "de", "es"] {
+            assert_eq!(world.skip(&step, language), None, "{language}");
+        }
+        assert_eq!(
+            world.skip(&step, "it"),
+            Some(Why::OnlyFor(
+                ["en", "fr", "de", "es"].map(str::to_owned).to_vec()
+            ))
+        );
+    }
+
+    #[test]
+    fn a_tidy_entry_without_languages_reads_its_in_lang_only() {
+        let catalog = [tidy(&[])];
+        let world = World::new(&catalog, None);
+        let step = ChainStep::new("tidy");
+        assert_eq!(world.skip(&step, "en"), None);
+        assert_eq!(
+            world.skip(&step, "fr"),
+            Some(Why::OnlyFor(vec!["en".to_owned()]))
+        );
     }
 }
