@@ -20,7 +20,8 @@ use futures_util::stream::{self, BoxStream, StreamExt};
 use tokio::sync::watch;
 
 use super::{
-    Activation, FocusEvent, InjectError, Injector, Support, Target, TextInputCapabilities,
+    fold_control_chars, Activation, FieldPurpose, FocusEvent, InjectError, Injector, Support,
+    Target, TextInputCapabilities,
 };
 
 /// A recording of what the controller did to the injector. Shared with the test
@@ -94,6 +95,7 @@ struct Shown {
     text: String,
     preedit: String,
     secure: bool,
+    purpose: FieldPurpose,
 }
 
 /// The test's hand on the field the mock writes into. Every acquire binds it
@@ -128,6 +130,16 @@ impl MockField {
     /// The field's content type turns secure (or ordinary) under the user.
     pub fn set_secure(&self, secure: bool) {
         self.shown.lock().unwrap().secure = secure;
+    }
+
+    /// What the field says it is for (`URL`, `EMAIL`, `TERMINAL`, etc.).
+    pub fn set_purpose(&self, purpose: FieldPurpose) {
+        self.shown.lock().unwrap().purpose = purpose;
+    }
+
+    /// What the field already holds ahead of the cursor.
+    pub fn set_text(&self, text: &str) {
+        self.shown.lock().unwrap().text = text.into();
     }
 
     /// The committed text the field holds.
@@ -183,6 +195,7 @@ impl MockInjector {
             capabilities: TextInputCapabilities {
                 preedit: false,
                 surrounding_text: false,
+                field_purpose: true,
                 secure_field_detection: Support::Supported,
             },
             log: Arc::new(Mutex::new(InjectorLog::default())),
@@ -193,6 +206,13 @@ impl MockInjector {
     /// `acquire` takes `delay`, as one waiting for a key grab to end does.
     pub fn with_acquire_delay(mut self, delay: std::time::Duration) -> Self {
         self.acquire_delay = delay;
+        self
+    }
+
+    /// Report the character before the cursor (the IBus backend's behavior
+    /// where the field sends surrounding text; default is not to).
+    pub fn with_surrounding_text(mut self) -> Self {
+        self.capabilities.surrounding_text = true;
         self
     }
 
@@ -352,6 +372,7 @@ impl Target for MockTarget {
             field.lose_focus(event);
         }
         let refusal = self.refusal();
+        let purpose = self.field_purpose();
         let mut log = self.log.lock().unwrap();
         log.order.push("commit");
         match refusal {
@@ -360,8 +381,16 @@ impl Target for MockTarget {
                 Err(err)
             }
             None => {
-                log.commits.push(text.to_string());
-                self.field.shown.lock().unwrap().text.push_str(text);
+                let written = if purpose == FieldPurpose::Terminal {
+                    fold_control_chars(text)
+                } else {
+                    text.to_string()
+                };
+                if written.is_empty() {
+                    return Ok(()); // as the daemon: an empty insertion is no insertion
+                }
+                log.commits.push(written.clone());
+                self.field.shown.lock().unwrap().text.push_str(&written);
                 Ok(())
             }
         }
@@ -384,6 +413,22 @@ impl Target for MockTarget {
         self.field
             .lease
             .send_modify(|lease| lease.activated |= lease.id == id);
+    }
+
+    fn char_before_cursor(&self) -> Option<char> {
+        if self.owned() && self.capabilities.surrounding_text {
+            self.field.shown.lock().unwrap().text.chars().last()
+        } else {
+            None
+        }
+    }
+
+    fn field_purpose(&self) -> FieldPurpose {
+        if self.owned() {
+            self.field.shown.lock().unwrap().purpose
+        } else {
+            FieldPurpose::Plain
+        }
     }
 
     fn focus_events(&self) -> BoxStream<'static, FocusEvent> {

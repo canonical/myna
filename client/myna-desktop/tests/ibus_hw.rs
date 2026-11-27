@@ -65,8 +65,13 @@ const NOTICE: Duration = Duration::from_secs(1);
 
 const SENTINEL: &str = "after";
 
+/// `IBusInputPurpose` values used by the conformance fixture.
+const PURPOSE_ALPHA: u32 = 1;
+const PURPOSE_URL: u32 = 5;
+const PURPOSE_EMAIL: u32 = 6;
 /// `IBusInputPurpose::PASSWORD`.
 const PURPOSE_PASSWORD: u32 = 8;
+const PURPOSE_TERMINAL: u32 = 10;
 /// `IBusInputHints::PRIVATE` and `HIDDEN_TEXT`.
 const HINT_PRIVATE: u32 = 1 << 11;
 const HINT_HIDDEN_TEXT: u32 = 1 << 12;
@@ -254,6 +259,12 @@ impl Field {
 
     async fn focus_out(&self) {
         self.ic_call(IC_IFACE, "FocusOut", &()).await;
+    }
+
+    /// Tell the daemon the cursor moved, as a field does once text landed.
+    async fn move_cursor(&self, x: i32) {
+        self.ic_call(IC_IFACE, "SetCursorLocation", &(x, 0i32, 1i32, 20i32))
+            .await;
     }
 
     /// Make `PRIOR_ENGINE` global, so a target's `release` has one to restore.
@@ -577,6 +588,10 @@ impl suite::Fixture for IbusFixture {
         self.close().await;
         let purpose = match kind {
             FieldKind::Plain => 0,
+            FieldKind::Url => PURPOSE_URL,
+            FieldKind::Email => PURPOSE_EMAIL,
+            FieldKind::Terminal => PURPOSE_TERMINAL,
+            FieldKind::Other => PURPOSE_ALPHA,
             FieldKind::Secure => PURPOSE_PASSWORD,
         };
         let (field, injector) = session(purpose, 0).await;
@@ -794,18 +809,111 @@ async fn a_long_commit_reaches_an_xim_field_in_pieces() {
     field.close().await;
 }
 
-/// Any other field gets the long commit as one: on GNOME Wayland mutter keeps
-/// only the last of back-to-back commits.
+/// Any other field gets it in the same pieces, but one at a time: the next
+/// waits until the field has answered the one before, since a compositor may
+/// hand two commits it reads together to the application as one
+/// (mutter#5087). Here the field answers by moving its cursor.
 #[tokio::test]
-async fn a_long_commit_reaches_any_other_field_whole() {
+async fn a_long_commit_waits_for_the_field_between_pieces() {
+    skip_unless_ibus!();
+    let _serial = exclusive().await;
+    let (mut field, mut injector) = session(0, 0).await;
+    let mut target = injector.acquire().await.expect("acquire an ordinary field");
+    field.move_cursor(0).await;
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    let text = long_text();
+    let answering = async {
+        let mut pieces: Vec<String> = Vec::new();
+        while pieces.concat().len() < text.len() {
+            match field.next().await {
+                Seen::Commit(piece) => pieces.push(piece),
+                other => panic!("expected a commit piece, got {other:?}"),
+            }
+            if pieces.concat().len() < text.len() {
+                let early = field.next_within(Duration::from_millis(300)).await;
+                assert_eq!(early, None, "a piece overtook the field's answer");
+                field.move_cursor(pieces.len() as i32).await;
+            }
+        }
+        pieces
+    };
+    let (committed, pieces) = tokio::join!(target.commit(&text), answering);
+    committed.expect("commit the long text");
+    assert_eq!(pieces.concat(), text);
+    assert_eq!(pieces.len(), 3, "{pieces:?}");
+    assert!(pieces.iter().all(|p| p.encode_utf16().count() <= 255));
+    field.expect_only_sentinel(target.as_mut()).await;
+
+    let _ = target.release().await;
+    field.close().await;
+}
+
+/// Focus leaving between two pieces ends the commit there: the rest is not
+/// sent after it, and the caller hears of the loss.
+#[tokio::test]
+async fn a_long_commit_stops_when_focus_leaves_between_pieces() {
+    skip_unless_ibus!();
+    let _serial = exclusive().await;
+    let (mut field, mut injector) = session(0, 0).await;
+    let mut target = injector.acquire().await.expect("acquire an ordinary field");
+    field.move_cursor(0).await;
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    let text = long_text();
+    let leaving = async {
+        let first = field.next().await;
+        assert!(matches!(first, Seen::Commit(_)), "{first:?}");
+        field.focus_out().await;
+        let mut later = Vec::new();
+        while let Some(seen) = field.next_within(Duration::from_secs(1)).await {
+            later.push(seen);
+        }
+        later
+    };
+    let (committed, later) = tokio::join!(target.commit(&text), leaving);
+    assert!(
+        matches!(committed, Err(InjectError::FocusLost)),
+        "{committed:?}"
+    );
+    assert!(
+        !later.iter().any(|seen| matches!(seen, Seen::Commit(_))),
+        "{later:?}"
+    );
+
+    let _ = target.release().await;
+    field.close().await;
+}
+
+/// A field that never says where its cursor is cannot be waited for: its
+/// pieces are spaced by the clock instead.
+#[tokio::test]
+async fn a_long_commit_to_a_silent_field_is_spaced_out() {
     skip_unless_ibus!();
     let _serial = exclusive().await;
     let (mut field, mut injector) = session(0, 0).await;
     let mut target = injector.acquire().await.expect("acquire an ordinary field");
 
     let text = long_text();
-    target.commit(&text).await.expect("commit the long text");
-    assert_eq!(field.next().await, Seen::Commit(text));
+    let reading = async {
+        let mut pieces: Vec<(String, std::time::Instant)> = Vec::new();
+        while pieces.iter().map(|(p, _)| p.len()).sum::<usize>() < text.len() {
+            match field.next().await {
+                Seen::Commit(piece) => pieces.push((piece, std::time::Instant::now())),
+                other => panic!("expected a commit piece, got {other:?}"),
+            }
+        }
+        pieces
+    };
+    let (committed, pieces) = tokio::join!(target.commit(&text), reading);
+    committed.expect("commit the long text");
+    let landed: String = pieces.iter().map(|(p, _)| p.as_str()).collect();
+    assert_eq!(landed, text);
+    assert_eq!(pieces.len(), 3);
+    for pair in pieces.windows(2) {
+        let apart = pair[1].1 - pair[0].1;
+        assert!(apart >= Duration::from_millis(80), "pieces {apart:?} apart");
+    }
     field.expect_only_sentinel(target.as_mut()).await;
 
     let _ = target.release().await;
@@ -1506,13 +1614,21 @@ async fn the_ibus_backend_conforms() {
             "a_blip_kept_alive_by_continued_activation_is_not_a_loss",
             "secure_fields_are_refused",
             "a_field_turning_secure_is_refused",
+            "field_purpose_is_reported",
+            "terminal_fields_fold_control_characters",
             "commit_clears_the_preedit",
             "no_preedit_after_focus_loss",
             "release_clears_the_preedit",
         ]
     );
     assert!(report.unobserved.is_empty(), "{report:?}");
-    assert_eq!(report.not_applicable, ["preedit_without_support_is_inert"]);
+    assert_eq!(
+        report.not_applicable,
+        [
+            "field_purpose_without_support_is_plain",
+            "preedit_without_support_is_inert",
+        ]
+    );
 }
 
 /// Live **visual** probe for the preedit path (R9): shows an underlined

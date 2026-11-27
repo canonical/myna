@@ -13,7 +13,8 @@ use tokio::time::Instant;
 use myna_platform::conformance::text_input::{run, Field, FieldKind, FieldView, Fixture};
 use myna_platform::conformance::Report;
 use myna_platform::text_input::{
-    FocusEvent, InjectError, Injector, Support, Target, TextInputCapabilities,
+    fold_control_chars, FieldPurpose, FocusEvent, InjectError, Injector, Support, Target,
+    TextInputCapabilities,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -38,6 +39,12 @@ enum Flaw {
     BlipIsNeverALoss,
     SilentlyDropsHeldCommit,
     GraceIgnoresActivation,
+    IgnoresFieldPurpose,
+    FieldPurposeAfterLoss,
+    FieldPurposeWithoutSupport,
+    RawControlsInTerminal,
+    DeletesControlsInTerminal,
+    FoldsControlsInPlainField,
 }
 
 /// How long the reference backend rides out a blip after its last
@@ -56,6 +63,7 @@ struct Desk {
     grabbed_at: Option<Instant>,
     focused: bool,
     secure: bool,
+    purpose: FieldPurpose,
     /// Commits a field turned secure still takes before the backend hears.
     lag: u32,
     blind: u32,
@@ -147,6 +155,16 @@ impl Target for RefTarget {
             return Err(InjectError::SecureField);
         }
         let flaw = self.flaw;
+        let purpose = self.field_purpose();
+        let written: String = match (flaw, purpose) {
+            (Flaw::RawControlsInTerminal, FieldPurpose::Terminal) => text.to_owned(),
+            (Flaw::DeletesControlsInTerminal, FieldPurpose::Terminal) => {
+                text.chars().filter(|c| !c.is_control()).collect()
+            }
+            (Flaw::FoldsControlsInPlainField, _) => fold_control_chars(text),
+            (_, FieldPurpose::Terminal) => fold_control_chars(text),
+            _ => text.to_owned(),
+        };
         self.desk.send_modify(|desk| {
             desk.blind = desk.blind.saturating_sub(1);
             if flaw == Flaw::CommitsThePreedit {
@@ -157,10 +175,21 @@ impl Target for RefTarget {
                 desk.preedit.clear();
             }
             if flaw != Flaw::DropsCommits {
-                desk.text.push_str(text);
+                desk.text.push_str(&written);
             }
         });
         Ok(())
+    }
+
+    fn field_purpose(&self) -> FieldPurpose {
+        let supported =
+            self.capabilities.field_purpose || self.flaw == Flaw::FieldPurposeWithoutSupport;
+        let allowed = self.owned() || self.flaw == Flaw::FieldPurposeAfterLoss;
+        if supported && allowed && self.flaw != Flaw::IgnoresFieldPurpose {
+            self.desk.borrow().purpose
+        } else {
+            FieldPurpose::Plain
+        }
     }
 
     async fn set_preedit(&mut self, text: &str) {
@@ -289,9 +318,17 @@ struct RefFixture {
 #[async_trait]
 impl Fixture for RefFixture {
     async fn setup(&mut self, kind: FieldKind) -> (Box<dyn Injector>, Box<dyn Field>) {
+        let purpose = match kind {
+            FieldKind::Plain => FieldPurpose::Plain,
+            FieldKind::Url => FieldPurpose::Url,
+            FieldKind::Email => FieldPurpose::Email,
+            FieldKind::Terminal => FieldPurpose::Terminal,
+            FieldKind::Other | FieldKind::Secure => FieldPurpose::Other,
+        };
         let desk = Arc::new(watch::Sender::new(Desk {
             focused: true,
             secure: kind == FieldKind::Secure,
+            purpose,
             lag: self.lag,
             ..Desk::default()
         }));
@@ -307,6 +344,7 @@ impl Fixture for RefFixture {
 const FULL: TextInputCapabilities = TextInputCapabilities {
     preedit: true,
     surrounding_text: false,
+    field_purpose: true,
     secure_field_detection: Support::Supported,
 };
 
@@ -349,25 +387,38 @@ async fn a_backend_with_every_capability_passes_every_check() {
             "a_blip_kept_alive_by_continued_activation_is_not_a_loss",
             "secure_fields_are_refused",
             "a_field_turning_secure_is_refused",
+            "field_purpose_is_reported",
+            "terminal_fields_fold_control_characters",
             "commit_clears_the_preedit",
             "no_preedit_after_focus_loss",
             "release_clears_the_preedit",
         ]
     );
     assert!(report.unobserved.is_empty(), "{report:?}");
-    assert_eq!(report.not_applicable, ["preedit_without_support_is_inert"]);
+    assert_eq!(
+        report.not_applicable,
+        [
+            "field_purpose_without_support_is_plain",
+            "preedit_without_support_is_inert",
+        ]
+    );
 }
 
 #[tokio::test(start_paused = true)]
 async fn a_commit_only_backend_that_cannot_see_secure_fields_skips_those_checks() {
     let report = suite(TextInputCapabilities::COMMIT_ONLY, Flaw::None).await;
-    assert_eq!(report.passed.len(), 10, "{report:?}");
+    assert_eq!(report.passed.len(), 11, "{report:?}");
+    assert!(report
+        .passed
+        .contains(&"field_purpose_without_support_is_plain"));
     assert!(report.passed.contains(&"preedit_without_support_is_inert"));
     assert_eq!(
         report.not_applicable,
         [
             "secure_fields_are_refused",
             "a_field_turning_secure_is_refused",
+            "field_purpose_is_reported",
+            "terminal_fields_fold_control_characters",
             "commit_clears_the_preedit",
             "no_preedit_after_focus_loss",
             "release_clears_the_preedit",
@@ -498,4 +549,40 @@ rejects!(
     Flaw::GraceIgnoresActivation,
     FULL,
     "a_blip_kept_alive_by_continued_activation_is_not_a_loss"
+);
+rejects!(
+    a_backend_that_ignores_field_purpose,
+    Flaw::IgnoresFieldPurpose,
+    FULL,
+    "field_purpose_is_reported"
+);
+rejects!(
+    a_lost_target_that_keeps_reporting_purpose,
+    Flaw::FieldPurposeAfterLoss,
+    FULL,
+    "field_purpose_is_reported"
+);
+rejects!(
+    a_field_purpose_the_backend_does_not_claim,
+    Flaw::FieldPurposeWithoutSupport,
+    TextInputCapabilities::COMMIT_ONLY,
+    "field_purpose_without_support_is_plain"
+);
+rejects!(
+    raw_control_characters_in_a_terminal,
+    Flaw::RawControlsInTerminal,
+    FULL,
+    "terminal_fields_fold_control_characters"
+);
+rejects!(
+    deleted_control_characters_joining_commands_in_a_terminal,
+    Flaw::DeletesControlsInTerminal,
+    FULL,
+    "terminal_fields_fold_control_characters"
+);
+rejects!(
+    folded_control_characters_in_a_plain_field,
+    Flaw::FoldsControlsInPlainField,
+    FULL,
+    "terminal_fields_fold_control_characters"
 );

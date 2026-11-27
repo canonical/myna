@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use futures_util::StreamExt;
 
 use super::Report;
-use crate::text_input::{FocusEvent, InjectError, Injector, Support, Target};
+use crate::text_input::{FieldPurpose, FocusEvent, InjectError, Injector, Support, Target};
 
 /// How long a backend may take to report a focus loss.
 const FOCUS_EVENT_LIMIT: Duration = Duration::from_secs(5);
@@ -25,6 +25,10 @@ const REPEAT: Duration = Duration::from_millis(50);
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FieldKind {
     Plain,
+    Url,
+    Email,
+    Terminal,
+    Other,
     /// A password field, as the desktop marks one.
     Secure,
 }
@@ -108,6 +112,23 @@ pub async fn run(fixture: &mut dyn Fixture) -> Report {
         report
             .not_applicable
             .push("a_field_turning_secure_is_refused");
+    }
+
+    if capabilities.field_purpose {
+        field_purpose_is_reported(fixture).await;
+        report.record("field_purpose_is_reported", true);
+        let observed = terminal_fields_fold_control_characters(fixture).await;
+        report.record("terminal_fields_fold_control_characters", observed);
+        report
+            .not_applicable
+            .push("field_purpose_without_support_is_plain");
+    } else {
+        report.not_applicable.push("field_purpose_is_reported");
+        report
+            .not_applicable
+            .push("terminal_fields_fold_control_characters");
+        field_purpose_without_support_is_plain(fixture).await;
+        report.record("field_purpose_without_support_is_plain", true);
     }
 
     if capabilities.preedit {
@@ -473,4 +494,88 @@ async fn preedit_without_support_is_inert(fixture: &mut dyn Fixture) -> bool {
     }
     target.release().await.expect(CHECK);
     view.is_some()
+}
+
+async fn field_purpose_is_reported(fixture: &mut dyn Fixture) {
+    const CHECK: &str = "field_purpose_is_reported";
+    let cases = [
+        (FieldKind::Plain, FieldPurpose::Plain),
+        (FieldKind::Url, FieldPurpose::Url),
+        (FieldKind::Email, FieldPurpose::Email),
+        (FieldKind::Terminal, FieldPurpose::Terminal),
+        (FieldKind::Other, FieldPurpose::Other),
+    ];
+    for (kind, expected) in cases {
+        let (mut injector, mut field) = fixture.setup(kind).await;
+        let target = acquire(injector.as_mut(), CHECK).await;
+        assert_eq!(
+            target.field_purpose(),
+            expected,
+            "{CHECK}: {kind:?} reported {:?}",
+            target.field_purpose()
+        );
+        if kind == FieldKind::Terminal {
+            field.lose_focus().await;
+            expect_loss(target.as_ref(), CHECK).await;
+            assert_eq!(
+                target.field_purpose(),
+                FieldPurpose::Plain,
+                "{CHECK}: lost {kind:?} target still reported {:?}",
+                target.field_purpose()
+            );
+        }
+        let _ = target.release().await;
+    }
+}
+
+async fn terminal_fields_fold_control_characters(fixture: &mut dyn Fixture) -> bool {
+    const CHECK: &str = "terminal_fields_fold_control_characters";
+    let (mut injector, mut field) = fixture.setup(FieldKind::Terminal).await;
+    let mut target = acquire(injector.as_mut(), CHECK).await;
+    if let Err(err) = target.commit("rm -rf /tmp/x\nsudo reboot").await {
+        panic!("{CHECK}: commit into a terminal field failed: {err}");
+    }
+    if let Err(err) = target.commit(" echo\r\nhi\x1b[2J\tend\n").await {
+        panic!("{CHECK}: second commit into a terminal field failed: {err}");
+    }
+    if let Err(err) = target.commit("\n\r\t").await {
+        panic!("{CHECK}: control-only commit into a terminal field failed: {err}");
+    }
+    let terminal_view = field.observe().await;
+    if let Some(view) = &terminal_view {
+        assert_eq!(
+            view.text, "rm -rf /tmp/x sudo reboot echo hi [2J end",
+            "{CHECK}: terminal field shows {view:?}"
+        );
+    }
+    target.release().await.expect(CHECK);
+    drop((injector, field));
+
+    let (mut injector, mut plain) = fixture.setup(FieldKind::Plain).await;
+    let mut target = acquire(injector.as_mut(), CHECK).await;
+    if let Err(err) = target.commit("line one\nline two").await {
+        panic!("{CHECK}: multiline commit into a plain field failed: {err}");
+    }
+    let plain_view = plain.observe().await;
+    if let Some(view) = &plain_view {
+        assert_eq!(
+            view.text, "line one\nline two",
+            "{CHECK}: plain field altered layout break: {view:?}"
+        );
+    }
+    target.release().await.expect(CHECK);
+    terminal_view.is_some() && plain_view.is_some()
+}
+
+async fn field_purpose_without_support_is_plain(fixture: &mut dyn Fixture) {
+    const CHECK: &str = "field_purpose_without_support_is_plain";
+    let (mut injector, _field) = fixture.setup(FieldKind::Terminal).await;
+    let target = acquire(injector.as_mut(), CHECK).await;
+    assert_eq!(
+        target.field_purpose(),
+        FieldPurpose::Plain,
+        "{CHECK}: backend without field_purpose support reported {:?}",
+        target.field_purpose()
+    );
+    target.release().await.expect(CHECK);
 }

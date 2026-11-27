@@ -54,11 +54,18 @@ impl Fixture for MockFixture {
         }
         let field = injector.field();
         field.set_secure(kind == FieldKind::Secure);
+        field.set_purpose(match kind {
+            FieldKind::Plain => myna_desktop::FieldPurpose::Plain,
+            FieldKind::Url => myna_desktop::FieldPurpose::Url,
+            FieldKind::Email => myna_desktop::FieldPurpose::Email,
+            FieldKind::Terminal => myna_desktop::FieldPurpose::Terminal,
+            FieldKind::Other | FieldKind::Secure => myna_desktop::FieldPurpose::Other,
+        });
         (Box::new(injector), Box::new(SeenField(field)))
     }
 }
 
-const COMMON: [&str; 11] = [
+const COMMON: [&str; 13] = [
     "commits_reach_a_plain_field",
     "no_commit_after_focus_loss",
     "late_focus_streams_still_report_the_loss",
@@ -70,6 +77,8 @@ const COMMON: [&str; 11] = [
     "a_blip_kept_alive_by_continued_activation_is_not_a_loss",
     "secure_fields_are_refused",
     "a_field_turning_secure_is_refused",
+    "field_purpose_is_reported",
+    "terminal_fields_fold_control_characters",
 ];
 
 #[tokio::test(start_paused = true)]
@@ -82,6 +91,7 @@ async fn a_commit_only_mock_conforms() {
     assert_eq!(
         report.not_applicable,
         [
+            "field_purpose_without_support_is_plain",
             "commit_clears_the_preedit",
             "no_preedit_after_focus_loss",
             "release_clears_the_preedit",
@@ -100,5 +110,11 @@ async fn a_preedit_mock_conforms() {
     ]);
     assert_eq!(report.passed, passed);
     assert!(report.unobserved.is_empty(), "{report:?}");
-    assert_eq!(report.not_applicable, ["preedit_without_support_is_inert"]);
+    assert_eq!(
+        report.not_applicable,
+        [
+            "field_purpose_without_support_is_plain",
+            "preedit_without_support_is_inert",
+        ]
+    );
 }
