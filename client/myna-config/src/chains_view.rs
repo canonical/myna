@@ -357,3 +357,95 @@ mod tests {
         assert_eq!(new_name(&[named("New chain")]), "New chain 2");
     }
 }
+
+#[cfg(test)]
+mod chain_tests {
+    use super::*;
+
+    fn pair(from: &str, to: &str) -> Entry {
+        let id = format!("{}-{}", from.to_lowercase(), to.to_lowercase());
+        serde_json::from_value(serde_json::json!({
+            "id": id, "snap": "myna-translation", "component": format!("model-translate-{id}"),
+            "model": format!("m-{id}"), "task": "text.translate",
+            "in_lang": from, "out_lang": to,
+            "download_bytes": 30_000_000,
+            "step": {"id": "translate", "stage": "translate", "label_key": "step.translate.name",
+                     "description_key": "", "example_key": ""},
+        }))
+        .unwrap()
+    }
+
+    /// What Charles' laptop held: en to fr and zh-Hant to en installed, en to
+    /// zh-Hans and zh-Hans to en only in the catalog.
+    fn laptop() -> (Vec<Entry>, Offered) {
+        let catalog = vec![
+            pair("en", "fr"),
+            pair("zh-Hant", "en"),
+            pair("en", "zh-Hans"),
+            pair("zh-Hans", "en"),
+        ];
+        let offered = Offered {
+            models: vec!["m-en-fr".into(), "m-zh-hant-en".into()],
+            ..Offered::default()
+        };
+        (catalog, offered)
+    }
+
+    fn chain() -> Chain {
+        Chain {
+            id: "c".into(),
+            name: "c".into(),
+            steps: vec![
+                ChainStep::new(TRANSLATE).with("to", "zh-Hans"),
+                ChainStep::new(TRANSLATE).with("to", "fr"),
+            ],
+        }
+    }
+
+    fn lines_with(
+        installing: &BTreeMap<String, Option<u8>>,
+        preparing: &BTreeSet<String>,
+    ) -> Vec<Row> {
+        let (catalog, offered) = laptop();
+        lines(
+            &chain(),
+            &Context {
+                language: Some("en"),
+                catalog: &catalog,
+                daemon: Some(&offered),
+                installing,
+                preparing,
+                locales: &[],
+            },
+        )
+    }
+
+    #[test]
+    fn two_translate_steps_have_their_own_install_keys() {
+        let rows = lines_with(&BTreeMap::new(), &BTreeSet::new());
+        assert_eq!(rows[0].key, "translate:en>zh-Hans");
+        assert_eq!(rows[1].key, "translate:zh>fr");
+    }
+
+    #[test]
+    fn installing_one_translate_step_leaves_the_other_alone() {
+        let rows = lines_with(&BTreeMap::new(), &BTreeSet::new());
+        assert!(matches!(rows[0].standing, Standing::Missing(_)));
+        let first = rows[0].key.clone();
+        let installing = BTreeMap::from([(first.clone(), Some(40))]);
+        let rows = lines_with(&installing, &BTreeSet::new());
+        assert_eq!(rows[0].standing, Standing::Installing(Some(40)));
+        assert!(
+            !matches!(rows[1].standing, Standing::Installing(_)),
+            "{:?}",
+            rows[1].standing
+        );
+        let rows = lines_with(&BTreeMap::new(), &BTreeSet::from([first]));
+        assert_eq!(rows[0].standing, Standing::Preparing);
+        assert!(
+            !matches!(rows[1].standing, Standing::Preparing),
+            "{:?}",
+            rows[1].standing
+        );
+    }
+}

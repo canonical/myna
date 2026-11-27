@@ -132,6 +132,10 @@ pub struct TranslateRow {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Row {
     pub id: String,
+    /// What its install is tracked under: the id, but for a translation the
+    /// language pair too, since a chain may hold several Translate steps and
+    /// installing one must not stand for the others.
+    pub key: String,
     pub title: String,
     pub description: String,
     /// The line under the title: what is wrong, else what the step does.
@@ -249,6 +253,7 @@ pub fn row(step: &ChainStep, source: &Source, inputs: &Inputs) -> Row {
     };
     Row {
         id: step.step.clone(),
+        key: install_key(step, source),
         title,
         description,
         subtitle,
@@ -316,6 +321,29 @@ fn script_row(step: &ChainStep, inputs: &Inputs) -> ScriptRow {
     }
 }
 
+/// What an install of `step`'s model is tracked under (see [`Row::key`]).
+pub fn install_key(step: &ChainStep, source: &Source) -> String {
+    match (step.step.as_str(), source, target_of(step)) {
+        (TRANSLATE, Source::One(from), Some(to)) => translate_key(from, to),
+        (id, _, _) => id.to_owned(),
+    }
+}
+
+/// The install key of the translation from `from` into `to`.
+pub fn translate_key(from: &str, to: &str) -> String {
+    format!("{TRANSLATE}:{from}>{to}")
+}
+
+/// Whether an install of step `id`, under any of its keys, runs in `keys`.
+pub fn installing_step<V>(keys: &BTreeMap<String, V>, id: &str) -> bool {
+    keys.keys().any(|key| {
+        key == id
+            || key
+                .strip_prefix(id)
+                .is_some_and(|rest| rest.starts_with(':'))
+    })
+}
+
 /// The language `step` translates into, when it holds one.
 fn target_of(step: &ChainStep) -> Option<&str> {
     step.params
@@ -380,7 +408,8 @@ fn standing(
     if id == SCRIPT {
         return Standing::Ready;
     }
-    if let Some(percent) = inputs.installing.get(id) {
+    let key = install_key(step, source);
+    if let Some(percent) = inputs.installing.get(&key) {
         return Standing::Installing(*percent);
     }
     if let (Some(target), Source::One(from)) =
@@ -402,7 +431,7 @@ fn standing(
     let Some(need) = need(step, translate, &own, source, inputs) else {
         return Standing::Ready;
     };
-    if inputs.preparing.contains(id) {
+    if inputs.preparing.contains(&key) {
         Standing::Preparing
     } else {
         Standing::Missing(need)

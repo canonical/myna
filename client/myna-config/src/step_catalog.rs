@@ -133,7 +133,8 @@ fn entry_row(entry: &Entry, inputs: &Inputs) -> Row {
     let installed = inputs
         .daemon
         .is_some_and(|daemon| daemon.offers(&entry.model));
-    let going = inputs.removing.contains(&entry.id) || inputs.installing.contains_key(&row.id);
+    let going =
+        inputs.removing.contains(&entry.id) || steps::installing_step(inputs.installing, &row.id);
     row.removable = (installed && !going).then(|| Box::new(entry.clone()));
     row.entry = Some(Box::new(entry.clone()));
     row
@@ -174,7 +175,7 @@ fn translate_row(inputs: &Inputs) -> Row {
             .daemon
             .is_some_and(|daemon| daemon.offers(&entry.model))
             && !inputs.removing.contains(&entry.id)
-            && !inputs.installing.contains_key(TRANSLATE)
+            && !steps::installing_step(inputs.installing, TRANSLATE)
     };
     let removable = inputs
         .catalog
@@ -184,6 +185,7 @@ fn translate_row(inputs: &Inputs) -> Row {
         .map(|entry| Box::new(entry.clone()));
     Row {
         id: TRANSLATE.to_owned(),
+        key: TRANSLATE.to_owned(),
         title: gettextrs::gettext("Translate"),
         description: String::new(),
         standing: if open {

@@ -19,7 +19,7 @@ use crate::languages::{language_in_text, Source};
 use crate::markup::escape_markup;
 use crate::plugin_catalog::{self, Entry};
 use crate::plugin_install::{self, Failure, SnapState};
-use crate::processing_steps::{size, Row, Standing, TRANSLATE};
+use crate::processing_steps::{self as steps, size, Row, Standing, TRANSLATE};
 use crate::step_catalog::{self, Language, LanguageState};
 use crate::ui::InstallControl;
 
@@ -193,7 +193,8 @@ async fn run_install(
     page: &std::rc::Weak<StepsPage>,
     id: &str,
     requests: Vec<plugin_catalog::ComponentRequest>,
-) -> Result<(), Failure> {
+) -> Result<plugin_install::Outcome, Failure> {
+    let mut outcome = plugin_install::Outcome::Settled;
     for request in requests {
         let Some(strong) = page.upgrade() else {
             return Err(Failure::Dismissed);
@@ -223,9 +224,13 @@ async fn run_install(
             daemon: strong.deps.daemon.as_ref(),
             follow: &follow,
         };
-        plugin_install::install(&ctx, &request, state, &report).await?;
+        if plugin_install::install(&ctx, &request, state, &report).await?
+            == plugin_install::Outcome::Unconfirmed
+        {
+            outcome = plugin_install::Outcome::Unconfirmed;
+        }
     }
-    Ok(())
+    Ok(outcome)
 }
 
 /// Remove each component of `entry`.
@@ -302,9 +307,10 @@ impl StepsPage {
         }
     }
 
-    /// Install `entries` as one operation, shown under `id`.
+    /// Install `entries` as one operation, shown under `id` (a row's `key`).
+    /// Only one runs at a time: the controls are disabled meanwhile.
     pub(crate) fn start_install(self: &Rc<Self>, id: &str, entries: &[Entry]) {
-        if self.installing.borrow().contains_key(id) || !self.removing.borrow().is_empty() {
+        if !self.installing.borrow().is_empty() || !self.removing.borrow().is_empty() {
             return;
         }
         self.installing.borrow_mut().insert(id.to_owned(), None);
@@ -318,11 +324,23 @@ impl StepsPage {
             let outcome = run_install(&page, &id, requests).await;
             let Some(page) = page.upgrade() else { return };
             page.installing.borrow_mut().remove(&id);
-            if outcome.is_ok() {
+            let unconfirmed = matches!(outcome, Ok(plugin_install::Outcome::Unconfirmed));
+            if unconfirmed {
                 page.preparing.borrow_mut().insert(id, Instant::now());
             }
-            page.report_outcome(&outcome, &gettextrs::gettext("Installing the model failed"));
+            page.report_outcome(
+                &outcome.map(|_| ()),
+                &gettextrs::gettext("Installing the model failed"),
+            );
             page.refresh().await;
+            if unconfirmed {
+                let weak = Rc::downgrade(&page);
+                glib::timeout_add_local_once(crate::processing_ui::PREPARING_FOR, move || {
+                    if let Some(page) = weak.upgrade() {
+                        page.render();
+                    }
+                });
+            }
         });
     }
 
@@ -368,11 +386,12 @@ impl StepsPage {
             self.view(|ctx| chains_view::strands(&steps, &after, ctx))
         };
         let mut language_installs = BTreeMap::new();
-        if let (Some(code), Some(percent)) = (
-            self.installing_language.borrow().as_ref(),
-            installing.get(TRANSLATE),
-        ) {
-            language_installs.insert(step_catalog::language_key(code), *percent);
+        if let (Some(code), Source::One(from_code)) =
+            (self.installing_language.borrow().as_ref(), &from)
+        {
+            if let Some(percent) = installing.get(&steps::translate_key(from_code, code)) {
+                language_installs.insert(step_catalog::language_key(code), *percent);
+            }
         }
         let languages = step_catalog::languages(&step_catalog::LanguageInputs {
             catalog: &catalog,
@@ -889,7 +908,7 @@ impl StepsPage {
             return;
         }
         let entries = need.entries.clone();
-        self.start_install(&row.id, &entries);
+        self.start_install(&row.key, &entries);
     }
 
     /// Say how an install or a removal went: a success and a dismissed

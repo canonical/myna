@@ -37,7 +37,7 @@ use crate::step_catalog::{Language, LanguageState};
 /// a letter per line.
 const NARROW_EDITOR: &str = "max-width: 560sp";
 
-const PREPARING_FOR: Duration = Duration::from_secs(30);
+pub(crate) const PREPARING_FOR: Duration = Duration::from_secs(30);
 
 const PAGE_KEY: &str = "myna-steps-page";
 
@@ -836,7 +836,7 @@ impl StepsPage {
         let lines = self.view(|ctx| chains_view::lines(chain, ctx));
         let Some(line) = lines.get(index) else { return };
         if let Standing::Missing(need) = &line.standing {
-            self.start_install(&line.id, &need.entries);
+            self.start_install(&line.key, &need.entries);
         }
     }
 }
