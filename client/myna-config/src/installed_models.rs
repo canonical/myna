@@ -150,5 +150,35 @@ fn named(entry: &Entry) -> (String, String) {
         return (title, gettextrs::gettext("Translation"));
     }
     let title = plugin_catalog::label(&entry.step.label_key).unwrap_or_else(|| entry.model.clone());
-    (title, language_name(&entry.in_lang))
+    let languages = if entry.languages.is_empty() {
+        language_name(&entry.in_lang)
+    } else {
+        let names: Vec<String> = entry.languages.iter().map(|l| language_name(l)).collect();
+        names.join(", ")
+    };
+    (title, languages)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tidy(languages: &[&str]) -> Entry {
+        serde_json::from_value(serde_json::json!({
+            "id": "model-tidy", "snap": "myna-text", "component": "model-tidy",
+            "model": "m-tidy", "task": "text.cleanup", "in_lang": "en", "languages": languages,
+            "step": {
+                "id": "tidy", "stage": "clean-up", "label_key": "step.tidy.name",
+                "description_key": "step.tidy.description", "example_key": "step.tidy.example",
+            },
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn a_multilingual_text_model_names_every_language_it_reads() {
+        assert_eq!(named(&tidy(&[])).1, language_name("en"));
+        let names = ["en", "fr", "de", "es"].map(language_name).join(", ");
+        assert_eq!(named(&tidy(&["en", "fr", "de", "es"])).1, names);
+    }
 }
