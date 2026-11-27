@@ -15,13 +15,13 @@ One strictly confined snap, no `network` plug, serving `myna-text-v1` to the Myn
 - Never hand-edit `models/*/myna-text-model.json`, `models/*/NOTICE`, `catalog.json` or the marked blocks of `snap/snapcraft.yaml`: edit `plugins/*.toml` and run `dev/gen-plugins.py .` (`make lint-plugins` fails on drift).
 - The declared `latency_ms` and `quality` come from `plugins/*.measured.json`. They are measurements (see `README.md`), re-measure before changing them.
 - Every build input is pinned: the Python wheels by hash (`dev/prepare.sh` exports `server/uv.lock`) and the tagger by sha256. Moving one is a commit.
-- `model-disfluency-en` serves English, French, German and Spanish (`languages` in its toml). It keeps the English-only component name because the store's component and the e2e provisioning use it; renaming it (the convention would be `model-disfluency-en-fr-de-es`) means registering the new name first.
+- English is served by `model-disfluency-en` (`myna-disfluency-en`, the English-only tagger), French, German and Spanish by `model-disfluency-fr-de-es` (`myna-disfluency`, the multilingual tagger). The multilingual model reads English too, but on real dictations it deleted more content there, numbers included (`server/.kb/text-processing-evaluation.md`); do not add `en` to its `languages` without a real-dictation measurement that beats the English one. The `model-disfluency-fr-de-es` name must be registered on the store before its first upload.
 - Pack with `umask 022`: a 077 shell leaves files in local snaps unreadable to the daemon.
-- `MYNA_TAGGER_SRC` is the only way to stage the tagger until it is published; publishing it, and the snap, is Charles' call.
+- `MYNA_TAGGER_EN_SRC` and `MYNA_TAGGER_SRC` are the only way to stage the taggers until they are published; publishing them, and the snap, is Charles' call.
 
 # Directory
 
-- `snap/snapcraft.yaml` - The snap and its two components.
+- `snap/snapcraft.yaml` - The snap and its components.
 - `plugins/` - One `<name>.toml` per component, the only hand-edited source (plus `<name>.measured.json`); `dev/gen-plugins.py` generates from it the `components:` stanza, `models/`, and `catalog.json`.
 - `models/` - Per-component manifest and NOTICE, generated.
 - `catalog.json` - Generated catalog of this snap's plugins, shipped in the snap.

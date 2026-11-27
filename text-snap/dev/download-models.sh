@@ -5,8 +5,9 @@
 #   ./dev/download-models.sh
 #
 # What to stage, and the sha256 each file must match, is in plugins/*.toml.
-# model-disfluency-en (the multilingual tagger) is our own fine-tune and has no public home yet: it is
-# copied from the directory the training run staged (MYNA_TAGGER_SRC).
+# The taggers are our own fine-tunes and have no public home yet: they are
+# copied from the directories their training runs staged (MYNA_TAGGER_EN_SRC
+# for model-disfluency-en, MYNA_TAGGER_SRC for model-disfluency-fr-de-es).
 set -euo pipefail
 
 exec "$(dirname "${BASH_SOURCE[0]}")/../../dev/stage-plugins.sh" "$(dirname "${BASH_SOURCE[0]}")/.."

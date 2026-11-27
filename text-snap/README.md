@@ -14,7 +14,8 @@ component installed while the daemon runs is offered on the next
 
 | component | model | task | measured (warm, 1 thread) | licence |
 |---|---|---|---|---|
-| `model-disfluency-en` | Multilingual MiniLM-L12 tagger, int8 ONNX, 51 MB, `myna-disfluency` | `text.cleanup` (`language=en,fr,de,es`) | p95 8 ms | Apache-2.0 (CC-BY-4.0, CC BY 2.0 FR and MIT inputs, see its NOTICE) |
+| `model-disfluency-en` | MiniLM-L12 tagger, int8 ONNX, 46 MB, `myna-disfluency-en` | `text.cleanup` (`language=en`) | p95 5 ms | Apache-2.0 (CC-BY-4.0 and MIT inputs, see its NOTICE) |
+| `model-disfluency-fr-de-es` | Multilingual MiniLM-L12 tagger, int8 ONNX, 51 MB, `myna-disfluency` | `text.cleanup` (`language=fr,de,es`) | p95 8 ms | Apache-2.0 (CC-BY-4.0, CC BY 2.0 FR and MIT inputs, see its NOTICE) |
 
 The latencies and quality in each component's `myna-text-model.json` are what
 the daemon declares in `capabilities`; they come from the model benchmarks of
@@ -26,15 +27,16 @@ the processing-graph workstream, not from a guess.
 make snap-text
 ```
 
-That stages `components/` (the tagger from `MYNA_TAGGER_SRC`, checked against
-pinned sha256 - it has no public home yet), the wheels and their pinned
-requirements, and packs.
+That stages `components/` (the taggers from `MYNA_TAGGER_EN_SRC` and
+`MYNA_TAGGER_SRC`, checked against pinned sha256 - they have no public home
+yet), the wheels and their pinned requirements, and packs.
 
 ## Install
 
 ```bash
 sudo snap install --dangerous ./myna-text_*.snap \
-    ./myna-text+model-disfluency-en_*.comp
+    ./myna-text+model-disfluency-en_*.comp \
+    ./myna-text+model-disfluency-fr-de-es_*.comp
 sudo snap connect myna:backend myna-text:provider
 sudo snap connect myna-text:hardware-observe
 ```

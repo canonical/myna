@@ -25,7 +25,8 @@ TEXT = ROOT / "text-snap"
 TRANSLATION = ROOT / "translation-snap"
 SNAPS = {"myna-text": TEXT, "myna-translation": TRANSLATION}
 COMPONENT_IDS = {
-    "myna-text": {"myna-disfluency": "text.cleanup"},
+    # English keeps its own tagger; the multilingual one covers fr/de/es.
+    "myna-text": {"myna-disfluency-en": "text.cleanup", "myna-disfluency": "text.cleanup"},
     # Every translation pair, one plugin file each: the manifests follow them.
     "myna-translation": {
         tomllib.loads(path.read_text(encoding="utf-8"))["id"]: "text.translate"

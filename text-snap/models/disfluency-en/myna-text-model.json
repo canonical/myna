@@ -1,7 +1,7 @@
 {
   "contract": 2,
   "kind": "disfluency-tagger",
-  "id": "myna-disfluency",
+  "id": "myna-disfluency-en",
   "task": "text.cleanup",
   "class": "edit",
   "needs": "sentence",
@@ -9,17 +9,11 @@
     {"name": "language", "kind": "language", "role": "source", "required": false}
   ],
   "language": "en",
-  "languages": [
-    "en",
-    "fr",
-    "de",
-    "es"
-  ],
   "latency_ms": 10,
-  "quality": 0.82,
-  "tau": 0.6,
+  "quality": 0.95,
+  "tau": 0.9,
   "license": "Apache-2.0",
-  "attribution": "Canonical Ltd; fine-tuned from microsoft/Multilingual-MiniLM-L12-H384 (MIT)",
-  "download_bytes": 45432832,
-  "source": "https://huggingface.co/microsoft/Multilingual-MiniLM-L12-H384"
+  "attribution": "Canonical Ltd; fine-tuned from microsoft/MiniLM-L12-H384-uncased (MIT)",
+  "download_bytes": 42848256,
+  "source": "https://huggingface.co/microsoft/MiniLM-L12-H384-uncased"
 }
