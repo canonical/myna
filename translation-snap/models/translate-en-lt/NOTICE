@@ -1,0 +1,17 @@
+model-translate-en-lt: the Firefox Translations English to Lithuanian student
+model "base-memory" (version 2.1), Copyright Mozilla and contributors,
+licensed under the Mozilla Public License 2.0 (LICENSE in this component).
+
+Source: Mozilla's Firefox Translations models,
+https://github.com/mozilla/firefox-translations-models (the files themselves
+are served from the Remote Settings collection "translations-models" of
+https://firefox.settings.services.mozilla.com). The model files are shipped
+unmodified; their sha256 are:
+
+  model.enlt.intgemm.alphas.bin  d27c676d9d761c2abfffec83956e32b2923f3f745b56acdbd84c49d888cdc94e
+  lex.50.50.enlt.s2t.bin         5972c834218c7beea241dc8fe77c2e577a8d8b4eb3d3dc286d10ad890c64d374
+  vocab.enlt.spm                 5d38fe70ff4a50368af756b715b69519c9ee064c27cbceeabc90d4e1a10f25a8
+
+config.yml and myna-text-model.json are Canonical's own (AGPL-3.0-or-later).
+The runtime that executes the model, bergamot-translator (MPL-2.0), and its
+bundled libraries are noted in the myna-translation snap's NOTICE.

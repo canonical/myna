@@ -1,0 +1,17 @@
+model-translate-ko-en: the Firefox Translations Korean to English student
+model "base" (version 2.0), Copyright Mozilla and contributors,
+licensed under the Mozilla Public License 2.0 (LICENSE in this component).
+
+Source: Mozilla's Firefox Translations models,
+https://github.com/mozilla/firefox-translations-models (the files themselves
+are served from the Remote Settings collection "translations-models" of
+https://firefox.settings.services.mozilla.com). The model files are shipped
+unmodified; their sha256 are:
+
+  model.koen.intgemm.alphas.bin  1c902d6f7a8d7e3efe6ff4f7d4960a369957bca4ce2ce4a6e8572c231d525090
+  lex.50.50.koen.s2t.bin         471cd980c4ba08c240246f9361f64eb5d627848a135b5731d665f9efaa1e26ae
+  vocab.koen.spm                 1c72b740ab793cdc3a8f16913dd6b4e806c77421077dd2d85edeb7be38418598
+
+config.yml and myna-text-model.json are Canonical's own (AGPL-3.0-or-later).
+The runtime that executes the model, bergamot-translator (MPL-2.0), and its
+bundled libraries are noted in the myna-translation snap's NOTICE.

@@ -1,0 +1,17 @@
+model-translate-en-sl: the Firefox Translations English to Slovenian student
+model "base-memory" (version 2.1), Copyright Mozilla and contributors,
+licensed under the Mozilla Public License 2.0 (LICENSE in this component).
+
+Source: Mozilla's Firefox Translations models,
+https://github.com/mozilla/firefox-translations-models (the files themselves
+are served from the Remote Settings collection "translations-models" of
+https://firefox.settings.services.mozilla.com). The model files are shipped
+unmodified; their sha256 are:
+
+  model.ensl.intgemm.alphas.bin  a34fc5cc2f52733f64e37f8512cf1ddc4723c08a7a1a59d01fc2b6e641fc2280
+  lex.50.50.ensl.s2t.bin         2190798297bc12505f917189defcf451ab5bd2e815bc05df244dc291dc2ae63b
+  vocab.ensl.spm                 7cd295383c46824c05a05db76b543d3595f2516537dd22b77190a45c8919224d
+
+config.yml and myna-text-model.json are Canonical's own (AGPL-3.0-or-later).
+The runtime that executes the model, bergamot-translator (MPL-2.0), and its
+bundled libraries are noted in the myna-translation snap's NOTICE.
