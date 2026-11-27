@@ -12,6 +12,7 @@
 #   4. a step's own switch pauses only that step
 #   5. the step's input badge and picker, and the picker under it at 360 px
 #   6. a translation of Chinese shows the converter the solver puts first
+#   7. Try it traces the chain on the catalog's examples, fit to the field last
 set -uo pipefail
 # shellcheck source=e2e-tests/suites/lib.sh
 source "$(dirname "$0")/lib.sh"
@@ -74,6 +75,28 @@ assert_on "a chain translating to English is saved, for Chinese dictation" \
 shot waitfor:General tab:Processing "click:Chinese to English" \
     "waitfor:Writes Traditional first" shot:shots/processing-editor/06-inserted.png \
     || { echo "inserted converter failed" >&2; FAILED=1; }
+
+step 7 "Try it traces the chain on the catalog's examples, fit to the field last"
+# Still the Chinese chain: the sample is Chinese, the solver's converter is a
+# line of its own, and the chain's card on the page says what it types.
+shot waitfor:General tab:Processing "waitfor:~Types: software" \
+    "click:Chinese to English" "waitfor:Try it" "waitfor:Typing into" \
+    "waitfor:You say" "waitfor:软件" "waitfor:Myna types" "waitfor:Step by step" \
+    "waitfor:Writes Traditional first" "waitfor:軟體" "waitfor:software" \
+    shot:shots/processing-editor/07-trace-chinese.png \
+    || { echo "chinese trace failed" >&2; FAILED=1; }
+# English: Tidy then Translate, each a line with the sample after it; an
+# address field takes the capital and the full stop off last.
+assert_on "a chain tidying then translating is saved, for English dictation" \
+    "snap run myna.config set chains \"[('en', 'Email in French', [('tidy', true, {}), ('translate', true, {'to': 'fr'})])]\" && snap run myna.config set language en"
+shot waitfor:General tab:Processing "click:Email in French" "waitfor:Typing into" \
+    "waitfor:um so I, I think we should go" "waitfor:So I think we should go." \
+    "waitfor:Je pense que nous devrions y aller." \
+    "click:Typing into@combo box" "waitfor:An address field" \
+    "key:Down" "key:Down" "key:Return" \
+    "waitfor:Fitted to the field" "waitfor:je pense que nous devrions y aller" \
+    shot:shots/processing-editor/07-trace-address.png \
+    || { echo "address trace failed" >&2; FAILED=1; }
 
 evidence editor
 suite_status
