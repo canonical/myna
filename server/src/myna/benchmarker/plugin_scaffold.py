@@ -32,7 +32,7 @@ METADATA_URL = (
     "https://raw.githubusercontent.com/mozilla/firefox-translations-models/main/"
     "models/{arch}/{pair}/metadata.json"
 )
-ARCHITECTURES = ("base-memory", "tiny")
+ARCHITECTURES = ("base-memory", "base", "tiny")
 VERSION_RE = re.compile(r"\d+(\.\d+)*")
 PAIR_RE = re.compile(r"([a-z]{2,3}(?:-[A-Za-z]+)?):([a-z]{2,3}(?:-[A-Za-z]+)?)")
 
@@ -159,11 +159,51 @@ def _version_key(version: str) -> tuple[int, ...]:
     return tuple(int(part) for part in version.split("."))
 
 
+# The Firefox a Myna user stands in for: desktop, release channel.
+DESKTOP_RELEASE = {"env.appinfo.OS": "Linux", "env.channel": "release"}
+_COMPARISON = re.compile(r"\s*(env\.appinfo\.OS|env\.channel)\s*(==|!=)\s*'([^']*)'\s*")
+
+
+def desktop_release_admits(expression: str) -> bool | None:
+    """Whether a record's ``filter_expression`` serves desktop release Firefox.
+
+    Only the shapes Mozilla uses are understood: ``||`` of ``&&`` of
+    ``env.appinfo.OS`` or ``env.channel`` compared (``==``, ``!=``) with a
+    quoted literal. Anything else is None, and the record is dropped."""
+    if not expression.strip():
+        return True
+    admitted = False
+    for clause in expression.split("||"):
+        holds = True
+        for term in clause.split("&&"):
+            found = _COMPARISON.fullmatch(term)
+            if not found:
+                return None
+            name, op, literal = found.groups()
+            holds = holds and (DESKTOP_RELEASE[name] == literal) == (op == "==")
+        admitted = admitted or holds
+    return admitted
+
+
+def _pair_records(records: list[dict[str, Any]], src: str, dst: str) -> list[dict[str, Any]]:
+    return [r for r in records if r.get("fromLang") == src and r.get("toLang") == dst]
+
+
+def unknown_filters(records: list[dict[str, Any]], src: str, dst: str) -> set[str]:
+    """The pair's filter expressions ``desktop_release_admits`` cannot read."""
+    return {
+        r["filter_expression"]
+        for r in _pair_records(records, src, dst)
+        if desktop_release_admits(r.get("filter_expression") or "") is None
+    }
+
+
 def pair_versions(records: list[dict[str, Any]], src: str, dst: str) -> dict[str, dict[str, Any]]:
-    """Complete, unrestricted versions of a pair: {version: {fileType: record}}."""
+    """Complete versions of a pair served to desktop release Firefox:
+    {version: {fileType: record}}."""
     versions: dict[str, dict[str, dict[str, Any]]] = {}
-    for rec in records:
-        if rec.get("fromLang") != src or rec.get("toLang") != dst or rec.get("filter_expression"):
+    for rec in _pair_records(records, src, dst):
+        if not desktop_release_admits(rec.get("filter_expression") or ""):
             continue
         version = rec.get("version", "")
         if VERSION_RE.fullmatch(version):
@@ -397,8 +437,15 @@ def scaffold(
             "degeneracy checks; only the vendor COMET and the spot check remain"
         )
     versions = pair_versions(records, src, dst)
+    unknown = [
+        f"record filter not understood, record dropped: {expression!r}"
+        for expression in sorted(unknown_filters(records, src, dst))
+    ]
     if not versions:
-        raise ScaffoldError(f"{src}->{dst}: no complete unrestricted record in translations-models")
+        raise ScaffoldError(
+            "; ".join([f"{src}->{dst}: no complete record for desktop release Firefox", *unknown])
+        )
+    warnings += unknown
     any_files = next(iter(versions.values()))
     directory = pair_dir(any_files["model"]["attachment"]["filename"])
     archs = (arch,) if arch else ARCHITECTURES
@@ -446,7 +493,7 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--arch",
         choices=ARCHITECTURES,
-        help="model architecture (default: base-memory, else tiny)",
+        help="model architecture (default: the one describing the newest model)",
     )
     parser.add_argument(
         "--no-eval",

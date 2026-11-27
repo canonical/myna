@@ -168,11 +168,87 @@ def test_an_unknown_pair_is_refused():
         make("en:fr")
 
 
+def test_a_pair_left_with_only_unknown_filters_names_them():
+    records = [
+        dict(r, filter_expression="env.locale == 'de'") for r in _records("ja", "en", "2.0", "m")
+    ]
+    with pytest.raises(ps.ScaffoldError, match="env.locale == 'de'"):
+        ps.scaffold("ja:en", records=records, metadata=lambda a, d: None)
+
+
 def test_restricted_and_incomplete_versions_are_ignored():
     recs = [dict(r, filter_expression="env.channel == 'nightly'") for r in RECORDS]
     assert ps.pair_versions(recs, "en", "de") == {}
     no_lex = [r for r in RECORDS if r["fileType"] != "lex"]
     assert ps.pair_versions(no_lex, "en", "de") == {}
+
+
+DESKTOP = "env.appinfo.OS != 'Android' || env.channel != 'release'"
+
+
+@pytest.mark.parametrize(
+    ("expression", "admits"),
+    [
+        ("", True),
+        (DESKTOP, True),
+        ("env.appinfo.OS == 'Android' ", False),
+        ("env.channel == 'default' || env.channel == 'nightly'", False),
+        ("env.channel == 'default' || env.channel == 'nightly' || env.channel == 'beta'", False),
+        ("env.appinfo.OS != 'Android' && env.channel == 'release'", True),
+        ("env.appinfo.OS != 'Android' && env.channel == 'beta'", False),
+    ],
+)
+def test_desktop_release_is_evaluated_on_the_known_filter_shapes(expression, admits):
+    assert ps.desktop_release_admits(expression) is admits
+
+
+@pytest.mark.parametrize(
+    "expression",
+    [
+        "env.version|versionCompare('130') >= 0",
+        "(env.channel == 'release')",
+        "env.locale == 'en-US'",
+        "env.channel == release",
+        "env.channel == 'a' ||",
+    ],
+)
+def test_an_unknown_filter_shape_is_not_understood(expression):
+    assert ps.desktop_release_admits(expression) is None
+
+
+def test_a_version_desktop_release_is_served_is_kept_and_others_dropped():
+    def tagged(version, digest, expression):
+        return [
+            dict(r, filter_expression=expression) for r in _records("ja", "en", version, digest)
+        ]
+
+    records = (
+        tagged("2.1", "android", "env.appinfo.OS == 'Android' ")
+        + tagged("2.0", "desktop", DESKTOP)
+        + tagged(
+            "1.9",
+            "beta",
+            "env.channel == 'default' || env.channel == 'nightly' || env.channel == 'beta'",
+        )
+        + tagged("1.8", "odd", "env.version|versionCompare('130') >= 0")
+    )
+    assert set(ps.pair_versions(records, "ja", "en")) == {"2.0"}
+    assert ps.unknown_filters(records, "ja", "en") == {"env.version|versionCompare('130') >= 0"}
+    result = ps.scaffold("ja:en", records=records, metadata=lambda a, d: None)
+    assert tomllib.loads(result.toml)["pin"] == "mozilla firefox-translations ja-en mozilla 2.0"
+    assert any("versionCompare" in w and "not understood" in w for w in result.warnings)
+
+
+def test_the_base_architecture_is_described_by_its_metadata():
+    records = _records("ja", "en", "2.0", "base-hash")
+    described = {"hash": "base-hash", "byteSize": 1000, "flores": {"comet": 0.8642}}
+
+    result = ps.scaffold(
+        "ja:en", records=records, metadata=lambda a, d: described if a == "base" else None
+    )
+    got = tomllib.loads(result.toml)
+    assert got["id"] == "bergamot-base-ja-en"
+    assert got["gate"] == {"vendor_comet": 0.8642}
 
 
 def test_every_language_a_scaffold_can_meet_has_a_name():
