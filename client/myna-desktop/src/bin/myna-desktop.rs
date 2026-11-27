@@ -46,6 +46,7 @@ use myna_core::{AudioFormat, SessionConfig};
 use myna_desktop::controller::{ChannelSink, SessionRun};
 use myna_desktop::dbus::serve::{ServeError, ZbusBus};
 use myna_desktop::dbus::{DictationService, PropertyValue, SharedBus};
+use myna_desktop::draft::{BusDraftView, CommitPolicy};
 use myna_desktop::indicator::dbus::DbusIndicator;
 use myna_desktop::indicator::dynamic::DynamicIndicator;
 use myna_desktop::indicator::notify::NotifyIndicator;
@@ -53,6 +54,12 @@ use myna_desktop::indicator::readiness::{Readiness, ReadinessTee};
 use myna_desktop::inject::lazy::{IbusConnect, LazyInjector};
 use myna_desktop::inject::Injector as _;
 use myna_desktop::platform::Platform;
+use myna_desktop::process::graph::Graph;
+use myna_desktop::process::history::{Context, Recorded};
+use myna_desktop::process::pipeline::Pipeline;
+use myna_desktop::process::resolve::Resolver;
+use myna_desktop::process::steps::StepSpec;
+use myna_desktop::restart::{RestartWatch, CHECK_EVERY};
 use myna_desktop::shortcut::control::{default_socket_path, listen, send_toggle, ControlTrigger};
 use myna_desktop::sound::{
     player::{Player, Previewer},
@@ -138,6 +145,12 @@ struct Resolved {
     auto_stop: AutoStop,
     sounds: bool,
     sound_set: SoundSet,
+    steps: Vec<StepSpec>,
+    /// The saved chain in use: its id and name.
+    chain: Option<(String, String)>,
+    /// Every saved chain, for the bus's `Chains`.
+    chains: Vec<myna_core::chains::Chain>,
+    history: bool,
 }
 
 impl Resolved {
@@ -149,17 +162,108 @@ impl Resolved {
             choice: settings.streaming_mode,
             backend_streams,
         };
+        let language = args.language.clone().or_else(|| settings.language.clone());
+        let chain = settings.processing.active();
+        let steps: Vec<StepSpec> = chain
+            .map(|chain| chain.steps.iter().map(StepSpec::of_chain).collect())
+            .unwrap_or_default();
         Self {
             activation,
-            language: args.language.clone().or_else(|| settings.language.clone()),
+            language,
             vocabulary: settings.vocabulary.clone(),
             preedit: resolve_preedit(args.preedit, mode.effective().mode),
             mode,
             auto_stop: resolve_auto_stop(activation, settings.silence_timeout),
             sounds: settings.sounds,
             sound_set: settings.sound_set,
+            steps,
+            chain: chain.map(|chain| (chain.id.clone(), chain.name.clone())),
+            chains: settings.processing.chains.clone(),
+            history: settings.processing_history,
         }
     }
+}
+
+/// Binds the text models of the chosen chain at start, when the chain
+/// changes or `RescanModels` is called, when a share changes on disk, and
+/// again while any is unbound. Speech start only has to bind what this has
+/// not. Also publishes what became of each step of the chain.
+struct Binding {
+    graph: Live<Graph>,
+    /// Derives from the graph: a chain that changes text is held to a
+    /// sentence, one that does not streams.
+    commit: Live<CommitPolicy>,
+    steps: Live<Vec<StepSpec>>,
+    language: Live<Option<String>>,
+    chain: Live<Option<(String, String)>>,
+    chains: Live<Vec<myna_core::chains::Chain>>,
+}
+
+fn spawn_binder(resolver: Resolver, live: Binding, wake: Arc<tokio::sync::Notify>) {
+    let Binding {
+        graph,
+        commit,
+        steps,
+        language,
+        chain,
+        chains,
+    } = live;
+    // The graph the steps compile to given the models installed now: a
+    // translation with no direct model pivots through English. This is the
+    // only writer of the graph and the commit policy.
+    let refresh: Arc<dyn Fn() -> bool + Send + Sync> = {
+        let resolver = resolver.clone();
+        let (graph, commit) = (graph.clone(), commit.clone());
+        Arc::new(move || {
+            let language = language.get();
+            let compiled = resolver.compile(&steps.get(), language.as_deref());
+            let moved = graph.get() != compiled.graph;
+            let policy = CommitPolicy::for_chain(compiled.graph.touches());
+            if moved {
+                if compiled.graph.converts() {
+                    myna_desktop::process::script::warm();
+                }
+                graph.set(compiled.graph);
+            }
+            if commit.get() != policy {
+                commit.set(policy);
+            }
+            resolver.set_steps(compiled.report);
+            resolver.set_chains(
+                myna_desktop::process::resolve::chain_summaries(
+                    &resolver,
+                    &chains.get(),
+                    language.as_deref(),
+                ),
+                chain.get().map(|(id, _)| id).unwrap_or_default(),
+            );
+            moved
+        })
+    };
+    // Once before the controller exists, so a press between the two sees the
+    // graph its settings mean rather than an empty one.
+    refresh();
+    let wanted = {
+        let refresh = refresh.clone();
+        let graph = graph.clone();
+        move || {
+            refresh();
+            graph.get().requests()
+        }
+    };
+    let after = {
+        let wake = wake.clone();
+        move |_: &Resolver| {
+            if refresh() {
+                wake.notify_one();
+            }
+        }
+    };
+    tokio::spawn(async move {
+        resolver
+            .keep_bound(&wake, Default::default(), wanted, after)
+            .await;
+    });
 }
 
 /// What the transcription mode resolves from. They arrive separately - the
@@ -215,6 +319,22 @@ struct LiveSettings {
     /// Read at every stats tick of a running session, so a changed timeout
     /// applies to the session in progress.
     auto_stop: Live<AutoStop>,
+    /// Read at each press.
+    commit: Live<CommitPolicy>,
+    /// The enabled steps, as stored; read as each piece is recorded.
+    steps: Live<Vec<StepSpec>>,
+    /// The model the backend said it serves; `None` until a press has asked.
+    speech_model: Live<Option<String>>,
+    /// What the chosen chain compiles to, written by the binder alone.
+    graph: Live<Graph>,
+    /// The saved chain in use, read at each press for the record.
+    chain: Live<Option<(String, String)>>,
+    /// Every saved chain, read by the binder for the bus.
+    chains: Live<Vec<myna_core::chains::Chain>>,
+    /// Wakes the text model binder.
+    graph_changed: Arc<tokio::sync::Notify>,
+    /// Read at each commit.
+    history: Live<bool>,
     sounds: Live<bool>,
     /// Shared with the [`Player`], which reads it at every cue.
     sound_set: Live<SoundSet>,
@@ -229,6 +349,16 @@ impl LiveSettings {
             language: Live::new(resolved.language.clone()),
             vocabulary: Live::new(resolved.vocabulary.clone()),
             auto_stop: Live::new(resolved.auto_stop),
+            commit: Live::new(CommitPolicy::Streaming),
+            steps: Live::new(resolved.steps.clone()),
+            speech_model: Live::default(),
+            // Until the binder's first refresh, which runs before the
+            // controller exists.
+            graph: Live::new(Graph::passthrough()),
+            chain: Live::new(resolved.chain.clone()),
+            chains: Live::new(resolved.chains.clone()),
+            graph_changed: Arc::default(),
+            history: Live::new(resolved.history),
             sounds: Live::new(resolved.sounds),
             sound_set,
             // The schema default until the first read in `follow`; a machine
@@ -322,7 +452,7 @@ impl LiveSettings {
     }
 
     /// Write the new resolution through, logging only what actually moved -
-    /// GSettings notifies per key, so most changes touch neither of these.
+    /// GSettings notifies per key, so most changes touch none of these.
     ///
     /// A change that resolves to the value already in force is the interesting
     /// *silent* case (a flag outranks it), so it is logged too - at the debug
@@ -330,42 +460,35 @@ impl LiveSettings {
     /// filling a long-lived daemon's journal.
     fn apply(&self, resolved: &Resolved, reason: &str) {
         self.apply_preedit(resolved.preedit, reason);
-        if self.language.get() != resolved.language {
-            myna_core::info_log!(
-                "settings",
-                "language -> {} (live, from the next press)",
-                resolved.language.as_deref().unwrap_or("(backend default)")
-            );
-            self.language.set(resolved.language.clone());
+        let woke = self
+            .language
+            .update(&resolved.language, "language (from the next press)")
+            | self
+                .chain
+                .update(&resolved.chain, "chain (from the next dictation)")
+            | self.chains.update(&resolved.chains, "saved chains");
+        if woke {
+            self.graph_changed.notify_one();
         }
-        if self.vocabulary.get() != resolved.vocabulary {
-            myna_core::info_log!(
-                "settings",
-                "vocabulary -> {} word(s) (live, from the next press)",
-                resolved.vocabulary.len()
-            );
-            self.vocabulary.set(resolved.vocabulary.clone());
+        if self.apply_steps(resolved) {
+            self.graph_changed.notify_one();
         }
-        if self.auto_stop.get() != resolved.auto_stop {
-            myna_core::info_log!(
-                "settings",
-                "silence timeout -> {:?} (live, applies to a running session)",
-                resolved.auto_stop.silence
-            );
-            self.auto_stop.set(resolved.auto_stop);
-        }
-        if self.sounds.get() != resolved.sounds {
-            myna_core::info_log!("settings", "sounds -> {} (live)", resolved.sounds);
-            self.sounds.set(resolved.sounds);
-        }
-        if self.sound_set.get() != resolved.sound_set {
-            myna_core::info_log!(
-                "settings",
-                "sound set -> {} (live)",
-                resolved.sound_set.nick()
-            );
-            self.sound_set.set(resolved.sound_set);
-        }
+        self.vocabulary
+            .update(&resolved.vocabulary, "vocabulary (from the next press)");
+        self.auto_stop.update(
+            &resolved.auto_stop,
+            "silence timeout (applies to a running session)",
+        );
+        self.history.update(&resolved.history, "processing history");
+        self.sounds.update(&resolved.sounds, "sounds");
+        self.sound_set.update(&resolved.sound_set, "sound set");
+    }
+
+    /// Store the steps; the binder recompiles the graph from them. True when
+    /// they are news.
+    fn apply_steps(&self, resolved: &Resolved) -> bool {
+        self.steps
+            .update(&resolved.steps, "processing steps (from the next text)")
     }
 
     fn apply_preedit(&self, preedit: bool, reason: &str) {
@@ -479,16 +602,20 @@ fn preedit_reason(forced: Option<bool>, mode: myna_core::EffectiveMode) -> Strin
     }
 }
 
-/// The backend's `Capabilities.streaming`, `None` when it does not say or
-/// cannot be asked.
-async fn backend_streams(socket: &std::path::Path) -> Option<bool> {
+/// What the backend says it can do, `None` when it cannot be asked.
+async fn backend_capabilities(socket: &std::path::Path) -> Option<myna_core::Capabilities> {
     match myna_orchestrator::query_capabilities(socket).await {
-        Ok(caps) => caps.streaming,
+        Ok(caps) => Some(caps),
         Err(e) => {
             myna_core::dbg_log!("settings", "capabilities query failed: {e}");
             None
         }
     }
+}
+
+/// The model a backend serves, as it names it; `None` when it names none.
+fn speech_model(caps: &myna_core::Capabilities) -> Option<String> {
+    (!caps.models.is_empty()).then(|| caps.models.join(", "))
 }
 
 fn next(it: &mut impl Iterator<Item = String>, flag: &str) -> Result<String, String> {
@@ -581,7 +708,7 @@ fn make_session(
             // backend socket is: a value changed after login applies at the
             // next press, without a restart.
             language: language.get(),
-            keywords: vocabulary.get(),
+            keywords: myna_desktop::process::vocabulary::keywords(&vocabulary.get()),
             ..Default::default()
         };
         // --dbus: pump the capture level meter onto com.canonical.Myna.Dictation for the
@@ -592,7 +719,11 @@ fn make_session(
         // transcript event, and the answer lands long before the first one.
         let learn = {
             let (live, socket) = (live.clone(), socket.clone());
-            async move { live.backend_learned(forced_preedit, backend_streams(&socket).await) }
+            async move {
+                let caps = backend_capabilities(&socket).await;
+                live.speech_model.set(caps.as_ref().and_then(speech_model));
+                live.backend_learned(forced_preedit, caps.and_then(|caps| caps.streaming));
+            }
         };
         let run: SessionRun = Box::pin(async move {
             tokio::spawn(learn);
@@ -651,6 +782,8 @@ impl Sounds {
 struct Handles {
     trigger: ControlTrigger,
     sounds: Sounds,
+    /// Wakes the text model binder: `RescanModels` rings it.
+    rescan: Arc<tokio::sync::Notify>,
 }
 
 impl Handles {
@@ -658,6 +791,7 @@ impl Handles {
         Self {
             trigger: ControlTrigger::new(),
             sounds: Sounds::spawn(resolved),
+            rescan: Arc::default(),
         }
     }
 }
@@ -698,12 +832,20 @@ async fn run_controller(
     bus_lost: Option<BoxFuture<'static, ()>>,
     handles: Handles,
 ) -> ExitCode {
-    let Handles { trigger, sounds } = handles;
-    let live = LiveSettings::new(&resolved, sounds.set);
+    let Handles {
+        trigger,
+        sounds,
+        rescan,
+    } = handles;
+    let mut live = LiveSettings::new(&resolved, sounds.set);
+    live.graph_changed = rescan;
     // Held for the controller's whole life, and no longer: the subscription
     // exists to serve this controller, and dropping the handle stops it.
     let _settings_watch = live.follow(&args, pump_bus.clone());
     let restart = Arc::new(tokio::sync::Notify::new());
+    // The bridge for snapd LP#2175592 (`myna_desktop::restart`).
+    let leave = Arc::new(tokio::sync::Notify::new());
+    let shares_lost = Arc::new(std::sync::atomic::AtomicBool::new(false));
 
     let injector = LazyInjector::new(IbusConnect);
     // Every poke reaches the text input backend at once, a held key's repeats
@@ -720,7 +862,57 @@ async fn run_controller(
             restart.clone(),
         ))
         .preedit(live.preedit.clone())
-        .auto_stop(live.auto_stop.clone());
+        .auto_stop(live.auto_stop.clone())
+        .commit(live.commit.clone())
+        .processor({
+            let backend = match &args.backend {
+                Some(BackendSocket::Search(dir)) => Some(dir.as_path()),
+                _ => None,
+            };
+            let resolver = Resolver::from_env(backend, std::env::var_os("MYNA_TEXT_SHARES"));
+            if let Some(bus) = pump_bus.clone() {
+                tokio::spawn(myna_desktop::dbus::chain::run(
+                    bus,
+                    resolver.status(),
+                    resolver.catalog(),
+                ));
+            }
+            if let Some(dir) = backend {
+                spawn_restart_watch(dir.to_path_buf(), leave.clone(), shares_lost.clone());
+            }
+            spawn_binder(
+                resolver.clone(),
+                Binding {
+                    graph: live.graph.clone(),
+                    commit: live.commit.clone(),
+                    steps: live.steps.clone(),
+                    language: live.language.clone(),
+                    chain: live.chain.clone(),
+                    chains: live.chains.clone(),
+                },
+                live.graph_changed.clone(),
+            );
+            let pipeline =
+                Pipeline::new(live.graph.clone(), resolver).written(live.vocabulary.clone());
+            let context = Context {
+                steps: live.steps.clone(),
+                chain: live.chain.clone(),
+                trace: pipeline.trace(),
+                speech_model: live.speech_model.clone(),
+                version: Some(env!("MYNA_VERSION")),
+            };
+            Recorded::new(
+                pipeline,
+                live.history.clone(),
+                myna_core::history::path(),
+                context,
+            )
+        });
+    let builder = match &pump_bus {
+        Some(bus) => builder.draft(BusDraftView::new(bus.clone())),
+        None => builder,
+    };
+    let builder = builder.leave_when_idle(leave);
 
     let mut controller = match resolved.activation {
         // Debug only, and the one trigger whose end is a real user intent:
@@ -745,6 +937,12 @@ async fn run_controller(
     let bus_lost = bus_lost.unwrap_or_else(|| futures_util::future::pending().boxed());
     tokio::select! {
         () = controller.run() => {
+            if shares_lost.load(std::sync::atomic::Ordering::SeqCst) {
+                eprintln!(
+                    "a backend share is no longer mounted in this process (snapd LP#2175592); exiting so the service restarts and sees it again"
+                );
+                return ExitCode::FAILURE;
+            }
             println!("bye");
             ExitCode::SUCCESS
         }
@@ -767,6 +965,39 @@ async fn run_controller(
             ExitCode::FAILURE
         }
     }
+}
+
+/// Watch the shares under `dir` for one this process lost since it started
+/// ([`RestartWatch`]), then mark the exit a failure and ask the controller to
+/// leave at its next idle moment, so `Restart=on-failure` starts a daemon
+/// that sees the share again.
+fn spawn_restart_watch(
+    dir: PathBuf,
+    leave: Arc<tokio::sync::Notify>,
+    lost: Arc<std::sync::atomic::AtomicBool>,
+) {
+    tokio::spawn(async move {
+        let mut watch = RestartWatch::default();
+        loop {
+            let unmounted = myna_orchestrator::backend::share::unmounted_shares(&dir);
+            if watch.observe(&unmounted) {
+                myna_core::info_log!(
+                    "ctrl",
+                    "backend share lost here since start ({unmounted:?}); restarting once idle"
+                );
+                lost.store(true, std::sync::atomic::Ordering::SeqCst);
+                if let Some(path) = myna_desktop::restart::note_path() {
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map_or(0, |d| d.as_secs());
+                    let _ = std::fs::write(path, myna_desktop::restart::note(now, &unmounted));
+                }
+                leave.notify_one();
+                return;
+            }
+            tokio::time::sleep(CHECK_EVERY).await;
+        }
+    });
 }
 
 /// How long the notice of a press that needs a restart shows before it.
@@ -982,6 +1213,20 @@ fn print_status(args: &Args) -> ExitCode {
             (None, myna_core::ModeSource::Unknown) => "built-in",
         },
     );
+    let chain = settings.processing.active();
+    let named = chain.map_or_else(|| "(none)".into(), |chain| chain.name.clone());
+    row(
+        "chain",
+        named.clone(),
+        named,
+        source(false, chain.is_some()),
+    );
+    row(
+        "steps",
+        myna_desktop::process::steps::describe(&resolved.steps),
+        myna_desktop::process::steps::describe(&resolved.steps),
+        source(false, chain.is_some()),
+    );
 
     println!("\nbackend");
     match args.backend.as_ref().zip(provider) {
@@ -1050,12 +1295,85 @@ fn print_status(args: &Args) -> ExitCode {
                     status.status_message
                 }
             );
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| d.as_secs());
+            if let Some(line) = myna_desktop::restart::note_path()
+                .and_then(|path| std::fs::read_to_string(path).ok())
+                .and_then(|note| myna_desktop::restart::describe(&note, now))
+            {
+                println!("  {:<15} {line}", "last restart");
+            }
+            if !status.chain_status.is_empty() {
+                println!(
+                    "  {:<15} {} {}",
+                    "chain", status.chain_status, status.chain_missing
+                );
+                for line in installed_lines(&status.chain_requests, &status.installed_steps) {
+                    println!("{line}");
+                }
+            }
         }
         // Not running is the common case for someone debugging, and it is an
         // answer, not a failure - so it reads as one and still exits 0.
         Err(e) => println!("  {:<15} not reachable ({e})", "state"),
     }
     ExitCode::SUCCESS
+}
+
+/// The models and steps the daemon publishes, one line each.
+fn installed_lines(requests: &str, installed: &str) -> Vec<String> {
+    let mut lines = Vec::new();
+    use serde_json::Value;
+    let parse = |text: &str| serde_json::from_str::<Value>(text).unwrap_or(Value::Null);
+    let word = |v: &Value, key: &str| v[key].as_str().unwrap_or("?").to_owned();
+    let params = |v: &Value| {
+        v.as_object()
+            .map(|o| {
+                o.iter()
+                    .map(|(k, v)| format!("{k}={}", v.as_str().unwrap_or("?")))
+                    .collect::<Vec<_>>()
+                    .join(",")
+            })
+            .unwrap_or_default()
+    };
+    for r in parse(requests).as_array().into_iter().flatten() {
+        lines.push(format!(
+            "  {:<15} {} {}",
+            "missing",
+            word(r, "task"),
+            params(&r["params"])
+        ));
+    }
+    let installed = parse(installed);
+    for m in installed["models"].as_array().into_iter().flatten() {
+        lines.push(format!(
+            "  {:<15} {}/{} {} ({})",
+            "model",
+            word(m, "share"),
+            word(m, "model"),
+            word(m, "task"),
+            word(m, "class")
+        ));
+    }
+    for s in installed["steps"].as_array().into_iter().flatten() {
+        let detail = match &s["detail"] {
+            Value::String(reason) => format!(" ({reason})"),
+            Value::Object(_) => format!(
+                " (needs {} {})",
+                word(&s["detail"], "task"),
+                params(&s["detail"]["params"])
+            ),
+            _ => String::new(),
+        };
+        lines.push(format!(
+            "  {:<15} {} {}{detail}",
+            "step",
+            word(s, "id"),
+            word(s, "state")
+        ));
+    }
+    lines
 }
 
 /// Which plane a resolved value came from - the same order as [`Resolved`].
@@ -1210,7 +1528,11 @@ fn run_headless(args: Args, resolved: Resolved) -> ExitCode {
 /// `com.canonical.Myna.Hud` singletons). `--no-dbus` forces the notification
 /// path.
 async fn run_headless_dbus(args: Args, resolved: Resolved, handles: Handles) -> ExitCode {
-    let served = ZbusBus::serve_with(Some(handles.trigger.poke()), handles.sounds.previewer());
+    let served = ZbusBus::serve_with(
+        Some(handles.trigger.poke()),
+        handles.sounds.previewer(),
+        handles.rescan.clone(),
+    );
     match served.await {
         Ok(bus) => {
             let clients = bus.client_registry();
@@ -1501,6 +1823,155 @@ mod tests {
         backend_streams: Option<bool>,
     ) -> Resolved {
         Resolved::new(args, settings, backend_streams)
+    }
+
+    /// Settings holding `ids` with `params` as the active chain.
+    fn settings_with(
+        ids: &[String],
+        params: &myna_core::processing::Params,
+    ) -> myna_core::Settings {
+        use myna_core::chains::ChainStep;
+        let mut settings = unset();
+        let steps = ids
+            .iter()
+            .map(|id| ChainStep {
+                step: id.clone(),
+                on: true,
+                params: params
+                    .iter()
+                    .filter_map(|(key, value)| {
+                        let (step, name) = key.split_once('.')?;
+                        (step == id).then(|| (name.to_owned(), value.clone()))
+                    })
+                    .collect(),
+            })
+            .collect();
+        let id = settings.processing.add("c", steps);
+        settings.processing.activate(Some(&id));
+        settings
+    }
+
+    /// Settings holding the steps of a preset.
+    fn settings_of(chain: myna_core::ProcessingChain) -> myna_core::Settings {
+        settings_with(&chain.steps(), &chain.params())
+    }
+
+    /// A chain is ready when installed models cover its model steps, an
+    /// empty one always, and a step this build does not know makes it not.
+    #[test]
+    fn each_saved_chain_says_whether_its_models_are_installed() {
+        use myna_core::chains::{Chain, ChainStep};
+        let chain = |id: &str, steps: &[&str]| Chain {
+            id: id.into(),
+            name: id.to_uppercase(),
+            steps: steps.iter().map(|s| ChainStep::new(s)).collect(),
+        };
+        let resolver = Resolver::open(Vec::new());
+        let summaries = myna_desktop::process::resolve::chain_summaries(
+            &resolver,
+            &[
+                chain("empty", &[]),
+                chain("tidy", &["tidy"]),
+                chain("future", &["shout"]),
+            ],
+            Some("en"),
+        );
+        assert!(summaries[0].ready);
+        assert!(!summaries[1].ready);
+        assert_eq!(summaries[1].missing[0].task, "text.cleanup");
+        assert_eq!(summaries[1].name, "TIDY");
+        assert!(!summaries[2].ready);
+        assert_eq!(summaries[2].unknown, 1);
+    }
+
+    /// The active chain runs as ordered, and switching chains is a live
+    /// settings change: the graph is rebuilt and the record names the chain.
+    #[test]
+    fn the_active_chain_is_compiled_as_ordered_and_switches_live() {
+        use myna_core::chains::ChainStep;
+        let a = Args::default();
+        let mut settings = unset();
+        let french_first = settings.processing.add(
+            "French first",
+            vec![
+                ChainStep::new("translate").with("to", "fr"),
+                ChainStep::new("tidy"),
+            ],
+        );
+        let tidy_first = settings.processing.add(
+            "Tidy first",
+            vec![
+                ChainStep::new("tidy"),
+                ChainStep::new("translate").with("to", "fr"),
+            ],
+        );
+        settings.processing.activate(Some(&french_first));
+        let first = resolved(&a, &settings);
+        let ids: Vec<&str> = first.steps.iter().map(|s| s.id.as_str()).collect();
+        assert_eq!(ids, ["translate", "tidy"]);
+        assert_eq!(
+            first.chain.as_ref().map(|c| c.1.as_str()),
+            Some("French first")
+        );
+
+        let live = LiveSettings::new(&first, Live::new(SoundSet::default()));
+        settings.processing.activate(Some(&tidy_first));
+        live.apply(&resolved(&a, &settings), "test");
+        let ids: Vec<String> = live.steps.get().into_iter().map(|s| s.id).collect();
+        assert_eq!(ids, ["tidy", "translate"]);
+        assert_eq!(live.chain.get().map(|c| c.0), Some(tidy_first));
+
+        settings.processing.activate(None);
+        live.apply(&resolved(&a, &settings), "test");
+        assert!(live.steps.get().is_empty());
+        assert_eq!(live.chain.get(), None);
+    }
+
+    #[test]
+    fn a_chain_holds_the_dictation_as_far_as_its_nodes_need() {
+        use myna_core::ProcessingChain;
+        let hold = |chain| myna_desktop::process::steps::preset_graph(chain).touches();
+        assert_eq!(
+            CommitPolicy::for_chain(hold(ProcessingChain::EXACT)),
+            CommitPolicy::Streaming
+        );
+        assert_eq!(
+            CommitPolicy::for_chain(hold(ProcessingChain::TIDY)),
+            CommitPolicy::Horizon { sentences: 1 }
+        );
+
+        let tidy = settings_of(ProcessingChain::TIDY);
+        let live = LiveSettings::new(&resolved(&Args::default(), &tidy), Live::default());
+        assert!(!live.history.get());
+        let recording = myna_core::Settings {
+            processing_history: true,
+            ..tidy
+        };
+        live.apply(&resolved(&Args::default(), &recording), "test");
+        assert!(live.history.get());
+    }
+
+    /// The steps the settings thread stores are the stored chain; the graph
+    /// the binder compiles from them is not the settings thread's to write.
+    #[test]
+    fn the_settings_thread_stores_steps_and_never_a_graph() {
+        let a = Args::default();
+        let tidy = settings_of(myna_core::ProcessingChain::TIDY);
+        let live = LiveSettings::new(&resolved(&a, &tidy), Live::new(SoundSet::default()));
+
+        let mut future = tidy.clone();
+        let active = future.processing.active.clone().expect("a chain is in use");
+        future
+            .processing
+            .chains
+            .iter_mut()
+            .find(|chain| chain.id == active)
+            .expect("the active chain exists")
+            .steps
+            .push(myna_core::chains::ChainStep::new("from-the-future"));
+        live.apply(&resolved(&a, &future), "test");
+        assert_eq!(live.steps.get().len(), 2);
+        assert_eq!(live.graph.get(), Graph::passthrough(), "the binder's cell");
     }
 
     #[test]
@@ -1886,7 +2357,8 @@ mod tests {
     async fn a_press_asks_the_backend_whether_it_streams() {
         for streaming in [Some(true), Some(false), None] {
             let (_dir, path) = fake_backend(streaming).await;
-            assert_eq!(backend_streams(&path).await, streaming);
+            let caps = backend_capabilities(&path).await;
+            assert_eq!(caps.and_then(|caps| caps.streaming), streaming);
         }
     }
 
@@ -1914,10 +2386,25 @@ mod tests {
         assert!(!live.preedit.get(), "the batch backend's answer landed");
     }
 
+    #[test]
+    fn the_speech_model_is_what_the_backend_names() {
+        let named = myna_core::Capabilities {
+            models: vec!["parakeet-tdt-0.6b-v3".into(), "int8".into()],
+            ..Default::default()
+        };
+        assert_eq!(
+            speech_model(&named).as_deref(),
+            Some("parakeet-tdt-0.6b-v3, int8")
+        );
+        assert_eq!(speech_model(&myna_core::Capabilities::default()), None);
+    }
+
     #[tokio::test]
     async fn an_unreachable_backend_streams_unknown() {
         let dir = tempdir::Dir::new("caps-missing");
-        assert_eq!(backend_streams(&dir.0.join("absent.sock")).await, None);
+        assert!(backend_capabilities(&dir.0.join("absent.sock"))
+            .await
+            .is_none());
     }
 
     // Regression (manual test report, 2026-07-31): the HUD pill visibly
@@ -1985,5 +2472,35 @@ mod tests {
     fn control_toggle_hint_asks_whether_the_daemon_is_running() {
         let hint = toggle_hint_for(Activation::Control).join(" ");
         assert!(hint.contains("--socket"), "{hint}");
+    }
+
+    #[test]
+    fn status_lists_models_missing_requests_and_steps_and_nothing_from_an_old_daemon() {
+        assert!(installed_lines("", "").is_empty());
+        let lines = installed_lines(
+            r#"[{"task":"text.translate","params":{"to":"fr"}}]"#,
+            r#"{"models":[{"share":"myna-text","model":"tagger","task":"text.cleanup","class":"edit"}],
+               "steps":[{"id":"tidy","state":"applicable","detail":null},
+                        {"id":"script","state":"not-applicable","detail":"Applies when the text is Chinese"},
+                        {"id":"translate","state":"unavailable","detail":{"task":"text.translate","params":{"to":"fr"}}}]}"#,
+        );
+        let text = lines.join("\n");
+        assert!(
+            text.contains("missing         text.translate to=fr"),
+            "{text}"
+        );
+        assert!(
+            text.contains("model           myna-text/tagger text.cleanup (edit)"),
+            "{text}"
+        );
+        assert!(text.contains("step            tidy applicable\n"), "{text}");
+        assert!(
+            text.contains("script not-applicable (Applies when the text is Chinese)"),
+            "{text}"
+        );
+        assert!(
+            text.contains("translate unavailable (needs text.translate to=fr)"),
+            "{text}"
+        );
     }
 }

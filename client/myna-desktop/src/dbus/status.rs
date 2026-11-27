@@ -20,6 +20,14 @@ pub struct DaemonStatus {
     pub state: String,
     /// Publisher-owned label for the current state; empty while idle.
     pub status_message: String,
+    /// `ready`, `degraded` or `restart`; empty from a daemon predating it.
+    pub chain_status: String,
+    /// Tasks the chosen chain has no model for, comma separated.
+    pub chain_missing: String,
+    /// JSON `{task, params}` list; empty from a daemon predating it.
+    pub chain_requests: String,
+    /// JSON `{models, steps}`; empty from a daemon predating it.
+    pub installed_steps: String,
 }
 
 /// Read the published properties, or say why they could not be read.
@@ -39,6 +47,10 @@ pub async fn read() -> Result<DaemonStatus, zbus::Error> {
     Ok(DaemonStatus {
         state: text(&all, "State"),
         status_message: text(&all, "StatusMessage"),
+        chain_status: text(&all, "ChainStatus"),
+        chain_missing: text(&all, "ChainMissing"),
+        chain_requests: text(&all, "ChainMissingRequests"),
+        installed_steps: text(&all, "InstalledSteps"),
     })
 }
 
