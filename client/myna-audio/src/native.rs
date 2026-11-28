@@ -280,11 +280,19 @@ impl Continuity {
         let (num, denom) = graph_rate;
         // A clock that did not move (a rebase, or the second callback of a
         // split cycle) produced nothing over this interval. Its frames still
-        // arrived, so they still count.
-        let expected = if ticks > last && denom != 0 {
-            (ticks - last) as f64 * num as f64 * self.rate / denom as f64
+        // arrived, so they still count. Nor did one that leapt further than
+        // any silence could span: the watchdog would have ended the capture
+        // first, so that is the clock being replaced (seen across a Bluetooth
+        // transport failure), not audio the graph produced.
+        let elapsed = if ticks > last && denom != 0 {
+            (ticks - last) as f64 * num as f64 / denom as f64
         } else {
             0.0
+        };
+        let expected = if elapsed > SILENCE_TIMEOUT.as_secs_f64() {
+            0.0
+        } else {
+            elapsed * self.rate
         };
         if expected > 0.0 && (self.cycle == 0.0 || expected < self.cycle) {
             self.cycle = expected;
@@ -1442,6 +1450,40 @@ mod tests {
             assert_eq!(miss(&mut c, &mut ticks), None);
         }
         assert!(without_repaying(&mut c, &mut ticks, GRAPH, 85).is_some());
+    }
+
+    /// A Bluetooth transport failure was seen to fault a capture with
+    /// "18446744073709551 ms of audio was lost", the most the loss code can
+    /// carry. A gap between two deliveries that long cannot be audio the
+    /// graph produced: the silence watchdog ends a capture long before.
+    #[test]
+    fn a_clock_jump_no_silence_could_span_is_not_lost_audio() {
+        let mut c = Continuity::new(16_000);
+        let mut ticks = 0;
+        run(&mut c, &mut ticks, 40);
+        ticks += 1 << 60;
+        assert_eq!(run(&mut c, &mut ticks, 1), None);
+        assert_eq!(run(&mut c, &mut ticks, 30), None);
+        assert_eq!(without_repaying(&mut c, &mut ticks, GRAPH, 341), None);
+    }
+
+    /// The bound is the watchdog's: a gap it would not have caught stays loss.
+    #[test]
+    fn a_gap_within_the_silence_timeout_is_still_lost_audio() {
+        let gap = SILENCE_TIMEOUT.as_secs() * 48_000;
+        let mut c = Continuity::new(16_000);
+        let mut ticks = 0;
+        run(&mut c, &mut ticks, 40);
+        ticks += gap;
+        assert_eq!(c.delivered(ticks, GRAPH, 341), None);
+        assert!(without_repaying(&mut c, &mut ticks, GRAPH, 341).is_some());
+        // One tick past it is no longer a gap audio could have fallen into.
+        let mut c = Continuity::new(16_000);
+        let mut ticks = 0;
+        run(&mut c, &mut ticks, 40);
+        ticks += gap + 1;
+        assert_eq!(c.delivered(ticks, GRAPH, 341), None);
+        assert_eq!(without_repaying(&mut c, &mut ticks, GRAPH, 341), None);
     }
 
     #[test]
